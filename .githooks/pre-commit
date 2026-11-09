@@ -1,0 +1,7 @@
+#!/bin/sh
+# Refuses commits on main: every change is made on its own branch, in its own worktree
+# (docs/adr/0004-one-worktree-per-pull-request.md). Enabled by `make git-hooks`.
+if [ "$(git branch --show-current)" = "main" ]; then
+  echo "pre-commit: commits on main are not allowed; work in a worktree: make worktree BRANCH=<type>/<issue>-<slug>" >&2
+  exit 1
+fi

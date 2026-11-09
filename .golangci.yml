@@ -1,0 +1,91 @@
+version: "2"
+
+linters:
+  default: standard
+  enable:
+    - bodyclose
+    - depguard
+    - errorlint
+    - exhaustive
+    - gocritic
+    - gosec
+    - misspell
+    - nolintlint
+    - revive
+    - thelper
+    - tparallel
+    - unconvert
+    - unparam
+    - usetesting
+  settings:
+    # Architecture rules. These are the dependency rule from docs/architecture.md,
+    # enforced by the linter so no agent (or human) can quietly break the layering.
+    depguard:
+      rules:
+        domain-is-pure:
+          list-mode: strict
+          files:
+            - "**/internal/domain/**/*.go"
+            - "!$test"
+          allow:
+            - $gostd
+            - github.com/timothymamo/eu-sov-cloud/internal/domain
+        app-uses-ports-not-adapters:
+          list-mode: lax
+          files:
+            - "**/internal/app/**/*.go"
+          deny:
+            - pkg: github.com/timothymamo/eu-sov-cloud/internal/adapter
+              desc: the application layer depends on ports it declares; wire adapters in cmd/eusov
+            - pkg: github.com/timothymamo/eu-sov-cloud/internal/cli
+              desc: the application layer must not know about its driving adapter
+            - pkg: github.com/aws/aws-sdk-go-v2
+              desc: cloud SDKs belong in internal/adapter/source/aws
+            - pkg: github.com/Azure/azure-sdk-for-go
+              desc: cloud SDKs belong in internal/adapter/source/azure
+            - pkg: cloud.google.com/go
+              desc: cloud SDKs belong in internal/adapter/source/gcp
+            - pkg: google.golang.org/api
+              desc: cloud SDKs belong in internal/adapter/source/gcp
+        testutil-only-in-tests:
+          list-mode: lax
+          files:
+            - "$all"
+            - "!$test"
+            - "!**/internal/testutil/**"
+          deny:
+            - pkg: github.com/timothymamo/eu-sov-cloud/internal/testutil
+              desc: testutil may only be imported from _test.go files
+    exhaustive:
+      default-signifies-exhaustive: true
+    gosec:
+      excludes:
+        - G104 # unchecked errors are already reported by errcheck
+    revive:
+      rules:
+        - name: exported
+        - name: package-comments
+        - name: var-naming
+        - name: error-strings
+        - name: error-naming
+        - name: receiver-naming
+        - name: indent-error-flow
+        - name: unused-parameter
+  exclusions:
+    generated: lax
+    presets:
+      - std-error-handling
+    rules:
+      - path: _test\.go
+        linters:
+          - gosec
+          - unparam
+
+formatters:
+  enable:
+    - gofumpt
+    - goimports
+  settings:
+    goimports:
+      local-prefixes:
+        - github.com/timothymamo/eu-sov-cloud

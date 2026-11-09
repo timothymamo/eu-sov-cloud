@@ -1,0 +1,50 @@
+# --- Go -----------------------------------------------------------------------
+/bin/
+/dist/
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+*.test
+*.out
+coverage.*
+go.work
+go.work.sum
+
+# --- Analysis inputs and outputs ---------------------------------------------
+# Real inventories and reports describe someone's infrastructure. Never commit
+# them; only sanitised fixtures under testdata/ belong in git.
+/inventories/
+/reports/
+*.inventory.json
+
+# --- Secrets and cloud credentials -------------------------------------------
+.env
+.env.*
+!.env.example
+# Keep direnv files with secrets above the repository: the agents' VM can read everything in it.
+.envrc
+*.pem
+*.key
+*credentials*.json
+*service-account*.json
+.aws/
+.azure/
+.config/gcloud/
+
+# --- Agent tooling ------------------------------------------------------------
+# One git worktree per pull request (make worktree; docs/adr/0004-one-worktree-per-pull-request.md).
+/.worktrees/
+# dot-agent-deck runtime state (task/work-done handoff files, logs).
+.dot-agent-deck/
+# Personal Claude Code overrides; the shared .claude/settings.json is committed.
+.claude/settings.local.json
+CLAUDE.local.md
+
+# --- Editors and OS -----------------------------------------------------------
+.idea/
+.vscode/
+*.swp
+*~
+.DS_Store

@@ -1,0 +1,147 @@
+# Isolated environment for running dot-agent-deck and its agents.
+#
+# Create it with `make vm-up`, which passes `--mount-only <repo>:w`: this
+# repository is the ONLY host path the VM can see. Agents running inside cannot
+# read ~/.ssh, ~/.aws, ~/.azure, ~/.config/gcloud or anything else on the Mac.
+#
+# Everything the agents need is installed here, so nothing about the agent
+# toolchain has to be installed on the host. See docs/dev-environment.md.
+minimumLimaVersion: 2.0.0
+
+base:
+  - template:_images/ubuntu-lts
+
+vmType: vz
+cpus: 4
+memory: 8GiB
+disk: 40GiB
+
+# Deliberately empty: host mounts come only from `--mount-only` in the Makefile.
+mounts: []
+
+containerd:
+  system: false
+  user: false
+
+# Kept current by Renovate through the "# renovate:" comments (.github/renovate.json5).
+param:
+  # renovate: datasource=golang-version depName=go
+  goVersion: "1.27.3"
+  # renovate: datasource=github-releases depName=golangci/golangci-lint
+  golangciLintVersion: "v2.15.0"
+  # renovate: datasource=go depName=golang.org/x/vuln
+  govulncheckVersion: "v1.9.0"
+  # renovate: datasource=github-releases depName=vfarcic/dot-agent-deck
+  dotAgentDeckVersion: "v0.49.7"
+  # renovate: datasource=node-version depName=node versioning=node
+  nodeVersion: "26.13.0"
+  # renovate: datasource=npm depName=@earendil-works/pi-coding-agent
+  piVersion: "1.5.0"
+
+provision:
+  - mode: system
+    script: |
+      #!/bin/bash
+      set -eux -o pipefail
+      export DEBIAN_FRONTEND=noninteractive
+      # Provisioning re-runs on every boot, so each step is skipped when already done.
+      pkgs="build-essential ca-certificates curl gh git jq make ripgrep unzip"
+      if ! dpkg -s ${pkgs} >/dev/null 2>&1; then
+        apt-get update
+        apt-get install -y --no-install-recommends ${pkgs}
+      fi
+
+      arch="$(dpkg --print-architecture)" # amd64 | arm64, matching Go's naming
+      # Go, verified against the published checksum.
+      if ! /usr/local/go/bin/go version 2>/dev/null | grep -q "go${PARAM_goVersion} "; then
+        tarball="go${PARAM_goVersion}.linux-${arch}.tar.gz"
+        tmp="$(mktemp -d)"
+        curl -fsSL -o "${tmp}/${tarball}" "https://dl.google.com/go/${tarball}"
+        echo "$(curl -fsSL "https://dl.google.com/go/${tarball}.sha256")  ${tmp}/${tarball}" | sha256sum --check --strict
+        rm -rf /usr/local/go
+        tar -C /usr/local -xzf "${tmp}/${tarball}"
+        rm -rf "${tmp}"
+      fi
+
+      # Node.js, needed by pi. Official build, verified against the release checksums.
+      if ! /usr/local/node/bin/node --version 2>/dev/null | grep -qx "v${PARAM_nodeVersion}"; then
+        tarball="node-v${PARAM_nodeVersion}-linux-${arch/amd64/x64}.tar.gz"
+        tmp="$(mktemp -d)"
+        curl -fsSL -o "${tmp}/${tarball}" "https://nodejs.org/dist/v${PARAM_nodeVersion}/${tarball}"
+        curl -fsSL -o "${tmp}/SHASUMS256.txt" "https://nodejs.org/dist/v${PARAM_nodeVersion}/SHASUMS256.txt"
+        (cd "${tmp}" && grep " ${tarball}\$" SHASUMS256.txt | sha256sum --check --strict)
+        rm -rf /usr/local/node && mkdir -p /usr/local/node
+        tar -C /usr/local/node --strip-components=1 --no-same-owner -xzf "${tmp}/${tarball}"
+        rm -rf "${tmp}"
+      fi
+
+      if ! golangci-lint --version 2>/dev/null | grep -q "version ${PARAM_golangciLintVersion#v} "; then
+        curl -fsSL "https://raw.githubusercontent.com/golangci/golangci-lint/${PARAM_golangciLintVersion}/install.sh" \
+          | sh -s -- -b /usr/local/bin "${PARAM_golangciLintVersion}"
+      fi
+
+      cat > /etc/profile.d/eu-sov-cloud.sh <<'PROFILE'
+      export PATH="$HOME/.local/bin:$HOME/go/bin:/usr/local/go/bin:/usr/local/node/bin:$PATH"
+      # Agent credentials, copied in from the Mac by `make vm-env` (docs/dev-environment.md).
+      if [ -r "$HOME/.config/dot-agent-deck/daemon.env" ]; then
+        set -a
+        . "$HOME/.config/dot-agent-deck/daemon.env"
+        set +a
+      fi
+      PROFILE
+
+  - mode: user
+    script: |
+      #!/bin/bash
+      set -eux -o pipefail
+      export PATH="$HOME/.local/bin:$HOME/go/bin:/usr/local/go/bin:/usr/local/node/bin:$PATH"
+      mkdir -p "$HOME/.local/bin"
+
+      go install "golang.org/x/vuln/cmd/govulncheck@${PARAM_govulncheckVersion}"
+
+      # git push over HTTPS authenticates through gh, with the GITHUB_TOKEN copied in by `make vm-env`.
+      git config --global credential.https://github.com.helper '!gh auth git-credential'
+
+      # The deck's daemon runs as a systemd user service (`dot-agent-deck daemon install`, once). This
+      # drop-in gives it the credentials from `make vm-env`. Lima enables lingering, so it starts at boot.
+      mkdir -p "$HOME/.config/systemd/user/dot-agent-deck.service.d"
+      cat > "$HOME/.config/systemd/user/dot-agent-deck.service.d/credentials.conf" <<'UNIT'
+      [Service]
+      EnvironmentFile=-%h/.config/dot-agent-deck/daemon.env
+      UNIT
+
+      # Claude Code (native installer, no Node.js needed): every role except the tester.
+      command -v claude >/dev/null 2>&1 || curl -fsSL https://claude.ai/install.sh | bash
+
+      # pi: the tester role (DeepSeek). Global npm packages go to ~/.local, so `pi update` needs no root.
+      npm config set prefix "$HOME/.local"
+      if ! pi --version 2>/dev/null | grep -qx "${PARAM_piVersion}"; then
+        npm install -g --ignore-scripts --no-fund --no-audit "@earendil-works/pi-coding-agent@${PARAM_piVersion}"
+      fi
+
+      # dot-agent-deck release binary, verified against the release checksums.
+      if ! dot-agent-deck --version 2>/dev/null | grep -q "${PARAM_dotAgentDeckVersion#v}"; then
+        arch="$(dpkg --print-architecture)"
+        asset="dot-agent-deck-linux-${arch}"
+        base="https://github.com/vfarcic/dot-agent-deck/releases/download/${PARAM_dotAgentDeckVersion}"
+        tmp="$(mktemp -d)"
+        curl -fsSL -o "${tmp}/${asset}" "${base}/${asset}"
+        curl -fsSL -o "${tmp}/checksums.txt" "${base}/checksums.txt"
+        (cd "${tmp}" && grep " ${asset}\$" checksums.txt | sha256sum --check --strict)
+        install -m 0755 "${tmp}/${asset}" "$HOME/.local/bin/dot-agent-deck"
+        rm -rf "${tmp}"
+        dot-agent-deck hooks install
+      fi
+
+probes:
+  - script: |
+      #!/bin/bash
+      set -eux -o pipefail
+      export PATH="$HOME/.local/bin:$HOME/go/bin:/usr/local/go/bin:/usr/local/node/bin:$PATH"
+      for bin in go golangci-lint govulncheck node claude pi dot-agent-deck gh; do
+        if ! timeout 300s bash -c "until command -v ${bin} >/dev/null 2>&1; do sleep 5; done"; then
+          echo >&2 "${bin} is not installed yet"
+          exit 1
+        fi
+      done
+    hint: See /var/log/cloud-init-output.log in the guest

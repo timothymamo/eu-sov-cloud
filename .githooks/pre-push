@@ -1,0 +1,9 @@
+#!/bin/sh
+# Refuses pushes to main: main changes only through merged pull requests
+# (docs/adr/0004-one-worktree-per-pull-request.md). Enabled by `make git-hooks`.
+while read -r _local_ref _local_sha remote_ref _remote_sha; do
+  if [ "${remote_ref}" = "refs/heads/main" ]; then
+    echo "pre-push: pushing to main is not allowed; push your branch and open a pull request" >&2
+    exit 1
+  fi
+done

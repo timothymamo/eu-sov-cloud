@@ -1,0 +1,54 @@
+{
+  $schema: 'https://docs.renovatebot.com/renovate-schema.json',
+  extends: [
+    'config:recommended',
+    // Keep workflow actions pinned to commit SHAs, with the version in a trailing comment.
+    'helpers:pinGitHubActionDigests',
+    ':semanticCommits',
+    'schedule:weekly',
+  ],
+  labels: ['dependencies'],
+  postUpdateOptions: ['gomodTidy'],
+  // Open security PRs from the OSV database straight away, outside the weekly schedule.
+  osvVulnerabilityAlerts: true,
+  packageRules: [
+    {
+      description: 'Batch non-major Go module updates into one PR',
+      matchManagers: ['gomod'],
+      matchDepTypes: ['require', 'indirect'],
+      matchUpdateTypes: ['minor', 'patch', 'digest'],
+      groupName: 'Go modules',
+    },
+    {
+      description: 'Batch GitHub Actions updates into one PR',
+      matchManagers: ['github-actions'],
+      groupName: 'GitHub Actions',
+    },
+    {
+      // eusov is an application, so it is built with the Go it declares. Renovate leaves the go
+      // directive alone by default; bump it together with the VM's Go version.
+      description: 'Go toolchain: go.mod go directive and dev/lima.yaml',
+      matchDatasources: ['golang-version'],
+      rangeStrategy: 'bump',
+      groupName: 'Go toolchain',
+    },
+    {
+      description: 'golangci-lint: CI and dev/lima.yaml stay on the same version',
+      matchDepNames: ['golangci/golangci-lint'],
+      groupName: 'golangci-lint',
+    },
+  ],
+  customManagers: [
+    {
+      description: 'Versions annotated with "# renovate: datasource=... depName=..." on the line above',
+      customType: 'regex',
+      managerFilePatterns: [
+        '/^dev/lima\\.yaml$/',
+        '/^\\.github/workflows/[^/]+\\.ya?ml$/',
+      ],
+      matchStrings: [
+        '# renovate: datasource=(?<datasource>\\S+) depName=(?<depName>\\S+)(?: versioning=(?<versioning>\\S+))?\\s+\\S+:\\s*"?(?<currentValue>[^"\\s]+)"?',
+      ],
+    },
+  ],
+}

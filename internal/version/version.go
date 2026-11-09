@@ -1,0 +1,16 @@
+// Package version exposes build metadata injected at link time by the
+// Makefile and GoReleaser (-ldflags "-X .../internal/version.version=...").
+package version
+
+import "fmt"
+
+var (
+	version = "dev"
+	commit  = "none"
+	date    = "unknown"
+)
+
+// String returns a one-line, human-readable build description.
+func String() string {
+	return fmt.Sprintf("eusov %s (commit %s, built %s)", version, commit, date)
+}
