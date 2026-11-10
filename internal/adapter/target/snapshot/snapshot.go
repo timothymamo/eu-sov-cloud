@@ -32,8 +32,9 @@ var (
 	// not one JSON object, a key that is unknown, not spelt exactly or repeated,
 	// a field that is missing, null or of the wrong JSON type, a string that
 	// escapes a lone surrogate, a retrieval date that is not a YYYY-MM-DD date,
-	// or a declared region that is blank, not valid text (text.Validate) or
-	// declared twice.
+	// or a declared region that is blank, not valid text (text.Validate),
+	// declared twice, not a region code (ASCII letters and digits in groups
+	// joined by single hyphens) or equal to another ignoring ASCII case.
 	ErrDecode = errors.New("not a valid catalog document")
 	// ErrSchemaVersion is returned for a document whose schemaVersion is missing
 	// or is not a version this package reads.
@@ -83,7 +84,7 @@ func Parse(data []byte) (Document, error) {
 
 	for i, o := range doc.offerings {
 		for _, region := range o.regions {
-			if _, ok := declared[region]; !ok {
+			if !isDeclared(declared, region) {
 				return Document{}, fmt.Errorf(
 					"%w: offering %s is available in region %s, which the regions list does not declare",
 					ErrUndeclaredRegion, text.Quote(o.name), text.Quote(region))
@@ -318,11 +319,14 @@ func parseDate(raw string) (time.Time, error) {
 	return date, nil
 }
 
-// declaredRegions checks the regions a document declares, each non-blank, valid
-// text and declared once, and returns them as a set, so an offering's regions
-// are each checked in constant time however many regions are declared.
-func declaredRegions(regions []string) (map[string]struct{}, error) {
-	set := make(map[string]struct{}, len(regions))
+// declaredRegions checks the regions a document declares, each in this order:
+// non-blank, valid text, a region code (isRegionCode), and not equal to a
+// region declared before it, exactly or ignoring ASCII case. It returns them as
+// a map from the code in ASCII lower case to the code as declared, so each
+// check, and each offering region later (isDeclared), takes constant time
+// however many regions are declared.
+func declaredRegions(regions []string) (map[string]string, error) {
+	declared := make(map[string]string, len(regions))
 
 	for i, region := range regions {
 		if strings.TrimSpace(region) == "" {
@@ -335,15 +339,78 @@ func declaredRegions(regions []string) (map[string]struct{}, error) {
 				ErrDecode, text.Quote(region), i, err)
 		}
 
-		if _, dup := set[region]; dup {
-			return nil, fmt.Errorf("%w: region %s is declared more than once (again at regions[%d])",
-				ErrDecode, text.Quote(region), i)
+		if !isRegionCode(region) {
+			return nil, fmt.Errorf("%w: declared region %s (regions[%d]) is not a region code: "+
+				"ASCII letters and digits in groups joined by single hyphens", ErrDecode, text.Quote(region), i)
 		}
 
-		set[region] = struct{}{}
+		key := asciiLower(region)
+
+		if earlier, dup := declared[key]; dup {
+			if earlier == region {
+				return nil, fmt.Errorf("%w: region %s is declared more than once (again at regions[%d])",
+					ErrDecode, text.Quote(region), i)
+			}
+
+			return nil, fmt.Errorf("%w: declared region %s (regions[%d]) is region %s again: region codes are compared ignoring case",
+				ErrDecode, text.Quote(region), i, text.Quote(earlier))
+		}
+
+		declared[key] = region
 	}
 
-	return set, nil
+	return declared, nil
+}
+
+// isDeclared reports whether region is one of declared, the map declaredRegions
+// returns, spelt as the document declares it.
+func isDeclared(declared map[string]string, region string) bool {
+	spelling, ok := declared[asciiLower(region)]
+
+	return ok && spelling == region
+}
+
+// isRegionCode reports whether s is a region code: ASCII letters and digits in
+// one or more groups joined by single hyphens, ^[A-Za-z0-9]+(-[A-Za-z0-9]+)*$.
+// fr-par, GRA and eu-central-1 are region codes. A look-alike letter (the
+// Cyrillic р of fr-раr), any space, an underscore, a dot and a hyphen at an end
+// or after another are not: such a code would declare a region no reader can
+// tell from a real one.
+func isRegionCode(s string) bool {
+	// afterHyphen starts true, so a code that is empty or starts with a hyphen
+	// is refused like one that ends with a hyphen.
+	afterHyphen := true
+
+	for i := range len(s) {
+		switch b := s[i]; {
+		case b == '-' && !afterHyphen:
+			afterHyphen = true
+		case 'a' <= b && b <= 'z', 'A' <= b && b <= 'Z', '0' <= b && b <= '9':
+			afterHyphen = false
+		default:
+			return false
+		}
+	}
+
+	return !afterHyphen
+}
+
+// asciiLower returns s with its ASCII upper-case letters in lower case, and s
+// itself when it has none, so the usual lower-case code costs no allocation.
+func asciiLower(s string) string {
+	i := strings.IndexFunc(s, func(r rune) bool { return 'A' <= r && r <= 'Z' })
+	if i < 0 {
+		return s
+	}
+
+	b := []byte(s)
+	for j := i; j < len(b); j++ {
+		if 'A' <= b[j] && b[j] <= 'Z' {
+			b[j] += 'a' - 'A'
+		}
+	}
+
+	return string(b)
 }
 
 // kindOf names, with its article, the JSON type of the value whose first byte

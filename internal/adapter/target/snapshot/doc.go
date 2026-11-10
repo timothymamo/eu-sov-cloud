@@ -27,8 +27,11 @@
 //     per object; every field the format defines is present, not null, and of
 //     its JSON type; and no string, key or value, escapes a lone surrogate;
 //   - its retrievedOn is a YYYY-MM-DD date;
-//   - every declared region is non-blank, valid text (text.Validate) and
-//     declared once, and every offering region is a declared one;
+//   - every declared region is non-blank, valid text (text.Validate), a region
+//     code (ASCII letters and digits in groups joined by single hyphens, such
+//     as fr-par, GRA or eu-central-1) and declared once, compared ignoring
+//     ASCII case, and every offering region is a declared one, spelt as
+//     declared;
 //   - catalog.New accepts its target, its source URL and every offering's name,
 //     categories, capabilities and regions.
 //
