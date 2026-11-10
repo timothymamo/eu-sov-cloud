@@ -106,12 +106,21 @@ start work on an issue or PRD.
   why the VM mounts the workspace rather than the repository
   ([ADR 0008](adr/0008-mount-a-workspace-directory-for-dispatcher-mode.md)).
 - **PRs still get their own worktree.** A dispatched orchestrator follows the `start-work` skill like any
-  other: `make worktree` creates the PR's branch and worktree under the main checkout's `.worktrees/`
-  ([ADR 0004](adr/0004-one-worktree-per-pull-request.md)). The dispatch worktree is only where the
-  unit's agents start; its `agent/dispatch-*` branch never gets commits or a PR.
-- **Cleaning up.** `dot-agent-deck close <unit>` removes the unit's worktree, or keeps it when it has
-  uncommitted changes. `dot-agent-deck worktree list` shows what is left. The `agent/dispatch-*`
-  branches stay; delete them with `git branch -d`.
+  other ([ADR 0004](adr/0004-one-worktree-per-pull-request.md)). Run from the dispatch worktree,
+  `make worktree` creates the PR's branch and worktree under the dispatch worktree's own `.worktrees/`,
+  for example `../eu-sov-cloud-dispatch-<name>/.worktrees/feat-12-short-name`, so the unit's agents
+  never leave their working directory and never stop at a permission prompt
+  ([ADR 0009](adr/0009-create-pull-request-worktrees-inside-the-dispatch-worktree.md)). `.worktrees/` is
+  git-ignored, so the dispatch worktree stays clean. Its `agent/dispatch-*` branch never gets commits or
+  a PR.
+- **Cleaning up, in this order.** First remove each PR worktree inside the unit, which the `pr-create`
+  merge step does: `git -C <main checkout> worktree remove <path>`. Then close the unit:
+  `dot-agent-deck close <unit>` removes the unit's worktree, or keeps it when `git status` there shows
+  uncommitted changes. That check does not see the git-ignored `.worktrees/`, so a unit closed with a PR
+  worktree still inside it loses that worktree, uncommitted changes included. The branch and its
+  commits survive: `git worktree prune` clears the stale entry and `make worktree` brings the worktree
+  back. `dot-agent-deck worktree list` shows what is left. The `agent/dispatch-*` branches stay; delete
+  them with `git branch -d`.
 
 ### Moving an existing checkout into a workspace
 
