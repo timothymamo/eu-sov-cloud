@@ -1,0 +1,450 @@
+package jsondoc
+
+import (
+	"encoding/json"
+	"fmt"
+	"slices"
+	"strconv"
+	"strings"
+	"unicode"
+	"unicode/utf16"
+	"unicode/utf8"
+
+	"github.com/timothymamo/eu-sov-cloud/internal/domain/text"
+)
+
+// MaxKeys is the most keys one kind of object may list: Walker.Object records
+// the keys an object has in one bit each.
+const MaxKeys = 64
+
+// Key is one key an object of a format may have.
+type Key struct {
+	// Name is the key, spelt as the format defines it. A key of the document
+	// matches it only character for character, once JSON escapes are decoded.
+	Name string
+	// Required is whether Walker.Object refuses an object without the key.
+	Required bool
+}
+
+// Walker reads a Document token by token, holding one token at a time however
+// large the document or its values, and keeps the path of the value it reads
+// next, which its errors name. A format drives it from the document's object
+// down: Walker.Object calls back for each key, and the callback reads the key's
+// value with one of the methods below, which may call back in turn. Get a
+// Walker from Document.Walker; a Walker is not safe for concurrent use.
+type Walker struct {
+	data    []byte
+	dec     *json.Decoder
+	invalid error
+	// path holds a segment for each object key and array element the walker is
+	// in, outermost first.
+	path []segment
+	// pending is set while a callback has yet to read the value it was called
+	// for, so a callback that returns without reading it is caught.
+	pending bool
+}
+
+// segment is one step of a path: an object key, or an array index when index
+// is not negative.
+type segment struct {
+	key   string
+	index int
+}
+
+// Object reads the next value, which must be an object whose keys are among
+// keys (at most MaxKeys). For each key of the object, in document order, it
+// calls value with the key's Name, with the walker at the key's value and Path
+// naming it. value must read that value whole, with one call of Object, Array,
+// String or Raw, or with Null and, when Null returns false, one of those, or
+// return an error.
+//
+// Object refuses, with an error that wraps the format's sentinel: a value that
+// is not an object, null included; a key that escapes a lone surrogate; a key
+// that is not character for character the Name of one of keys, with a hint
+// when it equals one ignoring case; a key the object already has; and, once the
+// object closes, a Required key it lacks. An error value returns is passed on
+// as it is, and stops the walk.
+func (w *Walker) Object(keys []Key, value func(key string) error) error {
+	if len(keys) > MaxKeys {
+		return fmt.Errorf("jsondoc: an object may list at most %d keys, not %d", MaxKeys, len(keys))
+	}
+
+	tok, start, err := w.value()
+	if err != nil {
+		return err
+	}
+
+	if tok != json.Delim('{') {
+		return w.wrongType(start, "an object")
+	}
+
+	var seen uint64
+
+	for w.dec.More() {
+		i, err := w.key(keys, seen)
+		if err != nil {
+			return err
+		}
+
+		seen |= 1 << i
+
+		w.enter(segment{key: keys[i].Name, index: -1})
+
+		if err := w.leave(value(keys[i].Name)); err != nil {
+			return err
+		}
+	}
+
+	if _, _, err := w.next(); err != nil {
+		return err
+	}
+
+	for i, key := range keys {
+		if !key.Required || seen&(1<<i) != 0 {
+			continue
+		}
+
+		if len(w.path) == 0 {
+			return fmt.Errorf("%w: required key %s is missing from the document", w.invalid, text.Quote(key.Name))
+		}
+
+		return fmt.Errorf("%w: required key %s is missing from %s, which starts at %s",
+			w.invalid, text.Quote(key.Name), text.Quote(w.Path()), position(w.data, start))
+	}
+
+	return nil
+}
+
+// Array reads the next value, which must be an array, and calls element with the
+// index of each of its elements, in order, with the walker at the element and
+// Path naming it. element must read the element whole, as Object's value must
+// read a key's value, or return an error. A value that is not an array, null
+// included, is refused as not want, which names, with its article, the type
+// the format expects ("an array", "an array of strings"). An error element
+// returns is passed on as it is and stops the walk, so a format refuses an
+// array at its first element past a cap by returning an error before it reads
+// that element.
+func (w *Walker) Array(want string, element func(i int) error) error {
+	tok, at, err := w.value()
+	if err != nil {
+		return err
+	}
+
+	if tok != json.Delim('[') {
+		return w.wrongType(at, want)
+	}
+
+	for i := 0; w.dec.More(); i++ {
+		w.enter(segment{index: i})
+
+		if err := w.leave(element(i)); err != nil {
+			return err
+		}
+	}
+
+	_, _, err = w.next()
+
+	return err
+}
+
+// String reads the next value, which must be a string, and returns it with its
+// JSON escapes decoded. It refuses a value that is not a string, null included,
+// and a string that escapes a lone surrogate.
+func (w *Walker) String() (string, error) {
+	tok, at, err := w.value()
+	if err != nil {
+		return "", err
+	}
+
+	s, ok := tok.(string)
+	if !ok {
+		return "", w.wrongType(at, "a string")
+	}
+
+	if err := w.checkString(s, at, func() string { return text.Quote(w.Path()) }); err != nil {
+		return "", err
+	}
+
+	return s, nil
+}
+
+// Null reads the next value if it is null, and reports whether it was. When it
+// was not, Null reads nothing, and the value is still to be read. A format reads
+// a field that may be null, as an absent value, by calling Null first; a field
+// whose value is read without Null refuses null as a value of the wrong type.
+func (w *Walker) Null() (bool, error) {
+	// The document is well formed, so a value that starts with n is null.
+	if at := skipSeparators(w.data, int(w.dec.InputOffset())); at >= len(w.data) || w.data[at] != 'n' {
+		return false, nil
+	}
+
+	if _, _, err := w.value(); err != nil {
+		return false, err
+	}
+
+	return true, nil
+}
+
+// Raw reads the next value whole, objects and arrays in it included, and
+// returns its JSON text as the document spells it. It checks nothing in the
+// value: a format reads a value with Raw to check it itself, as it checks its
+// schema version, and Describe names it in an error.
+func (w *Walker) Raw() ([]byte, error) {
+	w.pending = false
+
+	start, err := w.skip()
+	if err != nil {
+		return nil, err
+	}
+
+	return w.data[start:w.dec.InputOffset()], nil
+}
+
+// Path returns the path of the value the walker reads next, as the domain
+// writes it: the keys it is in joined by dots, and the index of an array
+// element in brackets (resources[1].capabilities[0]). It is "" for the
+// document's object. In Object's value it names the key's value, and in
+// Array's element the element.
+func (w *Walker) Path() string {
+	var b strings.Builder
+
+	for i, s := range w.path {
+		if s.index >= 0 {
+			b.WriteString("[" + strconv.Itoa(s.index) + "]")
+
+			continue
+		}
+
+		if i > 0 {
+			b.WriteByte('.')
+		}
+
+		b.WriteString(s.key)
+	}
+
+	return b.String()
+}
+
+// Position returns where the value the walker reads next starts, as "line L,
+// column C", both counted from 1 and the column in characters, as every error
+// of this package places a problem.
+func (w *Walker) Position() string {
+	return position(w.data, skipSeparators(w.data, int(w.dec.InputOffset())))
+}
+
+// enter puts s, the key or element whose value a callback is about to read, on
+// the path, and records that the value is still to be read.
+func (w *Walker) enter(s segment) {
+	w.path = append(w.path, s)
+	w.pending = true
+}
+
+// leave takes the segment enter put on the path off it, once the callback has
+// returned err. It passes err on, and refuses a callback that returned no error
+// without reading its value.
+func (w *Walker) leave(err error) error {
+	if err == nil && w.pending {
+		err = fmt.Errorf("jsondoc: the value at %s was not read", text.Quote(w.Path()))
+	}
+
+	w.path = w.path[:len(w.path)-1]
+
+	return err
+}
+
+// value returns the next token, which starts a value, and the index in the
+// document of its first byte, and records that the value is being read.
+func (w *Walker) value() (json.Token, int, error) {
+	w.pending = false
+
+	return w.next()
+}
+
+// next returns the next token and the index in the document of its first byte.
+func (w *Walker) next() (json.Token, int, error) {
+	at := skipSeparators(w.data, int(w.dec.InputOffset()))
+
+	tok, err := w.dec.Token()
+	if err != nil {
+		// Open has checked the syntax already, so the decoder fails here only
+		// if the walker has lost its place.
+		return nil, at, w.lost(at)
+	}
+
+	return tok, at, nil
+}
+
+// key reads the next key of an object whose keys are keys, of which seen
+// records those the object has had so far, and returns its index in keys. It
+// refuses a key that escapes a lone surrogate, that is not character for
+// character the Name of one of keys, or that seen already records.
+func (w *Walker) key(keys []Key, seen uint64) (int, error) {
+	tok, at, err := w.next()
+	if err != nil {
+		return 0, err
+	}
+
+	key, ok := tok.(string)
+	if !ok {
+		// Only a value a callback left unread puts anything but a string here.
+		return 0, w.lost(at)
+	}
+
+	what := func() string {
+		if len(w.path) == 0 {
+			return "a key"
+		}
+
+		return "a key of " + text.Quote(w.Path())
+	}
+
+	if err := w.checkString(key, at, what); err != nil {
+		return 0, err
+	}
+
+	i := slices.IndexFunc(keys, func(k Key) bool { return k.Name == key })
+	if i < 0 {
+		hint := ""
+		if j := slices.IndexFunc(keys, func(k Key) bool { return strings.EqualFold(k.Name, key) }); j >= 0 {
+			hint = " (keys are exact: did you mean " + text.Quote(keys[j].Name) + "?)"
+		}
+
+		return 0, fmt.Errorf("%w: unknown key %s at %s%s", w.invalid, text.Quote(key), w.where(key, at), hint)
+	}
+
+	if seen&(1<<i) != 0 {
+		return 0, fmt.Errorf("%w: repeated key %s at %s", w.invalid, text.Quote(key), w.where(key, at))
+	}
+
+	return i, nil
+}
+
+// skip steps over the next value, objects and arrays included, and returns the
+// index in the document of its first byte.
+func (w *Walker) skip() (int, error) {
+	depth := 0
+
+	tok, at, err := w.next()
+
+	for ; err == nil; tok, _, err = w.next() {
+		switch tok {
+		case json.Delim('{'), json.Delim('['):
+			depth++
+		case json.Delim('}'), json.Delim(']'):
+			depth--
+		}
+
+		if depth == 0 {
+			return at, nil
+		}
+	}
+
+	return at, err
+}
+
+// checkString refuses s, a string token that starts at index at of the
+// document, if its JSON text escapes a lone surrogate: a high surrogate escape
+// (D800 to DBFF) not followed at once by a low one (DC00 to DFFF), or a low one
+// on its own. Such an escape names no character, and encoding/json decodes it to
+// U+FFFD, so the value would differ from the document. what names the string in
+// the error and is called only then. The JSON text is scanned only when s holds
+// U+FFFD, which every lone surrogate decodes to; Open has refused invalid UTF-8
+// already.
+func (w *Walker) checkString(s string, at int, what func() string) error {
+	if !strings.ContainsRune(s, utf8.RuneError) {
+		return nil
+	}
+
+	raw := w.data[at:w.dec.InputOffset()]
+
+	i, unit := loneSurrogate(raw)
+	if i < 0 {
+		return nil
+	}
+
+	return fmt.Errorf("%w: %s escapes U+%04X, a surrogate on its own, which is no character, at %s",
+		w.invalid, what(), unit, position(w.data, at+i))
+}
+
+// wrongType reports that the value at Path, which starts at index at of the
+// document, is not of the JSON type want. The walk stops there, so a value that
+// is an object or an array is never stepped over.
+func (w *Walker) wrongType(at int, want string) error {
+	if len(w.path) == 0 {
+		return fmt.Errorf("%w: the document is %s, want %s, at %s", w.invalid, kind(w.data[at]), want, position(w.data, at))
+	}
+
+	return fmt.Errorf("%w: %s is %s, want %s, at %s",
+		w.invalid, text.Quote(w.Path()), kind(w.data[at]), want, position(w.data, at))
+}
+
+// where names the place of key, which starts at index at of the document, in
+// the object at Path: the key's path and its line and column, or only its line
+// and column for a key of the document's object, whose path is the key itself.
+func (w *Walker) where(key string, at int) string {
+	if len(w.path) == 0 {
+		return position(w.data, at)
+	}
+
+	return text.Quote(w.Path()+"."+key) + ", " + position(w.data, at)
+}
+
+// lost reports that the walker cannot read the token at index at of the
+// document: it has lost its place, which a well-formed document and a format
+// that reads every value it is called for never cause.
+func (w *Walker) lost(at int) error {
+	return fmt.Errorf("%w: the JSON document cannot be read at %s", w.invalid, position(w.data, at))
+}
+
+// escapeLen is the length of a JSON escape of one UTF-16 code unit: a
+// backslash, u and four hexadecimal digits.
+const escapeLen = 6
+
+// loneSurrogate returns the index in raw, the JSON text of a well-formed string,
+// of the first escape of a lone surrogate, and the surrogate, or -1 if there is
+// none. It steps over every other escape, so an escaped backslash followed by u
+// is never read as an escape of its own.
+func loneSurrogate(raw []byte) (int, rune) {
+	for i := 0; i < len(raw); i++ {
+		if raw[i] != '\\' {
+			continue
+		}
+
+		r, ok := escapedUnit(raw, i)
+		if !ok {
+			// Any other escape is two bytes: step over the escaped byte.
+			i++
+
+			continue
+		}
+
+		if utf16.IsSurrogate(r) {
+			// A pair decodes to one character; anything else is U+FFFD.
+			if low, ok := escapedUnit(raw, i+escapeLen); !ok || utf16.DecodeRune(r, low) == unicode.ReplacementChar {
+				return i, r
+			}
+
+			i += escapeLen
+		}
+
+		i += escapeLen - 1
+	}
+
+	return -1, 0
+}
+
+// escapedUnit returns the UTF-16 code unit escaped at index i of raw, and
+// whether raw holds such an escape there: a backslash, u and four hexadecimal
+// digits.
+func escapedUnit(raw []byte, i int) (rune, bool) {
+	if i+escapeLen > len(raw) || raw[i] != '\\' || raw[i+1] != 'u' {
+		return 0, false
+	}
+
+	unit, err := strconv.ParseUint(string(raw[i+2:i+escapeLen]), 16, 16)
+	if err != nil {
+		return 0, false
+	}
+
+	return rune(unit), true
+}

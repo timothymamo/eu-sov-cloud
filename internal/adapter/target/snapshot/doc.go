@@ -10,14 +10,18 @@
 // Every field is required, at the top level and in each offering; a list may be
 // empty.
 //
-// Parse refuses a document, with an error, unless all of these hold, checked in
-// this order:
+// Parse decodes a document through jsondoc, the strict JSON decoder adapters
+// share (ADR 0009), which holds the rules of the first, second, third and fifth
+// items below, worded as it words them for the inventory file reader too. This
+// package keeps the format's own decisions: its keys, every one required; null
+// refused everywhere; the size cap; the schema version read first; the checks
+// after the walk; and its sentinels. Parse refuses a document, with an error,
+// unless all of these hold, checked in this order:
 //
 //   - it is at most MaxDocumentBytes long, checked before anything else;
 //   - it starts with no byte order mark, UTF-8 or UTF-16, which is refused by
-//     name as the inventory file reader does (ADR 0006), and it is valid UTF-8,
-//     both checked before any decoding, since the JSON decoder would read a
-//     byte that is not UTF-8 as U+FFFD;
+//     name, and it is valid UTF-8, both checked before any decoding, since the
+//     JSON decoder would read a byte that is not UTF-8 as U+FFFD;
 //   - it is one JSON object with nothing after it but white space;
 //   - its schemaVersion is the integer 1, found before any other key or value is
 //     checked, so a document of another version is refused for its version

@@ -3,26 +3,30 @@
 // `eusov assess` (ADR 0006). It implements the analysis.InventorySource port and
 // passes the contract suite in sourcetest.
 //
-// The file is untrusted input. It is read only up to MaxFileSize bytes and
-// refused unless it is UTF-8 without a byte order mark. It is then read strictly:
-// one JSON object with nothing after it; schemaVersion 1, found before any key
-// or type is checked (any other version, or none, is refused); and, token by
-// token before anything is decoded, every key spelt exactly as the format
-// defines it, character for character once JSON escapes are decoded, and never
-// repeated, every value of the right JSON type, no string that escapes a lone
-// surrogate, a resources list (which may be empty) of at most MaxResources
-// entries, and at most MaxCapabilities capabilities in each, counted as they
-// are read. Only then is the document decoded. The values are validated by the
-// domain, through inventory.New: an unknown category is an error, never
+// The file is untrusted input. It is read only up to MaxFileSize bytes, then
+// decoded through jsondoc, the strict JSON decoder adapters share (ADR 0009),
+// which holds the rules this format shares with the target catalog snapshots:
+// UTF-8 without a byte order mark; one JSON object with nothing after it; every
+// key spelt exactly as the format defines it, character for character once
+// JSON escapes are decoded, and never repeated; every value of the right JSON
+// type; and no string that escapes a lone surrogate. This package keeps the
+// format's own decisions: its keys; schemaVersion 1, found before any key or
+// type is checked (any other version, or none, is refused); null read as an
+// absent value for every field but resources, and refused as an element of
+// resources or capabilities; a resources list (which may be empty) of at most
+// MaxResources entries and at most MaxCapabilities capabilities in each,
+// counted as they are read, so a list is refused at its first element past the
+// cap before that element is read; and its sentinels. The values are validated
+// by the domain, through inventory.New: an unknown category is an error, never
 // unclassified.
 //
 // Errors are one line, name the file through text.QuotePath (which keeps the
 // base name of a long path), and wrap ErrRead, ErrTooLarge, ErrDecode,
 // ErrSchemaVersion, ErrTooManyResources, the domain's own sentinel or
-// ctx.Err(). A problem in the document is placed by line and column, and a key
-// or value is named by its path, resources[1].region. The text of OS and JSON
-// decoder errors is never passed on: it would repeat the path or file contents
-// unquoted.
+// ctx.Err(). A problem in the document is placed by line and column, a
+// malformed multi-byte character at its first byte, and a key or value is named
+// by its path, resources[1].region. The text of OS and JSON decoder errors is
+// never passed on: it would repeat the path or file contents unquoted.
 //
 // Cancelling the context ends a call at once, even while the file is opened or
 // read: the file is opened and read on a goroutine of its own, closed on
