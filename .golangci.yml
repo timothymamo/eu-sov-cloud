@@ -192,7 +192,17 @@ linters:
         # it stays offline. It may import only what is listed under allow.
         # The glob ends in /** so it also matches the files directly in the
         # package directory. Add a standard package only when parsing needs
-        # it, never one that does I/O.
+        # it, never one that does I/O. The domain packages are named one by
+        # one, each ending in $: domain-is-pure allows the domain the whole
+        # standard library, so a prefix entry would let the reader reach I/O
+        # through a domain package it has no use for.
+        #
+        # An allowed package can still hold a function that does I/O, which an
+        # import rule cannot see. fmt$ is allowed for fmt.Errorf and
+        # fmt.Sprintf, and time$ for time.Parse; the reader must not call
+        # fmt.Print* (which writes to stdout) or time.LoadLocation (which
+        # reads zoneinfo files and the ZONEINFO environment variable). Review
+        # holds that line.
         target-snapshot-reader-parses-bytes:
           list-mode: strict
           files:
@@ -211,7 +221,25 @@ linters:
             - unicode$
             - unicode/utf16$
             - unicode/utf8$
-            - github.com/timothymamo/eu-sov-cloud/internal/domain/
+            - github.com/timothymamo/eu-sov-cloud/internal/domain/catalog$
+            - github.com/timothymamo/eu-sov-cloud/internal/domain/taxonomy$
+            - github.com/timothymamo/eu-sov-cloud/internal/domain/text$
+        # Every target adapter reads its embedded snapshot through the shared
+        # reader (ADR 0007), never with encoding/json of its own, which matches
+        # keys ignoring case, keeps the last of a repeated key, reads null or a
+        # missing field as empty and has no size cap. The deny entry has no $,
+        # so it also covers encoding/json/v2 and encoding/json/jsontext. The
+        # globs cover every package under internal/adapter/target, a target
+        # added later included, except the reader itself; tests may decode JSON.
+        target-adapters-read-snapshots-through-the-reader:
+          list-mode: lax
+          files:
+            - "**/internal/adapter/target/**"
+            - "!**/internal/adapter/target/snapshot/**"
+            - "!$test"
+          deny:
+            - pkg: encoding/json
+              desc: read the snapshot through internal/adapter/target/snapshot (ADR 0007)
         testutil-only-in-tests:
           list-mode: lax
           files:
