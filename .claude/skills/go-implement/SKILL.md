@@ -18,7 +18,8 @@ description: Implementation conventions for eu-sov-cloud Go code - layering, err
 
 - `internal/domain/...`: other domain packages and the pure standard packages on the allow list of the
   `domain-is-pure` rule in `.golangci.yml`. A new standard package needs its own entry there, never one
-  that does I/O. Pure types and functions. No I/O, no `context`, no clock (pass `time.Time` in), no
+  that does I/O. A new domain package needs one too, as do the rules that list the domain packages for
+  the application layer and the CLI. Pure types and functions. No I/O, no `context`, no clock (pass `time.Time` in), no
   logging.
 - `internal/app/...`: use cases. Declares the port interfaces it consumes, next to the consumer. Imports
   domain only. Never imports adapters or cloud SDKs.

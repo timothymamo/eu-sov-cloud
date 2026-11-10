@@ -38,11 +38,23 @@ linters:
         # itself is not allowed. Add a standard package only when the domain
         # needs it, never one that does I/O.
         #
+        # The domain packages are named one by one as well, not by the prefix
+        # internal/domain/. make lint runs on ./..., which skips testdata
+        # directories and directories whose name starts with _, so a package
+        # there is never linted: a prefix entry would let a domain package
+        # import one that does I/O. A new domain package needs an entry here,
+        # in app-uses-ports-not-adapters and in cli-gets-adapters-from-cmd.
+        #
         # An allowed package can still hold a function that does I/O or reads
-        # the clock, which an import rule cannot see: the domain must not call
-        # fmt.Print* (which writes to stdout), time.Now or time.LoadLocation
-        # (which reads zoneinfo files and the ZONEINFO environment variable).
-        # Review holds that line.
+        # the clock, which an import rule cannot see. The domain must not call
+        # fmt.Print* (which writes to stdout) or fmt.Scan* (which reads
+        # stdin); time.Now, Since, Until, Sleep, After, Tick, NewTimer,
+        # NewTicker or AfterFunc (which read or wait on the clock);
+        # time.LoadLocation (which reads zoneinfo files and the ZONEINFO
+        # environment variable); or anything that reaches time.Local, which
+        # reads the TZ environment variable and /etc/localtime: time.Parse of
+        # a value with a zone offset, time.ParseInLocation(..., time.Local)
+        # or Time.Local(). Review holds that line.
         domain-is-pure:
           list-mode: strict
           files:
@@ -59,7 +71,12 @@ linters:
             - time$
             - unicode$
             - unicode/utf8$
-            - github.com/timothymamo/eu-sov-cloud/internal/domain/
+            - github.com/timothymamo/eu-sov-cloud/internal/domain/assessment$
+            - github.com/timothymamo/eu-sov-cloud/internal/domain/catalog$
+            - github.com/timothymamo/eu-sov-cloud/internal/domain/inventory$
+            - github.com/timothymamo/eu-sov-cloud/internal/domain/mapping$
+            - github.com/timothymamo/eu-sov-cloud/internal/domain/taxonomy$
+            - github.com/timothymamo/eu-sov-cloud/internal/domain/text$
           # The allow list already refuses every package below; these entries
           # only say why. They have no $, so each also covers its subpackages:
           # os covers os/exec, os/signal and os/user, and net covers net/http.
@@ -80,6 +97,9 @@ linters:
         # domain and the few standard-library packages the use case needs. An
         # entry ending in $ matches that package only, not its subpackages. Add
         # a package only when the use case needs it, never one that does I/O.
+        # The domain packages are named one by one, each ending in $, for the
+        # reason given at domain-is-pure: a prefix entry would also admit a
+        # package under testdata or a _ directory, which make lint never visits.
         app-uses-ports-not-adapters:
           list-mode: strict
           files:
@@ -91,7 +111,12 @@ linters:
             - fmt$
             - io$
             - strings$
-            - github.com/timothymamo/eu-sov-cloud/internal/domain/
+            - github.com/timothymamo/eu-sov-cloud/internal/domain/assessment$
+            - github.com/timothymamo/eu-sov-cloud/internal/domain/catalog$
+            - github.com/timothymamo/eu-sov-cloud/internal/domain/inventory$
+            - github.com/timothymamo/eu-sov-cloud/internal/domain/mapping$
+            - github.com/timothymamo/eu-sov-cloud/internal/domain/taxonomy$
+            - github.com/timothymamo/eu-sov-cloud/internal/domain/text$
           deny: &app-deny
             - pkg: github.com/timothymamo/eu-sov-cloud/internal/adapter
               desc: the application layer depends on ports it declares; wire adapters in cmd/eusov
@@ -143,6 +168,10 @@ linters:
         # The driving adapter gets its adapters from the composition root
         # through cli.Deps and never constructs one, so it imports only the
         # application, the domain, the build metadata and the standard library.
+        # The application and domain packages are named one by one, each
+        # ending in $, for the reason given at domain-is-pure: a prefix entry
+        # would also admit a package under testdata or a _ directory, which
+        # make lint never visits. A new application package needs an entry.
         cli-gets-adapters-from-cmd:
           list-mode: strict
           files:
@@ -150,8 +179,13 @@ linters:
             - "!$test"
           allow:
             - $gostd
-            - github.com/timothymamo/eu-sov-cloud/internal/app/
-            - github.com/timothymamo/eu-sov-cloud/internal/domain/
+            - github.com/timothymamo/eu-sov-cloud/internal/app/analysis$
+            - github.com/timothymamo/eu-sov-cloud/internal/domain/assessment$
+            - github.com/timothymamo/eu-sov-cloud/internal/domain/catalog$
+            - github.com/timothymamo/eu-sov-cloud/internal/domain/inventory$
+            - github.com/timothymamo/eu-sov-cloud/internal/domain/mapping$
+            - github.com/timothymamo/eu-sov-cloud/internal/domain/taxonomy$
+            - github.com/timothymamo/eu-sov-cloud/internal/domain/text$
             - github.com/timothymamo/eu-sov-cloud/internal/version$
           deny:
             - pkg: github.com/timothymamo/eu-sov-cloud/internal/adapter
@@ -236,17 +270,24 @@ linters:
         # application and is built by the composition root, so it never
         # imports the driving adapter or the composition root. The glob ends
         # in /** so it also matches the files directly in internal/adapter
-        # and in each of its directories. cmd/ covers every package under
-        # cmd, a library package added there later included; Go already
-        # refuses an import of a main package such as cmd/eusov.
+        # and in each of its directories. internal/cli$ is the CLI itself and
+        # internal/cli/ every package under it; a package whose path only
+        # starts with internal/cli, such as internal/client, is not covered.
+        # cmd$ is a library package placed directly in cmd, and cmd/ every
+        # package under cmd, a library package added there later included; Go
+        # already refuses an import of a main package such as cmd/eusov.
         adapters-do-not-import-cli-or-cmd:
           list-mode: lax
           files:
             - "**/internal/adapter/**"
             - "!$test"
           deny:
-            - pkg: github.com/timothymamo/eu-sov-cloud/internal/cli
+            - pkg: github.com/timothymamo/eu-sov-cloud/internal/cli$
               desc: an adapter never imports the driving adapter; share what both need through the application or the domain
+            - pkg: github.com/timothymamo/eu-sov-cloud/internal/cli/
+              desc: an adapter never imports the driving adapter; share what both need through the application or the domain
+            - pkg: github.com/timothymamo/eu-sov-cloud/cmd$
+              desc: an adapter never imports the composition root; cmd/eusov imports the adapters
             - pkg: github.com/timothymamo/eu-sov-cloud/cmd/
               desc: an adapter never imports the composition root; cmd/eusov imports the adapters
         # Only the packages under internal/adapter/target import the shared
