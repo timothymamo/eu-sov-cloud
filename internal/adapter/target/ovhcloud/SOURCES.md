@@ -56,7 +56,8 @@ in taxonomy terms. This file records where each fact comes from, so the snapshot
   available across zones only in the 3-AZ regions, the snapshot lists a variant named "<offering> 3-AZ"
   in `MIL` and `PAR` only, beside the offering in the 1-AZ regions (PRD #11, *a capability limited to some
   regions makes a separate offering*). For the same reason, a capability missing from some of a product's
-  regions makes a separate offering (Block Storage LUKS).
+  regions makes a separate offering (*Block Storage LUKS* in the 1-AZ regions, and *Block Storage LUKS
+  Zonal* in the 3-AZ regions, which have no volume snapshots).
 - **Capabilities:** only from the taxonomy vocabulary, each as the taxonomy defines it, and only when an
   OVHcloud page describes the feature as available. A capability that needs a particular plan or class is
   marked **Needs:** on its line. A feature with no vocabulary entry is listed under *Left out on purpose*.
@@ -116,7 +117,8 @@ Gen2 classes, unencrypted). Pages: <https://www.ovhcloud.com/en/public-cloud/blo
 - No `high-availability`: the classes in 1-AZ regions replicate data within one zone (storage class page,
   "Zonal" replication), which is durability under the rules above.
 - Regions `GRA`, `LIM`, `RBX`, `SBG`, `WAW`: the regions page ticks the three Block Storage classes and
-  "Volume Snapshot" in each. Volumes in `PAR` and `MIL` are under *Block Storage 3-AZ*.
+  "Volume Snapshot" in each. Volumes in `PAR` and `MIL` are under *Block Storage 3-AZ* and *Block Storage
+  LUKS Zonal*.
 
 ### Block Storage 3-AZ
 
@@ -133,7 +135,8 @@ Category `storage.block`: the Regional Classic Volume class, offered only in 3-A
   not have this capability.
 - No `snapshots`: the regions page does not tick "Volume Snapshot" or "Volume Backup" in Paris or Milan.
 - No `encryption-at-rest`: multi-attach volumes cannot be encrypted (multi-attach page, *Limitations*; storage
-  class page: Regional Classic does not support LUKS). See *Left out on purpose*.
+  class page: Regional Classic does not support LUKS). Encrypted volumes in these regions are zonal, under
+  *Block Storage LUKS Zonal*. See *Left out on purpose*.
 - Regions `MIL`, `PAR`: the 3-AZ regions; the product page offers Regional Classic Volume "in 3-AZ regions
   only", and the regions page ticks the Block Storage classes in both.
 
@@ -156,8 +159,33 @@ every 1-AZ region. Pages: <https://docs.ovhcloud.com/en/guides/public-cloud/comp
   OVHcloud's roadmap closed the rollouts for GRA and DE1 on 2026-02-19
   (<https://github.com/ovh/public-cloud-roadmap/issues/951>,
   <https://github.com/ovh/public-cloud-roadmap/issues/952>). Warsaw is not listed, and its rollout is still
-  open (<https://github.com/ovh/public-cloud-roadmap/issues/954>). Paris and Milan are left out because
-  volume snapshots are not offered there (see *Block Storage 3-AZ*).
+  open (<https://github.com/ovh/public-cloud-roadmap/issues/954>). The same page lists EU-WEST-PAR and
+  EU-SOUTH-MIL, but volume snapshots are not offered there, so encrypted volumes in Paris and Milan make an
+  offering of their own, *Block Storage LUKS Zonal*.
+
+### Block Storage LUKS Zonal
+
+Category `storage.block`: encrypted zonal volumes in the 3-AZ regions, of the High Speed Gen2 class (volume
+type `high-speed-gen2-luks`). Each volume sits in one availability zone of the region. Listed apart from
+*Block Storage LUKS* because volume snapshots are not offered in these regions. Pages:
+<https://docs.ovhcloud.com/en/guides/public-cloud/compute/encrypting-a-block-storage-volume-with-luks>,
+<https://docs.ovhcloud.com/en/guides/storage-and-backup/block-storage/block-storage-the-right-storage-class>,
+<https://docs.ovhcloud.com/en/guides/public-cloud/containers-orchestration/managed-kubernetes/datacenters-nodes-storage-flavors>,
+<https://www.ovhcloud.com/en/public-cloud/regions-availability/>.
+
+- `encryption-at-rest`: LUKS encryption at rest, as for *Block Storage LUKS* (encryption page). The
+  encryption page says "classic-luks is not available in 3-AZ regions" and to "use high-speed-gen2-luks
+  there"; its example creates a `high-speed-gen2-luks` volume in region `EU-WEST-PAR`, availability zone
+  `eu-west-par-a`. The storage class page offers High Speed Volume Gen2 in "3-AZ, 1-AZ, Local Zones".
+- No `snapshots`: the regions page ticks neither "Volume Snapshot" nor "Volume Backup" in Paris or Milan,
+  as for *Block Storage 3-AZ*.
+- No `high-availability`: the storage class page gives High Speed Volume Gen2 "Zonal" replication, so a
+  volume stays in its zone; copies within one zone are durability under the rules above.
+- Regions `MIL`, `PAR`: the Managed Kubernetes regions page lists EU-WEST-PAR and EU-SOUTH-MIL among the
+  regions where LUKS encrypted storage "is currently available", and the regions page ticks Block Storage
+  High Speed Gen 2 in "3-AZ Paris" and "3-AZ Milan".
+- The unencrypted zonal volumes in these regions have no offering of their own: they have no capability
+  that this offering lacks.
 
 ### Instances
 
@@ -392,10 +420,10 @@ Active Archive, and Cold Archive in Paris only). Pages: <https://www.ovhcloud.co
   would go down with its zone. The Standard plan in Roubaix (1-AZ) is not described as replicated either. Unlike the
   databases, no failover mechanism is documented, so node-level high availability is not claimed. Check
   this in review; issue #14 covers node versus zone granularity.
-- **Block Storage `encryption-at-rest` in Warsaw, Paris and Milan:** not in Warsaw (rollout open, see
-  *Block Storage LUKS*). In Paris and Milan, encrypted zonal volumes exist (Kubernetes regions page), but the
-  only offering there is *Block Storage 3-AZ*, whose class cannot be encrypted; listing both capabilities on
-  it would describe a volume that has both, which does not exist.
+- **Block Storage `encryption-at-rest` in Warsaw, and on *Block Storage 3-AZ*:** not in Warsaw (rollout
+  open, see *Block Storage LUKS*). In Paris and Milan, encrypted volumes are zonal and are listed as *Block
+  Storage LUKS Zonal*. *Block Storage 3-AZ* does not have the capability: its class cannot be encrypted, and
+  listing both capabilities on it would describe a volume that has both, which does not exist.
 - **Block Storage `snapshots` in Paris and Milan:** the regions page ticks neither "Volume Snapshot" nor
   "Volume Backup" there.
 - **Block Storage and Object Storage (1-AZ) `high-availability`:** replication or erasure coding within one
@@ -403,7 +431,7 @@ Active Archive, and Cold Archive in Paris only). Pages: <https://www.ovhcloud.co
 - **Instances and Metal Instances `high-availability`, `autoscaling` and `encryption-at-rest`:** the pages
   read describe no automatic restart of an instance on another host, no autoscaling group for instances
   (autoscaling is documented for Kubernetes node pools), and no encryption of an instance's own disks
-  (encrypted volumes are *Block Storage LUKS*).
+  (encrypted volumes are *Block Storage LUKS* and *Block Storage LUKS Zonal*).
 - **Managed MySQL and Managed PostgreSQL `snapshots`, `autoscaling` and `ipv6`:** backups are automated
   (with PITR) and manual backups use the engines' own dump tools (FAQ), with no snapshot of the service's
   volume. Storage and node size are increased by hand

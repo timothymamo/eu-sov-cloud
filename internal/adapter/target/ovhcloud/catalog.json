@@ -24,6 +24,12 @@
       "regions": ["GRA", "LIM", "RBX", "SBG"]
     },
     {
+      "name": "Block Storage LUKS Zonal",
+      "categories": ["storage.block"],
+      "capabilities": ["encryption-at-rest"],
+      "regions": ["MIL", "PAR"]
+    },
+    {
       "name": "Instances",
       "categories": ["compute.vm"],
       "capabilities": ["ipv6", "snapshots"],
