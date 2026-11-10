@@ -616,6 +616,80 @@ func TestMisuse(t *testing.T) {
 				})
 			},
 		},
+		{
+			// Every error Open returns wraps the format's sentinel, so a nil one
+			// would leave the caller nothing to recognise the document's problem by.
+			name: "Open without the format's sentinel",
+			misuse: func(t *testing.T) error {
+				t.Helper()
+
+				_, err := jsondoc.Open([]byte(`{}`), maxDocumentBytes, nil)
+
+				return err
+			},
+		},
+		{
+			name: "Document.Version without the format's sentinel",
+			misuse: func(t *testing.T) error {
+				t.Helper()
+
+				return open(t, `{"v": 1}`).Version("v", 1, nil)
+			},
+		},
+		{
+			name: "Walker.Version without the format's sentinel",
+			misuse: func(t *testing.T) error {
+				t.Helper()
+
+				w := open(t, `{"v": 1}`).Walker()
+
+				return w.Object([]jsondoc.Key{{Name: "v"}}, func(string) error {
+					return w.Version(1, nil)
+				})
+			},
+		},
+		{
+			// A Walker reads the document's object once: a second Object() on the
+			// same walk starts where the first stopped, in the middle of the document.
+			name: "two reads of the document's object",
+			misuse: func(t *testing.T) error {
+				t.Helper()
+
+				w := open(t, `{"x": 1}`).Walker()
+
+				read := func(string) error {
+					_, err := w.Raw()
+
+					return err
+				}
+
+				if err := w.Object([]jsondoc.Key{{Name: "x"}}, read); err != nil {
+					t.Fatalf("the first Object() returned unexpected error: %v", err)
+				}
+
+				return w.Object([]jsondoc.Key{{Name: "x"}}, read)
+			},
+		},
+		{
+			// Null() reads the value when it is null, so a callback that has read
+			// its value cannot ask afterwards whether it was null.
+			name: "Null on a value read already",
+			misuse: func(t *testing.T) error {
+				t.Helper()
+
+				w := open(t, `{"x": "a"}`).Walker()
+
+				return w.Object([]jsondoc.Key{{Name: "x"}}, func(string) error {
+					if _, err := w.String(); err != nil {
+						return err
+					}
+
+					_, err := w.Null()
+
+					return err
+				})
+			},
+		},
 	}
 
 	for _, tt := range tests {
@@ -654,6 +728,109 @@ func TestLookupFirstOfRepeatedKeys(t *testing.T) {
 
 	if diff := cmp.Diff("1", string(raw)); diff != "" {
 		t.Errorf("Lookup() raw value mismatch (-want +got):\n%s", diff)
+	}
+}
+
+// TestVersion pins the walk's re-check of a schema version: Version reads the
+// value whole, as Raw does, so the walk checks the value the document holds
+// rather than the one Document.Version read before it, and names that value by
+// its Path.
+func TestVersion(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name string
+		doc  string
+		// walk checks the version in the walk over doc and returns the error it
+		// reports.
+		walk func(t *testing.T, w *jsondoc.Walker) error
+		// wantPath is the path the error names the value by, or "" when the
+		// version is accepted.
+		wantPath string
+		// wantMentions lists substrings the message must contain.
+		wantMentions []string
+	}{
+		{
+			name: "key of the document object",
+			doc:  `{"schemaVersion": 2}`,
+			walk: func(t *testing.T, w *jsondoc.Walker) error {
+				t.Helper()
+
+				return w.Object([]jsondoc.Key{{Name: "schemaVersion"}}, func(string) error {
+					return w.Version(1, errInvalid)
+				})
+			},
+			wantPath:     "schemaVersion",
+			wantMentions: []string{"is 2", "want the integer 1"},
+		},
+		{
+			name: "element of an array",
+			doc:  `{"values": [1, 2]}`,
+			walk: func(t *testing.T, w *jsondoc.Walker) error {
+				t.Helper()
+
+				return w.Object([]jsondoc.Key{{Name: "values"}}, func(string) error {
+					return w.Array("an array", func(i int) error {
+						return w.Version(i+2, errInvalid)
+					})
+				})
+			},
+			wantPath:     "values[0]",
+			wantMentions: []string{"is 1", "want the integer 2"},
+		},
+		{
+			name: "null value",
+			doc:  `{"schemaVersion": null}`,
+			walk: func(t *testing.T, w *jsondoc.Walker) error {
+				t.Helper()
+
+				return w.Object([]jsondoc.Key{{Name: "schemaVersion"}}, func(string) error {
+					return w.Version(1, errInvalid)
+				})
+			},
+			wantPath:     "schemaVersion",
+			wantMentions: []string{"is missing", "want the integer 1"},
+		},
+		{
+			name: "accepted version",
+			doc:  `{"schemaVersion": 1}`,
+			walk: func(t *testing.T, w *jsondoc.Walker) error {
+				t.Helper()
+
+				return w.Object([]jsondoc.Key{{Name: "schemaVersion"}}, func(string) error {
+					return w.Version(1, errInvalid)
+				})
+			},
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			err := tc.walk(t, open(t, tc.doc).Walker())
+
+			if tc.wantPath == "" {
+				if err != nil {
+					t.Fatalf("Version() returned unexpected error: %v", err)
+				}
+
+				return
+			}
+
+			checkDocumentError(t, err)
+
+			msg := err.Error()
+			if !strings.Contains(msg, tc.wantPath) {
+				t.Errorf("error = %q, want it to name the value %s by its path", msg, text.Quote(tc.wantPath))
+			}
+
+			for _, want := range tc.wantMentions {
+				if !strings.Contains(msg, want) {
+					t.Errorf("error = %q, want it to mention %s", msg, text.Quote(want))
+				}
+			}
+		})
 	}
 }
 
