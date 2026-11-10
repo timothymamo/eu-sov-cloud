@@ -1,0 +1,496 @@
+// Package ovhcloud_test pins the OVHcloud catalog adapter: the target contract in
+// internal/adapter/target/targettest, the snapshot header the catalog reports, a
+// golden change detector for the parsed catalog, the declared EU regions, that a
+// cancelled run reads nothing, that no error of one target names the other, and
+// the two verdicts PRD 11 asks of the data: categories OVHcloud does not serve
+// are a blocker, and a resource needing high availability is pointed at the 3-AZ
+// variant. The snapshot document format itself, its strictness, its errors and
+// the SOURCES.md rule are pinned once, in the shared reader's own tests
+// (internal/adapter/target/snapshot). It is black-box: only the package's
+// exported API is used.
+package ovhcloud_test
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"os"
+	"slices"
+	"strings"
+	"testing"
+	"time"
+
+	"github.com/google/go-cmp/cmp"
+
+	"github.com/timothymamo/eu-sov-cloud/internal/adapter/target/ovhcloud"
+	"github.com/timothymamo/eu-sov-cloud/internal/adapter/target/snapshot"
+	"github.com/timothymamo/eu-sov-cloud/internal/adapter/target/targettest"
+	"github.com/timothymamo/eu-sov-cloud/internal/app/analysis"
+	"github.com/timothymamo/eu-sov-cloud/internal/domain/assessment"
+	"github.com/timothymamo/eu-sov-cloud/internal/domain/catalog"
+	"github.com/timothymamo/eu-sov-cloud/internal/domain/inventory"
+	"github.com/timothymamo/eu-sov-cloud/internal/domain/mapping"
+	"github.com/timothymamo/eu-sov-cloud/internal/domain/taxonomy"
+	"github.com/timothymamo/eu-sov-cloud/internal/domain/text"
+	"github.com/timothymamo/eu-sov-cloud/internal/testutil"
+)
+
+// The adapter implements the catalog source port: pin that at compile time.
+var _ analysis.CatalogSource = ovhcloud.New()
+
+// The catalog the adapter embeds, and the golden file its parsed form renders to.
+// Both are relative to this package's directory.
+const (
+	catalogFile = "catalog.json"
+	goldenFile  = "testdata/catalog.golden"
+)
+
+// wantRegions is the EU region list catalog.json declares, written out here so
+// the test cannot agree with a wrong declaration by construction: the contract
+// expectations below and TestRegions compare against this list, never against
+// what Regions() returns.
+func wantRegions() []string {
+	return []string{"GRA", "LIM", "MIL", "PAR", "RBX", "SBG", "WAW"}
+}
+
+// threeAZRegions are the OVHcloud regions where Paris and Milan sit: each holds
+// three availability zones, so a product deployed there can be highly available
+// across zones. PRD 11 lists the 3-AZ variants of such a product in these regions
+// only.
+func threeAZRegions() []string {
+	return []string{"MIL", "PAR"}
+}
+
+// nonEURegions are OVHcloud region codes outside the EU: the United Kingdom,
+// Canada, the United States and Asia-Pacific. PRD 11 keeps the catalog to EU
+// member states, so no declared region may be one of these. The guard is
+// readable on purpose: it names what a refresh must not add.
+var nonEURegions = []string{"ERI", "UK", "LON", "BHS", "TOR", "HIL", "VIN", "SGP", "SYD", "MUM", "YNM"}
+
+// TestCatalogContract runs the target contract suite every target adapter must
+// pass: the display name, every offering only in a declared EU region, the six
+// categories PRD 11 requires, the same catalog on every call, and cancellation.
+func TestCatalogContract(t *testing.T) {
+	t.Parallel()
+
+	targettest.Run(t, ovhcloud.New(), targettest.Expectations{
+		Target:  "OVHcloud",
+		Regions: wantRegions(),
+		Categories: []taxonomy.Category{
+			taxonomy.ComputeVM,
+			taxonomy.KubernetesManaged,
+			taxonomy.StorageObject,
+			taxonomy.StorageBlock,
+			taxonomy.DatabasePostgreSQL,
+			taxonomy.DatabaseMySQL,
+		},
+	})
+}
+
+// catalogOf returns the catalog a fresh source serves.
+func catalogOf(t *testing.T) catalog.Catalog {
+	t.Helper()
+
+	cat, err := ovhcloud.New().Catalog(t.Context())
+	if err != nil {
+		t.Fatalf("Catalog() returned unexpected error: %v", err)
+	}
+
+	return cat
+}
+
+// TestCatalogSnapshotHeader pins that the snapshot comes from the file header: the
+// documentation root the data was compiled from, and its retrieval date as UTC
+// midnight. A report states both, so neither may be invented by the adapter.
+func TestCatalogSnapshotHeader(t *testing.T) {
+	t.Parallel()
+
+	snapshot := catalogOf(t).Snapshot()
+
+	const wantSourceURL = "https://www.ovhcloud.com/en/public-cloud/regions-availability/"
+	if snapshot.SourceURL != wantSourceURL {
+		t.Errorf("Snapshot().SourceURL = %s, want %s", text.Quote(snapshot.SourceURL), text.Quote(wantSourceURL))
+	}
+
+	wantRetrievedOn := time.Date(2026, time.November, 10, 0, 0, 0, 0, time.UTC)
+	if !snapshot.RetrievedOn.Equal(wantRetrievedOn) {
+		t.Errorf("Snapshot().RetrievedOn = %s, want %s",
+			snapshot.RetrievedOn.Format(time.RFC3339), wantRetrievedOn.Format(time.RFC3339))
+	}
+
+	if got := snapshot.RetrievedOn.Location(); got != time.UTC {
+		t.Errorf("Snapshot().RetrievedOn location = %v, want time.UTC", got)
+	}
+}
+
+// TestCatalogGolden pins the whole parsed catalog against a hand-written golden
+// file: every offering with its categories, capabilities and regions, in the
+// order and canonical form the domain gives them. It is a change detector for the
+// snapshot data and for the parsing, so a refresh of catalog.json has to update
+// this file in the same review.
+func TestCatalogGolden(t *testing.T) {
+	t.Parallel()
+
+	cat := catalogOf(t)
+
+	testutil.Golden(t, goldenFile, dump(cat))
+
+	// The embed and the shared reader must agree: the golden file is the
+	// specification of both, and the analysis may reach the catalog either way.
+	data, err := os.ReadFile(catalogFile)
+	if err != nil {
+		t.Fatalf("reading the embedded catalog %s: %v", text.Quote(catalogFile), err)
+	}
+
+	parsed, err := snapshot.Parse(data)
+	if err != nil {
+		t.Fatalf("snapshot.Parse() of %s returned unexpected error: %v", text.Quote(catalogFile), err)
+	}
+
+	if diff := cmp.Diff(string(dump(cat)), string(dump(parsed.Catalog))); diff != "" {
+		t.Errorf("snapshot.Parse() of the embedded file differs from Catalog() (-Catalog +Parse):\n%s", diff)
+	}
+}
+
+// dump renders cat as the golden file's lines: a header with where and when the
+// data was taken, then one line per offering, sorted by name, with every list
+// comma-separated and an empty list shown as "-".
+func dump(cat catalog.Catalog) []byte {
+	var b strings.Builder
+
+	snapshot := cat.Snapshot()
+
+	fmt.Fprintf(&b, "target: %s\n", cat.Target())
+	fmt.Fprintf(&b, "sourceURL: %s\n", snapshot.SourceURL)
+	fmt.Fprintf(&b, "retrievedOn: %s\n", snapshot.RetrievedOn.UTC().Format(time.DateOnly))
+
+	for _, o := range cat.Offerings() {
+		fmt.Fprintf(&b, "%s | %s | %s | %s\n",
+			o.Name, join(o.Categories), join(o.Capabilities), join(o.Regions))
+	}
+
+	return []byte(b.String())
+}
+
+// join formats values as a comma-separated list, or "-" when there are none.
+func join[S ~string](values []S) string {
+	if len(values) == 0 {
+		return "-"
+	}
+
+	strs := make([]string, len(values))
+	for i, v := range values {
+		strs[i] = string(v)
+	}
+
+	return strings.Join(strs, ", ")
+}
+
+// TestRegions pins the declared EU region list the reviewer checks against
+// OVHcloud's published regions page, and that callers get a copy: a driving
+// adapter cannot change what the adapter declares. The order is the file's, since
+// the snapshot declares the regions in the order reports list them.
+func TestRegions(t *testing.T) {
+	t.Parallel()
+
+	want := wantRegions()
+
+	got := ovhcloud.Regions()
+	if !slices.Equal(got, want) {
+		t.Fatalf("Regions() = %v, want %v", got, want)
+	}
+
+	for _, region := range got {
+		if slices.Contains(nonEURegions, region) {
+			t.Errorf("Regions() declares %s, an OVHcloud region outside the EU: PRD 11 keeps the catalog to EU member states",
+				text.Quote(region))
+		}
+	}
+
+	for i := range got {
+		got[i] = "tampered"
+	}
+
+	if again := ovhcloud.Regions(); !slices.Equal(again, want) {
+		t.Errorf("Regions() after changing the returned slice = %v, want %v: the result is not a copy", again, want)
+	}
+}
+
+// TestCatalogHonoursCancelledContext pins that a cancelled run reads nothing, and
+// that the error names the embedded OVHcloud catalog and its file on one line.
+func TestCatalogHonoursCancelledContext(t *testing.T) {
+	t.Parallel()
+
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+
+	_, err := ovhcloud.New().Catalog(ctx)
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("Catalog() with a cancelled context returned error %v, want one wrapping %v", err, context.Canceled)
+	}
+
+	if strings.ContainsAny(err.Error(), "\r\n") {
+		t.Errorf("Catalog() error = %q, want a single line", err.Error())
+	}
+
+	for _, want := range []string{"embedded OVHcloud catalog", catalogFile} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("Catalog() error = %q, want it to name %q", err.Error(), want)
+		}
+	}
+}
+
+// TestCatalogErrorNamesNoOtherTarget pins PRD 11's rule that no error says
+// "Scaleway" when the target is OVHcloud. The Scaleway adapter's own cancelled
+// test pins the other direction.
+func TestCatalogErrorNamesNoOtherTarget(t *testing.T) {
+	t.Parallel()
+
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+
+	_, err := ovhcloud.New().Catalog(ctx)
+	if err == nil {
+		t.Fatalf("Catalog() with a cancelled context returned no error, want one naming the OVHcloud catalog")
+	}
+
+	if strings.Contains(err.Error(), "Scaleway") {
+		t.Errorf("Catalog() error = %q, want no other target's name in it", err.Error())
+	}
+}
+
+// newResource builds r the way an inventory holds it, so the domain gets the
+// canonical form: an inventory validates and normalises its resources, and
+// mapping.Map expects one that went through it.
+func newResource(t *testing.T, id string, category taxonomy.Category, capabilities ...taxonomy.Capability) inventory.Resource {
+	t.Helper()
+
+	r := inventory.Resource{
+		ID:           id,
+		RawType:      "AWS::Example::Resource",
+		Category:     category,
+		Region:       "eu-west-1",
+		Capabilities: capabilities,
+	}
+
+	inv, err := inventory.New("aws", []inventory.Resource{r})
+	if err != nil {
+		t.Fatalf("inventory.New() returned unexpected error: %v", err)
+	}
+
+	return inv.Resources()[0]
+}
+
+// TestNoOfferingForUnservedCategories pins PRD 11's criterion that a resource of
+// a category OVHcloud does not serve gets fit none, the target-neutral reason
+// naming OVHcloud and the category, and is listed as a blocker. The snapshot
+// serves neither serverless functions nor message queues.
+func TestNoOfferingForUnservedCategories(t *testing.T) {
+	t.Parallel()
+
+	cat := catalogOf(t)
+
+	// PRD 11 expects no generally available OVHcloud offering to serve these. A
+	// milestone-2 change that adds one updates the PRD with the snapshot, so this
+	// test fails first and the review sees it.
+	unserved := []taxonomy.Category{taxonomy.ServerlessFunction, taxonomy.MessagingQueue}
+
+	for _, o := range cat.Offerings() {
+		for _, category := range o.Categories {
+			if slices.Contains(unserved, category) {
+				t.Errorf("offering %s serves %s, want no OVHcloud offering to serve it",
+					text.Quote(o.Name), text.Quote(string(category)))
+			}
+		}
+	}
+
+	for _, category := range unserved {
+		t.Run(string(category), func(t *testing.T) {
+			t.Parallel()
+
+			r := newResource(t, "res-example", category)
+
+			got := mapping.Map(r, cat)
+			if got.Fit != mapping.None {
+				t.Errorf("Map() fit = %q, want %q: OVHcloud serves no %s",
+					got.Fit, mapping.None, text.Quote(string(category)))
+			}
+
+			wantReasons := []mapping.Reason{{Code: mapping.NoOffering, Target: "OVHcloud", Category: category}}
+			if diff := cmp.Diff(wantReasons, got.Reasons); diff != "" {
+				t.Errorf("Map() reasons mismatch (-want +got):\n%s", diff)
+			}
+
+			wantSentence := "no offering in the OVHcloud catalog for " + string(category)
+			if reasons := got.Reasons; len(reasons) == 1 && reasons[0].String() != wantSentence {
+				t.Errorf("reason = %q, want %q", reasons[0].String(), wantSentence)
+			}
+
+			inv, err := inventory.New("aws", []inventory.Resource{r})
+			if err != nil {
+				t.Fatalf("inventory.New() returned unexpected error: %v", err)
+			}
+
+			gotBlockers := assessment.Assess(inv, cat).Blockers
+			wantBlockers := []assessment.Blocker{{ResourceID: r.ID, Reason: wantReasons[0]}}
+			if diff := cmp.Diff(wantBlockers, gotBlockers); diff != "" {
+				t.Errorf("Assess() blockers mismatch (-want +got):\n%s", diff)
+			}
+		})
+	}
+}
+
+// offeringNamed returns the catalog's offering called name, and fails the test if
+// there is none.
+func offeringNamed(t *testing.T, cat catalog.Catalog, name string) catalog.Offering {
+	t.Helper()
+
+	for _, o := range cat.Offerings() {
+		if o.Name == name {
+			return o
+		}
+	}
+
+	t.Fatalf("the catalog has no offering called %s: the 3-AZ rule below assumes it", text.Quote(name))
+
+	return catalog.Offering{}
+}
+
+// candidateFit pairs the name of a candidate with its fit, which is what the
+// tests below pin without copying the snapshot's capability lists into them. Its
+// fields are exported because cmp cannot compare a struct with unexported ones.
+type candidateFit struct {
+	Name string
+	Fit  mapping.Fit
+}
+
+// fits returns candidates' names and fits, best first.
+func fits(candidates []mapping.Candidate) []candidateFit {
+	out := make([]candidateFit, len(candidates))
+	for i, c := range candidates {
+		out[i] = candidateFit{Name: c.Offering.Name, Fit: c.Fit}
+	}
+
+	return out
+}
+
+// TestThreeAZVariantsServeHighAvailability pins PRD 11's criterion that a
+// resource needing high availability is pointed at the offering's 3-AZ variant:
+// OVHcloud makes Object Storage, Block Storage and Managed Kubernetes highly
+// available across zones only in Paris and Milan, so the snapshot lists a 3-AZ
+// variant there beside the single-zone offering. It also pins the structure
+// behind that verdict, so a refresh of the data has to keep both halves true.
+func TestThreeAZVariantsServeHighAvailability(t *testing.T) {
+	t.Parallel()
+
+	cat := catalogOf(t)
+
+	// The products OVHcloud makes highly available only in its 3-AZ regions, and
+	// the variant the snapshot lists for them there.
+	variants := []struct {
+		category taxonomy.Category
+		name     string
+	}{
+		{category: taxonomy.StorageObject, name: "Object Storage 3-AZ"},
+		{category: taxonomy.StorageBlock, name: "Block Storage 3-AZ"},
+		{category: taxonomy.KubernetesManaged, name: "Managed Kubernetes Service 3-AZ"},
+	}
+
+	for _, tc := range variants {
+		t.Run(string(tc.category), func(t *testing.T) {
+			t.Parallel()
+
+			o := offeringNamed(t, cat, tc.name)
+
+			if !o.Has(taxonomy.HighAvailability) {
+				t.Errorf("offering %s does not offer %s, want the 3-AZ variant to",
+					text.Quote(o.Name), text.Quote(string(taxonomy.HighAvailability)))
+			}
+
+			if !slices.Contains(o.Categories, tc.category) {
+				t.Errorf("offering %s categories = %v, want them to include %s",
+					text.Quote(o.Name), o.Categories, text.Quote(string(tc.category)))
+			}
+
+			for _, region := range o.Regions {
+				if !slices.Contains(threeAZRegions(), region) {
+					t.Errorf("offering %s is available in region %s, want only the 3-AZ regions %v",
+						text.Quote(o.Name), text.Quote(region), threeAZRegions())
+				}
+			}
+
+			if len(o.Regions) == 0 {
+				t.Errorf("offering %s lists no region, want the 3-AZ regions %v", text.Quote(o.Name), threeAZRegions())
+			}
+
+			r := newResource(t, "res-example", tc.category, taxonomy.HighAvailability)
+
+			got := mapping.Map(r, cat)
+			if got.Fit != mapping.Direct {
+				t.Errorf("Map() fit = %q, want %q for a resource needing only %s",
+					got.Fit, mapping.Direct, text.Quote(string(taxonomy.HighAvailability)))
+			}
+
+			best, ok := got.Best()
+			if !ok {
+				t.Fatalf("Map() returned no candidate, want offering %s to be the best one", text.Quote(tc.name))
+			}
+
+			if best.Offering.Name != tc.name {
+				t.Errorf("Map() best offering = %s, want %s: a resource needing %s must be pointed at the 3-AZ variant",
+					text.Quote(best.Offering.Name), text.Quote(tc.name), text.Quote(string(taxonomy.HighAvailability)))
+			}
+		})
+	}
+}
+
+// TestDatabaseVariantsBothServeHighAvailability pins the other half of the 3-AZ
+// rule: OVHcloud's databases are highly available in both variants, at node level
+// in the single-zone offering and across zones in the 3-AZ one, so no variant is
+// the product's high-availability answer on its own and both stay candidates.
+func TestDatabaseVariantsBothServeHighAvailability(t *testing.T) {
+	t.Parallel()
+
+	cat := catalogOf(t)
+
+	tests := []struct {
+		name     string
+		category taxonomy.Category
+		want     []candidateFit
+	}{
+		{
+			name:     "postgresql",
+			category: taxonomy.DatabasePostgreSQL,
+			want: []candidateFit{
+				{Name: "Managed PostgreSQL", Fit: mapping.Direct},
+				{Name: "Managed PostgreSQL 3-AZ", Fit: mapping.Direct},
+			},
+		},
+		{
+			name:     "mysql",
+			category: taxonomy.DatabaseMySQL,
+			want: []candidateFit{
+				{Name: "Managed MySQL", Fit: mapping.Direct},
+				{Name: "Managed MySQL 3-AZ", Fit: mapping.Direct},
+			},
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			r := newResource(t, "res-example", tc.category, taxonomy.HighAvailability)
+
+			got := mapping.Map(r, cat)
+			if got.Fit != mapping.Direct {
+				t.Errorf("Map() fit = %q, want %q for a resource needing only %s",
+					got.Fit, mapping.Direct, text.Quote(string(taxonomy.HighAvailability)))
+			}
+
+			if diff := cmp.Diff(tc.want, fits(got.Candidates)); diff != "" {
+				t.Errorf("Map() candidates mismatch (-want +got):\n%s", diff)
+			}
+		})
+	}
+}
