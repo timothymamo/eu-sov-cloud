@@ -3,8 +3,9 @@
 // golden change detector for the parsed catalog, the declared EU regions, and the
 // adapter's own error contract - one line, the sentinel it wraps, every value
 // shown through text.Quote, the keys a document must carry, the declared regions
-// it must declare once and validly, and the size limit above which a document is
-// refused undecoded. It is black-box: only the package's exported API is used.
+// it must declare once and as valid text (UTF-8 included), and the size limit
+// above which a document is refused undecoded. It is black-box: only the
+// package's exported API is used.
 package scaleway_test
 
 import (
@@ -15,6 +16,7 @@ import (
 	"fmt"
 	"os"
 	"slices"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -240,11 +242,11 @@ func padTo(t *testing.T, data string, n int) []byte {
 	return append([]byte(data), bytes.Repeat([]byte(" "), n-len(data))...)
 }
 
-// without returns validDocument with the top-level key removed, so a case pins a
-// key the format requires. Re-encoding a map of raw fields keeps every nested
-// value as it is; only the order of the top-level keys changes, which no test
-// here depends on.
-func without(t *testing.T, key string) string {
+// topFields returns validDocument's top-level keys and their raw values, so a
+// case can change or remove one without touching the rest. Re-encoding a map of
+// raw fields keeps every nested value as it is; only the order of the top-level
+// keys changes, which no test here depends on.
+func topFields(t *testing.T) map[string]json.RawMessage {
 	t.Helper()
 
 	var fields map[string]json.RawMessage
@@ -252,18 +254,51 @@ func without(t *testing.T, key string) string {
 		t.Fatalf("unmarshalling validDocument: %v", err)
 	}
 
+	return fields
+}
+
+// marshalFields renders the top-level fields back as a document.
+func marshalFields(t *testing.T, fields map[string]json.RawMessage) string {
+	t.Helper()
+
+	data, err := json.Marshal(fields)
+	if err != nil {
+		t.Fatalf("marshalling the document's top-level fields: %v", err)
+	}
+
+	return string(data)
+}
+
+// without returns validDocument with the top-level key removed, so a case pins a
+// key the format requires.
+func without(t *testing.T, key string) string {
+	t.Helper()
+
+	fields := topFields(t)
+
 	if _, ok := fields[key]; !ok {
 		t.Fatalf("without(): validDocument has no %s key", text.Quote(key))
 	}
 
 	delete(fields, key)
 
-	data, err := json.Marshal(fields)
-	if err != nil {
-		t.Fatalf("marshalling the document without %s: %v", text.Quote(key), err)
+	return marshalFields(t, fields)
+}
+
+// with returns validDocument with the top-level key set to the raw JSON value,
+// so a case pins a value the whole key takes, such as null.
+func with(t *testing.T, key, raw string) string {
+	t.Helper()
+
+	fields := topFields(t)
+
+	if _, ok := fields[key]; !ok {
+		t.Fatalf("with(): validDocument has no %s key", text.Quote(key))
 	}
 
-	return string(data)
+	fields[key] = json.RawMessage(raw)
+
+	return marshalFields(t, fields)
 }
 
 // TestParseErrors pins every way parsing a catalog document fails: the sentinel
@@ -420,6 +455,18 @@ func TestParseErrors(t *testing.T) {
 			wantErr: []error{scaleway.ErrDecode},
 		},
 		{
+			// null is not an empty list: a header that says regions: null
+			// says nothing it means to say, which is a mistake in the document.
+			name:    "null regions list",
+			data:    with(t, "regions", "null"),
+			wantErr: []error{scaleway.ErrDecode},
+		},
+		{
+			name:    "null offerings list",
+			data:    with(t, "offerings", "null"),
+			wantErr: []error{scaleway.ErrDecode},
+		},
+		{
 			// Every declared region is a promise too: an entry that is no region
 			// name would be declared for nothing. No offering uses the broken
 			// entry, so the declaration itself is what has to be checked.
@@ -445,6 +492,16 @@ func TestParseErrors(t *testing.T) {
 			data:       doc(t, `  "regions": ["fr-par"],`, "  \"regions\": [\"fr-par\", \"bad\\u0000x\"],"),
 			wantErr:    []error{scaleway.ErrDecode},
 			wantQuoted: []string{"bad\x00x"},
+		},
+		{
+			// A region name is text that reaches reports and terminals, and a
+			// byte that is not UTF-8 has no text to show there. The JSON decoder
+			// on its own would turn it into U+FFFD and report nothing, so the
+			// document's own bytes have to be checked.
+			name:         "declared region with an invalid UTF-8 byte",
+			data:         doc(t, `  "regions": ["fr-par"],`, "  \"regions\": [\"fr-par\", \"bad\xffx\"],"),
+			wantErr:      []error{scaleway.ErrDecode},
+			wantContains: []string{"UTF-8"},
 		},
 	}
 
@@ -547,29 +604,64 @@ func TestParseRejectsDocumentsOverTheSizeCap(t *testing.T) {
 	}
 }
 
-// repeatedRegionDocument builds a catalog document that declares fifty regions
-// and mentions the first of them 200 000 times, far more often than a real
-// catalog does. Fifty distinct two-letter region names keep the document under
-// the size cap even with every mention spelled out.
+// emptyCatalogDocument is a complete catalog that declares no region and no
+// offering. Both lists are present and empty, which is a catalog of nothing;
+// null (see TestParseErrors) is a document that does not say.
+const emptyCatalogDocument = `{
+  "schemaVersion": 1,
+  "target": "Scaleway",
+  "sourceURL": "https://www.scaleway.com/en/docs/",
+  "retrievedOn": "2026-11-10",
+  "regions": [],
+  "offerings": []
+}`
+
+// TestParseEmptyCatalog pins that a document declaring no region and no offering
+// is an empty catalog, not a broken one: an empty list is an answer, which is why
+// only null is refused. It is the other side of the two null rows above.
+func TestParseEmptyCatalog(t *testing.T) {
+	t.Parallel()
+
+	cat, err := scaleway.Parse([]byte(emptyCatalogDocument))
+	if err != nil {
+		t.Fatalf("Parse() of a document declaring no region and no offering returned unexpected error: %v", err)
+	}
+
+	if got := cat.Target(); got != "Scaleway" {
+		t.Errorf("Parse().Target() = %s, want %s", text.Quote(got), text.Quote("Scaleway"))
+	}
+
+	if got := cat.Offerings(); len(got) != 0 {
+		t.Errorf("Parse().Offerings() = %v, want none", got)
+	}
+}
+
+// repeatedRegionDocument builds a catalog document that declares many short,
+// distinct regions and mentions the last of them as often as the size cap allows.
+//
+// Mentioning the last declared region is what makes the document a worst case: a
+// lookup that finds a region by scanning the declared list stops at the first
+// match, so a mention of an early region hides the scan. Only the region furthest
+// down the list, mentioned a hundred thousand times, makes the scan cost one
+// comparison per declared region per mention.
 func repeatedRegionDocument(tb testing.TB) []byte {
 	tb.Helper()
 
-	const (
-		declaredCount = 50
-		mentions      = 200_000
-	)
+	// Four hex digits name every region in five bytes quoted, so the declared
+	// list stays a fraction of MaxDocumentBytes and leaves the rest for mentions.
+	const declaredCount = 60_000
 
 	regions := make([]string, declaredCount)
 	for i := range regions {
-		regions[i] = fmt.Sprintf(`"%c%c"`, 'a'+i/5, 'a'+i%5)
+		regions[i] = strconv.Quote(fmt.Sprintf("%04x", i))
 	}
 
-	repeated := make([]string, mentions)
-	for i := range repeated {
-		repeated[i] = regions[0]
-	}
+	last := regions[declaredCount-1]
 
-	data := fmt.Sprintf(`{
+	// compose renders the document around the offering's region mentions, so the
+	// size of every other byte can be measured with the mentions empty.
+	compose := func(mentions string) string {
+		return fmt.Sprintf(`{
   "schemaVersion": 1,
   "target": "Scaleway",
   "sourceURL": "https://www.scaleway.com/en/docs/",
@@ -583,7 +675,20 @@ func repeatedRegionDocument(tb testing.TB) []byte {
       "regions": [%s]
     }
   ]
-}`, strings.Join(regions, ", "), strings.Join(repeated, ","))
+}`, strings.Join(regions, ", "), mentions)
+	}
+
+	// Every mention but the last is followed by a comma, so a mention costs the
+	// region's quoted length plus the comma.
+	perMention := len(last) + len(",")
+
+	mentions := (scaleway.MaxDocumentBytes - len(compose(""))) / perMention
+	if mentions < 2 {
+		tb.Fatalf("the declared regions leave room for %d mentions, want at least 2, under MaxDocumentBytes = %d",
+			mentions, scaleway.MaxDocumentBytes)
+	}
+
+	data := compose(strings.TrimSuffix(strings.Repeat(last+",", mentions), ","))
 
 	if len(data) > scaleway.MaxDocumentBytes {
 		tb.Fatalf("the document is %d bytes, over MaxDocumentBytes = %d: shorten the region names",
@@ -593,12 +698,29 @@ func repeatedRegionDocument(tb testing.TB) []byte {
 	return []byte(data)
 }
 
-// BenchmarkParseRepeatedRegionMention measures parsing a document that mentions
-// one declared region 200 000 times. It is a benchmark, not a test with a
-// wall-clock budget: a single parse is far too quick to assert on without
-// flaking on a loaded machine even at a generous margin, whereas the ns/op it
-// reports exposes the regression it guards - a lookup that scans the declared
-// regions once per mention instead of validating them once.
+// TestParseRepeatedRegionMention parses the worst-case document once, so the
+// default test run exercises the builder and the size guard it works to. It
+// asserts no duration: the cost is what BenchmarkParseRepeatedRegionMention
+// reports, not something a wall-clock budget can pin without flaking.
+func TestParseRepeatedRegionMention(t *testing.T) {
+	t.Parallel()
+
+	data := repeatedRegionDocument(t)
+
+	if _, err := scaleway.Parse(data); err != nil {
+		t.Fatalf("Parse() of the %d-byte document that mentions its last declared region as often as the size cap allows returned unexpected error: %v",
+			len(data), err)
+	}
+}
+
+// BenchmarkParseRepeatedRegionMention measures parsing a document that declares
+// 60 000 regions and mentions the last of them as often as MaxDocumentBytes
+// allows. It is a benchmark, not a test with a wall-clock budget: a single parse
+// is far too quick to assert on without flaking on a loaded machine even at a
+// generous margin, whereas the ns/op it reports exposes the regression it guards -
+// a lookup that scans the declared regions once per mention instead of validating
+// them once. Mentioning the last of many regions is what makes the scan visible:
+// a mention of the first region is found on the first comparison.
 func BenchmarkParseRepeatedRegionMention(b *testing.B) {
 	data := repeatedRegionDocument(b)
 
@@ -607,7 +729,7 @@ func BenchmarkParseRepeatedRegionMention(b *testing.B) {
 
 	for b.Loop() {
 		if _, err := scaleway.Parse(data); err != nil {
-			b.Fatalf("Parse() of a %d-byte document mentioning a declared region 200 000 times returned unexpected error: %v",
+			b.Fatalf("Parse() of a %d-byte document mentioning its last declared region as often as the size cap allows returned unexpected error: %v",
 				len(data), err)
 		}
 	}
