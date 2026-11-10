@@ -1,0 +1,63 @@
+{
+  "schemaVersion": 1,
+  "target": "Scaleway",
+  "sourceURL": "https://www.scaleway.com/en/docs/",
+  "retrievedOn": "2026-11-10",
+  "regions": ["fr-par", "it-mil", "nl-ams", "pl-waw"],
+  "offerings": [
+    {
+      "name": "Block Storage",
+      "categories": ["storage.block"],
+      "capabilities": ["snapshots"],
+      "regions": ["fr-par", "it-mil", "nl-ams", "pl-waw"]
+    },
+    {
+      "name": "Elastic Metal",
+      "categories": ["compute.vm"],
+      "capabilities": ["ipv6"],
+      "regions": ["fr-par", "nl-ams", "pl-waw"]
+    },
+    {
+      "name": "Instances",
+      "categories": ["compute.vm"],
+      "capabilities": ["ipv6", "snapshots"],
+      "regions": ["fr-par", "it-mil", "nl-ams", "pl-waw"]
+    },
+    {
+      "name": "Kubernetes Kapsule",
+      "categories": ["kubernetes.managed"],
+      "capabilities": ["autoscaling", "high-availability"],
+      "regions": ["fr-par", "it-mil", "nl-ams", "pl-waw"]
+    },
+    {
+      "name": "Managed Database for PostgreSQL and MySQL",
+      "categories": ["database.mysql", "database.postgresql"],
+      "capabilities": ["encryption-at-rest", "high-availability", "read-replicas", "snapshots"],
+      "regions": ["fr-par", "nl-ams", "pl-waw"]
+    },
+    {
+      "name": "Object Storage",
+      "categories": ["storage.object"],
+      "capabilities": ["encryption-at-rest", "high-availability", "object-versioning"],
+      "regions": ["fr-par", "it-mil", "nl-ams", "pl-waw"]
+    },
+    {
+      "name": "Queues",
+      "categories": ["messaging.queue"],
+      "capabilities": ["dead-letter-queue"],
+      "regions": ["fr-par", "nl-ams"]
+    },
+    {
+      "name": "Serverless Functions",
+      "categories": ["serverless.function"],
+      "capabilities": ["autoscaling"],
+      "regions": ["fr-par", "nl-ams", "pl-waw"]
+    },
+    {
+      "name": "Serverless SQL Database",
+      "categories": ["database.postgresql"],
+      "capabilities": ["autoscaling"],
+      "regions": ["fr-par"]
+    }
+  ]
+}
