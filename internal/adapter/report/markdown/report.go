@@ -18,6 +18,10 @@ const dateLayout = "2006-01-02"
 // reasonSeparator joins the reasons of one resource in its table cell.
 const reasonSeparator = "; "
 
+// nameSeparator joins names in one line or cell: tied offerings and required
+// changes.
+const nameSeparator = ", "
+
 // Reporter renders an assessment as a Markdown report. It holds no state, so
 // one Reporter may render any number of reports, concurrently too.
 type Reporter struct{}
@@ -44,6 +48,7 @@ func (*Reporter) Report(ctx context.Context, w io.Writer, a assessment.Assessmen
 	writeHeader(&b, a, meta)
 	writeSummary(&b, a.Summary)
 	writeResources(&b, a.Verdicts)
+	writeRequiredChanges(&b, a.Verdicts)
 	writeBlockers(&b, a.Blockers)
 
 	if _, err := io.WriteString(w, b.String()); err != nil {
@@ -56,16 +61,16 @@ func (*Reporter) Report(ctx context.Context, w io.Writer, a assessment.Assessmen
 // writeHeader writes the title and the lines that say what was assessed against
 // what. The inventory file line is left out when the inventory has no file name.
 func writeHeader(b *strings.Builder, a assessment.Assessment, meta analysis.ReportMeta) {
-	target := escapeText(a.Target)
+	target := codeSpan(a.Target, false)
 
 	b.WriteString("# Migration assessment: " + target + "\n\n")
 
 	if meta.InventoryName != "" {
-		b.WriteString("- Inventory file: " + escapeText(meta.InventoryName) + "\n")
+		b.WriteString("- Inventory file: " + codeSpan(meta.InventoryName, false) + "\n")
 	}
 
-	b.WriteString("- Source: " + escapeText(a.Source) + "\n")
-	b.WriteString("- Catalog: " + target + " snapshot from " + autolink(a.Snapshot.SourceURL) +
+	b.WriteString("- Source: " + codeSpan(a.Source, false) + "\n")
+	b.WriteString("- Catalog: " + target + " snapshot from " + codeSpan(a.Snapshot.SourceURL, false) +
 		", retrieved " + a.Snapshot.RetrievedOn.UTC().Format(dateLayout) + "\n\n")
 }
 
@@ -89,13 +94,44 @@ func writeResources(b *strings.Builder, verdicts []assessment.Verdict) {
 
 	for _, v := range verdicts {
 		writeRow(b,
-			escapeText(v.Resource.ID),
-			escapeText(v.Resource.RawType),
+			codeSpan(v.Resource.ID, true),
+			codeSpan(v.Resource.RawType, true),
 			codeSpan(string(v.Resource.Category), true),
 			escapeText(string(v.Fit)),
-			escapeText(v.BestOffering),
+			renderBestOffering(v),
 			renderReasons(v.Reasons, true),
 		)
+	}
+
+	b.WriteString("\n")
+}
+
+// writeRequiredChanges writes one list item per partial verdict that has
+// required changes, in the order given: the capabilities the best offering
+// lacks, and that offering. It writes "None." when there is no such verdict.
+func writeRequiredChanges(b *strings.Builder, verdicts []assessment.Verdict) {
+	b.WriteString("## Required changes\n\n")
+
+	items := 0
+
+	for _, v := range verdicts {
+		if v.Fit != mapping.Partial || len(v.RequiredChanges) == 0 {
+			continue
+		}
+
+		changes := make([]string, 0, len(v.RequiredChanges))
+		for _, c := range v.RequiredChanges {
+			changes = append(changes, codeSpan(string(c), false))
+		}
+
+		b.WriteString("- " + codeSpan(v.Resource.ID, false) + ": " + strings.Join(changes, nameSeparator) +
+			" (not offered by " + codeSpan(v.BestOffering, false) + ")\n")
+
+		items++
+	}
+
+	if items == 0 {
+		b.WriteString("None.\n")
 	}
 
 	b.WriteString("\n")
@@ -113,8 +149,7 @@ func writeBlockers(b *strings.Builder, blockers []assessment.Blocker) {
 	}
 
 	for _, blocker := range blockers {
-		id := escapeLineStart(escapeText(blocker.ResourceID))
-		b.WriteString("- " + id + ": " + renderReason(blocker.Reason, false) + "\n")
+		b.WriteString("- " + codeSpan(blocker.ResourceID, false) + ": " + renderReason(blocker.Reason, false) + "\n")
 	}
 }
 
@@ -128,6 +163,33 @@ func writeSeparator(b *strings.Builder, columns int) {
 	b.WriteString("|" + strings.Repeat("---|", columns) + "\n")
 }
 
+// renderBestOffering renders the best-offering cell of v: the best offering's
+// name, followed by "(tie: ...)" with the other candidates a reader could take
+// for it, those with the best candidate's fit and as many missing capabilities,
+// in candidate order. The best candidate is the first one.
+func renderBestOffering(v assessment.Verdict) string {
+	best := codeSpan(v.BestOffering, true)
+	if len(v.Candidates) == 0 {
+		return best
+	}
+
+	first := v.Candidates[0]
+
+	var ties []string
+
+	for _, c := range v.Candidates[1:] {
+		if c.Fit == first.Fit && len(c.Missing) == len(first.Missing) {
+			ties = append(ties, codeSpan(c.Offering.Name, true))
+		}
+	}
+
+	if len(ties) == 0 {
+		return best
+	}
+
+	return best + " (tie: " + strings.Join(ties, nameSeparator) + ")"
+}
+
 // renderReasons renders reasons one after the other, separated by "; ".
 func renderReasons(reasons []mapping.Reason, inTable bool) string {
 	rendered := make([]string, 0, len(reasons))
@@ -138,21 +200,22 @@ func renderReasons(reasons []mapping.Reason, inTable bool) string {
 	return strings.Join(rendered, reasonSeparator)
 }
 
-// renderReason renders a reason from its parts: categories and capabilities as
-// code spans, every other part, literal sentence text included, as escaped text.
-// It never uses the reason's String method, which is not safe for Markdown.
+// renderReason renders a reason from its parts: literal sentence text as escaped
+// text, every other part, a name, as a code span. It never uses the reason's
+// String method, which is not safe for Markdown.
 func renderReason(r mapping.Reason, inTable bool) string {
 	var b strings.Builder
 
 	for _, p := range r.Parts() {
-		switch p.Kind {
-		case mapping.PartCategory, mapping.PartCapability:
-			b.WriteString(codeSpan(p.Text, inTable))
-		default:
-			// PartLiteral, PartTarget, PartOffering, and any kind added later: text
-			// is escaped whatever it is.
+		if p.Kind == mapping.PartLiteral {
 			b.WriteString(escapeText(p.Text))
+
+			continue
 		}
+
+		// PartTarget, PartOffering, PartCategory, PartCapability, and any kind
+		// added later: a value is shown literally whatever it is.
+		b.WriteString(codeSpan(p.Text, inTable))
 	}
 
 	return b.String()
@@ -161,9 +224,8 @@ func renderReason(r mapping.Reason, inTable bool) string {
 // textEscaper puts a backslash before every character that could start Markdown
 // syntax in running text or a table cell: emphasis, code, links, images, HTML,
 // headings, strikethrough, entity references and cell boundaries. Dots are left
-// alone: they start no syntax in the middle of a line. Line endings, which a
-// valid value never holds, become character references, so no value can end a
-// line, a table row or a heading.
+// alone: they start no syntax in the middle of a line. Line endings become
+// character references, so no text can end a line, a table row or a heading.
 var textEscaper = strings.NewReplacer(
 	`\`, `\\`,
 	"`", "\\`",
@@ -184,30 +246,11 @@ var textEscaper = strings.NewReplacer(
 	"\r", "&#13;",
 )
 
-// escapeText returns s escaped for Markdown running text and table cells.
+// escapeText returns s escaped for Markdown running text and table cells. It is
+// for the report's own words only, literal reason text and fits; a value from
+// the assessment or the metadata is a code span.
 func escapeText(s string) string {
 	return textEscaper.Replace(s)
-}
-
-// asciiDigits are the digits of an ordered list marker.
-const asciiDigits = "0123456789"
-
-// escapeLineStart returns s, text already escaped by escapeText, with a backslash
-// before what would make s start a list item when s starts a line: a leading
-// dash or plus, and the dot after a leading run of digits. A leading star and the
-// parenthesis of an ordered marker are escaped by escapeText already. Nothing
-// later in s changes.
-func escapeLineStart(s string) string {
-	if strings.HasPrefix(s, "-") || strings.HasPrefix(s, "+") {
-		return `\` + s
-	}
-
-	rest := strings.TrimLeft(s, asciiDigits)
-	if digits := len(s) - len(rest); digits > 0 && strings.HasPrefix(rest, ".") {
-		return s[:digits] + `\` + rest
-	}
-
-	return s
 }
 
 // codeSpanLineEndings turns line endings into spaces, as CommonMark does inside a
@@ -270,41 +313,4 @@ func longestRun(s string, c byte) int {
 	}
 
 	return longest
-}
-
-// upperHex are the digits of a percent escape.
-const upperHex = "0123456789ABCDEF"
-
-// urlUnsafe lists the characters, besides ASCII control characters and the
-// space, that a source URL may not show as given in a Markdown autolink: the
-// parentheses and square brackets of link syntax, the angle brackets that
-// delimit the autolink, the pipe that ends a table cell and the backtick that
-// starts a code span.
-const urlUnsafe = "()[]<>|`"
-
-// autolink returns the stored source URL u as a Markdown autolink. Every
-// character of urlUnsafe, every ASCII control character and the space is
-// percent-encoded; nothing else changes, and u is never decoded, so a stored
-// escape such as "%0A" is shown as stored.
-func autolink(u string) string {
-	var b strings.Builder
-
-	b.WriteByte('<')
-
-	for i := range len(u) {
-		c := u[i]
-		if c > ' ' && c != 0x7f && strings.IndexByte(urlUnsafe, c) < 0 {
-			b.WriteByte(c)
-
-			continue
-		}
-
-		b.WriteByte('%')
-		b.WriteByte(upperHex[c>>4])
-		b.WriteByte(upperHex[c&0x0f])
-	}
-
-	b.WriteByte('>')
-
-	return b.String()
 }
