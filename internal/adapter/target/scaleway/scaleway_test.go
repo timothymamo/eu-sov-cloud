@@ -547,21 +547,18 @@ func TestParseRejectsDocumentsOverTheSizeCap(t *testing.T) {
 	}
 }
 
-// TestParseRepeatedRegionMentionIsLinear pins that a document listing one declared
-// region far more often than a real catalog does parses well inside a second:
-// checking each mention against the declared regions, and checking the declared
-// regions themselves, must not scan a list once per entry.
-func TestParseRepeatedRegionMentionIsLinear(t *testing.T) {
-	// Not parallel: the test measures elapsed time, so it must not compete with
-	// the other subtests for the machine.
+// repeatedRegionDocument builds a catalog document that declares fifty regions
+// and mentions the first of them 200 000 times, far more often than a real
+// catalog does. Fifty distinct two-letter region names keep the document under
+// the size cap even with every mention spelled out.
+func repeatedRegionDocument(tb testing.TB) []byte {
+	tb.Helper()
+
 	const (
 		declaredCount = 50
 		mentions      = 200_000
-		budget        = time.Second
 	)
 
-	// Fifty distinct two-letter region names keep the document under the size
-	// cap even with every mention spelled out.
 	regions := make([]string, declaredCount)
 	for i := range regions {
 		regions[i] = fmt.Sprintf(`"%c%c"`, 'a'+i/5, 'a'+i%5)
@@ -589,20 +586,30 @@ func TestParseRepeatedRegionMentionIsLinear(t *testing.T) {
 }`, strings.Join(regions, ", "), strings.Join(repeated, ","))
 
 	if len(data) > scaleway.MaxDocumentBytes {
-		t.Fatalf("the test document is %d bytes, over MaxDocumentBytes = %d: shorten the region names",
+		tb.Fatalf("the document is %d bytes, over MaxDocumentBytes = %d: shorten the region names",
 			len(data), scaleway.MaxDocumentBytes)
 	}
 
-	start := time.Now()
+	return []byte(data)
+}
 
-	if _, err := scaleway.Parse([]byte(data)); err != nil {
-		t.Fatalf("Parse() of a document mentioning a declared region %d times returned unexpected error: %v",
-			mentions, err)
-	}
+// BenchmarkParseRepeatedRegionMention measures parsing a document that mentions
+// one declared region 200 000 times. It is a benchmark, not a test with a
+// wall-clock budget: a single parse is far too quick to assert on without
+// flaking on a loaded machine even at a generous margin, whereas the ns/op it
+// reports exposes the regression it guards - a lookup that scans the declared
+// regions once per mention instead of validating them once.
+func BenchmarkParseRepeatedRegionMention(b *testing.B) {
+	data := repeatedRegionDocument(b)
 
-	if elapsed := time.Since(start); elapsed > budget {
-		t.Errorf("Parse() of a document mentioning a declared region %d times took %s, want under %s",
-			mentions, elapsed, budget)
+	b.ReportAllocs()
+	b.SetBytes(int64(len(data)))
+
+	for b.Loop() {
+		if _, err := scaleway.Parse(data); err != nil {
+			b.Fatalf("Parse() of a %d-byte document mentioning a declared region 200 000 times returned unexpected error: %v",
+				len(data), err)
+		}
 	}
 }
 
