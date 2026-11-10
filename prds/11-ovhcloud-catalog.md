@@ -158,7 +158,8 @@ Each milestone ships as one PR. This PRD starts after PRD #2: milestone 1 needs 
   not a service that runs user code. Milestone 2 re-checks this against OVHcloud's product pages.
 - **Decided: one shared snapshot format and reader.** Two copies of a strict parser drift apart, and its
   rules (unknown fields, undeclared regions, size cap, one-line errors) protect the correctness and safety
-  of every target. UpCloud will be the third user. The ADR is written in milestone 1.
+  of every target. UpCloud will be the third user. Recorded in
+  [ADR 0007](../docs/adr/0007-shared-target-catalog-snapshot-format-v1.md) (milestone 1).
 - **Decided: the taxonomy is unchanged.** A capability OVHcloud offers that has no vocabulary entry is
   left out and noted in `SOURCES.md`. Extending the vocabulary is a change of its own, with tests across
   every target.
