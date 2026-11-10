@@ -16,12 +16,13 @@
 // domain, through inventory.New: an unknown category is an error, never
 // unclassified.
 //
-// Errors are one line, name the file through text.Quote, and wrap ErrRead,
-// ErrTooLarge, ErrDecode, ErrSchemaVersion, ErrTooManyResources, the domain's
-// own sentinel or ctx.Err(). A problem in the document is placed by line and
-// column, and a key or value is named by its path, resources[1].region. The
-// text of OS and JSON decoder errors is never passed on: it would repeat the
-// path or file contents unquoted.
+// Errors are one line, name the file through text.QuotePath (which keeps the
+// base name of a long path), and wrap ErrRead, ErrTooLarge, ErrDecode,
+// ErrSchemaVersion, ErrTooManyResources, the domain's own sentinel or
+// ctx.Err(). A problem in the document is placed by line and column, and a key
+// or value is named by its path, resources[1].region. The text of OS and JSON
+// decoder errors is never passed on: it would repeat the path or file contents
+// unquoted.
 //
 // Cancelling the context ends a call at once, even while the file is opened or
 // read: the file is opened and read on a goroutine of its own, closed on

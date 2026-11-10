@@ -212,6 +212,8 @@ fixtures in earlier milestones share a picture of the data:
 - **Accepted: long inventory paths in errors.** `text.Quote` caps the inventory path at 128 runes in
   adapter errors, so a very long path can lose its base name; the report always shows the base name, and
   the path is still recognisable from its start. Revisit with the shared decoder (#13).
+  Resolved in issue #13: the adapter quotes the path with `text.QuotePath`, which keeps the first 32
+  and the last 96 runes of a longer path, so the base name survives.
 - **Decided: what `--output` may name.** The report is rendered into memory in full; only then is a
   temporary file created next to the destination, written, synced and renamed onto it, so a failed or
   cancelled run leaves no partial report and no temporary file. A path that does not exist is created,

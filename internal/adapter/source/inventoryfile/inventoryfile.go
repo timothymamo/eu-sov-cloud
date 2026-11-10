@@ -70,15 +70,15 @@ func New(path string) *Source {
 // A cancelled ctx is reported before the file is touched, and cancelling ctx
 // while the file is opened or read ends the call at once, even when the open or
 // the read blocks (a FIFO with no writer, a stalled network file system). Every
-// error is one line that names the file through text.Quote and wraps one of the
-// package's sentinels, a domain sentinel (such as taxonomy.ErrUnknownCategory)
-// for a value the domain refuses, or ctx.Err(). Values from the file are shown
-// through text.Quote; the text of the OS and JSON decoder errors is never passed
-// on.
+// error is one line that names the file through text.QuotePath, which keeps the
+// base name of a long path, and wraps one of the package's sentinels, a domain
+// sentinel (such as taxonomy.ErrUnknownCategory) for a value the domain refuses,
+// or ctx.Err(). Values from the file are shown through text.Quote; the text of
+// the OS and JSON decoder errors is never passed on.
 func (s *Source) Inventory(ctx context.Context) (inventory.Inventory, error) {
 	inv, err := s.inventory(ctx)
 	if err != nil {
-		return inventory.Inventory{}, fmt.Errorf("inventory file %s: %w", text.Quote(s.path), err)
+		return inventory.Inventory{}, fmt.Errorf("inventory file %s: %w", text.QuotePath(s.path), err)
 	}
 
 	return inv, nil
