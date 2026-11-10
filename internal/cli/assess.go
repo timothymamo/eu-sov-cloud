@@ -84,8 +84,9 @@ func parseAssess(args []string, deps Deps) (assessOptions, error) {
 }
 
 // assess builds the adapters from deps, runs the analysis and writes the report
-// to stdout or to the --output file. It writes nothing unless the whole report
-// was rendered.
+// to stdout or to the --output file. It refuses an unsafe --output before it
+// reads anything, renders the whole report into memory, and writes nothing
+// unless the whole report was rendered.
 func assess(ctx context.Context, opts assessOptions, stdout io.Writer, deps Deps) error {
 	newCatalog := deps.Targets[opts.target]
 	if deps.NewInventorySource == nil || newCatalog == nil || deps.NewReporter == nil {
@@ -97,41 +98,86 @@ func assess(ctx context.Context, opts assessOptions, stdout io.Writer, deps Deps
 		return err
 	}
 
+	if opts.output != "" {
+		if err := checkOutput(opts.inventory, opts.output); err != nil {
+			return err
+		}
+	}
+
 	// A report names the inventory file by its base name, never by its full
 	// path; analysis.Run checks the name before it reads anything.
 	meta := analysis.ReportMeta{InventoryName: filepath.Base(opts.inventory)}
 
-	render := func(w io.Writer) error {
-		if err := run.Run(ctx, w, meta); err != nil {
-			return err
-		}
+	var report bytes.Buffer
 
-		// A run cancelled while the report was rendered writes nothing: the
-		// user asked it to stop.
-		if err := ctx.Err(); err != nil {
-			return fmt.Errorf("cancelled before writing the report: %w", err)
-		}
-
-		return nil
-	}
-
-	if opts.output == "" {
-		return writeStdout(stdout, render)
-	}
-
-	return writeFile(opts.output, render)
-}
-
-// writeStdout renders the report into memory and writes it to stdout only once
-// it is complete, so a failed run prints nothing there.
-func writeStdout(stdout io.Writer, render func(io.Writer) error) error {
-	var buf bytes.Buffer
-
-	if err := render(&buf); err != nil {
+	if err := run.Run(ctx, &report, meta); err != nil {
 		return err
 	}
 
-	if _, err := stdout.Write(buf.Bytes()); err != nil {
+	// A run cancelled while the report was rendered writes nothing: the user
+	// asked it to stop.
+	if err := ctx.Err(); err != nil {
+		return fmt.Errorf("cancelled before writing the report: %w", err)
+	}
+
+	if opts.output == "" {
+		return writeStdout(stdout, report.Bytes())
+	}
+
+	return writeFile(opts.output, report.Bytes())
+}
+
+// checkOutput refuses an --output dest the report must not replace: anything
+// but a regular file or a symbolic link (a directory, a named pipe, a socket, a
+// device), and the inventory file itself, by the same path, a hard link or a
+// symbolic link to it. A dest that does not exist yet is accepted.
+func checkOutput(inventory, dest string) error {
+	info, err := os.Lstat(dest)
+
+	switch {
+	case errors.Is(err, fs.ErrNotExist):
+		return nil
+	case err != nil:
+		return fmt.Errorf("output %s: %w", text.Quote(dest), withoutPath(err))
+	case !info.Mode().IsRegular() && info.Mode()&fs.ModeSymlink == 0:
+		return fmt.Errorf("output %s is %s, not a regular file", text.Quote(dest), fileKind(info.Mode()))
+	}
+
+	// os.Stat follows symbolic links on both sides, so a link to the inventory,
+	// or an inventory that is a link to dest, is the same file. A path that
+	// cannot be resolved is no clash: the inventory source reports a missing
+	// inventory, and a dangling link at dest is replaced.
+	invInfo, invErr := os.Stat(inventory)
+	destInfo, destErr := os.Stat(dest)
+
+	if invErr == nil && destErr == nil && os.SameFile(invInfo, destInfo) {
+		return fmt.Errorf("output %s is the inventory file %s; write the report to another file",
+			text.Quote(dest), text.Quote(inventory))
+	}
+
+	return nil
+}
+
+// fileKind names the kind of file mode describes, for an output that is not a
+// regular file.
+func fileKind(mode fs.FileMode) string {
+	switch {
+	case mode.IsDir():
+		return "a directory"
+	case mode&fs.ModeNamedPipe != 0:
+		return "a named pipe"
+	case mode&fs.ModeSocket != 0:
+		return "a socket"
+	case mode&fs.ModeDevice != 0:
+		return "a device"
+	default:
+		return "a special file"
+	}
+}
+
+// writeStdout writes the rendered report to stdout in one call.
+func writeStdout(stdout io.Writer, report []byte) error {
+	if _, err := stdout.Write(report); err != nil {
 		return fmt.Errorf("write the report to standard output: %w", withoutPath(err))
 	}
 
@@ -142,11 +188,13 @@ func writeStdout(stdout io.Writer, render func(io.Writer) error) error {
 // infrastructure, so only its owner may read it.
 const reportMode = 0o600
 
-// writeFile renders the report into a temporary file in the directory of dest
-// and renames it onto dest once it is complete and synced. On any error it
-// removes the temporary file, so dest is either the whole new report or left as
-// it was, and never truncated.
-func writeFile(dest string, render func(io.Writer) error) error {
+// writeFile writes the rendered report to a temporary file in the directory of
+// dest and renames it onto dest once it is written and synced. The temporary
+// file exists only for this final write, never while the report is rendered.
+// On any error it removes the temporary file, so dest is either the whole new
+// report or left as it was, and never truncated. Every error names dest, never
+// the temporary file.
+func writeFile(dest string, report []byte) error {
 	tmp, err := os.CreateTemp(filepath.Dir(dest), ".eusov-report-*.tmp")
 	if err != nil {
 		return fmt.Errorf("output %s: create a temporary file in its directory: %w",
@@ -166,8 +214,8 @@ func writeFile(dest string, render func(io.Writer) error) error {
 		return fmt.Errorf("output %s: set the mode of the temporary file: %w", text.Quote(dest), withoutPath(err))
 	}
 
-	if err := render(tmp); err != nil {
-		return err
+	if _, err := tmp.Write(report); err != nil {
+		return fmt.Errorf("output %s: write the report: %w", text.Quote(dest), withoutPath(err))
 	}
 
 	if err := tmp.Sync(); err != nil {

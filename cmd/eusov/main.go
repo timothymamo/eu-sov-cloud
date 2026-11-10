@@ -21,10 +21,11 @@ import (
 )
 
 func main() {
-	// SIGINT and SIGTERM cancel ctx, which ends a run with exit code 1. Once
-	// ctx is cancelled, stop restores the default behaviour, so a second signal
-	// ends the process at once.
-	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	// SIGINT, SIGTERM and SIGHUP (the terminal closed) cancel ctx, which ends a
+	// run with exit code 1 and writes no report. Once ctx is cancelled, stop
+	// restores the default behaviour, so a second signal ends the process at
+	// once.
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM, syscall.SIGHUP)
 	context.AfterFunc(ctx, stop)
 
 	// Exit as soon as Run returns, without waiting for adapter goroutines: after
