@@ -11,11 +11,30 @@
 // target's display name, the source URL and the retrieval date (retrievedOn,
 // YYYY-MM-DD) of the data, the EU regions the snapshot declares, and the
 // offerings, each with its taxonomy categories, capabilities and regions.
-// Parse reads it strictly: an unknown field, an unsupported schema version, an
-// offering in a region the header does not declare, or a value the taxonomy or
-// catalog.New refuses is an error, never dropped or defaulted. Source.Catalog
-// serves the embedded file through Parse, and Regions returns its declared
-// region list.
+// Source.Catalog serves the embedded file through Parse, and Regions returns
+// its declared region list.
+//
+// Parse refuses a document, with an error, unless all of these hold:
+//
+//   - it is at most MaxDocumentBytes long, checked before any decoding;
+//   - it is one JSON object with nothing after it but white space;
+//   - its schemaVersion is the integer 1, checked first, so a document of
+//     another version is refused for its version alone;
+//   - it has no field the format does not define, at the top level or in an
+//     offering, and every field has the JSON type the format gives it;
+//   - its regions and offerings lists are present and not null;
+//   - its retrievedOn is a YYYY-MM-DD date;
+//   - every declared region is non-blank, valid text (text.Validate) and
+//     declared once, and every offering region is a declared one;
+//   - catalog.New accepts its target, its source URL and every offering's
+//     name, categories, capabilities and regions.
+//
+// Two things are not refused yet. encoding/json matches field names without
+// regard to case and, of a key given twice, keeps the last value; and
+// catalog.New sorts an offering's lists and drops duplicates in them. Refusing
+// keys that are not spelled exactly, and duplicate keys, through one strict
+// decoder shared with the inventory-file source adapter, is a tracked
+// follow-up.
 //
 // To refresh the snapshot: edit catalog.json, update SOURCES.md and the
 // retrievedOn date to match, run

@@ -8,7 +8,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -31,10 +30,19 @@ var embedded []byte
 // package reads.
 const schemaVersion = 1
 
+// MaxDocumentBytes is the size of the largest catalog document Parse reads, in
+// bytes. A larger one is refused before any of it is decoded. The embedded
+// snapshot is a few kilobytes; the limit leaves room to grow while keeping a
+// document that is not a catalog from costing more than a moment to refuse.
+const MaxDocumentBytes = 1 << 20
+
 var (
 	// ErrDecode is returned for data that is not a well-formed catalog document:
-	// not JSON, more than one JSON value, a field of the wrong type, an unknown
-	// field, or a retrieval date that is missing or not a YYYY-MM-DD date.
+	// larger than MaxDocumentBytes, not JSON, not a JSON object, more than one
+	// JSON value, a field of the wrong type, an unknown field, a missing or null
+	// regions or offerings list, a declared region that is blank, not valid
+	// text (text.Validate) or declared twice, or a retrieval date that is missing
+	// or not a YYYY-MM-DD date.
 	ErrDecode = errors.New("not a valid catalog document")
 	// ErrSchemaVersion is returned for a document whose schemaVersion is missing
 	// or is not a version this package reads.
@@ -89,10 +97,13 @@ func Regions() []string {
 // Parse decodes and validates data as a catalog document and returns the
 // catalog it describes, built by catalog.New.
 //
-// The document is one JSON object, with nothing after it but white space, and
-// no field the format does not define. Its schemaVersion must be 1, its
-// retrievedOn a YYYY-MM-DD date (read as UTC midnight), and every offering
-// region must be in the top-level regions list.
+// The document is at most MaxDocumentBytes long: one JSON object, with nothing
+// after it but white space, and no field the format does not define. Its
+// schemaVersion must be the integer 1 and its retrievedOn a YYYY-MM-DD date
+// (read as UTC midnight). Its regions and offerings lists must be present and
+// not null. Every declared region must be non-blank, valid text
+// (text.Validate) and declared once, and every offering region must be one of
+// them.
 //
 // Every error is one line and wraps ErrDecode, ErrSchemaVersion,
 // ErrUndeclaredRegion, or the error of catalog.New (so catalog.ErrInvalidCatalog
@@ -108,6 +119,11 @@ func Parse(data []byte) (catalog.Catalog, error) {
 // parse does the work of Parse and also returns the regions the document
 // declares.
 func parse(data []byte) (catalog.Catalog, []string, error) {
+	if len(data) > MaxDocumentBytes {
+		return catalog.Catalog{}, nil, fmt.Errorf("%w: the document is %d bytes, more than the limit of %d",
+			ErrDecode, len(data), MaxDocumentBytes)
+	}
+
 	doc, err := decode(data)
 	if err != nil {
 		return catalog.Catalog{}, nil, err
@@ -118,11 +134,16 @@ func parse(data []byte) (catalog.Catalog, []string, error) {
 		return catalog.Catalog{}, nil, err
 	}
 
-	offerings := make([]catalog.Offering, len(doc.Offerings))
+	declared, err := declaredRegions(*doc.Regions)
+	if err != nil {
+		return catalog.Catalog{}, nil, err
+	}
 
-	for i, o := range doc.Offerings {
+	offerings := make([]catalog.Offering, len(*doc.Offerings))
+
+	for i, o := range *doc.Offerings {
 		for _, region := range o.Regions {
-			if !slices.Contains(doc.Regions, region) {
+			if _, ok := declared[region]; !ok {
 				return catalog.Catalog{}, nil, fmt.Errorf(
 					"%w: offering %s is available in region %s, which the regions list does not declare",
 					ErrUndeclaredRegion, text.Quote(o.Name), text.Quote(region))
@@ -144,7 +165,35 @@ func parse(data []byte) (catalog.Catalog, []string, error) {
 		return catalog.Catalog{}, nil, err
 	}
 
-	return cat, doc.Regions, nil
+	return cat, *doc.Regions, nil
+}
+
+// declaredRegions checks the regions a document declares, each non-blank,
+// valid text and declared once, and returns them as a set, so an offering's
+// regions are each checked in constant time.
+func declaredRegions(regions []string) (map[string]struct{}, error) {
+	set := make(map[string]struct{}, len(regions))
+
+	for i, region := range regions {
+		if strings.TrimSpace(region) == "" {
+			return nil, fmt.Errorf("%w: declared region %s (regions[%d]) is blank",
+				ErrDecode, text.Quote(region), i)
+		}
+
+		if err := text.Validate(region); err != nil {
+			return nil, fmt.Errorf("%w: declared region %s (regions[%d]): %w",
+				ErrDecode, text.Quote(region), i, err)
+		}
+
+		if _, dup := set[region]; dup {
+			return nil, fmt.Errorf("%w: region %s is declared more than once (again at regions[%d])",
+				ErrDecode, text.Quote(region), i)
+		}
+
+		set[region] = struct{}{}
+	}
+
+	return set, nil
 }
 
 // parseDate reads the retrieval date of a document: a YYYY-MM-DD calendar date,
@@ -178,8 +227,10 @@ type document struct {
 	Target        string          `json:"target"`
 	SourceURL     string          `json:"sourceURL"`
 	RetrievedOn   string          `json:"retrievedOn"`
-	Regions       []string        `json:"regions"`
-	Offerings     []offering      `json:"offerings"`
+	// Regions and Offerings are pointers so a list the document leaves out, or
+	// gives as null, is told apart from an empty one: decode refuses both.
+	Regions   *[]string   `json:"regions"`
+	Offerings *[]offering `json:"offerings"`
 }
 
 // offering is one offering of a document. Its values are checked by
@@ -192,11 +243,18 @@ type offering struct {
 }
 
 // decode decodes data as a catalog document of schema version 1: one JSON
-// object, nothing after it, and every field one the format defines.
+// object, nothing after it, every field one the format defines, and the
+// regions and offerings lists present and not null.
 func decode(data []byte) (document, error) {
-	var env envelope
+	// A pointer, so a top-level null, which leaves it nil, is told apart from
+	// an object without a schemaVersion: null is no catalog document at all.
+	var env *envelope
 	if err := decodeOne(data, &env, false); err != nil {
 		return document{}, err
+	}
+
+	if env == nil {
+		return document{}, fmt.Errorf("%w: the document is null, not a JSON object", ErrDecode)
 	}
 
 	if err := checkVersion(env.SchemaVersion); err != nil {
@@ -206,6 +264,14 @@ func decode(data []byte) (document, error) {
 	var doc document
 	if err := decodeOne(data, &doc, true); err != nil {
 		return document{}, err
+	}
+
+	if doc.Regions == nil {
+		return document{}, fmt.Errorf("%w: field regions is missing or null", ErrDecode)
+	}
+
+	if doc.Offerings == nil {
+		return document{}, fmt.Errorf("%w: field offerings is missing or null", ErrDecode)
 	}
 
 	return doc, nil
@@ -280,13 +346,36 @@ func checkVersion(raw json.RawMessage) error {
 	case strconv.Itoa(schemaVersion):
 		return nil
 	case "", "null":
-		return fmt.Errorf("%w: schemaVersion is missing, want %d", ErrSchemaVersion, schemaVersion)
+		return fmt.Errorf("%w: schemaVersion is missing, want the integer %d", ErrSchemaVersion, schemaVersion)
 	}
 
-	seen := text.Quote(string(raw))
+	return fmt.Errorf("%w: schemaVersion is %s, want the integer %d", ErrSchemaVersion, describeVersion(raw), schemaVersion)
+}
+
+// describeVersion names a schemaVersion value that is not the one this package
+// reads: an integer as itself, a string by its value through text.Quote, and
+// any other JSON value by its type. raw is one non-empty, well-formed JSON
+// value, as the decoder captured it.
+func describeVersion(raw json.RawMessage) string {
 	if n, err := strconv.Atoi(string(raw)); err == nil {
-		seen = strconv.Itoa(n)
+		return strconv.Itoa(n)
 	}
 
-	return fmt.Errorf("%w: schemaVersion is %s, want %d", ErrSchemaVersion, seen, schemaVersion)
+	switch raw[0] {
+	case '"':
+		var s string
+		if err := json.Unmarshal(raw, &s); err == nil {
+			return "the string " + text.Quote(s)
+		}
+
+		return "a string"
+	case '{':
+		return "a JSON object"
+	case '[':
+		return "a JSON array"
+	case 't', 'f':
+		return "a boolean"
+	}
+
+	return "the number " + text.Quote(string(raw))
 }
