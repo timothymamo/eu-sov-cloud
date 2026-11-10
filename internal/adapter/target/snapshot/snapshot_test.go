@@ -4,12 +4,14 @@
 // the reader's own error contract - one line, the sentinel it wraps, every value
 // shown through text.Quote, the keys a document must carry and spell exactly,
 // the nulls and duplicate keys it must refuse rather than default, the lone
-// surrogates it must refuse rather than read as U+FFFD, the declared regions it
-// must declare once and as valid text (UTF-8 included), and the size limit above
-// which a document is refused undecoded. Errors are worded for every target: the
-// reader is shared, so no message names one. It also pins that every offering of
-// every embedded snapshot has a section in the SOURCES.md beside it (see
-// sources_test.go). It is black-box: only the package's exported API is used.
+// surrogates it must refuse rather than read as U+FFFD, the byte order marks
+// (UTF-8 and UTF-16) it refuses by name, the line and column it places each
+// problem at, the declared regions it must declare once and as valid text (UTF-8
+// included), and the size limit above which a document is refused undecoded.
+// Errors are worded for every target: the reader is shared, so no message names
+// one. It also pins that every offering of every embedded snapshot has a section
+// in the SOURCES.md beside it (see sources_test.go). It is black-box: only the
+// package's exported API is used.
 package snapshot_test
 
 import (
@@ -224,6 +226,11 @@ func TestParseErrors(t *testing.T) {
 		// ones it must not, for wording no single text.Quote value carries.
 		wantContains []string
 		wantAbsent   []string
+		// wantPosition is where the message must place the problem: a 1-based
+		// line and column in the document, never a byte offset. It is counted
+		// from the document's own text, in characters, so a multi-byte one
+		// counts once.
+		wantPosition string
 	}{
 		{
 			name: "valid document",
@@ -258,15 +265,21 @@ func TestParseErrors(t *testing.T) {
 				"  \"target\": \"Example Cloud\",\n  \"target\": \"Example Cloud\","),
 			wantErr:      []error{snapshot.ErrDecode},
 			wantQuoted:   []string{"target"},
-			wantContains: []string{"repeated key", "at line ", ", column "},
+			wantContains: []string{"repeated key"},
+			// The second of the two lines is the one refused, and its key
+			// starts after the two spaces that indent it.
+			wantPosition: "line 4, column 3",
 		},
 		{
 			name: "offering key given twice",
 			data: doc(t, `      "regions": ["fr-par"]`,
 				"      \"regions\": [\"fr-par\"],\n      \"regions\": [\"fr-par\"]"),
-			wantErr:      []error{snapshot.ErrDecode},
-			wantQuoted:   []string{"offerings[0].regions"},
-			wantContains: []string{"repeated key", ", column "},
+			wantErr:    []error{snapshot.ErrDecode},
+			wantQuoted: []string{"offerings[0].regions"},
+			// The repeated line is the offering's last one, indented six
+			// spaces, so its key starts in column 7.
+			wantContains: []string{"repeated key"},
+			wantPosition: "line 13, column 7",
 		},
 		{
 			// encoding/json matches field names without regard to case, so a key
@@ -295,9 +308,26 @@ func TestParseErrors(t *testing.T) {
 			wantContains: []string{"unknown key", "keys are exact"},
 		},
 		{
-			name:    "trailing data after the object",
-			data:    validDocument + "{}",
-			wantErr: []error{snapshot.ErrDecode},
+			// What follows is described by what it follows: the first JSON value,
+			// whatever its type, not an object the document never had to be. The
+			// {} starts on the document's last line, just after the object's brace.
+			name:         "trailing data after the object",
+			data:         validDocument + "{}",
+			wantErr:      []error{snapshot.ErrDecode},
+			wantContains: []string{"unexpected data after the first JSON value"},
+			wantPosition: "line 15, column 2",
+			wantAbsent:   []string{"catalog object"},
+		},
+		{
+			// The first value need not be an object for the reader to say what
+			// comes after it: "a" is the first JSON value, and the second one
+			// starts after the single space between them.
+			name:         "first value that is not an object followed by more data",
+			data:         `"a" "b"`,
+			wantErr:      []error{snapshot.ErrDecode},
+			wantContains: []string{"unexpected data after the first JSON value"},
+			wantPosition: "line 1, column 5",
+			wantAbsent:   []string{"catalog object"},
 		},
 		{
 			name:    "unsupported schema version",
@@ -308,6 +338,17 @@ func TestParseErrors(t *testing.T) {
 			name:    "missing schema version",
 			data:    doc(t, "  \"schemaVersion\": 1,\n", ""),
 			wantErr: []error{snapshot.ErrSchemaVersion},
+		},
+		{
+			// encoding/json would read SchemaVersion as schemaVersion. The version
+			// is refused for itself alone, and the message names the key the
+			// writer spelt so the mistake is visible.
+			name:         "schema version key not spelt as the format spells it",
+			data:         doc(t, `"schemaVersion": 1`, `"SchemaVersion": 1`),
+			wantErr:      []error{snapshot.ErrSchemaVersion},
+			wantNotErr:   []error{snapshot.ErrDecode},
+			wantQuoted:   []string{"SchemaVersion"},
+			wantContains: []string{"keys are exact", "is not schemaVersion"},
 		},
 		{
 			// Every declared region is a promise the file keeps: an offering in a
@@ -488,12 +529,14 @@ func TestParseErrors(t *testing.T) {
 		{
 			// catalog.New accepts an offering with no capabilities, so without
 			// this check a document that forgot the key would read as an offering
-			// with none: silently defaulted.
+			// with none: silently defaulted. The message says which offering it is
+			// by where that offering starts, the brace on line 8 in column 5.
 			name:         "missing offering capabilities",
-			data:         withoutOffering(t, "capabilities"),
+			data:         doc(t, "      \"capabilities\": [\"ipv6\"],\n", ""),
 			wantErr:      []error{snapshot.ErrDecode},
 			wantQuoted:   []string{"offerings[0]"},
-			wantContains: []string{"required key", "is missing"},
+			wantContains: []string{"required key", "is missing", "which starts at line 8, column 5"},
+			wantPosition: "line 8, column 5",
 		},
 		{
 			name:         "missing offering regions",
@@ -504,10 +547,13 @@ func TestParseErrors(t *testing.T) {
 		},
 		{
 			name:         "null offering name",
-			data:         withOffering(t, "name", "null"),
+			data:         doc(t, `      "name": "Example Compute",`, `      "name": null,`),
 			wantErr:      []error{snapshot.ErrDecode},
 			wantQuoted:   []string{"offerings[0].name"},
-			wantContains: []string{"is null", "want a string", "at line ", ", column "},
+			wantContains: []string{"is null", "want a string"},
+			// null is placed where it is written: after the six spaces, the
+			// quoted key and the colon, which leaves column 15.
+			wantPosition: "line 9, column 15",
 		},
 		{
 			name:         "null offering categories",
@@ -561,6 +607,25 @@ func TestParseErrors(t *testing.T) {
 			data: doc(t, `"name": "Example Compute"`, `"name": "Example\ufffdCompute"`),
 		},
 		{
+			// The name is U+FFFD, then an escaped backslash, then the text ud800.
+			// The JSON text \\ud800 is a backslash and four letters, no escape of
+			// its own: a scan that read the second backslash as the start of an
+			// escape would refuse a document the format allows.
+			name: "offering name holding U+FFFD before an escaped backslash and ud800",
+			data: doc(t, `      "name": "Example Compute",`, `      "name": "\ufffd\\ud800",`),
+		},
+		{
+			// A lone surrogate is placed at the escape that spells it, counted in
+			// characters from the start of the line: after the two-byte é, the
+			// backslash of \ud800 is line 9's character column 17.
+			name:         "escaped lone surrogate after a multi-byte character",
+			data:         doc(t, `      "name": "Example Compute",`, `      "name": "é\ud800",`),
+			wantErr:      []error{snapshot.ErrDecode},
+			wantQuoted:   []string{"offerings[0].name"},
+			wantContains: []string{"surrogate on its own", "U+D800"},
+			wantPosition: "line 9, column 17",
+		},
+		{
 			// A surrogate pair is one character, not two lone surrogates: the
 			// high one is followed at once by the low one.
 			name: "offering name holding a surrogate pair",
@@ -602,6 +667,63 @@ func TestParseErrors(t *testing.T) {
 			data:         doc(t, `  "regions": ["fr-par"],`, "  \"regions\": [\"fr-par\", \"bad\xffx\"],"),
 			wantErr:      []error{snapshot.ErrDecode},
 			wantContains: []string{"UTF-8"},
+		},
+		{
+			// An invalid byte is refused where it is, not at the start of the
+			// document: the FF of the offering name is line 9's character column
+			// 19, which is where the name's fourth character begins.
+			name:         "invalid UTF-8 in an offering name",
+			data:         doc(t, `      "name": "Example Compute",`, "      \"name\": \"bad\xffname\","),
+			wantErr:      []error{snapshot.ErrDecode},
+			wantContains: []string{"not valid UTF-8"},
+			wantPosition: "line 9, column 19",
+			wantAbsent:   []string{"line 1, column 1"},
+		},
+		{
+			// A byte order mark is not JSON, and the UTF-8 one is valid UTF-8, so
+			// only naming it stops the reader reporting it as malformed JSON at
+			// the first byte.
+			name:         "UTF-8 byte order mark",
+			data:         "\xef\xbb\xbf" + validDocument,
+			wantErr:      []error{snapshot.ErrDecode},
+			wantContains: []string{"byte order mark"},
+		},
+		{
+			// The UTF-16 byte order marks are not UTF-8 either, and are refused by
+			// name like the UTF-8 one rather than as a byte that is not UTF-8.
+			name:         "UTF-16LE byte order mark",
+			data:         "\xff\xfe" + validDocument,
+			wantErr:      []error{snapshot.ErrDecode},
+			wantContains: []string{"byte order mark"},
+			wantAbsent:   []string{"not valid UTF-8"},
+		},
+		{
+			name:         "UTF-16BE byte order mark",
+			data:         "\xfe\xff" + validDocument,
+			wantErr:      []error{snapshot.ErrDecode},
+			wantContains: []string{"byte order mark"},
+			wantAbsent:   []string{"not valid UTF-8"},
+		},
+		{
+			// A multi-byte character where the next key belongs is malformed JSON,
+			// and the JSON decoder counts the rune's last byte: the message must
+			// place the character at its first byte, which is line 3's column 2.
+			name:         "malformed two-byte character where a key is expected",
+			data:         "{\n \"schemaVersion\": 1,\n é\n}",
+			wantErr:      []error{snapshot.ErrDecode},
+			wantContains: []string{"malformed JSON"},
+			wantPosition: "line 3, column 2",
+			wantAbsent:   []string{"column 3"},
+		},
+		{
+			// The same for a character of three bytes: the step back to the first
+			// byte of the rune covers every byte of it.
+			name:         "malformed three-byte character where a key is expected",
+			data:         "{\n \"schemaVersion\": 1,\n €\n}",
+			wantErr:      []error{snapshot.ErrDecode},
+			wantContains: []string{"malformed JSON"},
+			wantPosition: "line 3, column 2",
+			wantAbsent:   []string{"column 4"},
 		},
 	}
 
@@ -669,6 +791,10 @@ func TestParseErrors(t *testing.T) {
 				if strings.Contains(msg, unwanted) {
 					t.Errorf("Parse() error = %q, want it without %s", msg, text.Quote(unwanted))
 				}
+			}
+
+			if tt.wantPosition != "" && !strings.Contains(msg, tt.wantPosition) {
+				t.Errorf("Parse() error = %q, want it to report the position as %q", msg, tt.wantPosition)
 			}
 		})
 	}

@@ -1,7 +1,7 @@
 // The documentation rule every embedded snapshot follows is pinned here: each
 // offering in a snapshot has its own section in the SOURCES.md beside it, and
-// that section names the pages the offering comes from, the fact behind each
-// capability and region, and the licence of each source. The test globs the
+// that section names the https pages the offering comes from, the fact behind
+// each capability and region, and the licence of each source. The test globs the
 // snapshots beside this package, so it runs for every target with an embedded
 // snapshot, adding one as each target arrives.
 
@@ -36,7 +36,8 @@ const scalewaySnapshot = "../scaleway/catalog.json"
 
 // TestEveryOfferingHasASourcesSection pins that every offering in an embedded
 // snapshot has exactly one section of its own in the SOURCES.md beside it, that
-// no section names an offering the snapshot does not have, and that the section
+// no section names an offering the snapshot does not have, that the section
+// names at least one https page the offering comes from, and that the section
 // names each of the offering's categories, capabilities and regions as a
 // Markdown code span, so the fact behind each one can be traced to a page.
 func TestEveryOfferingHasASourcesSection(t *testing.T) {
@@ -146,6 +147,13 @@ func checkSnapshotSources(t *testing.T, catalogPath string) {
 
 		spans := codeSpans(s.body)
 
+		// A section that names no page states a fact no reader can check: the PRD
+		// requires it to name the pages the offering comes from.
+		if !hasLink(s.body) {
+			t.Errorf("%s: offering %s: its section links no %s page, so where the offering comes from is untraceable",
+				sourcesPath, text.Quote(offering.Name), linkScheme)
+		}
+
 		for _, category := range offering.Categories {
 			if _, ok := spans[string(category)]; !ok {
 				t.Errorf("%s: offering %s: category %s has no code span in its section, so the fact behind it is untraceable",
@@ -224,6 +232,18 @@ func subsections(lines []string) []mdSection {
 // codeSpanPattern matches a Markdown code span: text between single backticks on
 // one line.
 var codeSpanPattern = regexp.MustCompile("`([^`\n]+)`")
+
+// linkScheme is what a section's page links start with: an absolute link to the
+// page the offering's facts come from.
+const linkScheme = "https://"
+
+// hasLink reports whether lines hold a link to a page: the pages a section names
+// as where its offering comes from.
+func hasLink(lines []string) bool {
+	return slices.ContainsFunc(lines, func(line string) bool {
+		return strings.Contains(line, linkScheme)
+	})
+}
 
 // codeSpans returns the code spans in lines as a set.
 func codeSpans(lines []string) map[string]struct{} {
