@@ -73,9 +73,11 @@ document error is one line and worded once for every format: it speaks of "the d
 the input (the format adds that), places the problem by line and column (both from 1, the column in
 characters, a malformed multi-byte character at its first byte) unless it speaks of the whole
 document, names a value by its path (`resources[1].capabilities[0]`), shows document values only
-through `text.Quote`, and never passes on the text of `encoding/json`. An error that starts with
-`jsondoc:` and wraps no sentinel is a mistake in the format's use of the package, such as a callback
-that returns without reading its value.
+through `text.Quote`, and never passes on the text of `encoding/json`. A mistake in the format's use
+of the package (a callback that returns without reading its value or reads it a second time, a list
+of keys longer than `MaxKeys` or holding a name twice, a nil sentinel, the zero `Document`) is an error
+that starts with `jsondoc:` and wraps `jsondoc.ErrMisuse`, never the format's sentinel, so it is never
+blamed on the document. The package returns it; it does not panic.
 
 **What each format decides.**
 

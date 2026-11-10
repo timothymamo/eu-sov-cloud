@@ -57,9 +57,16 @@
 // key). A value is named by its path, keys joined by dots and an array index in
 // brackets as the domain writes it (resources[1].capabilities[0]). Values from
 // the document are shown only through text.Quote, and the text of encoding/json
-// errors is never passed on. An error that does not wrap the format's sentinel
-// and starts with "jsondoc:" is a mistake in the format's use of this package,
-// not in the document.
+// errors is never passed on. Describe names a raw JSON value, as Lookup and
+// Walker.Raw return it, for a format's own errors in the same words: 2, the
+// number "1.0", the string "1", an object.
+//
+// An error that wraps ErrMisuse is a mistake in the format's use of this
+// package, not in the document: a callback that returns without reading the
+// value it was called for, or reads it a second time; a list of keys longer
+// than MaxKeys or that holds a Name twice; a nil sentinel; the zero Document. It
+// starts with "jsondoc:" and never wraps the format's sentinel. The package
+// returns such an error and never panics for it.
 //
 // Adapter layer, shared by adapters: parses bytes it is given, opens no file and
 // makes no network call. Go's internal rule keeps it to packages under

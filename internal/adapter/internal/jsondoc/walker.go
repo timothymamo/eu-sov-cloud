@@ -39,16 +39,19 @@ type Walker struct {
 	// path holds a segment for each object key and array element the walker is
 	// in, outermost first.
 	path []segment
-	// pending is set while a callback has yet to read the value it was called
-	// for, so a callback that returns without reading it is caught.
-	pending bool
+	// read is set once the document's object, the value of the empty path, has
+	// started to be read: a walker reads it once.
+	read bool
 }
 
 // segment is one step of a path: an object key, or an array index when index
-// is not negative.
+// is not negative. read is set once the callback for the key or element has
+// started to read its value, so a callback that reads it a second time, or
+// returns without reading it, is caught.
 type segment struct {
 	key   string
 	index int
+	read  bool
 }
 
 // Object reads the next value, which must be an object whose keys are among
@@ -63,10 +66,13 @@ type segment struct {
 // that is not character for character the Name of one of keys, with a hint
 // when it equals one ignoring case; a key the object already has; and, once the
 // object closes, a Required key it lacks. An error value returns is passed on
-// as it is, and stops the walk.
+// as it is, and stops the walk. keys longer than MaxKeys or holding a Name
+// twice, a value callback that reads its value a second time or returns no
+// error without reading it, and a value read a second time are refused as
+// ErrMisuse.
 func (w *Walker) Object(keys []Key, value func(key string) error) error {
-	if len(keys) > MaxKeys {
-		return fmt.Errorf("jsondoc: an object may list at most %d keys, not %d", MaxKeys, len(keys))
+	if err := checkKeys(keys); err != nil {
+		return err
 	}
 
 	tok, start, err := w.value()
@@ -115,6 +121,25 @@ func (w *Walker) Object(keys []Key, value func(key string) error) error {
 	return nil
 }
 
+// checkKeys refuses keys, the keys a format lists for one kind of object, with
+// an error that wraps ErrMisuse, if they are more than MaxKeys or hold a Name
+// twice, which leaves no way to tell which of the two an object's key is.
+func checkKeys(keys []Key) error {
+	if len(keys) > MaxKeys {
+		return fmt.Errorf("%w: an object may list at most %d keys, not %d", ErrMisuse, MaxKeys, len(keys))
+	}
+
+	for i := range keys {
+		for j := range i {
+			if keys[j].Name == keys[i].Name {
+				return fmt.Errorf("%w: the keys listed for an object hold %s twice", ErrMisuse, text.Quote(keys[i].Name))
+			}
+		}
+	}
+
+	return nil
+}
+
 // Array reads the next value, which must be an array, and calls element with the
 // index of each of its elements, in order, with the walker at the element and
 // Path naming it. element must read the element whole, as Object's value must
@@ -123,7 +148,9 @@ func (w *Walker) Object(keys []Key, value func(key string) error) error {
 // the format expects ("an array", "an array of strings"). An error element
 // returns is passed on as it is and stops the walk, so a format refuses an
 // array at its first element past a cap by returning an error before it reads
-// that element.
+// that element. An element callback that reads its element a second time or
+// returns no error without reading it, and a value read a second time, are
+// refused as ErrMisuse.
 func (w *Walker) Array(want string, element func(i int) error) error {
 	tok, at, err := w.value()
 	if err != nil {
@@ -172,7 +199,12 @@ func (w *Walker) String() (string, error) {
 // was not, Null reads nothing, and the value is still to be read. A format reads
 // a field that may be null, as an absent value, by calling Null first; a field
 // whose value is read without Null refuses null as a value of the wrong type.
+// Null on a value read already is refused as ErrMisuse.
 func (w *Walker) Null() (bool, error) {
+	if err := w.readable(); err != nil {
+		return false, err
+	}
+
 	// The document is well formed, so a value that starts with n is null.
 	if at := skipSeparators(w.data, int(w.dec.InputOffset())); at >= len(w.data) || w.data[at] != 'n' {
 		return false, nil
@@ -190,7 +222,9 @@ func (w *Walker) Null() (bool, error) {
 // value: a format reads a value with Raw to check it itself, as it checks its
 // schema version, and Describe names it in an error.
 func (w *Walker) Raw() ([]byte, error) {
-	w.pending = false
+	if err := w.begin(); err != nil {
+		return nil, err
+	}
 
 	start, err := w.skip()
 	if err != nil {
@@ -227,24 +261,24 @@ func (w *Walker) Path() string {
 
 // Position returns where the value the walker reads next starts, as "line L,
 // column C", both counted from 1 and the column in characters, as every error
-// of this package places a problem.
+// of this package places a problem. On a fresh Walker it is where the
+// document's object starts.
 func (w *Walker) Position() string {
 	return position(w.data, skipSeparators(w.data, int(w.dec.InputOffset())))
 }
 
 // enter puts s, the key or element whose value a callback is about to read, on
-// the path, and records that the value is still to be read.
+// the path, with its value still to be read.
 func (w *Walker) enter(s segment) {
 	w.path = append(w.path, s)
-	w.pending = true
 }
 
 // leave takes the segment enter put on the path off it, once the callback has
 // returned err. It passes err on, and refuses a callback that returned no error
 // without reading its value.
 func (w *Walker) leave(err error) error {
-	if err == nil && w.pending {
-		err = fmt.Errorf("jsondoc: the value at %s was not read", text.Quote(w.Path()))
+	if err == nil && !w.path[len(w.path)-1].read {
+		err = fmt.Errorf("%w: the value at %s was not read", ErrMisuse, text.Quote(w.Path()))
 	}
 
 	w.path = w.path[:len(w.path)-1]
@@ -252,12 +286,62 @@ func (w *Walker) leave(err error) error {
 	return err
 }
 
-// value returns the next token, which starts a value, and the index in the
-// document of its first byte, and records that the value is being read.
+// value starts reading the next value (begin) and returns its first token and
+// the index in the document of its first byte.
 func (w *Walker) value() (json.Token, int, error) {
-	w.pending = false
+	if err := w.begin(); err != nil {
+		return nil, 0, err
+	}
 
 	return w.next()
+}
+
+// begin records that the value the walker is at, the value of the innermost
+// segment of the path or the document's object, is being read, once readable
+// has allowed it.
+func (w *Walker) begin() error {
+	if err := w.readable(); err != nil {
+		return err
+	}
+
+	if n := len(w.path); n > 0 {
+		w.path[n-1].read = true
+	} else {
+		w.read = true
+	}
+
+	return nil
+}
+
+// readable refuses, as ErrMisuse, to read the value the walker is at when the
+// walker has no document, the zero Document's, or has started to read that
+// value already: a callback reads its value once, and a walker the document's
+// object once.
+func (w *Walker) readable() error {
+	if err := w.checkDocument(); err != nil {
+		return err
+	}
+
+	if n := len(w.path); n > 0 && w.path[n-1].read {
+		return fmt.Errorf("%w: the value at %s is read a second time", ErrMisuse, text.Quote(w.Path()))
+	}
+
+	if len(w.path) == 0 && w.read {
+		return fmt.Errorf("%w: the document's object is read a second time", ErrMisuse)
+	}
+
+	return nil
+}
+
+// checkDocument refuses, as ErrMisuse, a walker of the zero Document, which has
+// no document to read and no sentinel to wrap. Open never returns a Document
+// without its sentinel.
+func (w *Walker) checkDocument() error {
+	if w.invalid == nil {
+		return fmt.Errorf("%w: the zero Document holds no document; get one from Open", ErrMisuse)
+	}
+
+	return nil
 }
 
 // next returns the next token and the index in the document of its first byte.
@@ -389,11 +473,12 @@ func (w *Walker) where(key string, at int) string {
 	return text.Quote(w.Path()+"."+key) + ", " + position(w.data, at)
 }
 
-// lost reports that the walker cannot read the token at index at of the
-// document: it has lost its place, which a well-formed document and a format
-// that reads every value it is called for never cause.
+// lost reports, as ErrMisuse, that the walker cannot read the token at index at
+// of the document: it has lost its place. Open has checked the document's
+// syntax and every read is checked by readable, so only a format that misuses
+// the walker in a way readable cannot see gets here.
 func (w *Walker) lost(at int) error {
-	return fmt.Errorf("%w: the JSON document cannot be read at %s", w.invalid, position(w.data, at))
+	return fmt.Errorf("%w: the walker has lost its place in the document at %s", ErrMisuse, position(w.data, at))
 }
 
 // escapeLen is the length of a JSON escape of one UTF-16 code unit: a

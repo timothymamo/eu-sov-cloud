@@ -13,6 +13,15 @@ import (
 	"github.com/timothymamo/eu-sov-cloud/internal/domain/text"
 )
 
+// ErrMisuse is wrapped by every error that reports a mistake in a format's use
+// of this package, not a problem with the document: a callback that returns
+// without reading the value it was called for, or reads it a second time; a
+// list of keys longer than MaxKeys or that holds a Name twice; a nil sentinel;
+// the zero Document; and a walker read after the walk has ended. Such an error
+// starts with "jsondoc:" and never wraps the format's sentinel. Reading a
+// document, however malformed, never causes one: it is a bug in the format.
+var ErrMisuse = errors.New("jsondoc: misused by the format")
+
 // Document is a JSON document Open has checked as a whole: at most the caller's
 // cap, UTF-8 without a byte order mark, and one JSON object with nothing after
 // it but white space. Its keys and values are checked as a Walker reads them.
@@ -32,9 +41,14 @@ var byteOrderMarks = [...]string{"\xef\xbb\xbf", "\xff\xfe", "\xfe\xff"}
 // after it but white space; and a value that is not an object.
 //
 // Every error wraps invalid, the format's sentinel for a document it cannot
-// read, and is worded as the package documentation says. Open keeps data, not
-// a copy: the caller must not change it while the Document is in use.
+// read, and is worded as the package documentation says; a nil invalid is
+// refused as ErrMisuse. Open keeps data, not a copy: the caller must not change
+// it while the Document is in use.
 func Open(data []byte, maxBytes int, invalid error) (Document, error) {
+	if invalid == nil {
+		return Document{}, errNilSentinel("Open")
+	}
+
 	if len(data) > maxBytes {
 		return Document{}, fmt.Errorf("%w: the document is %d bytes, more than the limit of %d",
 			invalid, len(data), maxBytes)
@@ -66,15 +80,22 @@ func Open(data []byte, maxBytes int, invalid error) (Document, error) {
 
 // Lookup returns the JSON text of the value of the document object's first key
 // spelt exactly key, as the document spells it (the number 1 is "1", the string
-// "1" is "\"1\""), or nil if the object has no such key. folded is the first key
-// of the object before it that equals key ignoring case (strings.EqualFold), or
-// "" if there is none, so a format can name the key that was meant.
+// "1" is "\"1\""), or nil if the object has no such key. folded is a key of the
+// object that equals key ignoring case (strings.EqualFold), or "" if there is
+// none, so a format can name the key that was meant: the first such key before
+// the exact key, or, when the object has no exact key, the first anywhere in
+// the object.
 //
 // Lookup reads the object's keys only, steps over every other value and stops
 // at key. It checks nothing else, so a format calls it before Walker to read a
 // key, such as its schema version, before any other key or value is checked.
+// On the zero Document it returns an error that wraps ErrMisuse.
 func (d Document) Lookup(key string) (raw []byte, folded string, err error) {
 	w := d.Walker()
+
+	if err := w.checkDocument(); err != nil {
+		return nil, "", err
+	}
 
 	if _, _, err := w.next(); err != nil {
 		return nil, "", err
@@ -108,9 +129,16 @@ func (d Document) Lookup(key string) (raw []byte, folded string, err error) {
 	return nil, folded, nil
 }
 
+// errNilSentinel reports that a format passed fn a nil sentinel, which every
+// error fn returns would fail to wrap.
+func errNilSentinel(fn string) error {
+	return fmt.Errorf("%w: %s needs the format's sentinel, not nil", ErrMisuse, fn)
+}
+
 // Walker returns a Walker at the start of the document: the first value it reads
 // is the document's object, which Walker.Object reads. Each Walker reads the
-// document once, from the start.
+// document once, from the start. The Walker of the zero Document refuses its
+// first read with an error that wraps ErrMisuse.
 func (d Document) Walker() *Walker {
 	dec := json.NewDecoder(bytes.NewReader(d.data))
 	dec.UseNumber()
@@ -119,11 +147,13 @@ func (d Document) Walker() *Walker {
 }
 
 // Describe names the JSON value whose text is raw, for an error message: an
-// integer written as one is shown as written (2, -1); any other number as
-// written, through text.Quote, after "the number", so -0, 1.0 and 1e0 are never
-// shown as 0 or 1, values the document does not hold; a string by its value,
-// JSON escapes decoded, through text.Quote, after "the string"; and any other
-// value by its type, with its article: "an object", "an array", "a boolean" or
+// integer that fits an int and is written as one is shown as written (2, -1);
+// any other number, an integer too long for an int included, as written,
+// through text.Quote, after "the number", so -0, 1.0 and 1e0 are never shown as
+// 0 or 1, values the document does not hold; a string by its value, JSON
+// escapes decoded, through text.Quote, after "the string", with U+FFFD where it
+// escapes a lone surrogate, as encoding/json decodes one; and any other value
+// by its type, with its article: "an object", "an array", "a boolean" or
 // "null". raw is one well-formed JSON value, as Lookup and Walker.Raw return it;
 // an empty raw is "no value".
 func Describe(raw []byte) string {
