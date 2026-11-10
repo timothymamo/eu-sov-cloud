@@ -16,12 +16,15 @@ description: Implementation conventions for eu-sov-cloud Go code - layering, err
 
 ## Layering (enforced by `make lint` via depguard)
 
-- `internal/domain/...`: standard library only. Pure types and functions. No I/O, no `context`, no clock
-  (pass `time.Time` in), no logging.
+- `internal/domain/...`: other domain packages and the pure standard packages on the allow list of the
+  `domain-is-pure` rule in `.golangci.yml`. A new standard package needs its own entry there, never one
+  that does I/O. Pure types and functions. No I/O, no `context`, no clock (pass `time.Time` in), no
+  logging.
 - `internal/app/...`: use cases. Declares the port interfaces it consumes, next to the consumer. Imports
   domain only. Never imports adapters or cloud SDKs.
 - `internal/adapter/...`: implements ports. Cloud SDKs live only here, in the provider's own package.
   Adapters translate external models into domain types at the boundary; SDK types never leak out.
+  Adapters never import `internal/cli` or `cmd/`.
 - `internal/cli`: parses input, calls use cases, prints output. No business rules.
 - `cmd/eusov`: composition root. The only place that constructs adapters and injects them.
 

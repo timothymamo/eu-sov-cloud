@@ -25,14 +25,57 @@ linters:
         # File globs end in /** rather than /**/*.go: a /**/ needs at least one
         # directory, so the *.go form misses a file placed directly in
         # internal/domain or internal/app.
+        #
+        # The domain does no I/O (docs/architecture.md), and everything that
+        # may import it, the application layer and the adapters, would reach
+        # I/O through it unseen. So its imports are a strict allow list: the
+        # domain packages and the standard packages it uses, each ending in $
+        # so it covers that package only. Any other import fails lint. $gostd
+        # is not used: it makes every standard package an allow entry of its
+        # own, os, net/http and unsafe included, and an allow entry longer
+        # than a deny entry wins, so a deny of net would not cover net/http.
+        # net/netip and net/url parse values and open no connection; net
+        # itself is not allowed. Add a standard package only when the domain
+        # needs it, never one that does I/O.
+        #
+        # An allowed package can still hold a function that does I/O or reads
+        # the clock, which an import rule cannot see: the domain must not call
+        # fmt.Print* (which writes to stdout), time.Now or time.LoadLocation
+        # (which reads zoneinfo files and the ZONEINFO environment variable).
+        # Review holds that line.
         domain-is-pure:
           list-mode: strict
           files:
             - "**/internal/domain/**"
             - "!$test"
           allow:
-            - $gostd
-            - github.com/timothymamo/eu-sov-cloud/internal/domain
+            - errors$
+            - fmt$
+            - net/netip$
+            - net/url$
+            - slices$
+            - strconv$
+            - strings$
+            - time$
+            - unicode$
+            - unicode/utf8$
+            - github.com/timothymamo/eu-sov-cloud/internal/domain/
+          # The allow list already refuses every package below; these entries
+          # only say why. They have no $, so each also covers its subpackages:
+          # os covers os/exec, os/signal and os/user, and net covers net/http.
+          deny:
+            - pkg: os
+              desc: the domain has no OS access (files, environment, processes, signals); an adapter behind a port does
+            - pkg: net
+              desc: the domain has no network access; an adapter behind a port does (net/netip and net/url are allowed)
+            - pkg: syscall
+              desc: the domain makes no system calls
+            - pkg: unsafe
+              desc: the domain needs no unsafe code
+            - pkg: plugin
+              desc: the domain loads no code at run time
+            - pkg: runtime/cgo
+              desc: the domain calls no C code
         # The application layer may import only what is listed under allow: the
         # domain and the few standard-library packages the use case needs. An
         # entry ending in $ matches that package only, not its subpackages. Add
@@ -189,6 +232,23 @@ linters:
           deny:
             - pkg: github.com/timothymamo/eu-sov-cloud/internal/adapter/
               desc: adapters are constructed only in cmd/eusov
+        # Dependencies point inwards only: an adapter implements a port of the
+        # application and is built by the composition root, so it never
+        # imports the driving adapter or the composition root. The glob ends
+        # in /** so it also matches the files directly in internal/adapter
+        # and in each of its directories. cmd/ covers every package under
+        # cmd, a library package added there later included; Go already
+        # refuses an import of a main package such as cmd/eusov.
+        adapters-do-not-import-cli-or-cmd:
+          list-mode: lax
+          files:
+            - "**/internal/adapter/**"
+            - "!$test"
+          deny:
+            - pkg: github.com/timothymamo/eu-sov-cloud/internal/cli
+              desc: an adapter never imports the driving adapter; share what both need through the application or the domain
+            - pkg: github.com/timothymamo/eu-sov-cloud/cmd/
+              desc: an adapter never imports the composition root; cmd/eusov imports the adapters
         # Only the packages under internal/adapter/target import the shared
         # snapshot reader (ADR 0007): the target adapters, their contract suite
         # and the reader itself. A source adapter, a reporter, internal/config
@@ -212,9 +272,8 @@ linters:
         # The glob ends in /** so it also matches the files directly in the
         # package directory. Add a standard package only when parsing needs
         # it, never one that does I/O. The domain packages are named one by
-        # one, each ending in $: domain-is-pure allows the domain the whole
-        # standard library, so a prefix entry would let the reader reach I/O
-        # through a domain package it has no use for.
+        # one, each ending in $, so the reader gets only the domain packages
+        # it uses. domain-is-pure keeps I/O out of every domain package.
         #
         # An allowed package can still hold a function that does I/O, which an
         # import rule cannot see. fmt$ is allowed for fmt.Errorf and
