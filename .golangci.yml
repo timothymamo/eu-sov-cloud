@@ -22,10 +22,13 @@ linters:
     # enforced by the linter so no agent (or human) can quietly break the layering.
     depguard:
       rules:
+        # File globs end in /** rather than /**/*.go: a /**/ needs at least one
+        # directory, so the *.go form misses a file placed directly in
+        # internal/domain or internal/app.
         domain-is-pure:
           list-mode: strict
           files:
-            - "**/internal/domain/**/*.go"
+            - "**/internal/domain/**"
             - "!$test"
           allow:
             - $gostd
@@ -37,7 +40,7 @@ linters:
         app-uses-ports-not-adapters:
           list-mode: strict
           files:
-            - "**/internal/app/**/*.go"
+            - "**/internal/app/**"
             - "!$test"
           allow:
             - context$
@@ -92,6 +95,7 @@ linters:
           list-mode: lax
           files:
             - "**/internal/app/**/*_test.go"
+            - "**/internal/app/*_test.go"
           deny: *app-deny
         # The driving adapter gets its adapters from the composition root
         # through cli.Deps and never constructs one, so it imports only the
@@ -109,6 +113,62 @@ linters:
           deny:
             - pkg: github.com/timothymamo/eu-sov-cloud/internal/adapter
               desc: the CLI gets its adapters through cli.Deps; construct them in cmd/eusov
+            # The CLI reads one file and writes one report: it resolves no
+            # name, opens no connection and starts no process. $gostd makes
+            # every standard package an allow entry of its own, and strict mode
+            # lets an import through when its allow entry is longer than the
+            # deny entry it matches, so a deny entry covers only the package it
+            # names: each net subpackage is listed, not only its parent. net$
+            # is net itself; net/url and net/netip parse values, do no I/O and
+            # stay allowed.
+            - pkg: net$
+              desc: the CLI has no network access; an adapter behind a port does
+            - pkg: net/http$
+              desc: the CLI makes no HTTP calls; an adapter behind a port does
+            - pkg: net/http/cgi$
+              desc: the CLI serves no HTTP
+            - pkg: net/http/cookiejar$
+              desc: the CLI makes no HTTP calls; an adapter behind a port does
+            - pkg: net/http/fcgi$
+              desc: the CLI serves no HTTP
+            - pkg: net/http/httptest$
+              desc: the CLI makes no HTTP calls; an adapter behind a port does
+            - pkg: net/http/httptrace$
+              desc: the CLI makes no HTTP calls; an adapter behind a port does
+            - pkg: net/http/httputil$
+              desc: the CLI makes no HTTP calls; an adapter behind a port does
+            - pkg: net/http/pprof$
+              desc: the CLI serves no HTTP
+            - pkg: net/mail$
+              desc: the CLI parses no mail
+            - pkg: net/rpc$
+              desc: the CLI makes no RPC calls; an adapter behind a port does
+            - pkg: net/rpc/jsonrpc$
+              desc: the CLI makes no RPC calls; an adapter behind a port does
+            - pkg: net/smtp$
+              desc: the CLI sends no mail
+            - pkg: net/textproto$
+              desc: the CLI speaks no network protocol; an adapter behind a port does
+            - pkg: crypto/tls$
+              desc: the CLI opens no TLS connection; an adapter behind a port does
+            - pkg: os/exec$
+              desc: the CLI starts no processes
+            - pkg: os/user$
+              desc: the CLI looks up no OS users
+        # Adapters are constructed only in the composition root. No other
+        # production package, adapters included, imports an adapter: one
+        # adapter never builds or calls another, and internal/config or the
+        # CLI get adapters only through what cmd/eusov passes in. An adapter's
+        # tests may import its contract suite (contract-suites-only-in-tests).
+        adapters-are-built-in-cmd:
+          list-mode: lax
+          files:
+            - "$all"
+            - "!$test"
+            - "!**/cmd/eusov/**"
+          deny:
+            - pkg: github.com/timothymamo/eu-sov-cloud/internal/adapter/
+              desc: adapters are constructed only in cmd/eusov
         testutil-only-in-tests:
           list-mode: lax
           files:
