@@ -12,6 +12,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"strconv"
 	"strings"
@@ -100,6 +101,26 @@ func paddedInventory(t *testing.T, size int) string {
 	return document + strings.Repeat(" ", size-len(document))
 }
 
+// emptyResourcesDocument returns an inventory document holding n empty resource
+// objects: the shortest resource JSON allows, for the tests that need far more
+// resources than a document small enough to read can carry with full ones.
+func emptyResourcesDocument(n int) string {
+	var b strings.Builder
+	b.WriteString(`{"schemaVersion":1,"source":"aws","resources":[`)
+
+	for i := range n {
+		if i > 0 {
+			b.WriteString(",")
+		}
+
+		b.WriteString("{}")
+	}
+
+	b.WriteString("]}")
+
+	return b.String()
+}
+
 // resourcesDocument returns an inventory document holding n resources: input
 // too large for a fixture.
 func resourcesDocument(t *testing.T, n int) string {
@@ -186,10 +207,78 @@ func TestInventoryContract(t *testing.T) {
 	sourcetest.Run(t, inventoryfile.New(validPath), wantValidInventory(t))
 }
 
+// Documents that are written by the test instead of installed as fixtures.
+//
+// A fixture cannot hold them reliably: an editor, a formatter or a git filter
+// drops a byte order mark or re-encodes invalid UTF-8 without saying so, and a
+// repeated key is easy to "fix" by accident. Spelling the bytes out here keeps
+// each case exact.
+const (
+	// duplicateCapabilitiesDocument repeats a resource's capabilities key. The
+	// first value carries a capability, the second is empty, so a decoder that
+	// accepts duplicates silently decides which one the resource has.
+	duplicateCapabilitiesDocument = `{"schemaVersion":1,"source":"aws","resources":[` +
+		`{"id":"db-example","category":"database.postgresql",` +
+		`"capabilities":["point-in-time-restore"],"capabilities":[]}]}`
+	// duplicateCategoryDocument repeats a resource's category key.
+	duplicateCategoryDocument = `{"schemaVersion":1,"source":"aws","resources":[` +
+		`{"id":"db-example","category":"database.postgresql","category":"unclassified"}]}`
+	// duplicateResourcesDocument repeats the top-level resources key.
+	duplicateResourcesDocument = `{"schemaVersion":1,"source":"aws","resources":[],"resources":[]}`
+	// inexactCapabilitiesDocument capitalises a resource's capabilities key.
+	inexactCapabilitiesDocument = `{"schemaVersion":1,"source":"aws","resources":[` +
+		`{"id":"i-0123456789abcdef0","category":"compute.vm","Capabilities":[]}]}`
+	// inexactIDDocument capitalises a resource's id key, and carries a valid
+	// lowercase id beside it, so the resource is otherwise complete.
+	inexactIDDocument = `{"schemaVersion":1,"source":"aws","resources":[` +
+		`{"id":"i-0123456789abcdef0","ID":"i-0123456789abcdef1","category":"compute.vm"}]}`
+	// inexactCapabilitiesLongSDocument spells the s of capabilities with U+017F
+	// LATIN SMALL LETTER LONG S, which Unicode case-folds to s: a decoder that
+	// folds case accepts it as the right key.
+	inexactCapabilitiesLongSDocument = `{"schemaVersion":1,"source":"aws","resources":[` +
+		`{"id":"i-0123456789abcdef0","category":"compute.vm","capabilitie` + "\u017f" + `":[]}]}`
+	// inexactSourceLongSDocument adds a second source key spelled with the long s.
+	inexactSourceLongSDocument = `{"schemaVersion":1,"source":"aws","resources":[],` +
+		`"` + "\u017f" + `ource":"aws"}`
+	// unknownResourceFieldInSecondDocument carries the unknown key regoin in the
+	// second resource only: the message must say which resource it is.
+	unknownResourceFieldInSecondDocument = `{"schemaVersion":1,"source":"aws","resources":[` +
+		`{"id":"db-example","category":"database.postgresql"},` +
+		`{"id":"volume-example","category":"storage.block","regoin":"eu-west-1"}]}`
+	// bomUTF8Document starts with the UTF-8 encoding of U+FEFF, EF BB BF, which
+	// JSON does not allow: its text is white space, not a token, and a reader
+	// that skips it reads a different document than the bytes say.
+	bomUTF8Document = "\xef\xbb\xbf" + `{"schemaVersion":1,"source":"aws","resources":[]}`
+	// bomUTF16LEDocument starts with the UTF-16LE byte order mark, FF FE, in a
+	// file that is not UTF-16: it is refused, never guessed at.
+	bomUTF16LEDocument = "\xff\xfe" + `{"schemaVersion":1,"source":"aws","resources":[]}`
+	// invalidUTF8Document holds the byte FF, which is never valid UTF-8, in a
+	// resource id: encoding/json would replace it with U+FFFD and read on.
+	invalidUTF8Document = `{"schemaVersion":1,"source":"aws","resources":[` +
+		`{"id":"a` + "\xff" + `","category":"compute.vm"}]}`
+	// stringSchemaVersionDocument spells the version as the string "1", which is
+	// not the number 1.
+	stringSchemaVersionDocument = `{"schemaVersion":"1","source":"aws","resources":[]}`
+	// fractionalSchemaVersionDocument spells the version as the number 1.0, which
+	// is a different JSON number from 1.
+	fractionalSchemaVersionDocument = `{"schemaVersion":1.0,"source":"aws","resources":[]}`
+)
+
+// generated returns a function that writes document to a fresh file, for the
+// cases whose input is not a fixture.
+func generated(document string) func(t *testing.T) string {
+	return func(t *testing.T) string {
+		t.Helper()
+
+		return writeFile(t, t.TempDir(), document)
+	}
+}
+
 // TestInventoryErrors pins every way reading an inventory file fails: the
 // sentinel the error wraps, that it names the file through text.Quote(path), and
 // that it is one line that echoes the path quoted, never the OS error holding it
-// unquoted.
+// unquoted. A decode failure also says where in the document it is, as a line
+// and a column, and which key or location it is about.
 func TestInventoryErrors(t *testing.T) {
 	t.Parallel()
 
@@ -200,11 +289,20 @@ func TestInventoryErrors(t *testing.T) {
 		path func(t *testing.T) string
 		// wantErr lists every sentinel the error must wrap.
 		wantErr []error
+		// wantNotErr lists sentinels the error must not wrap: a file refused for
+		// one reason is never also reported as another.
+		wantNotErr []error
 		// wantMentions is a list of alternatives: the message, with the quoted
 		// path removed, must contain at least one keyword per group.
 		wantMentions [][]string
-		// wantQuoted lists values the message must show through text.Quote.
+		// wantQuoted lists values the message must show through text.Quote: the
+		// key the problem is about, or where in the document it is.
 		wantQuoted []string
+		// wantPosition is where the message must place the problem: a 1-based
+		// line and column in the document, never a byte offset.
+		wantPosition string
+		// wantAbsent lists substrings the message must not contain.
+		wantAbsent []string
 	}{
 		{
 			name:    "missing file",
@@ -212,9 +310,13 @@ func TestInventoryErrors(t *testing.T) {
 			wantErr: []error{inventoryfile.ErrRead},
 		},
 		{
-			name:    "not JSON",
-			path:    fixture("not-json.json"),
-			wantErr: []error{inventoryfile.ErrDecode},
+			// not-json.json holds "not json": the decoder reads n, o, t, then
+			// refuses the o on the first line, in its second column.
+			name:         "not JSON",
+			path:         fixture("not-json.json"),
+			wantErr:      []error{inventoryfile.ErrDecode},
+			wantPosition: "line 1, column 2",
+			wantAbsent:   []string{"byte offset"},
 		},
 		{
 			name:    "trailing data after the object",
@@ -234,15 +336,119 @@ func TestInventoryErrors(t *testing.T) {
 			wantQuoted: []string{"bogusResourceField"},
 		},
 		{
-			name:    "wrong type for a resource field",
-			path:    fixture("wrong-type.json"),
+			// Naming the key is not enough: with several resources, the message
+			// must say which one the key is in, through text.Quote.
+			name:       "unknown field in the second resource",
+			path:       generated(unknownResourceFieldInSecondDocument),
+			wantErr:    []error{inventoryfile.ErrDecode},
+			wantQuoted: []string{"resources.1.regoin"},
+		},
+		{
+			// encoding/json accepts a repeated key and keeps the last value, so a
+			// file could give a resource two capabilities lists and one would win
+			// silently. The key and where it is repeated are both named.
+			name:         "duplicate capabilities key",
+			path:         generated(duplicateCapabilitiesDocument),
+			wantErr:      []error{inventoryfile.ErrDecode},
+			wantMentions: [][]string{{"duplicate", "twice", "repeated", "again", "more than once"}},
+			wantQuoted:   []string{"resources.0.capabilities"},
+		},
+		{
+			name:         "duplicate category key",
+			path:         generated(duplicateCategoryDocument),
+			wantErr:      []error{inventoryfile.ErrDecode},
+			wantMentions: [][]string{{"duplicate", "twice", "repeated", "again", "more than once"}},
+			wantQuoted:   []string{"resources.0.category"},
+		},
+		{
+			name:         "duplicate resources key",
+			path:         generated(duplicateResourcesDocument),
+			wantErr:      []error{inventoryfile.ErrDecode},
+			wantMentions: [][]string{{"duplicate", "twice", "repeated", "again", "more than once"}},
+			wantQuoted:   []string{"resources"},
+		},
+		{
+			// A key must be byte-equal to the one the format declares: encoding/json
+			// matches case-insensitively, and Unicode case folding also maps the
+			// long s to s. Neither spelling is the capability the format names.
+			name:       "inexact capabilities key",
+			path:       generated(inexactCapabilitiesDocument),
+			wantErr:    []error{inventoryfile.ErrDecode},
+			wantQuoted: []string{"Capabilities"},
+		},
+		{
+			name:       "inexact id key",
+			path:       generated(inexactIDDocument),
+			wantErr:    []error{inventoryfile.ErrDecode},
+			wantQuoted: []string{"ID"},
+		},
+		{
+			name:       "inexact capabilities key spelled with a long s",
+			path:       generated(inexactCapabilitiesLongSDocument),
+			wantErr:    []error{inventoryfile.ErrDecode},
+			wantQuoted: []string{"capabilitie\u017f"},
+		},
+		{
+			name:       "inexact source key spelled with a long s",
+			path:       generated(inexactSourceLongSDocument),
+			wantErr:    []error{inventoryfile.ErrDecode},
+			wantQuoted: []string{"\u017fource"},
+		},
+		{
+			// wrong-type.json holds 42 where a resource id string belongs. The 42
+			// starts the document's only line in column 54.
+			name:         "wrong type for a resource field",
+			path:         fixture("wrong-type.json"),
+			wantErr:      []error{inventoryfile.ErrDecode},
+			wantPosition: "line 1, column 54",
+			wantAbsent:   []string{"byte offset"},
+		},
+		{
+			// A byte order mark is not JSON and not UTF-8 text either way: the
+			// reader refuses it and says what it found.
+			name:         "UTF-8 byte order mark",
+			path:         generated(bomUTF8Document),
+			wantErr:      []error{inventoryfile.ErrDecode},
+			wantMentions: [][]string{{"byte order mark"}},
+		},
+		{
+			name:         "UTF-16 byte order mark",
+			path:         generated(bomUTF16LEDocument),
+			wantErr:      []error{inventoryfile.ErrDecode},
+			wantMentions: [][]string{{"byte order mark"}},
+		},
+		{
+			// encoding/json replaces an invalid byte with U+FFFD and decodes on,
+			// which would make the id in the report differ from the id in the file.
+			name:    "invalid UTF-8 in a value",
+			path:    generated(invalidUTF8Document),
 			wantErr: []error{inventoryfile.ErrDecode},
 		},
 		{
+			// The version is checked on the envelope before any field of this
+			// version is decoded, so a version 2 file that carries a field version
+			// 2 has and version 1 does not is refused for its version alone.
 			name:         "unsupported schema version",
 			path:         fixture("schema-version-2.json"),
 			wantErr:      []error{inventoryfile.ErrSchemaVersion},
+			wantNotErr:   []error{inventoryfile.ErrDecode},
 			wantMentions: [][]string{{"schemaVersion"}, {"2"}},
+		},
+		{
+			// A version is a JSON number: the string "1" is not it. The message
+			// says what it found, in the package's own words, so the value from the
+			// file is quoted once and never double-escaped.
+			name:         "schema version as a string",
+			path:         generated(stringSchemaVersionDocument),
+			wantErr:      []error{inventoryfile.ErrSchemaVersion},
+			wantMentions: [][]string{{"schemaVersion"}, {"string"}},
+			wantAbsent:   []string{`\"`},
+		},
+		{
+			name:         "schema version as a fractional number",
+			path:         generated(fractionalSchemaVersionDocument),
+			wantErr:      []error{inventoryfile.ErrSchemaVersion},
+			wantMentions: [][]string{{"schemaVersion"}},
 		},
 		{
 			name:         "missing schema version",
@@ -301,6 +507,22 @@ func TestInventoryErrors(t *testing.T) {
 			path:    func(t *testing.T) string { t.Helper(); return missingFileInDir(t, "ansi\x1bseq") },
 			wantErr: []error{inventoryfile.ErrRead},
 		},
+		{
+			// A directory opens, and only reading it fails: the failure is still a
+			// read failure, and its path must not put a newline into the message.
+			name: "path that is a directory whose name holds a newline",
+			path: func(t *testing.T) string {
+				t.Helper()
+
+				path := filepath.Join(t.TempDir(), "dir\nname")
+				if err := os.Mkdir(path, 0o700); err != nil {
+					t.Fatalf("creating the directory %s: %v", text.Quote(path), err)
+				}
+
+				return path
+			},
+			wantErr: []error{inventoryfile.ErrRead},
+		},
 	}
 
 	for _, tt := range tests {
@@ -317,6 +539,12 @@ func TestInventoryErrors(t *testing.T) {
 			for _, sentinel := range tt.wantErr {
 				if !errors.Is(err, sentinel) {
 					t.Errorf("Inventory() error = %v, want it to wrap %v", err, sentinel)
+				}
+			}
+
+			for _, sentinel := range tt.wantNotErr {
+				if errors.Is(err, sentinel) {
+					t.Errorf("Inventory() error = %v, want it not to wrap %v", err, sentinel)
 				}
 			}
 
@@ -349,6 +577,18 @@ func TestInventoryErrors(t *testing.T) {
 				if quoted := text.Quote(value); !strings.Contains(msg, quoted) {
 					t.Errorf("Inventory() error = %q, want it to name %s through text.Quote", msg, quoted)
 				}
+			}
+
+			for _, absent := range tt.wantAbsent {
+				if strings.Contains(msg, absent) {
+					t.Errorf("Inventory() error = %q, want it not to contain %q", msg, absent)
+				}
+			}
+
+			// Where the problem is in the document is a line and a column a reader
+			// of the file can look up, not a byte offset it has to count to.
+			if tt.wantPosition != "" && !strings.Contains(msg, tt.wantPosition) {
+				t.Errorf("Inventory() error = %q, want it to report the position as %q", msg, tt.wantPosition)
 			}
 
 			// An adapter that passes the OS error through echoes the path unquoted:
@@ -419,6 +659,72 @@ func TestInventorySortsResourcesByID(t *testing.T) {
 		if diff := cmp.Diff(want, resourceIDs(inventoryOf(t, validPath).Resources())); diff != "" {
 			t.Errorf("Resources() IDs differ (-want +got):\n%s", diff)
 		}
+	}
+}
+
+// TestInventoryCapsResourcesBeforeDecoding pins that the resource count is
+// checked while the document is read, before its resources are decoded: a file
+// holding many times MaxResources resources is refused for its count, and the
+// call allocates memory in proportion to the file, not to the resources the
+// file claims.
+//
+// The test is not parallel: TotalAlloc counts the whole process, so a test
+// allocating at the same time would be counted here.
+func TestInventoryCapsResourcesBeforeDecoding(t *testing.T) {
+	// MaxResources*70 empty resources is a 10.5 MB document, larger than
+	// MaxFileSize, so the file would be refused for its size and never reach the
+	// resource cap. 60 * MaxResources stays under the size cap and still writes
+	// 3000000 resources, which decoding all of would allocate far more than the
+	// budget below.
+	const multiplier = 60
+
+	document := emptyResourcesDocument(inventoryfile.MaxResources * multiplier)
+	if len(document) >= inventoryfile.MaxFileSize {
+		t.Fatalf("the generated document is %d bytes, want fewer than MaxFileSize (%d) so the file is refused for its resource count, not its size",
+			len(document), inventoryfile.MaxFileSize)
+	}
+
+	path := writeFile(t, t.TempDir(), document)
+
+	runtime.GC()
+
+	var before, after runtime.MemStats
+	runtime.ReadMemStats(&before)
+
+	_, err := inventoryfile.New(path).Inventory(t.Context())
+
+	runtime.ReadMemStats(&after)
+
+	if !errors.Is(err, inventoryfile.ErrTooManyResources) {
+		t.Fatalf("Inventory() error = %v, want one wrapping %v", err, inventoryfile.ErrTooManyResources)
+	}
+
+	// A decoder that reads every resource before counting them allocates about
+	// 1.6 GiB for this document; stopping at the cap allocates the file and very
+	// little else.
+	const budget = 64 << 20
+	if grew := after.TotalAlloc - before.TotalAlloc; grew >= budget {
+		t.Errorf("Inventory() allocated %d MiB, want less than %d MiB: the resource cap must refuse the document before its resources are decoded",
+			grew>>20, budget>>20)
+	}
+}
+
+// TestInventoryAcceptsMaxResources pins the boundary of the resource cap:
+// exactly MaxResources resources is accepted, so the cap rejects only what is
+// more.
+func TestInventoryAcceptsMaxResources(t *testing.T) {
+	t.Parallel()
+
+	path := writeFile(t, t.TempDir(), resourcesDocument(t, inventoryfile.MaxResources))
+
+	inv, err := inventoryfile.New(path).Inventory(t.Context())
+	if err != nil {
+		t.Fatalf("Inventory() returned an error for exactly MaxResources (%d) resources: %v",
+			inventoryfile.MaxResources, err)
+	}
+
+	if got := len(inv.Resources()); got != inventoryfile.MaxResources {
+		t.Errorf("len(Resources()) = %d, want %d", got, inventoryfile.MaxResources)
 	}
 }
 
