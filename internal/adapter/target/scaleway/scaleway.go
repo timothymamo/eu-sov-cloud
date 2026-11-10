@@ -11,6 +11,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/timothymamo/eu-sov-cloud/internal/domain/catalog"
 	"github.com/timothymamo/eu-sov-cloud/internal/domain/taxonomy"
@@ -38,11 +39,11 @@ const MaxDocumentBytes = 1 << 20
 
 var (
 	// ErrDecode is returned for data that is not a well-formed catalog document:
-	// larger than MaxDocumentBytes, not JSON, not a JSON object, more than one
-	// JSON value, a field of the wrong type, an unknown field, a missing or null
-	// regions or offerings list, a declared region that is blank, not valid
-	// text (text.Validate) or declared twice, or a retrieval date that is missing
-	// or not a YYYY-MM-DD date.
+	// larger than MaxDocumentBytes, not valid UTF-8, not JSON, not a JSON
+	// object, more than one JSON value, a field of the wrong type, an unknown
+	// field, a missing or null regions or offerings list, a declared region that
+	// is blank, not valid text (text.Validate) or declared twice, or a retrieval
+	// date that is missing or not a YYYY-MM-DD date.
 	ErrDecode = errors.New("not a valid catalog document")
 	// ErrSchemaVersion is returned for a document whose schemaVersion is missing
 	// or is not a version this package reads.
@@ -97,8 +98,9 @@ func Regions() []string {
 // Parse decodes and validates data as a catalog document and returns the
 // catalog it describes, built by catalog.New.
 //
-// The document is at most MaxDocumentBytes long: one JSON object, with nothing
-// after it but white space, and no field the format does not define. Its
+// The document is at most MaxDocumentBytes long and valid UTF-8: one JSON
+// object, with nothing after it but white space, and no field the format does
+// not define. Its
 // schemaVersion must be the integer 1 and its retrievedOn a YYYY-MM-DD date
 // (read as UTC midnight). Its regions and offerings lists must be present and
 // not null. Every declared region must be non-blank, valid text
@@ -122,6 +124,13 @@ func parse(data []byte) (catalog.Catalog, []string, error) {
 	if len(data) > MaxDocumentBytes {
 		return catalog.Catalog{}, nil, fmt.Errorf("%w: the document is %d bytes, more than the limit of %d",
 			ErrDecode, len(data), MaxDocumentBytes)
+	}
+
+	// The JSON decoder reads a byte that is not UTF-8, inside a string, as
+	// U+FFFD and reports nothing, so the document's own bytes are checked first.
+	if !utf8.Valid(data) {
+		return catalog.Catalog{}, nil, fmt.Errorf("%w: the document is not valid UTF-8 at byte offset %d",
+			ErrDecode, invalidUTF8Offset(data))
 	}
 
 	doc, err := decode(data)
@@ -166,6 +175,21 @@ func parse(data []byte) (catalog.Catalog, []string, error) {
 	}
 
 	return cat, *doc.Regions, nil
+}
+
+// invalidUTF8Offset returns the byte offset of the first byte of data that does
+// not start a valid UTF-8 sequence, or -1 if data is valid UTF-8.
+func invalidUTF8Offset(data []byte) int {
+	for i := 0; i < len(data); {
+		r, size := utf8.DecodeRune(data[i:])
+		if r == utf8.RuneError && size == 1 {
+			return i
+		}
+
+		i += size
+	}
+
+	return -1
 }
 
 // declaredRegions checks the regions a document declares, each non-blank,

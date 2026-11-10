@@ -17,6 +17,8 @@
 // Parse refuses a document, with an error, unless all of these hold:
 //
 //   - it is at most MaxDocumentBytes long, checked before any decoding;
+//   - it is valid UTF-8, checked next and also before any decoding, since the
+//     JSON decoder would read a byte that is not UTF-8 as U+FFFD;
 //   - it is one JSON object with nothing after it but white space;
 //   - its schemaVersion is the integer 1, checked before any other field, so a
 //     document of another version is refused for its version alone;
@@ -32,8 +34,8 @@
 // Some things are not refused yet. encoding/json matches field names without
 // regard to case and, of a key given twice, keeps the last value; a null value
 // for any field other than regions and offerings is read as if the field were
-// absent; and an escaped lone surrogate, such as \ud800, or a byte that is not
-// UTF-8, inside a string is read as U+FFFD. catalog.New also sorts an
+// absent; and an escaped lone surrogate, such as \ud800, inside a string is
+// read as U+FFFD. catalog.New also sorts an
 // offering's lists and drops duplicates in them. Refusing keys that are not
 // spelled exactly, duplicate keys and lone surrogates through one strict
 // decoder shared with the inventory-file source adapter is issue #13.
