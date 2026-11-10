@@ -74,8 +74,11 @@ All criteria are pinned by tests that run offline under `make test` or `make tes
 - [ ] Every value taken from the inventory or catalog (IDs, raw types, regions, offering names, the
   target name and the snapshot source URL), and the inventory file name, is escaped for its Markdown
   context, so `|`, newlines, backticks, HTML and link syntax in an inventory cannot forge table rows,
-  headings, links or images. The source URL is emitted percent-encoding `( ) [ ] < > |`, space and
-  backtick (or as an autolink after encoding `<` `>`). Pinned by a golden test with a hostile fixture
+  headings, links or images. Every value taken from the inventory or catalog, the target name, the
+  snapshot source URL and the inventory file name is rendered as an inline code span (fence longer
+  than any backtick run, `|` escaped in table cells), so neither Markdown nor GitHub's filters (math,
+  mentions, references, emoji, task lists, bare links) interpret it; the source URL is the stored
+  string, never decoded. Pinned by a golden test with a hostile fixture
   that includes a hostile file name and source URL. The inventory file name must pass `text.Validate`;
   otherwise the command exits 1 with an error that shows the name through `text.Quote`. The reporter
   emits the stored source URL string, never a decoded form; the hostile fixture's source URL includes
