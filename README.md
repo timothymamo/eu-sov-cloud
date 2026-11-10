@@ -43,9 +43,16 @@ on either side does not mean writing a mapping for every pair. See
 
 ## Usage
 
+```text
+eusov assess --inventory <file> --target <target> [--output <file>]
+```
+
+`<target>` is `ovhcloud` or `scaleway`; `eusov help` lists them. For example:
+
 ```bash
 make build
-./bin/eusov assess --inventory inventory.json --target ovhcloud|scaleway [--output report.md]
+./bin/eusov assess --inventory inventory.json --target ovhcloud
+./bin/eusov assess --inventory inventory.json --target scaleway --output report.md
 ```
 
 `assess` reads an inventory file, compares every resource with the target's catalog and writes a
@@ -61,9 +68,9 @@ write to standard output.
 
 The inventory file is versioned JSON, described in
 [ADR 0006](docs/adr/0006-json-inventory-file-format-v1.md). `--inventory` takes a path; standard input
-is not supported. The targets are `ovhcloud` (OVHcloud Public Cloud, EU regions) and `scaleway`, each
-served from a dated catalog snapshot embedded in the binary, so `assess` runs offline and needs no
-credentials.
+is not supported. The targets are `ovhcloud` (OVHcloud Public Cloud) and `scaleway`, each served from
+a dated snapshot of the provider's EU regions, embedded in the binary, so `assess` runs offline and
+needs no credentials.
 
 | Exit code | Meaning |
 |---|---|
