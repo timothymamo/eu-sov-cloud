@@ -1,0 +1,29 @@
+# Migration assessment: Evil \| \`x\` \<b\> \[a\]\(b\) \*s\*
+
+- Inventory file: inv\|\`x\`\[y\]\(z\)\.json
+- Source: \# heading
+- Catalog: Evil \| \`x\` \<b\> \[a\]\(b\) \*s\* snapshot from <https://example.com/a%28b%29%0A%E2%80%AE>, retrieved 2026-11-01
+
+## Summary
+
+| Fit | Resources |
+|---|---|
+| direct | 2 |
+| partial | 1 |
+| none | 2 |
+| total | 5 |
+
+## Resources
+
+| ID | Raw type | Category | Fit | Best offering | Reasons |
+|---|---|---|---|---|---|
+| \[l\]\(javascript:x\) | \`tick\` | `serverless.function` | none |  | no offering in the Evil \| \`x\` \<b\> \[a\]\(b\) \*s\* catalog for `serverless.function` |
+| \`tick\` | a\*b\_c | `unclassified` | none |  | not classified |
+| a\*b\_c | AWS::X \<img src=x\> | `compute.vm` | direct | Evil \| \`x\` \<b\> \[a\]\(b\) \*s\* | Evil \| \`x\` \<b\> \[a\]\(b\) \*s\* offers every capability the resource uses |
+| back\\slash | \# heading | `storage.object` | partial | \`tick\` \[row\]\(x\) \| Name | \`tick\` \[row\]\(x\) \| Name does not offer `object-versioning` |
+| i-1 \| x | \[l\]\(javascript:x\) | `compute.vm` | direct | Evil \| \`x\` \<b\> \[a\]\(b\) \*s\* | Evil \| \`x\` \<b\> \[a\]\(b\) \*s\* offers every capability the resource uses |
+
+## Blockers
+
+- \[l\]\(javascript:x\): no offering in the Evil \| \`x\` \<b\> \[a\]\(b\) \*s\* catalog for `serverless.function`
+- \`tick\`: not classified
