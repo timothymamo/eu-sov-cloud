@@ -7,8 +7,13 @@ description: Review a change in eu-sov-cloud for correctness, architecture, test
 
 ## Get the change
 
-- Branch: in the worktree named in the task, `git fetch origin`, then `git diff origin/main...HEAD` and
-  `git log --oneline origin/main..HEAD`. The local `main` in the repository root can be out of date.
+Work in the worktree named in the task: run every non-git command from it (`cd <path> && ...`). Run git
+as `git -C <path> ...`, never `cd <path> && git ...`. Write the worktree path out in full; do not store it
+in a shell variable.
+
+- Branch: `git -C <path> fetch origin`, then `git -C <path> diff origin/main...HEAD` and
+  `git -C <path> log --oneline origin/main..HEAD`. The local `main` in the repository root can be out of
+  date.
 - PR: `gh pr diff <n>` and `gh pr view <n>`
 - Read the PRD or issue it claims to implement.
 
@@ -24,7 +29,7 @@ description: Review a change in eu-sov-cloud for correctness, architecture, test
 5. **Tests.** Behaviour is pinned at the lowest sensible level; tests assert outcomes, not internals;
    fixtures are sanitised; no network or credentials in default tests. The TDD split held: `test(...)`
    commits touch only `*_test.go`, `testdata/` and `internal/testutil`, and later commits did not weaken
-   a test to make it pass (`git log -p origin/main..HEAD -- '*_test.go'`).
+   a test to make it pass (`git -C <path> log -p origin/main..HEAD -- '*_test.go'`).
 6. **Readability.** Names use the ubiquitous language; errors carry context; exported identifiers documented.
 
 ## Report

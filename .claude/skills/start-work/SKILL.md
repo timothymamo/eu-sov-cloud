@@ -23,14 +23,16 @@ has its own branch, and every branch its own worktree under `.worktrees/`
    worktree's absolute path. For a branch that already exists it reopens it instead, so this is also how
    to resume.
 3. Work only in that worktree: run every non-git command from it (`cd <path> && ...`), and read and edit
-   files only under it. Run git as `git -C <path> ...`, never `cd <path> && git ...`. `make check`,
-   `go test ./...` and `git` then act on this branch alone.
+   files only under it. Run git as `git -C <path> ...`, never `cd <path> && git ...`. Write the
+   worktree path out in full; do not store it in a shell variable. `make check`, `go test ./...` and
+   `git` then act on this branch alone.
 4. When delegating, make `Worktree: <absolute path>` the first line of every task.
 
 ## Finish
 
-The PR's merge step (skill `pr-create`) removes the worktree with `git worktree remove <path>`, which
-refuses while there are uncommitted changes. `dot-agent-deck worktree list` shows leftover worktrees.
+The PR's merge step (skill `pr-create`) removes the worktree with
+`git -C <repository root> worktree remove <path>`, which refuses while there are uncommitted changes.
+`dot-agent-deck worktree list` shows leftover worktrees.
 
 ## Rules
 

@@ -10,13 +10,15 @@ You never modify source code in this flow.
 ## Open
 
 1. Work in the worktree named in the task: run every non-git command from it (`cd <path> && ...`). Run
-   git as `git -C <path> ...`, never `cd <path> && git ...`. Confirm the tree is clean (`git status`)
-   and the branch is not `main` (`git branch --show-current`). If either check fails, or the task names
-   no worktree, stop and report.
+   git as `git -C <path> ...`, never `cd <path> && git ...`. Write the worktree path out in full; do
+   not store it in a shell variable. Confirm the tree is clean (`git -C <path> status`) and the branch
+   is not `main` (`git -C <path> branch --show-current`). If either check fails, or the task names no
+   worktree, stop and report.
 2. Run `make check`. If it fails, report the exact output and stop.
-3. If this PR completes a file PRD: set its status to `Complete`, `git mv prds/<n>-*.md prds/done/`,
-   fix links to the old path, and commit `docs(prd): complete PRD #<n>`.
-4. `git push -u origin HEAD`
+3. If this PR completes a file PRD: set its status to `Complete`,
+   `git -C <path> mv prds/<n>-<slug>.md prds/done/`, fix links to the old path, and commit
+   `docs(prd): complete PRD #<n>`.
+4. `git -C <path> push -u origin HEAD`
 5. `gh pr create --base main --title "<conventional commit style title>" --body-file <file>`, using
    `.github/pull_request_template.md` as the structure. Use `Closes #<n>` only when the PR completes the
    PRD or issue, otherwise `Refs #<n>`.
@@ -34,8 +36,8 @@ You never modify source code in this flow.
 
 ## Merge (only when explicitly instructed)
 
-9. From the repository root, remove the worktree: `git worktree remove <path>`. It refuses when the
-   worktree has uncommitted changes; then report and stop, and never force it.
+9. From the repository root, remove the worktree: `git -C <repository root> worktree remove <path>`.
+   It refuses when the worktree has uncommitted changes; then report and stop, and never force it.
 10. Still from the root: `gh pr merge <n> --squash --delete-branch`, then confirm the linked issue's state
     matches the PR body (`gh issue view <n> --json state`) and report. If the merge fails, report the
     error; `make worktree BRANCH=<branch>` brings the worktree back for a fix.
