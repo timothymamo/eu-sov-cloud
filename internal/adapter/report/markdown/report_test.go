@@ -99,7 +99,9 @@ func awsResources() []inventory.Resource {
 
 // hostileResources is an inventory whose every text value carries Markdown
 // metacharacters: an ID with a stored pipe, an ID with link syntax, an ID with a
-// backslash, a raw type with HTML and a source that looks like a heading.
+// backslash, a raw type with HTML and a source that looks like a heading. The
+// raw type also carries dots, which are not Markdown metacharacters here and so
+// must stay unescaped.
 func hostileResources() []inventory.Resource {
 	return []inventory.Resource{
 		{
@@ -116,7 +118,7 @@ func hostileResources() []inventory.Resource {
 		},
 		{
 			ID:           "a*b_c",
-			RawType:      "AWS::X <img src=x>",
+			RawType:      "AWS::X.Y <img src=x>",
 			Category:     taxonomy.ComputeVM,
 			Region:       "eu-west-1",
 			Capabilities: []taxonomy.Capability{taxonomy.IPv6},

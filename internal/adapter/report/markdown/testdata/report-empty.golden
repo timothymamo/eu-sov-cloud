@@ -1,6 +1,6 @@
 # Migration assessment: Scaleway
 
-- Inventory file: inventory\.json
+- Inventory file: inventory.json
 - Source: aws
 - Catalog: Scaleway snapshot from <https://www.scaleway.com/en/pricing/>, retrieved 2026-11-01
 
