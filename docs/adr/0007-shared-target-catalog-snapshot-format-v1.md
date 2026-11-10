@@ -1,6 +1,8 @@
 # 0007. Read every embedded target catalog snapshot through one strictly decoded, versioned format
 
-- Status: Accepted
+- Status: Accepted; the separate token walker ("One reader, not one decoder yet") is superseded,
+  and the declared regions and the lint rules are amended, by
+  [0009](0009-decode-adapter-json-documents-through-one-strict-decoder.md)
 - Date: 2026-11-10
 
 ## Context
