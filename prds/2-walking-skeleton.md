@@ -119,7 +119,7 @@ Each milestone ships as one PR. Milestones 4, 5 and 6 depend only on 3 and can r
    before decoding. Caps the number of resources as well as the file size (each resource is mapped
    against every candidate offering). The adapter's errors name the file through `text.Quote(path)` and
    never pass `*os.PathError` or decoder text through unquoted.
-5. [ ] **Scaleway catalog adapter.** Embedded, dated catalog snapshot (`//go:embed`) covering at least
+5. [x] **Scaleway catalog adapter.** Embedded, dated catalog snapshot (`//go:embed`) covering at least
    `compute.vm`, `kubernetes.managed`, `storage.object` and `database.postgresql`, with its source URL and
    retrieval date in the file header. Passes `targettest`, plus a golden test of the parsed catalog.
    The reviewer checks the adapter's declared EU region list against Scaleway's published regions.
