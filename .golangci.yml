@@ -30,11 +30,23 @@ linters:
           allow:
             - $gostd
             - github.com/timothymamo/eu-sov-cloud/internal/domain
+        # The application layer may import only what is listed under allow: the
+        # domain and the few standard-library packages the use case needs. An
+        # entry ending in $ matches that package only, not its subpackages. Add
+        # a package only when the use case needs it, never one that does I/O.
         app-uses-ports-not-adapters:
-          list-mode: lax
+          list-mode: strict
           files:
             - "**/internal/app/**/*.go"
-          deny:
+            - "!$test"
+          allow:
+            - context$
+            - errors$
+            - fmt$
+            - io$
+            - strings$
+            - github.com/timothymamo/eu-sov-cloud/internal/domain/
+          deny: &app-deny
             - pkg: github.com/timothymamo/eu-sov-cloud/internal/adapter
               desc: the application layer depends on ports it declares; wire adapters in cmd/eusov
             - pkg: github.com/timothymamo/eu-sov-cloud/internal/cli
@@ -48,9 +60,13 @@ linters:
             - pkg: google.golang.org/api
               desc: cloud SDKs belong in internal/adapter/source/gcp
             # The assess path needs no network, process or OS access in the
-            # application layer: adapters do I/O behind the ports.
-            # depguard matches import paths exactly, so every subpackage is
-            # listed. net/netip stays allowed: it is a pure value type.
+            # application layer: adapters do I/O behind the ports. The allow
+            # list already refuses everything below; these entries only say
+            # why. depguard prefix-matches, so net/http also covers
+            # net/http/httptest and every other net/http/* package. With the
+            # strict allow list the application layer gets only what is
+            # listed, even a pure package such as net/netip; an import that no
+            # entry here names is refused with depguard's generic message.
             - pkg: net/http
               desc: the application layer makes no HTTP calls; an adapter behind a port does
             - pkg: net/rpc
@@ -69,6 +85,14 @@ linters:
               desc: the application layer handles no OS signals; the driving adapter cancels the context instead
             - pkg: os
               desc: the application layer has no OS access (files, environment); the driving adapter passes what it needs through the ports
+        # The application layer's tests use fakes, not adapters, and keep the
+        # same deny list. They are left out of the strict rule above because
+        # they also need testing, go-cmp and testutil.
+        app-tests-use-fakes-not-adapters:
+          list-mode: lax
+          files:
+            - "**/internal/app/**/*_test.go"
+          deny: *app-deny
         testutil-only-in-tests:
           list-mode: lax
           files:

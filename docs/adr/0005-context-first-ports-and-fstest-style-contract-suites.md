@@ -75,9 +75,9 @@ tested against fakes that violate it on purpose.
   already-cancelled context gives an error wrapping `context.Canceled`).
 - `targettest` takes `Expectations{Target, Regions, Categories}` that the adapter declares for itself:
   its display name, its EU regions and the categories its catalog must serve. Checks: **expectations**
-  (every field is set), **catalog** (no error), **target**, **snapshot** (source URL and retrieval date set), **regions** (every offering is
-  only in the declared EU regions), **category** (every declared category is served), **repeat** and
-  **cancel**.
+  (every field is set), **catalog** (no error), **target**, **snapshot** (source URL and retrieval date
+  set), **regions** (every offering is only in the declared EU regions; skipped when Regions is empty),
+  **category** (every declared category is served), **repeat** and **cancel**.
 
 The suites compare through the domain accessors (`Source()`, `Resources()`, `Target()`, `Snapshot()`,
 `Offerings()`) and `slices.Equal`, not go-cmp, and quote every value they print with `text.Quote`,
@@ -127,6 +127,10 @@ an adapter's own error included; that error stays in the violation's chain for `
 - Any field added to `ReportMeta` must be validated in `Run` the same way, before any port is called.
   It must never carry account IDs, profile names or anything derived from credentials unless a PRD
   decides the report shows it.
+- The application layer's imports are a strict allow list (depguard rule `app-uses-ports-not-adapters` in
+  `.golangci.yml`): the domain and `context`, `errors`, `fmt`, `io` and `strings`. Any other import
+  fails lint, so I/O stays in the adapters behind the ports; a new package needs its own entry and a
+  reason.
 - A reporter may write part of its output before failing. The driving adapter decides what to do about a
   partial file (for example, write to a temporary file and rename it), in PRD 2 milestone 7.
 - The use case handles one target per run. Comparing several targets in one run will need a new use
