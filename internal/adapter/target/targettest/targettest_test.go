@@ -387,6 +387,10 @@ func TestCheckExpectations(t *testing.T) {
 		// wantField is the empty field the violation must name; empty when the
 		// expectations are complete.
 		wantField string
+		// wantNoViolation is a check that must not report a violation of its own:
+		// an empty expectation is the expectations violation, not a reason to
+		// repeat it for every offering.
+		wantNoViolation string
 	}{
 		{name: "every field set", want: full},
 		{
@@ -395,9 +399,10 @@ func TestCheckExpectations(t *testing.T) {
 			wantField: "target",
 		},
 		{
-			name:      "missing regions",
-			want:      targettest.Expectations{Target: full.Target, Categories: full.Categories},
-			wantField: "regions",
+			name:            "missing regions",
+			want:            targettest.Expectations{Target: full.Target, Categories: full.Categories},
+			wantField:       "regions",
+			wantNoViolation: "regions",
 		},
 		{
 			name:      "missing categories",
@@ -429,6 +434,19 @@ func TestCheckExpectations(t *testing.T) {
 			for _, keyword := range []string{"expectations", tt.wantField} {
 				if !strings.Contains(msg, keyword) {
 					t.Errorf("Check() error = %q, want it to mention %q", err, keyword)
+				}
+			}
+
+			if tt.wantNoViolation == "" {
+				return
+			}
+
+			// Every violation line starts with the name of the check it breaks, so
+			// the field name inside the expectations line does not count.
+			for _, line := range strings.Split(msg, "\n") {
+				if strings.HasPrefix(line, tt.wantNoViolation+":") {
+					t.Errorf("Check() error = %q, want no %q violation line, only the expectations one",
+						err, tt.wantNoViolation)
 				}
 			}
 		})
