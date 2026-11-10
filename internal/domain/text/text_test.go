@@ -38,6 +38,9 @@ func TestValidateAccepts(t *testing.T) {
 		{name: "offering name", in: "Managed Database for PostgreSQL"},
 		{name: "arn", in: "arn:aws:rds:eu-west-1:123456789012:db:db-example"},
 		{name: "non ascii", in: "Zürich"},
+		// A private-use code point is not a control or format character: the source
+		// named it, so it is kept and left to the renderer to escape.
+		{name: "private use code point", in: "a\ue000b"},
 		// A pipe is printable; escaping it for a Markdown table is the reporter's job.
 		{name: "pipe", in: "primary|replica"},
 		{name: "exactly max len bytes", in: strings.Repeat("a", text.MaxLen)},
@@ -79,6 +82,9 @@ func TestValidateRejectsInvalidText(t *testing.T) {
 		{name: "zero width space", in: "a\u200bb"},
 		{name: "zero width joiner", in: "a\u200db"},
 		{name: "byte order mark", in: "a\ufeffb"},
+		// Some renderers treat Zl and Zp as line breaks, the same risk as "\n".
+		{name: "line separator", in: "a\u2028b"},
+		{name: "paragraph separator", in: "a\u2029b"},
 		{name: "invalid utf8", in: "a\xffb"},
 		{name: "truncated utf8", in: "Zürich"[0:2]},
 		{name: "one byte too long", in: strings.Repeat("a", text.MaxLen+1)},

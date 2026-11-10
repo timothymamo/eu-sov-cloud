@@ -394,6 +394,21 @@ func TestNewRejectsInvalidText(t *testing.T) {
 		})
 	}
 
+	// U+2028 and U+2029 are Unicode white space, so the blank checks of source and
+	// of the ID hide them before text.Validate sees them. A raw type has no blank
+	// check, and some renderers still treat a line separator as a line break, so it
+	// is rejected exactly like a newline.
+	withLineSeparatorRawType := base
+	withLineSeparatorRawType.ID = "db-example"
+	withLineSeparatorRawType.RawType = "AWS::RDS::DBInstance\u2028example"
+	tests = append(tests, testCase{
+		name:      "raw type/line separator",
+		source:    "aws",
+		resources: []inventory.Resource{base, withLineSeparatorRawType},
+		wantField: "raw type",
+		wantID:    "db-example",
+	})
+
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
