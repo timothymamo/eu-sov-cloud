@@ -1,0 +1,34 @@
+# Migration assessment: `Scaleway`
+
+- Inventory file: `inventory.json`
+- Source: `aws`
+- Catalog: `Scaleway` snapshot from `https://www.scaleway.com/en/docs/`, retrieved 2026-11-10
+
+## Summary
+
+| Fit | Resources |
+|---|---|
+| direct | 3 |
+| partial | 2 |
+| none | 1 |
+| total | 6 |
+
+## Resources
+
+| ID | Raw type | Category | Fit | Best offering | Reasons |
+|---|---|---|---|---|---|
+| `bucket-example` | `AWS::S3::Bucket` | `storage.object` | direct | `Object Storage` | `Object Storage` offers every capability the resource uses |
+| `db-example` | `AWS::RDS::DBInstance` | `database.postgresql` | partial | `Managed Database for PostgreSQL and MySQL` | `Managed Database for PostgreSQL and MySQL` does not offer `point-in-time-restore` |
+| `fn-example` | `AWS::Lambda::Function` | `serverless.function` | direct | `Serverless Functions` | `Serverless Functions` offers every capability the resource uses |
+| `i-0123456789abcdef0` | `AWS::EC2::Instance` | `compute.vm` | direct | `Elastic Metal` (tie: `Instances`) | `Elastic Metal` offers every capability the resource uses |
+| `misc-example` | `AWS::CloudFormation::CustomResource` | `unclassified` | none |  | not classified |
+| `partial-example` | `AWS::EC2::Instance` | `compute.vm` | partial | `Instances` | `Instances` does not offer `high-availability` |
+
+## Required changes
+
+- `db-example`: `point-in-time-restore` (not offered by `Managed Database for PostgreSQL and MySQL`)
+- `partial-example`: `high-availability` (not offered by `Instances`)
+
+## Blockers
+
+- `misc-example`: not classified

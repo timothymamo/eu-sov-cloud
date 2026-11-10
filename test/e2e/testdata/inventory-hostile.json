@@ -1,0 +1,32 @@
+{
+  "schemaVersion": 1,
+  "source": "aws",
+  "resources": [
+    {
+      "id": "#1",
+      "rawType": "$\\Huge X$",
+      "category": "storage.object",
+      "region": "eu-west-1",
+      "capabilities": ["object-versioning"]
+    },
+    {
+      "id": "[ ] x",
+      "rawType": "@octocat",
+      "category": "compute.vm",
+      "region": "eu-west-1"
+    },
+    {
+      "id": "a|b",
+      "rawType": "<b>",
+      "category": "compute.vm",
+      "region": "eu-west-1",
+      "capabilities": ["high-availability"]
+    },
+    {
+      "id": "tick`x",
+      "rawType": ":x:",
+      "category": "storage.object",
+      "region": "eu-west-1"
+    }
+  ]
+}
