@@ -9,22 +9,72 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
+
+	"github.com/google/go-cmp/cmp"
 
 	"github.com/timothymamo/eu-sov-cloud/internal/testutil"
 )
 
 const (
-	// targetKey is the one target the walking skeleton offers.
-	targetKey = "scaleway"
+	// ovhcloudKey and scalewayKey are the --target keys the composition root
+	// wires: the targets the binary offers.
+	ovhcloudKey = "ovhcloud"
+	scalewayKey = "scaleway"
 	// errPrefix is how the binary writes an error to stderr.
 	errPrefix = "eusov: "
 	// maxErrorLine is the longest error line the binary may write: the cap on
 	// the message, the prefix, a short truncation marker and the newline.
 	maxErrorLine = 1024 + len(errPrefix) + 64 + 1
+	// resourcesHeading is the heading that starts the table of verdicts.
+	resourcesHeading = "## Resources"
 )
+
+// targetCase is one target the binary offers: how its catalog names it, what
+// its catalog snapshot declares, and the golden report the shared fixture
+// renders for it.
+type targetCase struct {
+	// key is the value of --target.
+	key string
+	// name is the target as its catalog names it, which the report's title and
+	// its Catalog line show.
+	name string
+	// sourceURL and retrievedOn are the snapshot's source and retrieval date as
+	// the target's catalog declares them; the report's Catalog line shows both.
+	sourceURL   string
+	retrievedOn string
+	// golden is the report the shared fixture renders for this target.
+	golden string
+}
+
+// targets returns the targets the binary offers, in the order its usage error
+// sorts them, with the golden report of the shared fixture for each. A target
+// added later gets a row here and a golden file beside assess-scaleway.golden.
+//
+// The name, source and date are repeated here on purpose: -update rewrites a
+// golden file from whatever the binary printed, so only an assertion of its own
+// keeps a report from naming the wrong target or citing the wrong snapshot.
+func targets() []targetCase {
+	return []targetCase{
+		{
+			key:         ovhcloudKey,
+			name:        "OVHcloud",
+			sourceURL:   "https://www.ovhcloud.com/en/public-cloud/regions-availability/",
+			retrievedOn: "2026-11-10",
+			golden:      "assess-ovhcloud.golden",
+		},
+		{
+			key:         scalewayKey,
+			name:        "Scaleway",
+			sourceURL:   "https://www.scaleway.com/en/docs/",
+			retrievedOn: "2026-11-10",
+			golden:      "assess-scaleway.golden",
+		},
+	}
+}
 
 // binaryPath is the eusov binary every test runs, built once by TestMain.
 var binaryPath string
@@ -103,12 +153,12 @@ func run(t *testing.T, env []string, args ...string) result {
 	}
 }
 
-// assess runs `eusov assess --inventory inventory --target scaleway` with no
+// assess runs `eusov assess --inventory inventory --target target` with no
 // environment and returns the result.
-func assess(t *testing.T, inventory string, extra ...string) result {
+func assess(t *testing.T, target, inventory string, extra ...string) result {
 	t.Helper()
 
-	args := append([]string{"assess", "--inventory", inventory, "--target", targetKey}, extra...)
+	args := append([]string{"assess", "--inventory", inventory, "--target", target}, extra...)
 
 	return run(t, emptyEnv(), args...)
 }
@@ -119,26 +169,48 @@ func goldenPath(name string) string {
 }
 
 // TestAssessReport pins the whole path end to end: the built binary, run with no
-// environment, turns the fixture inventory into the report in assess.golden. The
-// golden is the specification of the walking skeleton: it shows the target, the
-// catalog snapshot, the inventory's base name, the summary, one row per resource
-// with its fit and reasons, the required changes and the blockers. The fixture
-// lists its resources in an order of its own, not in ID order, because the
-// report orders the rows itself and must not depend on the file's order.
+// environment, turns the fixture inventory into the report in each target's
+// golden file. A golden is the specification of the report for that target: it
+// shows the target, the catalog snapshot, the inventory's base name, the
+// summary, one row per resource with its fit and reasons, the required changes
+// and the blockers. The fixture lists its resources in an order of its own, not
+// in ID order, because the report orders the rows itself and must not depend on
+// the file's order.
 func TestAssessReport(t *testing.T) {
 	t.Parallel()
 
-	got := assess(t, filepath.Join("testdata", "inventory.json"))
+	inventory := filepath.Join("testdata", "inventory.json")
 
-	if got.code != 0 {
-		t.Fatalf("exit code = %d, want 0; stderr = %q", got.code, got.stderr)
+	for _, tc := range targets() {
+		t.Run(tc.key, func(t *testing.T) {
+			t.Parallel()
+
+			got := assess(t, tc.key, inventory)
+
+			if got.code != 0 {
+				t.Fatalf("exit code = %d, want 0; stderr = %q", got.code, got.stderr)
+			}
+
+			if got.stderr != "" {
+				t.Errorf("stderr = %q, want empty", got.stderr)
+			}
+
+			testutil.Golden(t, goldenPath(tc.golden), []byte(got.stdout))
+
+			// The report names the target and cites the snapshot its catalog
+			// declares, as the target's adapter holds them.
+			wantLines := []string{
+				"# Migration assessment: `" + tc.name + "`",
+				"- Catalog: `" + tc.name + "` snapshot from `" + tc.sourceURL + "`, retrieved " + tc.retrievedOn,
+			}
+
+			for _, want := range wantLines {
+				if !strings.Contains(got.stdout, want) {
+					t.Errorf("the report does not hold %q:\n%s", want, got.stdout)
+				}
+			}
+		})
 	}
-
-	if got.stderr != "" {
-		t.Errorf("stderr = %q, want empty", got.stderr)
-	}
-
-	testutil.Golden(t, goldenPath("assess.golden"), []byte(got.stdout))
 }
 
 // TestAssessOutput pins --output: the report file holds exactly what stdout
@@ -146,28 +218,191 @@ func TestAssessReport(t *testing.T) {
 func TestAssessOutput(t *testing.T) {
 	t.Parallel()
 
-	dest := filepath.Join(t.TempDir(), "report.md")
+	inventory := filepath.Join("testdata", "inventory.json")
 
-	got := assess(t, filepath.Join("testdata", "inventory.json"), "--output", dest)
+	for _, tc := range targets() {
+		t.Run(tc.key, func(t *testing.T) {
+			t.Parallel()
+
+			dest := filepath.Join(t.TempDir(), "report.md")
+
+			got := assess(t, tc.key, inventory, "--output", dest)
+
+			if got.code != 0 {
+				t.Fatalf("exit code = %d, want 0; stderr = %q", got.code, got.stderr)
+			}
+
+			if got.stdout != "" {
+				t.Errorf("stdout = %q, want empty with --output", got.stdout)
+			}
+
+			if got.stderr != "" {
+				t.Errorf("stderr = %q, want empty", got.stderr)
+			}
+
+			written, err := os.ReadFile(dest)
+			if err != nil {
+				t.Fatalf("the report file was not written: %v", err)
+			}
+
+			testutil.Golden(t, goldenPath(tc.golden), written)
+		})
+	}
+}
+
+// TestAssessFitCoverage pins that the shared fixture exercises every fit against
+// OVHcloud: a direct match, a partial match, a fit of none because OVHcloud
+// serves no offering in the resource's category, and the unclassified resource.
+// Without it a fixture edit could quietly stop exercising a fit and every other
+// test here would still pass.
+func TestAssessFitCoverage(t *testing.T) {
+	t.Parallel()
+
+	got := assess(t, ovhcloudKey, filepath.Join("testdata", "inventory.json"))
 
 	if got.code != 0 {
 		t.Fatalf("exit code = %d, want 0; stderr = %q", got.code, got.stderr)
 	}
 
-	if got.stdout != "" {
-		t.Errorf("stdout = %q, want empty with --output", got.stdout)
+	rows := resourceRows(t, got.stdout)
+
+	// The fits the report counts, as the summary table writes them.
+	fits := make(map[string]int, len(rows))
+	for _, row := range rows {
+		fits[row.fit]++
 	}
 
-	if got.stderr != "" {
-		t.Errorf("stderr = %q, want empty", got.stderr)
+	for _, want := range []string{"direct", "partial", "none"} {
+		if fits[want] == 0 {
+			t.Errorf("no resource has fit %q; the fixture must exercise every fit:\n%s", want, got.stdout)
+		}
 	}
 
-	written, err := os.ReadFile(dest)
-	if err != nil {
-		t.Fatalf("the report file was not written: %v", err)
+	var (
+		// unserved is a row in a category OVHcloud serves no offering in: the
+		// fixture's serverless.function resource (PRD #11).
+		unserved bool
+		// unclassified is the fixture's resource outside the taxonomy.
+		unclassified bool
+	)
+
+	for _, row := range rows {
+		switch row.category {
+		case "serverless.function":
+			unserved = true
+
+			if row.fit != "none" {
+				t.Errorf("the %s row has fit %q, want %q: OVHcloud serves no such category",
+					row.id, row.fit, "none")
+			}
+
+			// The reason says what is missing, never that the resource is
+			// unclassified, and it names the target's own catalog.
+			for _, want := range []string{"no offering in the", "OVHcloud", "serverless.function"} {
+				if !strings.Contains(row.reason, want) {
+					t.Errorf("the %s reason %q, want it to name %q", row.id, row.reason, want)
+				}
+			}
+		case "unclassified":
+			unclassified = true
+
+			if row.fit != "none" {
+				t.Errorf("the %s row has fit %q, want %q: it is not classified",
+					row.id, row.fit, "none")
+			}
+
+			if !strings.Contains(row.reason, "not classified") {
+				t.Errorf("the %s reason %q, want it to say the resource is not classified",
+					row.id, row.reason)
+			}
+		}
 	}
 
-	testutil.Golden(t, goldenPath("assess.golden"), written)
+	if !unserved {
+		t.Errorf("no serverless.function row; the fixture must hold one for the none-from-category fit:\n%s",
+			got.stdout)
+	}
+
+	if !unclassified {
+		t.Errorf("no unclassified row; the fixture must hold one:\n%s", got.stdout)
+	}
+}
+
+// TestAssessReportShape pins that the shared fixture yields the same report
+// skeleton for every target: the same headings in the same order, the same
+// table header rows, and the same resource IDs in the same order. Only the
+// target, its snapshot, the offerings, the fits and the reasons may differ, so
+// a user who switches --target reads the same report in the same shape.
+func TestAssessReportShape(t *testing.T) {
+	t.Parallel()
+
+	inventory := filepath.Join("testdata", "inventory.json")
+
+	type rendered struct {
+		key   string
+		shape reportShape
+	}
+
+	var renderedReports []rendered
+
+	for _, tc := range targets() {
+		got := assess(t, tc.key, inventory)
+
+		if got.code != 0 {
+			t.Errorf("%s: exit code = %d, want 0; stderr = %q", tc.key, got.code, got.stderr)
+
+			continue
+		}
+
+		renderedReports = append(renderedReports, rendered{key: tc.key, shape: shapeOf(t, tc, got.stdout)})
+	}
+
+	// A report that failed to render has nothing to compare, and the failure is
+	// already reported above.
+	if len(renderedReports) != len(targets()) {
+		return
+	}
+
+	want := renderedReports[0]
+
+	for _, got := range renderedReports[1:] {
+		if diff := cmp.Diff(want.shape, got.shape, cmp.AllowUnexported(reportShape{})); diff != "" {
+			t.Errorf("the %s report shape differs from the %s report (-%s +%s):\n%s",
+				got.key, want.key, want.key, got.key, diff)
+		}
+	}
+}
+
+// TestAssessReportsDoNotCrossName pins that a report names only its own target:
+// the OVHcloud report never says "Scaleway" and the Scaleway report never says
+// "OVHcloud", in any case. An adapter serving the wrong snapshot, or a sentence
+// built from the wrong catalog, shows up here.
+func TestAssessReportsDoNotCrossName(t *testing.T) {
+	t.Parallel()
+
+	inventory := filepath.Join("testdata", "inventory.json")
+
+	for _, tc := range targets() {
+		t.Run(tc.key, func(t *testing.T) {
+			t.Parallel()
+
+			got := assess(t, tc.key, inventory)
+
+			if got.code != 0 {
+				t.Fatalf("exit code = %d, want 0; stderr = %q", got.code, got.stderr)
+			}
+
+			for _, other := range targets() {
+				if other.key == tc.key {
+					continue
+				}
+
+				if strings.Contains(strings.ToLower(got.stdout), strings.ToLower(other.name)) {
+					t.Errorf("the %s report names %s:\n%s", tc.key, other.name, got.stdout)
+				}
+			}
+		})
+	}
 }
 
 // TestAssessHostileInventory pins that values from an inventory file reach the
@@ -178,7 +413,7 @@ func TestAssessOutput(t *testing.T) {
 func TestAssessHostileInventory(t *testing.T) {
 	t.Parallel()
 
-	got := assess(t, filepath.Join("testdata", "inventory-hostile.json"))
+	got := assess(t, scalewayKey, filepath.Join("testdata", "inventory-hostile.json"))
 
 	if got.code != 0 {
 		t.Fatalf("exit code = %d, want 0; stderr = %q", got.code, got.stderr)
@@ -213,7 +448,9 @@ func hostileValues() []string {
 }
 
 // TestAssessErrors pins the input errors: exit code 1, one error line that names
-// the file, and never a panic or a stack trace.
+// the file, and never a panic or a stack trace. The errors are read, not
+// assessed, so they are the same for every target; each case runs against all
+// of them and the message never names one that is not in use.
 func TestAssessErrors(t *testing.T) {
 	t.Parallel()
 
@@ -247,52 +484,67 @@ func TestAssessErrors(t *testing.T) {
 	}
 
 	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			t.Parallel()
+		for _, target := range targets() {
+			t.Run(tc.name+"/"+target.key, func(t *testing.T) {
+				t.Parallel()
 
-			got := assess(t, tc.inventory)
+				got := assess(t, target.key, tc.inventory)
 
-			if got.code != 1 {
-				t.Errorf("exit code = %d, want 1; stderr = %q", got.code, got.stderr)
-			}
-
-			if got.stdout != "" {
-				t.Errorf("stdout = %q, want empty", got.stdout)
-			}
-
-			if !strings.HasPrefix(got.stderr, errPrefix) {
-				t.Errorf("stderr = %q, want it to start with %q", got.stderr, errPrefix)
-			}
-
-			if !strings.HasSuffix(got.stderr, "\n") || strings.Count(got.stderr, "\n") != 1 {
-				t.Errorf("stderr = %q, want exactly one line ending in a newline", got.stderr)
-			}
-
-			if len(got.stderr) > maxErrorLine {
-				t.Errorf("stderr is %d bytes, want at most %d", len(got.stderr), maxErrorLine)
-			}
-
-			// The error names the file it failed on, quoted, as text.Quote shows it.
-			if want := strconv.Quote(tc.inventory); !strings.Contains(got.stderr, want) {
-				t.Errorf("stderr = %q, want it to name the file as %s", got.stderr, want)
-			}
-
-			for _, want := range tc.wantStderr {
-				if !strings.Contains(got.stderr, want) {
-					t.Errorf("stderr = %q, want it to name %q", got.stderr, want)
+				if got.code != 1 {
+					t.Errorf("exit code = %d, want 1; stderr = %q", got.code, got.stderr)
 				}
-			}
 
-			if lower := strings.ToLower(got.stdout + got.stderr); strings.Contains(lower, "panic") ||
-				strings.Contains(lower, "goroutine") {
-				t.Errorf("the output holds a panic or a stack trace:\n%s\n%s", got.stdout, got.stderr)
-			}
-		})
+				if got.stdout != "" {
+					t.Errorf("stdout = %q, want empty", got.stdout)
+				}
+
+				if !strings.HasPrefix(got.stderr, errPrefix) {
+					t.Errorf("stderr = %q, want it to start with %q", got.stderr, errPrefix)
+				}
+
+				if !strings.HasSuffix(got.stderr, "\n") || strings.Count(got.stderr, "\n") != 1 {
+					t.Errorf("stderr = %q, want exactly one line ending in a newline", got.stderr)
+				}
+
+				if len(got.stderr) > maxErrorLine {
+					t.Errorf("stderr is %d bytes, want at most %d", len(got.stderr), maxErrorLine)
+				}
+
+				// The error names the file it failed on, quoted, as text.Quote shows it.
+				if want := strconv.Quote(tc.inventory); !strings.Contains(got.stderr, want) {
+					t.Errorf("stderr = %q, want it to name the file as %s", got.stderr, want)
+				}
+
+				for _, want := range tc.wantStderr {
+					if !strings.Contains(got.stderr, want) {
+						t.Errorf("stderr = %q, want it to name %q", got.stderr, want)
+					}
+				}
+
+				// The message names the target in use, never another one.
+				for _, other := range targets() {
+					if other.key == target.key {
+						continue
+					}
+
+					if strings.Contains(strings.ToLower(got.stderr), strings.ToLower(other.name)) {
+						t.Errorf("stderr = %q for target %s, want it to name no %s",
+							got.stderr, target.key, other.name)
+					}
+				}
+
+				if lower := strings.ToLower(got.stdout + got.stderr); strings.Contains(lower, "panic") ||
+					strings.Contains(lower, "goroutine") {
+					t.Errorf("the output holds a panic or a stack trace:\n%s\n%s", got.stdout, got.stderr)
+				}
+			})
+		}
 	}
 }
 
 // TestAssessUsage pins the usage errors of the binary: exit code 2, usage text on
-// stderr, nothing on stdout, and the supported targets named for an unknown one.
+// stderr, nothing on stdout, and every supported target named, sorted, for an
+// unknown one.
 func TestAssessUsage(t *testing.T) {
 	t.Parallel()
 
@@ -316,14 +568,14 @@ func TestAssessUsage(t *testing.T) {
 				"assess", "--inventory", filepath.Join("testdata", "inventory.json"),
 				"--target", "nope",
 			},
-			wantStderr:    []string{targetKey},
-			wantFirstLine: []string{targetKey},
+			wantStderr:    []string{ovhcloudKey, scalewayKey},
+			wantFirstLine: []string{ovhcloudKey + ", " + scalewayKey},
 		},
 		{
 			name: "unknown flag",
 			args: []string{
 				"assess", "--inventory", filepath.Join("testdata", "inventory.json"),
-				"--target", targetKey, "--bogus",
+				"--target", scalewayKey, "--bogus",
 			},
 		},
 	}
@@ -389,28 +641,37 @@ func TestVersion(t *testing.T) {
 }
 
 // TestAssessIsDeterministic pins that two runs on the same inventory give the
-// same bytes: nothing in the report depends on map order or the clock.
+// same bytes for every target: nothing in the report depends on map order or the
+// clock.
 func TestAssessIsDeterministic(t *testing.T) {
 	t.Parallel()
 
 	inventory := filepath.Join("testdata", "inventory.json")
 
-	first := assess(t, inventory)
-	second := assess(t, inventory)
+	for _, tc := range targets() {
+		t.Run(tc.key, func(t *testing.T) {
+			t.Parallel()
 
-	if first.code != 0 || second.code != 0 {
-		t.Fatalf("exit codes = %d and %d, want 0; stderr = %q and %q",
-			first.code, second.code, first.stderr, second.stderr)
-	}
+			first := assess(t, tc.key, inventory)
+			second := assess(t, tc.key, inventory)
 
-	if first.stdout != second.stdout {
-		t.Errorf("two runs differ:\nfirst:\n%s\nsecond:\n%s", first.stdout, second.stdout)
+			if first.code != 0 || second.code != 0 {
+				t.Fatalf("exit codes = %d and %d, want 0; stderr = %q and %q",
+					first.code, second.code, first.stderr, second.stderr)
+			}
+
+			if first.stdout != second.stdout {
+				t.Errorf("two runs differ:\nfirst:\n%s\nsecond:\n%s", first.stdout, second.stdout)
+			}
+		})
 	}
 }
 
 // TestAssessPathHasNoNetworkOrCloudSDK pins the CLI criterion of the PRD: no
 // package on the assess path imports net/http, os/exec or a cloud SDK, so the
-// command cannot call a provider or start a process even by accident.
+// command cannot call a provider or start a process even by accident. It also
+// requires every target adapter to be on that path, so the check covers them all
+// instead of passing by absence.
 func TestAssessPathHasNoNetworkOrCloudSDK(t *testing.T) {
 	t.Parallel()
 
@@ -432,10 +693,24 @@ func TestAssessPathHasNoNetworkOrCloudSDK(t *testing.T) {
 		t.Fatalf("go list -deps ./cmd/eusov: %v", err)
 	}
 
-	for _, pkg := range strings.Fields(string(out)) {
+	deps := strings.Fields(string(out))
+
+	for _, pkg := range deps {
 		if forbiddenDependency(pkg) {
 			t.Errorf("the assess path depends on %s; no package on it may resolve a name, open a "+
 				"connection, start a process or use a cloud SDK", pkg)
+		}
+	}
+
+	// The check above can only refuse what the binary imports, so the adapters
+	// the CLI assesses against must be on the path: a target wired out of
+	// cmd/eusov, or one the build drops, would pass by absence.
+	for _, tc := range targets() {
+		want := "github.com/timothymamo/eu-sov-cloud/internal/adapter/target/" + tc.key
+
+		if !slices.Contains(deps, want) {
+			t.Errorf("the assess path does not depend on %s: wire the %s target in cmd/eusov so "+
+				"that the checks above cover it", want, tc.key)
 		}
 	}
 }
@@ -481,6 +756,157 @@ func forbiddenDependency(pkg string) bool {
 // holds a value and never opens a connection or resolves a name.
 func pureNetPackage(pkg string) bool {
 	return pkg == "net/url" || pkg == "net/netip"
+}
+
+// resourceRow is one row of a report's Resources table: the values the report
+// shows, with the code spans and the escapes the renderer adds undone.
+type resourceRow struct {
+	id       string
+	category string
+	fit      string
+	reason   string
+}
+
+// resourceRows returns the rows of report's Resources table, in report order,
+// and fails the test when the report has no such table or an empty one.
+func resourceRows(t *testing.T, report string) []resourceRow {
+	t.Helper()
+
+	lines := strings.Split(report, "\n")
+
+	start := slices.Index(lines, resourcesHeading)
+	if start < 0 {
+		t.Fatalf("the report has no %q heading:\n%s", resourcesHeading, report)
+	}
+
+	// The table follows the heading: a header row, the separator row below it,
+	// then one row per resource up to the blank line that ends the table.
+	i := start + 1
+	for i < len(lines) && !isTableRow(lines[i]) {
+		i++
+	}
+
+	i += 2
+
+	var rows []resourceRow
+
+	for ; i < len(lines) && isTableRow(lines[i]); i++ {
+		cells := tableCells(lines[i])
+		if len(cells) != 6 {
+			t.Fatalf("the Resources row %q has %d cells, want 6", lines[i], len(cells))
+		}
+
+		rows = append(rows, resourceRow{
+			id:       codeSpanText(cells[0]),
+			category: codeSpanText(cells[2]),
+			fit:      cells[3],
+			reason:   cells[5],
+		})
+	}
+
+	if len(rows) == 0 {
+		t.Fatalf("the Resources table has no rows:\n%s", report)
+	}
+
+	return rows
+}
+
+// isTableRow reports whether line is a row of a Markdown table: it starts and
+// ends with a boundary pipe.
+func isTableRow(line string) bool {
+	return strings.HasPrefix(line, "|") && strings.HasSuffix(line, "|")
+}
+
+// isSeparatorRow reports whether line separates a table's header row from its
+// rows: every cell of it is dashes, optionally with an alignment colon.
+func isSeparatorRow(line string) bool {
+	if !isTableRow(line) {
+		return false
+	}
+
+	for _, cell := range strings.Split(strings.Trim(line, "|"), "|") {
+		if strings.Trim(strings.TrimSpace(cell), ":-") != "" {
+			return false
+		}
+	}
+
+	return true
+}
+
+// tableCells splits a table row into its trimmed cells, with the backslash the
+// renderer writes before a pipe inside a cell undone.
+func tableCells(row string) []string {
+	body := strings.TrimSuffix(strings.TrimPrefix(row, "|"), "|")
+
+	var (
+		cells []string
+		cell  strings.Builder
+	)
+
+	for i := 0; i < len(body); i++ {
+		switch {
+		case body[i] == '\\' && i+1 < len(body) && body[i+1] == '|':
+			cell.WriteByte('|')
+			i++
+		case body[i] == '|':
+			cells = append(cells, strings.TrimSpace(cell.String()))
+			cell.Reset()
+		default:
+			cell.WriteByte(body[i])
+		}
+	}
+
+	return append(cells, strings.TrimSpace(cell.String()))
+}
+
+// codeSpanText returns the value a cell holds: the content of its code span,
+// which is how the report writes every value it does not trust, or the cell
+// itself when it holds none, as a fit does.
+func codeSpanText(cell string) string {
+	if spans := codeSpans(cell); len(spans) == 1 {
+		return spans[0]
+	}
+
+	return cell
+}
+
+// reportShape is what the reports of one inventory for two targets must share:
+// the headings in order, the header row of every table, and the resource IDs of
+// the Resources table in order. Everything else in a report depends on the
+// target, its snapshot and the fits.
+type reportShape struct {
+	headings     []string
+	tableHeaders []string
+	resourceIDs  []string
+}
+
+// shapeOf returns the skeleton of a report for target. The title names the
+// target, the one heading a report may not share with another target's, so it
+// is normalised to a placeholder.
+func shapeOf(t *testing.T, target targetCase, report string) reportShape {
+	t.Helper()
+
+	lines := strings.Split(report, "\n")
+
+	var shape reportShape
+
+	for i, line := range lines {
+		if strings.HasPrefix(line, "#") {
+			shape.headings = append(shape.headings, strings.ReplaceAll(line, "`"+target.name+"`", "`TARGET`"))
+			continue
+		}
+
+		// A table's header row is the row above its separator.
+		if isTableRow(line) && i+1 < len(lines) && isSeparatorRow(lines[i+1]) {
+			shape.tableHeaders = append(shape.tableHeaders, line)
+		}
+	}
+
+	for _, row := range resourceRows(t, report) {
+		shape.resourceIDs = append(shape.resourceIDs, row.id)
+	}
+
+	return shape
 }
 
 // hasCodeSpan reports whether s holds a Markdown code span whose content is
