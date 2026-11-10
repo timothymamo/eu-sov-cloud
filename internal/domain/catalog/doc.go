@@ -5,11 +5,12 @@
 //
 // A Catalog is validated when it is built with New: a target display name that
 // is not blank, a snapshot dated and sourced from an absolute https URL with an
-// ASCII DNS host name (not an IP address, not percent-encoded), no user info, no
-// square brackets, complete percent escapes, RFC 3986 characters only, no HTML
-// character reference shape and percent escapes that decode to valid text,
-// uniquely named offerings that each serve at least one known category in at
-// least one region, known capabilities, and free text (target, offering names,
+// ASCII DNS host name (not percent-encoded, and not ending in a number, so a
+// browser reads no IPv4 address in it, not even 0x7f.1 or 2130706433), no user
+// info, no square brackets, complete percent escapes, RFC 3986 characters only,
+// no HTML character reference shape and percent escapes that decode to valid
+// text, uniquely named offerings that each serve at least one known category in
+// at least one region, known capabilities, and free text (target, offering names,
 // regions) that passes text.Validate. Offering names are compared ignoring the
 // length of runs of white space; look-alike letters and Unicode normalisation
 // are not compared. Values are stored as given, never trimmed or decoded; the

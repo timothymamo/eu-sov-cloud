@@ -3,7 +3,6 @@ package catalog
 import (
 	"errors"
 	"fmt"
-	"net/netip"
 	"net/url"
 	"slices"
 	"strings"
@@ -19,9 +18,11 @@ import (
 // how current it is.
 type Snapshot struct {
 	// SourceURL is the page or API the data was taken from: an absolute https URL
-	// with an ASCII DNS host name, no user info, no square brackets and RFC 3986
-	// characters only, with every '%' starting a two-hex-digit escape, no HTML
-	// character reference and escapes that decode to valid text (see New).
+	// with an ASCII DNS host name that does not end in a number (no IPv4 address
+	// in any form a browser reads, such as 0x7f.1), no user info, no square
+	// brackets and RFC 3986 characters only, with every '%' starting a
+	// two-hex-digit escape, no HTML character reference and escapes that decode
+	// to valid text (see New).
 	SourceURL string
 	// RetrievedOn is when the data was retrieved. In a Catalog it is in UTC, and
 	// reporters format it as a UTC calendar date.
@@ -488,7 +489,9 @@ func isHex(b byte) bool {
 
 // isDNSName reports whether host, as url.URL.Hostname returns it (decoded, port
 // removed), is a non-empty ASCII DNS name of letters, digits, dots and hyphens
-// that is not an IP address.
+// that does not end in a number (endsInNumber), which a browser would read as
+// an IPv4 address. An IPv6 address needs square brackets, which
+// validateSourceURL refuses before.
 func isDNSName(host string) bool {
 	if host == "" {
 		return false
@@ -500,9 +503,26 @@ func isDNSName(host string) bool {
 		}
 	}
 
-	_, err := netip.ParseAddr(host)
+	return !endsInNumber(host)
+}
 
-	return err != nil
+// endsInNumber reports whether host ends in a number, as the WHATWG URL
+// Standard's host parser decides it: its last label, after one trailing dot is
+// dropped, is decimal digits only, or 0x or 0X followed by hexadecimal digits
+// only. A browser parses such a host as an IPv4 address, in any of the forms
+// its parser accepts (192.0.2.1; 0x7f.1 and 2130706433, which are both
+// 127.0.0.1), so it names no DNS host. A number in any other label, or a
+// last label that mixes a digit with a letter, is a name: 1password.com,
+// 123.example.com and example.co1 do not end in a number.
+func endsInNumber(host string) bool {
+	host = strings.TrimSuffix(host, ".")
+	last := host[strings.LastIndexByte(host, '.')+1:]
+
+	if len(last) >= 2 && last[0] == '0' && (last[1] == 'x' || last[1] == 'X') {
+		return strings.TrimLeft(last[2:], "0123456789abcdefABCDEF") == ""
+	}
+
+	return last != "" && strings.TrimLeft(last, "0123456789") == ""
 }
 
 // isDNSByte reports whether b may appear in an ASCII DNS name: a letter, a
