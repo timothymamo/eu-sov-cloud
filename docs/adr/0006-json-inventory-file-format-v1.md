@@ -47,9 +47,10 @@ read by `internal/adapter/source/inventoryfile`. This ADR fixes **schema version
 }
 ```
 
-**Fields.** Keys are spelt exactly as below, byte for byte, and appear at most once per object. Both are
-enforced: `"ID"`, `"Capabilities"` or `"capabilitieſ"` (with U+017F, which Unicode folds to `s`) is an
-unknown key, and a repeated key is an error, never a silent choice between two values.
+**Fields.** Keys are spelt exactly as below, character for character once JSON escapes are decoded, and
+appear at most once per object. Both are enforced: `"ID"`, `"Capabilities"` or `"capabilitieſ"` (with
+U+017F, which Unicode folds to `s`) is an unknown key, and a repeated key is an error, never a silent
+choice between two values.
 
 | Field | JSON type | Required | Meaning |
 |---|---|---|---|
@@ -67,37 +68,46 @@ Each resource object:
 | `region` | string | no | The source region; absent or empty means a global resource |
 | `capabilities` | array of strings | no | Capabilities from the taxonomy vocabulary; order and duplicates do not matter |
 
-`null` is the same as an absent field. The format has no account, tenant or subscription field.
+`null` is the same as an absent field; an element of `resources` or `capabilities` may not be `null`. The
+format has no account, tenant or subscription field.
 
 **Strict decoding.** The reader refuses, with `ErrDecode`: a file that starts with a byte order mark
 (UTF-8 `EF BB BF`, or UTF-16 `FF FE` or `FE FF`) or is not valid UTF-8 (`encoding/json` would replace an
 invalid byte with U+FFFD, so the IDs in a report would differ from the IDs in the file); anything but one
 JSON object (an empty file, malformed JSON, a second value after the object); a key the format does not
 define, spelt inexactly or repeated (at the top level or in a resource); a value of the wrong JSON type;
-and a missing or `null` `resources`. The reader checks keys, types and the resource count by reading the
-document token by token (`json.Decoder.Token`) before it decodes anything, because `encoding/json`
-matches keys ignoring case and keeps the last of a repeated key. Errors name the key by its path
-(`resources.1.regoin`) and place the problem by line and column (`line 3, column 26`, both from 1, the
-column in characters), never by byte offset, and never in the decoder's own text.
+a string, key or value, that escapes a surrogate (U+D800 to U+DFFF) other than as a high surrogate
+followed at once by a low one (such an escape names no character, and `encoding/json` would decode it to
+U+FFFD as well); and a missing or `null` `resources`. The reader checks keys, types, escapes and counts
+by reading the document token by token (`json.Decoder.Token`) before it decodes anything, because
+`encoding/json` matches keys ignoring case and keeps the last of a repeated key. Errors name the key by
+its path, an array element with its index in brackets as the domain writes it (`resources[1].regoin`),
+and place the problem by line and column (`line 3, column 26`, both from 1, the column in characters),
+never by byte offset, and never in the decoder's own text.
 
-**Schema version policy.** `schemaVersion` is read first, on its own, so a file of another version is
-refused for its version (`ErrSchemaVersion`, naming the version seen) and never for a field version 1
-does not know. The reader finds it by scanning the top-level keys for the exact key `schemaVersion`,
-stepping over the other values; a key that differs only in case is not the version, and is named in the
-error when the version is missing. A missing or `null` version is refused the same way; there is no default. The reader
-accepts exactly the integer `1`, spelt so: `1.0` and the string `"1"` are refused. Any change to the format, even a new optional field, is a new version
-recorded in a new ADR: with strict decoding, a version 1 reader could not read the new field anyway. A
-later reader may accept several versions; a writer always writes one.
+**Schema version policy.** `schemaVersion` is found before any key or type is checked (the encoding and
+the JSON syntax are checked before it), so a file of another version is refused for its version
+(`ErrSchemaVersion`, naming the version seen) and never for a field version 1 does not know. The reader
+finds it by scanning the top-level keys for the exact key `schemaVersion`, stepping over the other
+values; a key that differs only in case is not the version, and is named in the error when the version
+is missing. A missing or `null` version is refused the same way; there is no default. The reader accepts
+exactly the integer `1`, spelt so: `1.0` and the string `"1"` are refused. Any change to the format, even
+a new optional field, is a new version recorded in a new ADR: with strict decoding, a version 1 reader
+could not read the new field anyway. A later reader may accept several versions; a writer always writes
+one.
 
 **Caps.** The reader reads at most `MaxFileSize` (10 MiB) plus one byte through `io.LimitReader` and
-refuses a larger file (`ErrTooLarge`) before decoding it; exactly 10 MiB is accepted. It refuses more
-than `MaxResources` (50,000) resources (`ErrTooManyResources`) while it reads the document token by
-token: it counts the elements of `resources` and stops at the first one past the cap, before a single
-resource is decoded, so memory follows the file size, not the resource count. (Decoding first would let
+refuses a larger file (`ErrTooLarge`) before decoding it; exactly 10 MiB is accepted. While it reads the
+document token by token, it refuses more than `MaxResources` (50,000) resources (`ErrTooManyResources`)
+and a resource that lists more than `MaxCapabilities` (32) capabilities (`ErrDecode`): it counts the
+elements of `resources` and of each `capabilities` list and stops at the first one past the cap, before a
+single resource is decoded, so memory follows the file size, not the counts. (Decoding first would let
 10 MiB of empty `{}` resources, about 3 million of them, allocate over 1.5 GiB before the count is
-checked.) A resource entry in an exported, indented inventory is roughly 150 to 250 bytes, so the two caps
-admit about the same estate. The size cap alone would not bound the mapping work: 10 MiB of minimal
-resources (`{"id":"r1","category":"unclassified"}` and so on) is roughly 250,000 of them.
+checked.) A resource entry in an exported, indented inventory is roughly 150 to 250 bytes, so the size
+and resource caps admit about the same estate. The size cap alone would not bound the mapping work:
+10 MiB of minimal resources (`{"id":"r1","category":"unclassified"}` and so on) is roughly 250,000 of
+them. The capability vocabulary holds nine capabilities; 32 leaves room for it to grow, and for
+duplicates, which the cap counts although the domain drops them.
 
 **Values are validated by the domain.** The reader copies the fields into `inventory.Resource` values
 and builds the inventory with `inventory.New`, which enforces a non-blank source, unique non-blank IDs,
@@ -109,16 +119,18 @@ file order never reaches a report.
 
 **Errors.** Every error is one line, starts `inventory file <text.Quote(path)>:`, and wraps `ErrRead`,
 `ErrTooLarge`, `ErrDecode`, `ErrSchemaVersion`, `ErrTooManyResources`, a domain sentinel or `ctx.Err()`.
-A cancelled context is reported before the file is opened.
-
-**Cancellation and reading once.** The file is opened and read on a goroutine of its own; the call
-returns as soon as the context is cancelled, and closes the file if it is open, which ends a blocked
-read. An open that blocks (a FIFO with no writer) cannot be interrupted portably: its goroutine waits
-until the open returns or the process exits, which for a CLI is the end of the run. Regular files and
-pipes are read once per call. Whether `assess` accepts `-` for standard input is a milestone 7 decision;
-if it does, the CLI reads the input once and buffers it (ADR 0005), so the adapter still reads a file. The text of `*fs.PathError` (which repeats
+A cancelled context is reported before the file is opened. The text of `*fs.PathError` (which repeats
 the path unquoted) and of `encoding/json` errors is never passed on; values from the file, such as an
 unknown field name, are shown through `text.Quote`.
+
+**Cancellation and reading once.** The file is opened and read on a goroutine of its own; the call
+returns as soon as the context is cancelled, and closes the file if it is open, which ends a read
+blocked on a pipe or FIFO. An open that blocks (a FIFO with no writer) cannot be interrupted portably,
+and closing does not end a read Go cannot poll (a regular file on a stalled NFS mount): the goroutine
+then waits until the open or the read returns or the process exits, which for a CLI is the end of the
+run, and the call still returns. Regular files and pipes are read once per call. Whether `assess`
+accepts `-` for standard input is a milestone 7 decision; if it does, the CLI reads the input once and
+buffers it (ADR 0005), so the adapter still reads a file.
 
 **Fixtures.** Inventory files committed to the repository are sanitised (CLAUDE.md rule 2): IDs such as
 `i-0123456789abcdef0` and `db-example`, account `123456789012`, addresses in `192.0.2.0/24`, names under
@@ -158,11 +170,9 @@ unknown field name, are shown through `text.Quote`.
 - `eusov discover`, when it comes, writes version 1 exactly as recorded here, and a round-trip test pins
   that its output reads back to the same inventory.
 - The format cannot grow without a version bump and an ADR. That is deliberate friction.
-- One known gap in the version 1 reader, inherited from `encoding/json`: an escaped lone surrogate in a
-  string (`"\ud800"`) becomes U+FFFD instead of an error. A file that relies on it is not a valid version
-  1 file, so a stricter reader may refuse it without a version change; closing the gap needs a test that
-  pins it first. Inexact keys, repeated keys, invalid UTF-8 and byte order marks, gaps in the first
-  version of this reader, are refused.
+- The version 1 reader leaves no known gap from `encoding/json`: inexact keys, repeated keys, invalid
+  UTF-8, byte order marks and escaped lone surrogates, which `encoding/json` lets through and the first
+  version of this reader did too, are refused.
 - The format has no account field, but IDs can still identify an account (ARNs and Azure resource IDs
   embed account and subscription IDs). Users must treat an inventory file as sensitive; the tool never
   uploads it.
