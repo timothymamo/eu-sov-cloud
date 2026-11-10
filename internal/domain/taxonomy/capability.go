@@ -4,6 +4,8 @@ import (
 	"errors"
 	"fmt"
 	"slices"
+
+	"github.com/timothymamo/eu-sov-cloud/internal/domain/text"
 )
 
 // Capability is a feature a source resource depends on or a target offering
@@ -52,10 +54,11 @@ var capabilities = []Capability{
 
 // ParseCapability returns the capability whose value is exactly s. It does not
 // trim or fold case: anything else is an error wrapping ErrUnknownCapability.
+// The error quotes s with text.Quote, so it stays short however long s is.
 func ParseCapability(s string) (Capability, error) {
 	c := Capability(s)
 	if !slices.Contains(capabilities, c) {
-		return "", fmt.Errorf("%w %q", ErrUnknownCapability, s)
+		return "", fmt.Errorf("%w %s", ErrUnknownCapability, text.Quote(s))
 	}
 
 	return c, nil

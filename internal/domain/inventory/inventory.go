@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/timothymamo/eu-sov-cloud/internal/domain/taxonomy"
+	"github.com/timothymamo/eu-sov-cloud/internal/domain/text"
 )
 
 // Resource is one resource found in a source, classified into the taxonomy.
@@ -22,19 +23,23 @@ type Resource struct {
 	// Region is the source region the resource runs in, as the source names it.
 	Region string
 	// Capabilities lists the features the resource depends on. In an Inventory
-	// they are sorted and free of duplicates.
+	// they are sorted and free of duplicates, and nil when there are none.
 	Capabilities []taxonomy.Capability
 }
 
 // Inventory is a validated list of the resources found in one source. Build it
-// with New; its contents cannot be changed afterwards.
+// with New; its contents cannot be changed afterwards. A zero Inventory has not
+// been validated: later layers only ever receive values built by New.
 type Inventory struct {
 	source    string
 	resources []Resource
 }
 
 var (
-	// ErrEmptyID is returned for a resource without an ID.
+	// ErrEmptySource is returned for an inventory whose source is empty or only
+	// whitespace.
+	ErrEmptySource = errors.New("inventory has an empty source")
+	// ErrEmptyID is returned for a resource whose ID is empty or only whitespace.
 	ErrEmptyID = errors.New("resource has an empty ID")
 	// ErrDuplicateID is returned when two resources share an ID.
 	ErrDuplicateID = errors.New("duplicate resource ID")
@@ -42,29 +47,43 @@ var (
 
 // New validates resources and returns them as the inventory of source.
 //
-// Every resource needs a unique, non-empty ID, a taxonomy category (Unclassified
-// is valid; an unknown value is an error, never Unclassified) and capabilities
-// from the taxonomy vocabulary. The inventory holds its own copy of the
-// resources, sorted by ID, with each resource's capabilities sorted and
-// de-duplicated.
+// source must not be blank. Every resource needs a unique ID that is not blank, a
+// taxonomy category (Unclassified is valid; an unknown value is an error, never
+// Unclassified) and capabilities from the taxonomy vocabulary. source and each
+// resource's ID, RawType and Region must be valid free text (text.Validate); they
+// are stored as given, never trimmed. The inventory holds its own copy of the
+// resources, sorted by ID, with each resource's capabilities sorted,
+// de-duplicated and nil when there are none.
+//
+// Errors name the field and the resource at fault: by ID, or by position as
+// resources[i] when the ID itself is at fault. Values echoed in errors are quoted
+// with text.Quote, so errors stay short however long the input is.
 func New(source string, resources []Resource) (Inventory, error) {
+	if strings.TrimSpace(source) == "" {
+		return Inventory{}, ErrEmptySource
+	}
+
+	if err := text.Validate(source); err != nil {
+		return Inventory{}, fmt.Errorf("source: %w", err)
+	}
+
 	seen := make(map[string]struct{}, len(resources))
 	normalised := make([]Resource, 0, len(resources))
 
 	for i, r := range resources {
-		if r.ID == "" {
-			return Inventory{}, fmt.Errorf("resources[%d]: %w", i, ErrEmptyID)
+		if err := validateID(r.ID); err != nil {
+			return Inventory{}, fmt.Errorf("resources[%d]: %w", i, err)
 		}
 
 		if _, dup := seen[r.ID]; dup {
-			return Inventory{}, fmt.Errorf("%w %q", ErrDuplicateID, r.ID)
+			return Inventory{}, fmt.Errorf("resources[%d]: %w %s", i, ErrDuplicateID, text.Quote(r.ID))
 		}
 
 		seen[r.ID] = struct{}{}
 
 		n, err := normalise(r)
 		if err != nil {
-			return Inventory{}, fmt.Errorf("resource %q: %w", r.ID, err)
+			return Inventory{}, fmt.Errorf("resource %s: %w", text.Quote(r.ID), err)
 		}
 
 		normalised = append(normalised, n)
@@ -93,9 +112,31 @@ func (inv Inventory) Resources() []Resource {
 	return out
 }
 
-// normalise checks r's category and capabilities and returns a copy of r whose
-// capabilities are sorted and de-duplicated.
+// validateID checks that id is valid free text and not blank.
+func validateID(id string) error {
+	if strings.TrimSpace(id) == "" {
+		return ErrEmptyID
+	}
+
+	if err := text.Validate(id); err != nil {
+		return fmt.Errorf("id: %w", err)
+	}
+
+	return nil
+}
+
+// normalise checks the free text, category and capabilities of a resource with a
+// valid ID and returns a copy of it whose capabilities are sorted, de-duplicated
+// and nil when there are none.
 func normalise(r Resource) (Resource, error) {
+	if err := text.Validate(r.RawType); err != nil {
+		return Resource{}, fmt.Errorf("raw type: %w", err)
+	}
+
+	if err := text.Validate(r.Region); err != nil {
+		return Resource{}, fmt.Errorf("region: %w", err)
+	}
+
 	if _, err := taxonomy.ParseCategory(string(r.Category)); err != nil {
 		return Resource{}, err
 	}
@@ -109,6 +150,10 @@ func normalise(r Resource) (Resource, error) {
 	r = clone(r)
 	slices.Sort(r.Capabilities)
 	r.Capabilities = slices.Compact(r.Capabilities)
+
+	if len(r.Capabilities) == 0 {
+		r.Capabilities = nil
+	}
 
 	return r, nil
 }

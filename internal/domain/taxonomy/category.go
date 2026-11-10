@@ -4,6 +4,8 @@ import (
 	"errors"
 	"fmt"
 	"slices"
+
+	"github.com/timothymamo/eu-sov-cloud/internal/domain/text"
 )
 
 // Category is a provider-neutral service type, such as compute.vm. Its string
@@ -54,11 +56,12 @@ var categories = []Category{
 
 // ParseCategory returns the category whose value is exactly s. It does not trim
 // or fold case, and it never maps an unknown value to Unclassified: anything
-// else is an error wrapping ErrUnknownCategory.
+// else is an error wrapping ErrUnknownCategory. The error quotes s with
+// text.Quote, so it stays short however long s is.
 func ParseCategory(s string) (Category, error) {
 	c := Category(s)
 	if !slices.Contains(categories, c) {
-		return "", fmt.Errorf("%w %q", ErrUnknownCategory, s)
+		return "", fmt.Errorf("%w %s", ErrUnknownCategory, text.Quote(s))
 	}
 
 	return c, nil
