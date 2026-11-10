@@ -330,9 +330,46 @@ func TestParseErrors(t *testing.T) {
 			wantAbsent:   []string{"catalog object"},
 		},
 		{
-			name:    "unsupported schema version",
-			data:    doc(t, `"schemaVersion": 1`, `"schemaVersion": 2`),
-			wantErr: []error{snapshot.ErrSchemaVersion},
+			// An integer version is named by its value alone: the message never
+			// quotes a number the document spelt as an integer.
+			name:         "unsupported schema version",
+			data:         doc(t, `"schemaVersion": 1`, `"schemaVersion": 2`),
+			wantErr:      []error{snapshot.ErrSchemaVersion},
+			wantContains: []string{"is 2, want the integer 1"},
+		},
+		{
+			name:         "schema version written as the integer 0",
+			data:         doc(t, `"schemaVersion": 1`, `"schemaVersion": 0`),
+			wantErr:      []error{snapshot.ErrSchemaVersion},
+			wantContains: []string{"is 0, want the integer 1"},
+		},
+		{
+			// -0 is the integer 0 in a spelling that says more than its value:
+			// the message shows the number as written, so the reader says what
+			// the document actually holds, not a normalised form of it.
+			name:       "schema version written as -0",
+			data:       doc(t, `"schemaVersion": 1`, `"schemaVersion": -0`),
+			wantErr:    []error{snapshot.ErrSchemaVersion},
+			wantQuoted: []string{"-0"},
+			wantAbsent: []string{"is 0,"},
+		},
+		{
+			// 1.0 and 1e0 are the integer 1 in another spelling, which the
+			// reader refuses just the same, and names as the number it is not
+			// allowed to normalise: 1 alone would be a version the document
+			// does not contain.
+			name:       "schema version written as 1.0",
+			data:       doc(t, `"schemaVersion": 1`, `"schemaVersion": 1.0`),
+			wantErr:    []error{snapshot.ErrSchemaVersion},
+			wantQuoted: []string{"1.0"},
+			wantAbsent: []string{"is 1,"},
+		},
+		{
+			name:       "schema version written as 1e0",
+			data:       doc(t, `"schemaVersion": 1`, `"schemaVersion": 1e0`),
+			wantErr:    []error{snapshot.ErrSchemaVersion},
+			wantQuoted: []string{"1e0"},
+			wantAbsent: []string{"is 1,"},
 		},
 		{
 			name:    "missing schema version",
