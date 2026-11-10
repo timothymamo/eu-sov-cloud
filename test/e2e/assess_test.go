@@ -526,7 +526,8 @@ func TestAssessErrors(t *testing.T) {
 					t.Errorf("stderr is %d bytes, want at most %d", len(got.stderr), maxErrorLine)
 				}
 
-				// The error names the file it failed on, quoted, as text.Quote shows it.
+				// The error names the file it failed on, quoted, as text.QuotePath shows
+				// it.
 				if want := strconv.Quote(tc.inventory); !strings.Contains(got.stderr, want) {
 					t.Errorf("stderr = %q, want it to name the file as %s", got.stderr, want)
 				}
