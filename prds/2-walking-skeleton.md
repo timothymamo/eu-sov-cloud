@@ -1,6 +1,6 @@
 # PRD #2: Walking skeleton: assess an inventory file against the Scaleway catalog
 
-**Status:** Draft
+**Status:** In progress
 **Issue:** #2
 
 ## Problem
@@ -60,8 +60,8 @@ All criteria are pinned by tests that run offline under `make test` or `make tes
   fit is `partial` and the report lists each missing capability as a required change.
 - [ ] Given a resource whose category no offering in the catalog serves, then its fit is `none` with the
   reason "no offering in the Scaleway catalog for `<category>`", and it is listed as a blocker.
-- [ ] Given several candidate offerings, then the best fit is reported first (direct before partial),
-  ties broken by offering name.
+- [ ] Given several candidate offerings, then the best fit is reported first: direct before partial,
+  partial candidates missing fewer capabilities first, remaining ties broken by offering name.
 
 **Report**
 
@@ -101,25 +101,34 @@ All criteria are pinned by tests that run offline under `make test` or `make tes
 
 Each milestone ships as one PR. Milestones 4, 5 and 6 depend only on 3 and can run in parallel.
 
-1. [ ] **Domain models.** `taxonomy` (in-scope categories, `unclassified`, capability vocabulary, parsing
+1. [x] **Domain models.** `taxonomy` (in-scope categories, `unclassified`, capability vocabulary, parsing
    that rejects unknown values), `inventory` (resource: ID, raw provider type, category, region,
    capabilities used), `catalog` (target, offerings with categories, capabilities and EU regions, snapshot
    source and date). Unit tests only.
-2. [ ] **Mapping and assessment.** Fit rules (direct, partial, none) with reasons, candidate ordering,
+2. [x] **Mapping and assessment.** Fit rules (direct, partial, none) with reasons, candidate ordering,
    per-resource verdicts, blockers, required changes and summary counts. Table-driven unit tests covering
    every acceptance criterion under *Mapping*.
 3. [ ] **Use case and ports.** `internal/app/analysis` declares the inventory-source, catalog-source and
    reporter ports and runs load, map, assess, report. Tested with fakes. Empty contract suites
-   `sourcetest` and `targettest` with their first checks. ADR 0005 records the port shapes.
+   `sourcetest` and `targettest` with their first checks. ADR 0005 records the port shapes. The reporter
+   port receives report metadata alongside the assessment, including the inventory file name (checked
+   with `text.Validate`).
 4. [ ] **Inventory-file source adapter.** Reads the versioned JSON inventory format, validates it, passes
    `sourcetest`. Sanitised fixtures under `testdata/`. ADR 0006 records the file format, because it becomes
    the interchange format between future `discover` and `assess` commands. Caps the inventory file size
-   before decoding.
+   before decoding. Caps the number of resources as well as the file size (each resource is mapped
+   against every candidate offering).
 5. [ ] **Scaleway catalog adapter.** Embedded, dated catalog snapshot (`//go:embed`) covering at least
    `compute.vm`, `kubernetes.managed`, `storage.object` and `database.postgresql`, with its source URL and
    retrieval date in the file header. Passes `targettest`, plus a golden test of the parsed catalog.
 6. [ ] **Markdown reporter.** Renders an assessment as described under *Report*. Golden-file tests.
    Includes a golden test with a hostile inventory fixture (Markdown metacharacters in IDs and raw types).
+   Renders reasons from `mapping.Reason.Parts()`, escaping every part and building code spans for
+   category and capability parts safely (a fence longer than any backtick run in the value), never from
+   `String()` or by passing domain values to fmt/templates as Stringers. Escapes the inventory source too.
+   The hostile fixture includes a catalog whose target and offering names contain `|`, a backtick, `<`,
+   `[`, `](` and `*`. Regions are not a table column; offering regions appear only if a later milestone
+   adds them, escaped like every other value.
 7. [ ] **CLI and wiring.** `eusov assess` in `internal/cli`, adapters wired in `cmd/eusov`, exit codes,
    e2e test in `test/e2e` against a fixture inventory that exercises direct, partial, none and
    unclassified. README gains a usage section. Moves this PRD to `prds/done/` and closes #2.
