@@ -122,18 +122,37 @@ declares. An offering region still has to be a declared region spelt as declared
 in this repository and reviewed there; none exists outside it, so tightening a value rule breaks no
 document. ADR 0007's version policy is about documents in the wild, of which there are none yet.
 
-**Source URLs.** As defence in depth for a reader who sees a source URL rendered, `catalog.New` also
-refuses, after the checks it already makes (user info first, so nothing that could be a password is
-described):
+**Source URLs.** As defence in depth for a reader who sees a source URL rendered, `catalog.New`
+tightens two of the checks it already makes and adds two. User info is still checked first, so
+nothing that could be a password is described:
 
-- an ampersand that starts the shape of an HTML character reference: `&`, an ASCII letter, ASCII
-  letters or digits and `;` (`&amp;`, `&lt1;`); `&#`, decimal digits and `;`; `&#x` or `&#X`,
-  hexadecimal digits and `;`. A bare `&` between query parameters stays allowed;
+- user info is found as a browser's URL parser (the WHATWG URL Standard) finds it in an https URL:
+  an `@` in the authority, which starts after the scheme and any run of `/` or `\`, none included,
+  and ends at the next `/`, `\`, `?` or `#`. `https:/user:pass@host` and `https:user:pass@host` are
+  refused like `https://user:pass@host`, with the same bare message; an `@` in the path or the query
+  is not user info;
+- a host that ends in a number, by the WHATWG rule (its last label is decimal digits only, or `0x` or
+  `0X` and hexadecimal digits only), is not a DNS name: a browser reads it as an IPv4 address, and
+  `0x7f.1` and `2130706433` are both `127.0.0.1`. `1password.com`, `123.example.com` and
+  `example.co1` stay valid;
+- an ampersand that starts the shape of an HTML character reference is refused: `&`, an ASCII letter,
+  ASCII letters or digits and `;` (`&amp;`, `&lt1;`); `&#` and a decimal digit, or `&#x` or `&#X`
+  and a hexadecimal digit, with or without a `;` after the digits (`&#38;`, `&#38`, `&#x26`). A bare
+  `&` between query parameters stays allowed, and so do `&#` before a letter (`&#frag`) and `&#x`
+  before a letter that is not a hexadecimal digit (`&#xyz`);
 - percent escapes that, all decoded together as bytes (so a character spread over several escapes
-  decodes as one), fail `text.Validate`: a byte that is not UTF-8 (`%FF`), a control or format character
-  (`%0A`, `%00`, `%E2%80%AE`), or white space at the end of the URL.
+  decodes as one), fail `text.Validate` are refused: a byte that is not UTF-8 (`%FF`), a control or
+  format character (`%0A`, `%00`, `%E2%80%AE`), or white space at the end of the URL.
 
-Both errors say what was found and at which byte of the URL, and never show the URL or a part of it.
+The reference and escape errors say what was found and at which byte of the URL, and never show the
+URL or a part of it.
+
+The reference check is sized for the reporter that exists, Markdown. CommonMark decodes a character
+reference only with its `;`; HTML decodes a numeric reference without it too, so numeric references
+are refused with or without `;`. HTML also decodes some legacy named references without `;`
+(`&amp`, `&copy`, `&not`, `&reg`, `&sect`, ...). Those are **accepted on purpose**: refusing them by
+prefix would refuse ordinary query parameters such as `&region=`, `&section=` and `&notify=`. The
+check is a second layer, not output encoding: a reporter that writes HTML must escape `&` itself.
 
 **Query strings in fetched catalogs.** When catalogs can be fetched, a source URL with a query string
 is **refused**, never dropped. Dropping it would silently change the evidence the report cites, which
@@ -188,9 +207,13 @@ length. The inventory-file reader names its file with it, so the base name of a 
   without a word; allowing it can put tokens in a report.
 - **Move the declared regions into `catalog.Catalog` now.** See the decision: no consumer, more call
   sites, and the shape rule already meets the concern.
-- **Have the reporter neutralise character references and escapes instead.** The Markdown reporter
-  already shows the URL verbatim in a code span; refusing such a URL where the catalog is built covers
-  every reporter, including ones not yet written.
+- **Have the reporter neutralise character references and escapes instead.** A reporter must encode
+  what it writes in any case, and the Markdown reporter already shows the URL verbatim in a code span.
+  Refusing the shapes where the catalog is built is a second layer on top of that, sized for
+  Markdown, not a replacement for a reporter's own escaping.
+- **Refuse the legacy named references without `;` as well.** HTML decodes `&amp`, `&not`, `&reg`
+  and others without their `;`, but they are prefixes of ordinary parameter names (`&region=`,
+  `&notify=`), so refusing them would refuse plain provider URLs. An HTML reporter escapes `&`.
 
 ## Consequences
 
@@ -213,7 +236,8 @@ length. The inventory-file reader names its file with it, so the base name of a 
   character is placed at its first byte.
 - A new target whose provider names regions outside the code shape (with spaces, dots or non-ASCII
   letters) declares an ASCII code for each, as ADR 0007 already asks for one code per location.
-- A provider page whose URL needs an escape for a control or format character, or holds an entity
-  shape, cannot be cited as a source URL; such a snapshot cites another page.
+- A provider page whose URL needs an escape for a control or format character, holds a reference
+  shape or has a host that ends in a number cannot be cited as a source URL; such a snapshot cites
+  another page.
 - The fetching adapter, when it comes, must refuse a source URL with a query string, and must read at
   most the format's cap plus one byte before calling `Open` (ADR 0007).

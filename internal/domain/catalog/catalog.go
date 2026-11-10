@@ -21,8 +21,8 @@ type Snapshot struct {
 	// with an ASCII DNS host name that does not end in a number (no IPv4 address
 	// in any form a browser reads, such as 0x7f.1), no user info, no square
 	// brackets and RFC 3986 characters only, with every '%' starting a
-	// two-hex-digit escape, no HTML character reference and escapes that decode
-	// to valid text (see New).
+	// two-hex-digit escape, no HTML character reference (a numeric one with or
+	// without its ';') and escapes that decode to valid text (see New).
 	SourceURL string
 	// RetrievedOn is when the data was retrieved. In a Catalog it is in UTC, and
 	// reporters format it as a UTC calendar date.
@@ -230,8 +230,8 @@ func validateSnapshot(snapshot Snapshot) error {
 
 // errBadSourceURL is the reason given for a source URL that is not an
 // acceptable URL. The URL itself is never echoed: it may carry credentials.
-var errBadSourceURL = errors.New(
-	"not an absolute https URL with an ASCII DNS host name, no user info, RFC 3986 characters only")
+var errBadSourceURL = errors.New("not an absolute https URL with an ASCII DNS host name, no user info, " +
+	"RFC 3986 characters only, no character references, percent encoding that decodes to valid text")
 
 // validateSourceURL checks that raw is an absolute https URL with no user info,
 // valid free text made of RFC 3986 characters other than square brackets, with
@@ -284,11 +284,18 @@ func validateSourceURL(raw string) error {
 // characterReference returns the byte offset of the first '&' in raw that starts
 // the shape of an HTML character reference, or -1 if there is none. The shapes
 // are a named reference, '&', an ASCII letter, ASCII letters or digits and ';'
-// (&amp;, &lt1;), and a numeric one, "&#" with decimal digits or "&#x" or "&#X"
-// with hexadecimal digits, then ';' (&#38;, &#x26;). An HTML or Markdown
-// renderer would show the character such a reference names, not the URL the
-// catalog holds. A '&' that starts no such shape, as between query parameters
-// (?a=1&b=2), is allowed.
+// (&amp;, &lt1;), and a numeric one, "&#" and a decimal digit or "&#x" or "&#X"
+// and a hexadecimal digit, with or without a ';' after its digits (&#38;, &#38,
+// &#x26). An HTML or Markdown renderer would show the character such a
+// reference names, not the URL the catalog holds; HTML decodes a numeric
+// reference without its ';' too. A '&' that starts no such shape, as between
+// query parameters (?a=1&b=2) or before a hash and a letter (&#frag), is
+// allowed.
+//
+// A named reference needs its ';' here, although HTML also decodes some legacy
+// names without one (&amp, &copy, &not, &reg, &sect): refusing those by prefix
+// would refuse ordinary query parameters such as &region=, &section= and
+// &notify=. ADR 0009 records the decision; an HTML reporter escapes '&' itself.
 func characterReference(raw string) int {
 	for i := range len(raw) {
 		if raw[i] == '&' && isCharacterReference(raw[i+1:]) {
@@ -302,35 +309,29 @@ func characterReference(raw string) int {
 // isCharacterReference reports whether s, the text after a '&', starts with the
 // rest of an HTML character reference shape (see characterReference).
 func isCharacterReference(s string) bool {
-	var (
-		body  string
-		valid func(byte) bool
-	)
-
 	switch {
 	case strings.HasPrefix(s, "#x"), strings.HasPrefix(s, "#X"):
-		body, valid = s[2:], isHex
+		return len(s) > 2 && isHex(s[2])
 	case strings.HasPrefix(s, "#"):
-		body, valid = s[1:], isDigit
+		return len(s) > 1 && isDigit(s[1])
 	case s != "" && isLetter(s[0]):
 		// The letter is part of the name: what follows it may be empty.
-		return isReferenceEnd(s[1:], isAlphanumeric, 0)
+		return isNameEnd(s[1:])
 	default:
 		return false
 	}
-
-	return isReferenceEnd(body, valid, 1)
 }
 
-// isReferenceEnd reports whether s starts with at least least bytes for which
-// valid holds, followed by ';'.
-func isReferenceEnd(s string, valid func(byte) bool, least int) bool {
+// isNameEnd reports whether s starts with ASCII letters or digits, none
+// included, followed by ';': the rest of a named reference after its first
+// letter.
+func isNameEnd(s string) bool {
 	n := 0
-	for n < len(s) && valid(s[n]) {
+	for n < len(s) && isAlphanumeric(s[n]) {
 		n++
 	}
 
-	return n >= least && n < len(s) && s[n] == ';'
+	return n < len(s) && s[n] == ';'
 }
 
 // checkDecodedEscapes decodes every percent escape of raw, all at once and as
