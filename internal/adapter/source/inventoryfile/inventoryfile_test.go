@@ -10,6 +10,9 @@ package inventoryfile_test
 import (
 	"context"
 	"errors"
+	"go/ast"
+	"go/parser"
+	"go/token"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -262,7 +265,60 @@ const (
 	// fractionalSchemaVersionDocument spells the version as the number 1.0, which
 	// is a different JSON number from 1.
 	fractionalSchemaVersionDocument = `{"schemaVersion":1.0,"source":"aws","resources":[]}`
+	// misspeltSchemaVersionDocument capitalises the top-level schemaVersion key,
+	// so the exact key the format declares is missing.
+	misspeltSchemaVersionDocument = `{"SchemaVersion":1,"source":"aws","resources":[]}`
+	// capabilityNumberDocument puts the number 42 where a capability, a string,
+	// belongs.
+	capabilityNumberDocument = `{"schemaVersion":1,"source":"aws","resources":[` +
+		`{"id":"i-0123456789abcdef0","category":"compute.vm","capabilities":["ipv6",42]}]}`
+	// capabilityNullDocument puts null where a capability belongs.
+	capabilityNullDocument = `{"schemaVersion":1,"source":"aws","resources":[` +
+		`{"id":"i-0123456789abcdef0","category":"compute.vm","capabilities":[null]}]}`
+	// resourceNullDocument puts null where a resource object belongs.
+	resourceNullDocument = `{"schemaVersion":1,"source":"aws","resources":[null]}`
+	// multibyteThenWrongTypeDocument puts a value of several characters before a
+	// wrong type: äöü counts three columns, however many bytes it takes.
+	multibyteThenWrongTypeDocument = `{"schemaVersion":1,"source":"äöü","resources":[` +
+		`{"id":"i-0","category":42}]}`
+	// firstValueArrayDocument is a JSON array followed by a byte that is not
+	// JSON: what is wrong with the file is the data after the first value.
+	firstValueArrayDocument = `[] x`
+	// firstValueArrayThenValueDocument is a JSON array followed by a second value.
+	firstValueArrayThenValueDocument = `[1] x`
+	// loneHighSurrogateDocument escapes U+D800, a high surrogate, on its own in a
+	// resource id: JSON spells the escape so, but it names no character.
+	loneHighSurrogateDocument = `{"schemaVersion":1,"source":"aws","resources":[` +
+		`{"id":"a\ud800b","category":"compute.vm"}]}`
+	// loneLowSurrogateDocument escapes U+DC00, a low surrogate, on its own.
+	loneLowSurrogateDocument = `{"schemaVersion":1,"source":"aws","resources":[` +
+		`{"id":"a\udc00b","category":"compute.vm"}]}`
+	// surrogatePairDocument escapes U+1F600 as the pair of surrogates JSON spells
+	// it with: together they name one character, which the id may hold.
+	surrogatePairDocument = `{"schemaVersion":1,"source":"aws","resources":[` +
+		`{"id":"\ud83d\ude00","category":"compute.vm"}]}`
 )
+
+// capabilitiesDocument returns an inventory document holding one resource whose
+// capabilities list repeats the JSON value element n times: input too large for
+// a fixture.
+func capabilitiesDocument(n int, element string) string {
+	var b strings.Builder
+	b.WriteString(`{"schemaVersion":1,"source":"aws","resources":[`)
+	b.WriteString(`{"id":"i-0","category":"compute.vm","capabilities":[`)
+
+	for i := range n {
+		if i > 0 {
+			b.WriteString(",")
+		}
+
+		b.WriteString(element)
+	}
+
+	b.WriteString("]}]}")
+
+	return b.String()
+}
 
 // generated returns a function that writes document to a fresh file, for the
 // cases whose input is not a fixture.
@@ -278,7 +334,8 @@ func generated(document string) func(t *testing.T) string {
 // sentinel the error wraps, that it names the file through text.Quote(path), and
 // that it is one line that echoes the path quoted, never the OS error holding it
 // unquoted. A decode failure also says where in the document it is, as a line
-// and a column, and which key or location it is about.
+// and a column, and which key or location it is about, with an array element
+// written resources[i] as the domain writes it.
 func TestInventoryErrors(t *testing.T) {
 	t.Parallel()
 
@@ -322,6 +379,29 @@ func TestInventoryErrors(t *testing.T) {
 			name:    "trailing data after the object",
 			path:    fixture("trailing-data.json"),
 			wantErr: []error{inventoryfile.ErrDecode},
+			// What follows is described by what it follows: the first JSON value,
+			// whatever its type, not an inventory object the file never had to be.
+			wantMentions: [][]string{{"first JSON value"}},
+			wantAbsent:   []string{"inventory object"},
+		},
+		{
+			// The first value need not be an object for the reader to say what
+			// comes after it: an array and then a byte that is not JSON is refused
+			// for the data after the first JSON value at column 4.
+			name:         "array value then malformed data",
+			path:         generated(firstValueArrayDocument),
+			wantErr:      []error{inventoryfile.ErrDecode},
+			wantMentions: [][]string{{"first JSON value"}},
+			wantAbsent:   []string{"inventory object"},
+			wantPosition: "line 1, column 4",
+		},
+		{
+			name:         "array value then a second value",
+			path:         generated(firstValueArrayThenValueDocument),
+			wantErr:      []error{inventoryfile.ErrDecode},
+			wantMentions: [][]string{{"first JSON value"}},
+			wantAbsent:   []string{"inventory object"},
+			wantPosition: "line 1, column 5",
 		},
 		{
 			name:       "unknown top-level field",
@@ -337,11 +417,14 @@ func TestInventoryErrors(t *testing.T) {
 		},
 		{
 			// Naming the key is not enough: with several resources, the message
-			// must say which one the key is in, through text.Quote.
-			name:       "unknown field in the second resource",
-			path:       generated(unknownResourceFieldInSecondDocument),
-			wantErr:    []error{inventoryfile.ErrDecode},
-			wantQuoted: []string{"resources.1.regoin"},
+			// must say which one the key is in, through text.Quote, as the domain
+			// writes an array element - resources[1] - and where in the document it
+			// is: "regoin" opens at column 151.
+			name:         "unknown field in the second resource",
+			path:         generated(unknownResourceFieldInSecondDocument),
+			wantErr:      []error{inventoryfile.ErrDecode},
+			wantQuoted:   []string{"resources[1].regoin"},
+			wantPosition: "line 1, column 151",
 		},
 		{
 			// encoding/json accepts a repeated key and keeps the last value, so a
@@ -351,14 +434,14 @@ func TestInventoryErrors(t *testing.T) {
 			path:         generated(duplicateCapabilitiesDocument),
 			wantErr:      []error{inventoryfile.ErrDecode},
 			wantMentions: [][]string{{"duplicate", "twice", "repeated", "again", "more than once"}},
-			wantQuoted:   []string{"resources.0.capabilities"},
+			wantQuoted:   []string{"resources[0].capabilities"},
 		},
 		{
 			name:         "duplicate category key",
 			path:         generated(duplicateCategoryDocument),
 			wantErr:      []error{inventoryfile.ErrDecode},
 			wantMentions: [][]string{{"duplicate", "twice", "repeated", "again", "more than once"}},
-			wantQuoted:   []string{"resources.0.category"},
+			wantQuoted:   []string{"resources[0].category"},
 		},
 		{
 			name:         "duplicate resources key",
@@ -381,6 +464,8 @@ func TestInventoryErrors(t *testing.T) {
 			path:       generated(inexactIDDocument),
 			wantErr:    []error{inventoryfile.ErrDecode},
 			wantQuoted: []string{"ID"},
+			// Someone wrote ID for id: the message says so.
+			wantMentions: [][]string{{"did you mean"}},
 		},
 		{
 			name:       "inexact capabilities key spelled with a long s",
@@ -404,6 +489,45 @@ func TestInventoryErrors(t *testing.T) {
 			wantAbsent:   []string{"byte offset"},
 		},
 		{
+			// The column counts characters, not bytes: with äöü before it, the 42
+			// starts at character column 71, which is the document's byte 74.
+			name:         "wrong type after a multi-byte value",
+			path:         generated(multibyteThenWrongTypeDocument),
+			wantErr:      []error{inventoryfile.ErrDecode},
+			wantQuoted:   []string{"resources[0].category"},
+			wantPosition: "line 1, column 71",
+			wantAbsent:   []string{"column 74", "byte offset"},
+		},
+		{
+			// A capability is a string: the number 42 is refused where it is, so
+			// the message names the element of the list, with the index in brackets
+			// as the domain writes it, and where the 42 is (column 123).
+			name:         "capability that is not a string",
+			path:         generated(capabilityNumberDocument),
+			wantErr:      []error{inventoryfile.ErrDecode},
+			wantQuoted:   []string{"resources[0].capabilities[1]"},
+			wantPosition: "line 1, column 123",
+		},
+		{
+			// null is not a string either, and is refused as the element it is.
+			name:       "capability that is null",
+			path:       generated(capabilityNullDocument),
+			wantErr:    []error{inventoryfile.ErrDecode},
+			wantQuoted: []string{"resources[0].capabilities[0]"},
+		},
+		{
+			// A null element of the resources list is refused by the reader, as
+			// the element of that list, never passed on to the domain as a
+			// resource whose ID is empty.
+			name:         "resource that is null",
+			path:         generated(resourceNullDocument),
+			wantErr:      []error{inventoryfile.ErrDecode},
+			wantNotErr:   []error{inventory.ErrEmptyID},
+			wantMentions: [][]string{{"null"}},
+			wantQuoted:   []string{"resources[0]"},
+			wantPosition: "line 1, column 48",
+		},
+		{
 			// A byte order mark is not JSON and not UTF-8 text either way: the
 			// reader refuses it and says what it found.
 			name:         "UTF-8 byte order mark",
@@ -420,9 +544,28 @@ func TestInventoryErrors(t *testing.T) {
 		{
 			// encoding/json replaces an invalid byte with U+FFFD and decodes on,
 			// which would make the id in the report differ from the id in the file.
-			name:    "invalid UTF-8 in a value",
-			path:    generated(invalidUTF8Document),
-			wantErr: []error{inventoryfile.ErrDecode},
+			// The FF is the document's byte 55, its character column 56.
+			name:         "invalid UTF-8 in a value",
+			path:         generated(invalidUTF8Document),
+			wantErr:      []error{inventoryfile.ErrDecode},
+			wantPosition: "line 1, column 56",
+		},
+		{
+			// JSON spells a character outside the BMP as a pair of escaped
+			// surrogates. A surrogate escape on its own names no character, and a
+			// decoder that accepts it writes U+FFFD into the id instead.
+			name:         "escaped high surrogate on its own",
+			path:         generated(loneHighSurrogateDocument),
+			wantErr:      []error{inventoryfile.ErrDecode},
+			wantMentions: [][]string{{"line 1, column "}},
+			wantAbsent:   []string{"byte offset"},
+		},
+		{
+			name:         "escaped low surrogate on its own",
+			path:         generated(loneLowSurrogateDocument),
+			wantErr:      []error{inventoryfile.ErrDecode},
+			wantMentions: [][]string{{"line 1, column "}},
+			wantAbsent:   []string{"byte offset"},
 		},
 		{
 			// The version is checked on the envelope before any field of this
@@ -455,6 +598,17 @@ func TestInventoryErrors(t *testing.T) {
 			path:         fixture("no-schema-version.json"),
 			wantErr:      []error{inventoryfile.ErrSchemaVersion},
 			wantMentions: [][]string{{"schemaVersion"}, {"0", "absent", "missing", "not set", "not present"}},
+		},
+		{
+			// The exact key is missing, so the file is refused for its version,
+			// never for a field the version it claims has: the key that was meant
+			// is named, quoted, and the sentinel says it is about the version.
+			name:         "schema version key misspelt",
+			path:         generated(misspeltSchemaVersionDocument),
+			wantErr:      []error{inventoryfile.ErrSchemaVersion},
+			wantNotErr:   []error{inventoryfile.ErrDecode},
+			wantMentions: [][]string{{"schemaVersion"}},
+			wantQuoted:   []string{"SchemaVersion"},
 		},
 		{
 			name:         "missing resources",
@@ -743,5 +897,189 @@ func TestInventoryAcceptsFileOfMaxSize(t *testing.T) {
 
 	if got := inv.Source(); got != "aws" {
 		t.Errorf("Source() = %q, want %q", got, "aws")
+	}
+}
+
+// capabilityCap is the most capabilities a resource may carry. The adapter
+// declares it as the exported constant MaxCapabilities; the tests that need its
+// value cannot refer to the identifier while the branch pinning it still has to
+// build, so the value is repeated here and TestMaxCapabilitiesIsExported pins
+// the declaration.
+const capabilityCap = 32
+
+// TestMaxCapabilitiesIsExported pins the capability cap as part of the
+// adapter's API: an exported constant named MaxCapabilities whose value is
+// capabilityCap. A reader of the package - and its documentation - depends on
+// the name and the value, not only on the refusal a file with more capabilities
+// meets.
+//
+// The test reads the package's own source instead of referring to the
+// identifier: on a branch where the constant does not exist yet, a reference
+// would fail to compile, and a package that does not compile shows nothing
+// about any other pin here.
+func TestMaxCapabilitiesIsExported(t *testing.T) {
+	t.Parallel()
+
+	fset := token.NewFileSet()
+
+	entries, err := os.ReadDir(".")
+	if err != nil {
+		t.Fatalf("reading the package directory: %v", err)
+	}
+
+	for _, entry := range entries {
+		name := entry.Name()
+		if entry.IsDir() || !strings.HasSuffix(name, ".go") || strings.HasSuffix(name, "_test.go") {
+			continue
+		}
+
+		file, err := parser.ParseFile(fset, name, nil, 0)
+		if err != nil {
+			t.Fatalf("parsing the package source %s: %v", text.Quote(name), err)
+		}
+
+		for _, decl := range file.Decls {
+			gen, ok := decl.(*ast.GenDecl)
+			if !ok || gen.Tok != token.CONST {
+				continue
+			}
+
+			for _, spec := range gen.Specs {
+				value, ok := spec.(*ast.ValueSpec)
+				if !ok || len(value.Names) != 1 || value.Names[0].Name != "MaxCapabilities" {
+					continue
+				}
+
+				if len(value.Values) != 1 {
+					t.Fatalf("%s: MaxCapabilities has no value of its own, want the constant %d",
+						fset.Position(value.Names[0].Pos()), capabilityCap)
+				}
+
+				lit, ok := value.Values[0].(*ast.BasicLit)
+				if !ok || lit.Kind != token.INT {
+					t.Fatalf("%s: MaxCapabilities is not an integer literal, want the constant %d",
+						fset.Position(value.Values[0].Pos()), capabilityCap)
+				}
+
+				if lit.Value != strconv.Itoa(capabilityCap) {
+					t.Fatalf("%s: MaxCapabilities = %s, want %d", fset.Position(lit.Pos()), lit.Value, capabilityCap)
+				}
+
+				return
+			}
+		}
+	}
+
+	t.Fatalf("the package declares no exported constant MaxCapabilities, want one whose value is %d", capabilityCap)
+}
+
+// TestInventoryCapsCapabilities pins the capability cap: a resource carries at
+// most MaxCapabilities capabilities, so exactly that many are accepted and the
+// next one is refused as a document that cannot be decoded, naming the resource
+// and the limit it is over.
+func TestInventoryCapsCapabilities(t *testing.T) {
+	t.Parallel()
+
+	const resourcePath = "resources[0]"
+
+	t.Run("exactly the cap is accepted", func(t *testing.T) {
+		t.Parallel()
+
+		// The vocabulary holds nine capabilities, so the list repeats one of
+		// them: the domain de-duplicates capabilities, and the cap is about how
+		// many the file lists, not how many survive.
+		path := writeFile(t, t.TempDir(), capabilitiesDocument(capabilityCap, `"ipv6"`))
+
+		inv, err := inventoryfile.New(path).Inventory(t.Context())
+		if err != nil {
+			t.Fatalf("Inventory() returned an error for a resource with exactly %d capabilities: %v", capabilityCap, err)
+		}
+
+		if got := len(inv.Resources()); got != 1 {
+			t.Errorf("len(Resources()) = %d, want 1", got)
+		}
+	})
+
+	t.Run("one past the cap is refused", func(t *testing.T) {
+		t.Parallel()
+
+		path := writeFile(t, t.TempDir(), capabilitiesDocument(capabilityCap+1, `"ipv6"`))
+
+		_, err := inventoryfile.New(path).Inventory(t.Context())
+		if !errors.Is(err, inventoryfile.ErrDecode) {
+			t.Fatalf("Inventory() for a resource with %d capabilities returned error %v, want one wrapping %v",
+				capabilityCap+1, err, inventoryfile.ErrDecode)
+		}
+
+		msg := err.Error()
+		if !strings.Contains(msg, resourcePath) {
+			t.Errorf("Inventory() error = %q, want it to name the resource %s", msg, text.Quote(resourcePath))
+		}
+
+		if !strings.Contains(msg, strconv.Itoa(capabilityCap)) {
+			t.Errorf("Inventory() error = %q, want it to name the limit %d", msg, capabilityCap)
+		}
+	})
+}
+
+// TestInventoryCapsCapabilitiesBeforeDecoding pins that the capability cap is
+// checked while the document is read, token by token: a resource whose
+// capabilities list runs to millions of elements is refused at the first one
+// past the cap, and the call allocates memory in proportion to the file, not to
+// the capabilities the file claims.
+//
+// The test is not parallel: TotalAlloc counts the whole process, so a test
+// allocating at the same time would be counted here.
+func TestInventoryCapsCapabilitiesBeforeDecoding(t *testing.T) {
+	// Three and a half million empty capabilities would be a document of
+	// 10.5 MB, past MaxFileSize, so the file would be refused for its size and
+	// never reach the capability cap. 3.4 million stays under the size cap and
+	// still lists far more capabilities than any decoder may read at once:
+	// decoding all of them allocates hundreds of megabytes, far past the budget
+	// below.
+	const capabilities = 3400000
+
+	document := capabilitiesDocument(capabilities, `""`)
+	if len(document) >= inventoryfile.MaxFileSize {
+		t.Fatalf("the generated document is %d bytes, want fewer than MaxFileSize (%d) so the file is refused for its capability count, not its size",
+			len(document), inventoryfile.MaxFileSize)
+	}
+
+	path := writeFile(t, t.TempDir(), document)
+
+	runtime.GC()
+
+	var before, after runtime.MemStats
+	runtime.ReadMemStats(&before)
+
+	_, err := inventoryfile.New(path).Inventory(t.Context())
+
+	runtime.ReadMemStats(&after)
+
+	if !errors.Is(err, inventoryfile.ErrDecode) {
+		t.Fatalf("Inventory() error = %v, want one wrapping %v", err, inventoryfile.ErrDecode)
+	}
+
+	const budget = 64 << 20
+	if grew := after.TotalAlloc - before.TotalAlloc; grew >= budget {
+		t.Errorf("Inventory() allocated %d MiB, want less than %d MiB: the capability cap must refuse the document before its capabilities are decoded",
+			grew>>20, budget>>20)
+	}
+}
+
+// TestInventoryAcceptsSurrogatePair pins the other side of the surrogate rule: a
+// pair of escapes that together name one character is a character the file can
+// hold, so the ID is the character itself, not the two escapes and not U+FFFD.
+func TestInventoryAcceptsSurrogatePair(t *testing.T) {
+	t.Parallel()
+
+	resources := inventoryOf(t, writeFile(t, t.TempDir(), surrogatePairDocument)).Resources()
+	if len(resources) != 1 {
+		t.Fatalf("len(Resources()) = %d, want 1", len(resources))
+	}
+
+	// U+1F600 GRINNING FACE, which the file spells as the escape pair.
+	if got, want := resources[0].ID, "\U0001F600"; got != want {
+		t.Errorf("Resources()[0].ID = %q, want %q", got, want)
 	}
 }
