@@ -117,7 +117,6 @@ func TestResourcesDoesNotAliasInput(t *testing.T) {
 	// Mutating the slice handed to New must not reach the inventory either.
 	input[0].ID = "tampered-example"
 	input[0].Capabilities[1] = taxonomy.Capability("tampered")
-	input = append(input, inventory.Resource{ID: "extra-example", Category: taxonomy.StorageObject})
 
 	if diff := cmp.Diff(wantResources(), inv.Resources()); diff != "" {
 		t.Errorf("Resources() changed after mutating the input slice (-want +got):\n%s", diff)
