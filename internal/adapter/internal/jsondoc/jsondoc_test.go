@@ -426,8 +426,8 @@ func TestObjectKeys(t *testing.T) {
 
 // TestObjectKeyCount pins the cap on the keys one kind of object may list: a
 // format that lists more than MaxKeys keys has made a mistake in its use of the
-// package, not the document one, so the error starts with "jsondoc:" and wraps
-// no sentinel.
+// package, not the document one, so the error starts with "jsondoc:", wraps
+// jsondoc.ErrMisuse and wraps no format sentinel.
 func TestObjectKeyCount(t *testing.T) {
 	t.Parallel()
 
@@ -447,21 +447,213 @@ func TestObjectKeyCount(t *testing.T) {
 	}
 
 	err := doc.Walker().Object(keys(jsondoc.MaxKeys+1), func(string) error { return nil })
+
+	checkMisuseError(t, err)
+
+	msg := err.Error()
+	if want := strconv.Itoa(jsondoc.MaxKeys); !strings.Contains(msg, want) {
+		t.Errorf("Object() error = %q, want it to name the limit %d", msg, jsondoc.MaxKeys)
+	}
+}
+
+// checkMisuseError pins what every misuse of the package owes the caller: it
+// reports a mistake in the format's use of the package, not in the document, so
+// it keeps the "jsondoc:" prefix, wraps jsondoc.ErrMisuse and never wraps the
+// format's own sentinel.
+func checkMisuseError(t *testing.T, err error) {
+	t.Helper()
+
 	if err == nil {
-		t.Fatalf("Object() with %d keys returned no error, want one", jsondoc.MaxKeys+1)
+		t.Fatal("the call returned no error, want one reporting the misuse of the package")
+	}
+
+	if !errors.Is(err, jsondoc.ErrMisuse) {
+		t.Errorf("error = %v, want one wrapping jsondoc.ErrMisuse", err)
+	}
+
+	if errors.Is(err, errInvalid) {
+		t.Errorf("error = %v, want it not to wrap the format's sentinel %v: the document is not at fault", err, errInvalid)
 	}
 
 	msg := err.Error()
 	if !strings.HasPrefix(msg, "jsondoc:") {
-		t.Errorf("Object() error = %q, want it to start with %q, a mistake in the format's use of the package", msg, "jsondoc:")
+		t.Errorf("error = %q, want it to start with %q, a mistake in the format's use of the package", msg, "jsondoc:")
 	}
 
-	if errors.Is(err, errInvalid) {
-		t.Errorf("Object() error = %q, want an error wrapping no sentinel: the document is not at fault", msg)
+	if strings.ContainsAny(msg, "\r\n") {
+		t.Errorf("error = %q, want a single line", msg)
 	}
 
-	if want := strconv.Itoa(jsondoc.MaxKeys); !strings.Contains(msg, want) {
-		t.Errorf("Object() error = %q, want it to name the limit %d", msg, jsondoc.MaxKeys)
+	if strings.Contains(msg, "%!w(<nil>)") {
+		t.Errorf("error = %q, want it without a sentinel that failed to format", msg)
+	}
+}
+
+// TestMisuse pins that a mistake in a format's use of the package is reported as
+// such, and never blamed on the document: a callback that returns without
+// reading the value it was called for, or reads it twice, a keys list that holds
+// the same Name twice, and a zero Document, whose Lookup and Walker have no
+// document to read.
+func TestMisuse(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name string
+		// misuse drives the walk the wrong way and returns the error it reports.
+		misuse func(t *testing.T) error
+		// wantAbsent lists substrings the message must not contain: a misuse is
+		// never the document's fault.
+		wantAbsent []string
+	}{
+		{
+			name: "object value callback that reads nothing",
+			misuse: func(t *testing.T) error {
+				t.Helper()
+
+				return open(t, `{"x": 1}`).Walker().Object([]jsondoc.Key{{Name: "x"}}, func(string) error { return nil })
+			},
+		},
+		{
+			name: "array element callback that reads nothing",
+			misuse: func(t *testing.T) error {
+				t.Helper()
+
+				w := open(t, `{"s": ["x"]}`).Walker()
+
+				return w.Object([]jsondoc.Key{{Name: "s"}}, func(string) error {
+					return w.Array("an array", func(int) error { return nil })
+				})
+			},
+		},
+		{
+			// The second String() reads the object's next key as a value, and the
+			// walk then reports that key as unknown: the mistake is the callback's.
+			name: "object value callback that reads twice",
+			misuse: func(t *testing.T) error {
+				t.Helper()
+
+				w := open(t, `{"x": "a", "y": "b"}`).Walker()
+
+				return w.Object([]jsondoc.Key{{Name: "x"}, {Name: "y"}}, func(string) error {
+					if _, err := w.String(); err != nil {
+						return err
+					}
+
+					_, err := w.String()
+
+					return err
+				})
+			},
+			wantAbsent: []string{"unknown key"},
+		},
+		{
+			// The second String() reads the next element as a value, and the array
+			// walk then steps over the element after it: an element goes unread
+			// without a word.
+			name: "array element callback that reads twice",
+			misuse: func(t *testing.T) error {
+				t.Helper()
+
+				w := open(t, `{"s": ["x", "y", "z"]}`).Walker()
+
+				return w.Object([]jsondoc.Key{{Name: "s"}}, func(string) error {
+					return w.Array("an array", func(int) error {
+						if _, err := w.String(); err != nil {
+							return err
+						}
+
+						_, err := w.String()
+
+						return err
+					})
+				})
+			},
+		},
+		{
+			// The same Name twice cannot say which of the two keys an object key
+			// is: today the second is never marked seen, so a required duplicate is
+			// reported as a key the document lacks.
+			name: "keys list that holds the same Name twice",
+			misuse: func(t *testing.T) error {
+				t.Helper()
+
+				keys := []jsondoc.Key{{Name: "a", Required: true}, {Name: "a", Required: true}}
+				w := open(t, `{"a": 1}`).Walker()
+
+				return w.Object(keys, func(string) error {
+					_, err := w.Raw()
+
+					return err
+				})
+			},
+			wantAbsent: []string{"required key", "missing"},
+		},
+		{
+			name: "Lookup on the zero Document",
+			misuse: func(t *testing.T) error {
+				t.Helper()
+
+				var doc jsondoc.Document
+
+				_, _, err := doc.Lookup("schemaVersion")
+
+				return err
+			},
+		},
+		{
+			name: "first read on the zero Document's Walker",
+			misuse: func(t *testing.T) error {
+				t.Helper()
+
+				var doc jsondoc.Document
+
+				w := doc.Walker()
+
+				return w.Object([]jsondoc.Key{{Name: "schemaVersion"}}, func(string) error {
+					_, err := w.Raw()
+
+					return err
+				})
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			err := tt.misuse(t)
+
+			checkMisuseError(t, err)
+
+			msg := err.Error()
+			for _, unwanted := range tt.wantAbsent {
+				if strings.Contains(msg, unwanted) {
+					t.Errorf("error = %q, want it without %s", msg, text.Quote(unwanted))
+				}
+			}
+		})
+	}
+}
+
+// TestLookupFirstOfRepeatedKeys pins that Lookup finds the first of two keys
+// spelt the same: both formats read their schema version with Lookup before the
+// walk refuses the repeated key, so the version they check is the one the object
+// holds first.
+func TestLookupFirstOfRepeatedKeys(t *testing.T) {
+	t.Parallel()
+
+	raw, folded, err := open(t, `{"v":1,"v":2}`).Lookup("v")
+	if err != nil {
+		t.Fatalf("Lookup() returned unexpected error: %v", err)
+	}
+
+	if folded != "" {
+		t.Errorf("Lookup() folded = %s, want the empty spelling of an exact key", text.Quote(folded))
+	}
+
+	if diff := cmp.Diff("1", string(raw)); diff != "" {
+		t.Errorf("Lookup() raw value mismatch (-want +got):\n%s", diff)
 	}
 }
 
