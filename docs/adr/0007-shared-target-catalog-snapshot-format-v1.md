@@ -2,7 +2,9 @@
 
 - Status: Accepted; the separate token walker ("One reader, not one decoder yet") is superseded,
   and the declared regions and the lint rules are amended, by
-  [0009](0009-decode-adapter-json-documents-through-one-strict-decoder.md)
+  [0009](0009-decode-adapter-json-documents-through-one-strict-decoder.md). 0009 adds the declared
+  region code shape within schema version 1, a one-time, recorded exception to this ADR's schema
+  version policy that ends once a snapshot can come from outside this repository
 - Date: 2026-11-10
 
 ## Context

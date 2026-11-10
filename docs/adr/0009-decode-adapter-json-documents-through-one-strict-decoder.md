@@ -26,6 +26,11 @@ change should settle:
 - `text.Quote` keeps the first 128 runes of a value, so an error about a deeply nested inventory file
   loses the file's base name.
 
+The issue's remaining item, a target-neutral snapshot parser with the snapshot format recorded in an
+ADR, was already done by ADR 0007: PR #22 made the reader shared, and PR #24 added OVHcloud on it with
+only a `catalog.json` and a `SOURCES.md`. This decision builds on it, so this ADR accounts for every
+item of issue #13.
+
 Forces:
 
 - **Shared rules in one place.** A rule written twice drifts; a rule written once is reviewed and
@@ -124,10 +129,14 @@ that, before its shape is checked, and a region spelt exactly like an earlier on
 more than once"; one that differs from an earlier one only in ASCII case is refused as the same
 region declared again. The declared regions are held in a map keyed by the code in ASCII
 lower case, so the check stays linear for the 60,000 regions `BenchmarkParseRepeatedRegionMention`
-declares. An offering region still has to be a declared region spelt as declared. The format stays
-**schema version 1**: both embedded snapshots already comply, and every version 1 snapshot is embedded
-in this repository and reviewed there; none exists outside it, so tightening a value rule breaks no
-document. ADR 0007's version policy is about documents in the wild, of which there are none yet.
+declares. An offering region still has to be a declared region spelt as declared.
+
+The format stays **schema version 1**. This is a **one-time, recorded exception** to ADR 0007's
+schema version policy, under which any change to the format is a new version. It is allowed because
+no version 1 snapshot exists outside this repository: both embedded snapshots are reviewed here and
+already comply, so the tighter rule breaks no document anyone holds. The exception ends once a
+snapshot can come from outside the repository (a fetched or user-supplied catalog); from then on, any
+tightening of the format is a new version, as ADR 0007 says.
 
 **Source URLs.** As defence in depth for a reader who sees a source URL rendered, `catalog.New`
 tightens two of the checks it already makes and adds two. User info is still checked first, so
@@ -161,11 +170,25 @@ are refused with or without `;`. HTML also decodes some legacy named references 
 prefix would refuse ordinary query parameters such as `&region=`, `&section=` and `&notify=`. The
 check is a second layer, not output encoding: a reporter that writes HTML must escape `&` itself.
 
-**Query strings in fetched catalogs.** When catalogs can be fetched, a source URL with a query string
-is **refused**, never dropped. Dropping it would silently change the evidence the report cites, which
-ADR 0006 and ADR 0007 refuse on principle, and a query can carry tracking or session tokens that do not
-belong in a report. The fetching adapter enforces this when it is built. Embedded snapshots, which are
-reviewed, keep today's rule: a query and a fragment are allowed. Nothing changes in code now.
+**Fetched catalogs.** Every catalog today is an embedded snapshot, reviewed in this repository, and
+the rules above lean on that. A catalog that is not embedded (fetched, or supplied by a user) must
+not land until its adapter meets these preconditions. Nothing changes in code now.
+
+- **A source URL with a query string is refused**, never dropped. Dropping it would silently change
+  the evidence the report cites, which ADR 0006 and ADR 0007 refuse on principle, and a query can
+  carry tracking or session tokens that do not belong in a report. The adapter refuses such a URL
+  before it calls `catalog.New`, with a bare error that shows no part of the URL, and `targettest`
+  gains a contract check that a target refuses one, so a new adapter cannot forget it. Embedded
+  snapshots keep today's rule: a query and a fragment are allowed.
+- **The work a snapshot can cause is bounded by count, not only by size.** `MaxDocumentBytes` caps a
+  snapshot at 1 MiB, within which it can hold about 13,500 offerings, and mapping keeps every
+  matching offering for each resource as a candidate. The security audit of this change measured
+  1,566 of 50,000 resources served in 3 s against such a snapshot. So either the snapshot format
+  gains count caps (offerings, declared regions, and per offering its categories, capabilities and
+  regions), or mapping bounds the candidates it keeps per resource.
+- The adapter reads at most `MaxDocumentBytes` plus one byte before it calls `Parse` (ADR 0007).
+- From the first such catalog on, the one-time exception to the schema version policy above has
+  ended: any tightening of the format is a new version.
 
 **Declared regions stay out of `catalog.Catalog`.** Issue #13 asked to consider moving the declared EU
 region list into the domain. It is not done:
@@ -209,7 +232,8 @@ length. The inventory-file reader names its file with it, so the base name of a 
 - **A regular expression for the region code.** A hand-written loop over the bytes is as short, needs
   no `regexp` in the reader and costs nothing per region.
 - **Bump the snapshot format to version 2 for the region rule.** No version 1 document exists outside
-  this repository, so a new version would add a transition without protecting any reader.
+  this repository, so a new version would add a transition without protecting any reader. The
+  decision records a one-time exception to ADR 0007's policy instead, and says when it ends.
 - **Drop a query string from a fetched source URL, or allow it.** Dropping changes the cited evidence
   without a word; allowing it can put tokens in a report.
 - **Move the declared regions into `catalog.Catalog` now.** See the decision: no consumer, more call
@@ -246,5 +270,8 @@ length. The inventory-file reader names its file with it, so the base name of a 
 - A provider page whose URL needs an escape for a control or format character, holds a reference
   shape or has a host that ends in a number cannot be cited as a source URL; such a snapshot cites
   another page.
-- The fetching adapter, when it comes, must refuse a source URL with a query string, and must read at
-  most the format's cap plus one byte before calling `Open` (ADR 0007).
+- The first adapter that serves a catalog that is not embedded must meet the preconditions under
+  "Fetched catalogs" before it lands: refuse a source URL with a query string, with a `targettest`
+  check; bound the snapshot's counts or mapping's candidates per resource; read at most the format's
+  cap plus one byte before calling `Parse` (ADR 0007); and treat any later tightening of the format
+  as a new version.

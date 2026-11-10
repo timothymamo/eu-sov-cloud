@@ -63,7 +63,9 @@
 // decodes, not what a caller reads. A caller that ever reads a snapshot from a
 // stream, such as a fetched or user-supplied catalog (issue #13), must read at
 // most MaxDocumentBytes+1 bytes (io.LimitReader) before calling Parse, so a
-// larger one is still refused without being read whole.
+// larger one is still refused without being read whole. Such a fetching
+// adapter must also meet the other preconditions ADR 0009 sets, under "Fetched
+// catalogs", before it lands.
 //
 // Every snapshot sits beside a SOURCES.md that gives each offering a section of
 // its own, naming the pages it comes from, the fact behind each category,
