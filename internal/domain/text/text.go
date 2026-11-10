@@ -18,10 +18,11 @@ const quoteRunes = 128
 var ErrInvalid = errors.New("invalid text")
 
 // Validate reports whether s is valid free text: at most MaxLen bytes of valid
-// UTF-8 with no control character (C0, DEL or C1, including tab and newline) and
-// no format character (Unicode category Cf: bidi controls, zero-width
-// characters, the byte order mark). The empty string is valid; whether a value
-// may be empty is the caller's decision.
+// UTF-8 with no control character (C0, DEL or C1, including tab and newline), no
+// format character (Unicode category Cf: bidi controls, zero-width characters,
+// the byte order mark) and no line or paragraph separator (categories Zl and
+// Zp: U+2028, U+2029), which some renderers treat as line breaks. The empty
+// string is valid; whether a value may be empty is the caller's decision.
 //
 // The error wraps ErrInvalid and says what is wrong and where, without echoing s.
 func Validate(s string) error {
@@ -36,7 +37,7 @@ func Validate(s string) error {
 			}
 		}
 
-		if unicode.IsControl(r) || unicode.Is(unicode.Cf, r) {
+		if unicode.IsControl(r) || unicode.In(r, unicode.Cf, unicode.Zl, unicode.Zp) {
 			return fmt.Errorf("%w: disallowed character %U at byte %d", ErrInvalid, r, i)
 		}
 	}
