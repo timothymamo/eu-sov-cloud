@@ -9,9 +9,10 @@ You never modify source code in this flow.
 
 ## Open
 
-1. Work in the worktree named in the task: run every command from it (`cd <path> && ...`). Confirm the
-   tree is clean (`git status`) and the branch is not `main` (`git branch --show-current`). If either
-   check fails, or the task names no worktree, stop and report.
+1. Work in the worktree named in the task: run every non-git command from it (`cd <path> && ...`). Run
+   git as `git -C <path> ...`, never `cd <path> && git ...`. Confirm the tree is clean (`git status`)
+   and the branch is not `main` (`git branch --show-current`). If either check fails, or the task names
+   no worktree, stop and report.
 2. Run `make check`. If it fails, report the exact output and stop.
 3. If this PR completes a file PRD: set its status to `Complete`, `git mv prds/<n>-*.md prds/done/`,
    fix links to the old path, and commit `docs(prd): complete PRD #<n>`.

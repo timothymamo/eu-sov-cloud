@@ -22,8 +22,9 @@ has its own branch, and every branch its own worktree under `.worktrees/`
    `.worktrees/<type>-<issue>-<slug>` on a new branch cut from the latest `origin/main`, and prints the
    worktree's absolute path. For a branch that already exists it reopens it instead, so this is also how
    to resume.
-3. Work only in that worktree: run every command from it (`cd <path> && ...`), and read and edit files
-   only under it. `make check`, `go test ./...` and `git` then act on this branch alone.
+3. Work only in that worktree: run every non-git command from it (`cd <path> && ...`), and read and edit
+   files only under it. Run git as `git -C <path> ...`, never `cd <path> && git ...`. `make check`,
+   `go test ./...` and `git` then act on this branch alone.
 4. When delegating, make `Worktree: <absolute path>` the first line of every task.
 
 ## Finish
