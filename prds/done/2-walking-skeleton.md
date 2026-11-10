@@ -1,6 +1,6 @@
 # PRD #2: Walking skeleton: assess an inventory file against the Scaleway catalog
 
-**Status:** In progress
+**Status:** Complete
 **Issue:** #2
 
 ## Problem
@@ -39,39 +39,39 @@ All criteria are pinned by tests that run offline under `make test` or `make tes
 
 **Inventory input**
 
-- [ ] Given a valid inventory file, when I run `eusov assess --inventory <file> --target scaleway`, then the
+- [x] Given a valid inventory file, when I run `eusov assess --inventory <file> --target scaleway`, then the
   command exits 0 and prints a Markdown report to stdout.
-- [ ] Given `--output report.md`, then the report is written to that file and nothing but diagnostics goes
+- [x] Given `--output report.md`, then the report is written to that file and nothing but diagnostics goes
   to stdout or stderr.
-- [ ] Given a file that does not exist, is not valid JSON, or declares an unsupported `schemaVersion`, then
+- [x] Given a file that does not exist, is not valid JSON, or declares an unsupported `schemaVersion`, then
   the command exits 1 and prints one error line to stderr naming the file and the problem. It never panics
   or prints a stack trace.
-- [ ] Given a resource whose category is not in the taxonomy (for example a typo such as `compute.mv`),
+- [x] Given a resource whose category is not in the taxonomy (for example a typo such as `compute.mv`),
   then the command exits 1 and the error names the resource ID and the unknown category. Unknown categories
   are never silently treated as `unclassified`.
-- [ ] Given a resource explicitly marked `unclassified`, then it appears in the report with fit `none` and
+- [x] Given a resource explicitly marked `unclassified`, then it appears in the report with fit `none` and
   a blocker "not classified", and is never dropped.
 
 **Mapping**
 
-- [ ] Given a resource whose category the catalog serves and whose capabilities are all offered by a
+- [x] Given a resource whose category the catalog serves and whose capabilities are all offered by a
   candidate offering, then its fit is `direct` and the offering is named.
-- [ ] Given a resource whose category is served but which uses a capability no candidate offers, then its
+- [x] Given a resource whose category is served but which uses a capability no candidate offers, then its
   fit is `partial` and the report lists each missing capability as a required change.
-- [ ] Given a resource whose category no offering in the catalog serves, then its fit is `none` with the
+- [x] Given a resource whose category no offering in the catalog serves, then its fit is `none` with the
   reason "no offering in the Scaleway catalog for `<category>`", and it is listed as a blocker.
-- [ ] Given several candidate offerings, then the best fit is reported first: direct before partial,
+- [x] Given several candidate offerings, then the best fit is reported first: direct before partial,
   partial candidates missing fewer capabilities first, remaining ties broken by offering name.
 
 **Report**
 
-- [ ] The report states the target, the catalog snapshot's source URL and retrieval date, and the
+- [x] The report states the target, the catalog snapshot's source URL and retrieval date, and the
   inventory file's name (not its full path).
-- [ ] The report contains a summary with the number of resources per fit, a per-resource table (ID,
+- [x] The report contains a summary with the number of resources per fit, a per-resource table (ID,
   raw type, category, fit, best offering, reasons) and a blockers section.
-- [ ] Given the same inventory twice, the two reports are byte-identical. Resources are ordered by ID,
+- [x] Given the same inventory twice, the two reports are byte-identical. Resources are ordered by ID,
   never by map or file order.
-- [ ] Every value taken from the inventory or catalog (IDs, raw types, regions, offering names), the
+- [x] Every value taken from the inventory or catalog (IDs, raw types, regions, offering names), the
   target name, the snapshot source URL and the inventory file name is rendered as an inline code span
   (fence longer than any backtick run, `|` escaped in table cells), so `|`, newlines, backticks, HTML,
   link syntax and GitHub's filters (math, mentions, references, emoji, task lists, bare links) cannot
@@ -83,17 +83,17 @@ All criteria are pinned by tests that run offline under `make test` or `make tes
 
 **CLI**
 
-- [ ] `eusov assess` with a missing `--inventory`, a missing or unknown `--target`, or an unknown flag exits
+- [x] `eusov assess` with a missing `--inventory`, a missing or unknown `--target`, or an unknown flag exits
   2 and prints usage to stderr. Unknown targets list the supported ones.
-- [ ] `eusov version` keeps working unchanged.
-- [ ] `eusov assess` needs no credentials or network: the e2e test runs the binary with an empty
+- [x] `eusov version` keeps working unchanged.
+- [x] `eusov assess` needs no credentials or network: the e2e test runs the binary with an empty
   environment and gets the same report. No package on the `assess` path imports a cloud SDK or `net/http`.
 
 **Architecture**
 
-- [ ] `make check` passes, including depguard: the domain imports only the standard library, the
+- [x] `make check` passes, including depguard: the domain imports only the standard library, the
   application imports only the domain, and adapters are constructed only in `cmd/eusov`.
-- [ ] The inventory-file adapter passes the contract suite in `internal/adapter/source/sourcetest`, and
+- [x] The inventory-file adapter passes the contract suite in `internal/adapter/source/sourcetest`, and
   the Scaleway adapter passes the suite in `internal/adapter/target/targettest`. Both suites exist and are
   written so the future AWS, Azure, GCP, OVHcloud and UpCloud adapters can run them unchanged.
 
@@ -132,7 +132,7 @@ Each milestone ships as one PR. Milestones 4, 5 and 6 depend only on 3 and can r
    `[`, `](` and `*`. Regions are not a table column; offering regions appear only if a later milestone
    adds them, escaped like every other value. Defines how an empty inventory name renders (the line is
    omitted).
-7. [ ] **CLI and wiring.** `eusov assess` in `internal/cli`, adapters wired in `cmd/eusov`, exit codes,
+7. [x] **CLI and wiring.** `eusov assess` in `internal/cli`, adapters wired in `cmd/eusov`, exit codes,
    e2e test in `test/e2e` against a fixture inventory that exercises direct, partial, none and
    unclassified. README gains a usage section. Moves this PRD to `prds/done/` and closes #2. The CLI
    prints every error as `eusov: <err>` through one sanitiser (control, format, Zl/Zp characters
@@ -192,6 +192,20 @@ fixtures in earlier milestones share a picture of the data:
   resource can require a specific country (data residency) is a later decision.
 - **Open: capability granularity.** Whether capabilities need versions or parameters (engine version,
   storage class) is left until the first live source adapter shows what data is available.
+- **Decided: `--inventory` is a path; standard input is not supported.** ADR 0006 left `-` for standard
+  input to milestone 7. The walking skeleton does without it: every inventory is a file the
+  inventory-file adapter reads once per run. Supporting it later means buffering the input once in the
+  CLI (ADR 0005).
 - **Open: tie-break between equally direct offerings.** When several offerings are direct with nothing
-  missing (e.g. Instances and Elastic Metal for a plain VM), the best offering is the first by name.
-  A product-preference order per category may read better in reports; revisit with the readiness score.
+  missing (e.g. Instances and Elastic Metal for a plain VM), the best offering is the first by name, and
+  the report names the tied offerings next to it ("`Elastic Metal` (tie: `Instances`)"). A
+  product-preference order per category may read better in reports; revisit with the readiness score.
+- **Accepted: Required changes for a partial tie.** When several offerings are partial with the same
+  number of missing capabilities but different ones, Required changes lists only the best offering's
+  gaps, not those of the tied offerings. Accepted for now: the case is rare, and it understates the
+  options rather than overstating portability.
+- **Note: fit `none` by "no offering" is pinned at the mapping level only.** The current Scaleway
+  snapshot serves every in-scope category, so no inventory can reach that verdict end to end. The
+  mapping tests pin it, and the e2e fixture covers `none` through `unclassified` instead. A target
+  without an offering for some category (OVHcloud for `serverless.function`, PRD #11) will make it
+  reachable.

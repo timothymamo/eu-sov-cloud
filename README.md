@@ -2,8 +2,9 @@
 
 Analyse what you run on a hyperscaler today, and find out what can move to a European cloud provider.
 
-> **Status: early scaffolding.** The repository layout, tooling, CI and agent workflow are in place.
-> The analysis itself is not implemented yet.
+> **Status: walking skeleton.** `eusov assess` assesses an inventory file against an embedded snapshot
+> of the Scaleway catalog, offline. Live discovery from AWS, Azure and GCP, and the OVHcloud and
+> UpCloud catalogs, are not implemented yet.
 
 ## What it will do
 
@@ -39,6 +40,32 @@ Sources and targets never reference each other directly. Both speak a provider-n
 (`compute.vm`, `kubernetes.managed`, `storage.object`, `database.postgresql`, ...), so adding a provider
 on either side does not mean writing a mapping for every pair. See
 [docs/architecture.md](docs/architecture.md).
+
+## Usage
+
+```bash
+make build
+./bin/eusov assess --inventory inventory.json --target scaleway [--output report.md]
+```
+
+`assess` reads an inventory file, compares every resource with the target's catalog and writes a
+Markdown report: per resource its taxonomy category, best offering, fit (direct, partial, none) and the
+reasons, then the required changes and the blockers. Without `--output` the report goes to standard
+output. With it, the report is written to the file with mode 0600, and an existing file is replaced
+only once the whole report is written.
+
+The inventory file is versioned JSON, described in
+[ADR 0006](docs/adr/0006-json-inventory-file-format-v1.md). `--inventory` takes a path; standard input
+is not supported. The only target so far is `scaleway`, served from a dated catalog snapshot embedded
+in the binary, so `assess` runs offline and needs no credentials.
+
+| Exit code | Meaning |
+|---|---|
+| 0 | The assessment ran. Blockers are a result, not a failure. |
+| 1 | The inventory, the catalog, the report or the output failed: one `eusov: ...` line on standard error. |
+| 2 | Usage error: missing or unknown flag, command or target. Usage text on standard error. |
+
+`eusov version` prints the version, `eusov help` the usage.
 
 ## Repository layout
 
