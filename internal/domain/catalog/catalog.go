@@ -243,8 +243,12 @@ var errBadSourceURL = errors.New("not an absolute https URL with an ASCII DNS ho
 //
 // User info is checked first and rejected with errBadSourceURL alone: any detail
 // about a character or an offset after that point could be about a password.
-// The later errors name what they found and its byte offset in raw, never the
-// URL or a part of it.
+// hasUserInfo cannot speak for every parser (a browser strips leading spaces
+// and C0 controls first, and an RFC 3986 parser does not end the authority at
+// a backslash), so until url.Parse has confirmed that raw has no user info,
+// every error for a raw that holds an '@' anywhere is errBadSourceURL alone
+// too. The other errors name what they found and its byte offset in raw, never
+// the URL or a part of it.
 func validateSourceURL(raw string) error {
 	if raw == "" {
 		return errors.New("missing")
@@ -254,6 +258,32 @@ func validateSourceURL(raw string) error {
 		return errBadSourceURL
 	}
 
+	if err := checkSourceURLText(raw); err != nil {
+		if strings.Contains(raw, "@") {
+			return errBadSourceURL
+		}
+
+		return err
+	}
+
+	// The parse error is not wrapped: it echoes the whole URL.
+	u, err := url.Parse(raw)
+	if err != nil || u.Scheme != "https" || u.Opaque != "" || u.User != nil || !isDNSName(u.Hostname()) {
+		return errBadSourceURL
+	}
+
+	if i := characterReference(raw); i >= 0 {
+		return fmt.Errorf("%w: ampersand starting an HTML character reference at byte %d", errBadSourceURL, i)
+	}
+
+	return checkDecodedEscapes(raw)
+}
+
+// checkSourceURLText checks that raw is valid free text made of RFC 3986
+// characters other than square brackets, with complete percent escapes. Its
+// errors name the character or the escape at fault and its byte offset in raw,
+// so validateSourceURL gives them only for a raw that holds no '@'.
+func checkSourceURLText(raw string) error {
 	if err := text.Validate(raw); err != nil {
 		return err
 	}
@@ -268,17 +298,7 @@ func validateSourceURL(raw string) error {
 		return fmt.Errorf("%w: incomplete percent escape at byte %d", errBadSourceURL, i)
 	}
 
-	// The parse error is not wrapped: it echoes the whole URL.
-	u, err := url.Parse(raw)
-	if err != nil || u.Scheme != "https" || u.Opaque != "" || u.User != nil || !isDNSName(u.Hostname()) {
-		return errBadSourceURL
-	}
-
-	if i := characterReference(raw); i >= 0 {
-		return fmt.Errorf("%w: ampersand starting an HTML character reference at byte %d", errBadSourceURL, i)
-	}
-
-	return checkDecodedEscapes(raw)
+	return nil
 }
 
 // characterReference returns the byte offset of the first '&' in raw that starts
