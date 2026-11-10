@@ -5,8 +5,9 @@ description: Test-first workflow and Go testing conventions for eu-sov-cloud. Us
 
 # Go test-driven development
 
-Work in the worktree named in your task (`cd <path> && ...` for every command), never in the repository
-root and never on `main`.
+Work in the worktree named in your task (`cd <path> && ...` for every non-git command), never in the
+repository root and never on `main`. Run git as `git -C <path> ...`, never `cd <path> && git ...`.
+Write the worktree path out in full; do not store it in a shell variable.
 
 ## RED: pin the behaviour
 

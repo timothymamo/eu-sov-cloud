@@ -7,8 +7,9 @@ description: Implementation conventions for eu-sov-cloud Go code - layering, err
 
 ## Before you write code
 
-1. Work in the worktree named in the task (`cd <path> && ...` for every command), never in the
-   repository root and never on `main`.
+1. Work in the worktree named in the task (`cd <path> && ...` for every non-git command), never in the
+   repository root and never on `main`. Run git as `git -C <path> ...`, never `cd <path> && git ...`.
+   Write the worktree path out in full; do not store it in a shell variable.
 2. Read the task's PRD or issue and the failing test you were given.
 3. Locate the layer (CLAUDE.md, "Architecture") and read the package's `doc.go`.
 4. Make the smallest change that makes the test pass, then refactor with the tests green.
@@ -42,4 +43,4 @@ mention it in your work-done summary.
 ## Done means
 
 `make check` passes, the change is committed with a Conventional Commit message
-(`feat(mapping): ...`, `fix(aws): ...`), and `git status` is clean.
+(`feat(mapping): ...`, `fix(aws): ...`), and `git -C <path> status` is clean.

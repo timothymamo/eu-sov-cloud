@@ -10,11 +10,13 @@ and **leaking what is in it, or the credentials used to read it**. Audit with th
 
 ## Run the tools
 
-In the worktree named in the task, after `git fetch origin`:
+Work in the worktree named in the task: run every non-git command from it (`cd <path> && ...`). Run git
+as `git -C <path> ...`, never `cd <path> && git ...`. Write the worktree path out in full; do not store it
+in a shell variable. After `git -C <path> fetch origin`:
 
 - `govulncheck ./...` (reachable vulnerabilities in code and dependencies)
 - `golangci-lint run --enable-only gosec`
-- `git diff origin/main...HEAD -- go.mod go.sum` for every new or bumped dependency
+- `git -C <path> diff origin/main...HEAD -- go.mod go.sum` for every new or bumped dependency
 
 ## Checklist
 
