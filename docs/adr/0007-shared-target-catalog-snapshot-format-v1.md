@@ -90,8 +90,10 @@ Each offering:
 
 1. The document is at most `MaxDocumentBytes` (1 MiB), checked before anything else. Exactly 1 MiB
    is accepted.
-2. It is valid UTF-8 and does not start with a byte order mark.
-3. It is one JSON value, an object, with nothing after it but white space.
+2. It does not start with a byte order mark, UTF-8 (`EF BB BF`) or UTF-16 (`FF FE`, `FE FF`), which is
+   refused by name as the inventory-file reader does (ADR 0006), and it is valid UTF-8.
+3. It is one JSON value, an object, with nothing after it but white space. Data after the first value
+   is reported as "unexpected data after the first JSON value", the inventory-file reader's words.
 4. `schemaVersion` is exactly the integer `1` (`ErrSchemaVersion` otherwise, also when it is missing).
    It is found by scanning the top-level keys for the exact key, before any other key or value is
    checked. So a document of another version is refused for its version alone, even if it also has
@@ -123,11 +125,16 @@ member state (PRD 11) is checked in review against the provider's published regi
 checks that the snapshot is consistent with its own declaration.
 
 **Errors.** Every error is one line and wraps one of the sentinels above or the error of `catalog.New`.
-A problem is placed by line and column (both from 1, the column in characters). A value is named by its
-path, an array element with its index in brackets as the domain writes it (`offerings[1].regions[0]`).
-Values from the document are shown through `text.Quote`. The text of `encoding/json` and `time.Parse`
-errors is never passed on. The reader's errors name neither the input nor any target. The adapter wraps
-them: `embedded Scaleway catalog "catalog.json": ...`.
+A problem the token walk finds, other than a missing top-level key, is placed by line and column (both
+from 1, the column in characters), and so are a byte that is not UTF-8, malformed JSON and data after
+the first JSON value. The other errors carry no position: they name the value by its path or its name,
+or speak of the whole document. These are the size cap, a byte order mark, a document that is empty,
+cut short or not an object, the schema version, a missing top-level key, and the checks after the walk
+(steps 6 to 9). A path writes an array element with its index in brackets, as the domain does
+(`offerings[1].regions[0]`). Values from the document are shown through `text.Quote`, and a
+`schemaVersion` number not written as a plain integer (`-0`, `1.0`, `1e0`) is shown as written. The text
+of `encoding/json` and `time.Parse` errors is never passed on. The reader's errors name neither the input
+nor any target. The adapter wraps them: `embedded Scaleway catalog "catalog.json": ...`.
 
 **Schema version policy.** As for inventories (ADR 0006): any change to the format, even a new
 optional field, is a new version recorded in a new ADR. The reader is shared, so a new version reaches
@@ -138,7 +145,10 @@ reader accept both versions for a while.
 bounds the work: the worst case under it is about 60,000 declared regions with the last one mentioned
 about 80,000 times. `BenchmarkParseRepeatedRegionMention` builds that document and measured about
 22 ms per parse on the development VM, against about 7 s for a variant that scans the declared list
-for each mention.
+for each mention. `Parse` takes the whole document in memory, so the cap bounds decoding, not reading.
+A caller that ever reads a snapshot from a stream, such as a fetched or user-supplied catalog (issue
+#13), must read at most `MaxDocumentBytes`+1 bytes (`io.LimitReader`) before calling `Parse`, so a
+larger one is still refused without being read whole.
 
 **`SOURCES.md`.** Every `catalog.json` has a `SOURCES.md` beside it with:
 
@@ -194,9 +204,19 @@ both use is issue #13.
 - Until issue #13 lands, two token walkers implement the same rules, one per format. A fix to one is
   checked against the other. The snapshot reader already puts the column of a malformed multi-byte
   character on its first byte; the inventory-file reader does not yet.
-- `.golangci.yml` limits the snapshot package to parsing packages from the standard library and the
-  domain, so a target that reads its snapshot through it stays offline. A target adapter that imports
-  the snapshot package imports a shared adapter-layer reader, not another adapter. A lint rule that
-  stops adapters from importing one another must allow that one import.
+- `.golangci.yml` holds three rules for this decision:
+  - `target-snapshot-reader-parses-bytes` limits the snapshot package to a list of parsing packages
+    from the standard library and the three domain packages it uses (`catalog`, `taxonomy`, `text`),
+    so a target that reads its snapshot through it stays offline. An import rule cannot see a call, so
+    review keeps `fmt.Print*` and `time.LoadLocation` out of it.
+  - `target-adapters-read-snapshots-through-the-reader` denies `encoding/json`, and with it
+    `encoding/json/v2` and `encoding/json/jsontext`, to the production code of every package under
+    `internal/adapter/target` except the reader, a target added later included. A target cannot decode
+    its snapshot on its own and skip the rules above.
+  - `adapters-are-built-in-cmd` stops one adapter importing another. It allows the shared adapter
+    helpers under `internal/adapter/internal/` and, by an entry of its own, this reader
+    (`internal/adapter/target/snapshot$`): a target adapter that imports it imports a shared
+    adapter-layer reader, not another adapter. The reader stays where it is rather than under
+    `internal/adapter/internal/`, beside the targets whose `catalog.json` its tests check.
 - The embedded snapshot is parsed on every `Catalog` and `Regions` call. That is cheap at a few
   kilobytes, and it keeps the adapter free of package-level state.
