@@ -24,6 +24,18 @@ records where each fact comes from, so the snapshot can be checked and refreshed
   every region against the availability page and every capability against the product's documentation
   before relying on this data in a release.
 
+## Licences of the sources
+
+- **`scaleway/docs-content` is licensed CC BY-NC-SA 4.0** (Creative Commons
+  Attribution-NonCommercial-ShareAlike 4.0 International), as its `LICENSE.md` states at the commit above.
+  GitHub's licence detection reports it only as "Other".
+- **Rule for this file and `catalog.json`:** take facts only (which product exists, in which regions, with
+  which feature) and brief quotations, each in quotation marks and attributed to the page it comes from.
+  Paraphrase everything else. Never copy documentation text in bulk, and keep it out of `catalog.json`,
+  which holds only names, taxonomy terms and region codes. A refresh follows the same rule.
+- `scaleway/scaleway-sdk-go` is licensed Apache-2.0. Only facts are taken from it: the regions and zones
+  each API declares.
+
 ## Rules applied
 
 - **Regions:** an offering lists a region when Scaleway's SDK says the product's API serves that region
@@ -32,7 +44,8 @@ records where each fact comes from, so the snapshot can be checked and refreshed
 - **Capabilities:** only from the taxonomy vocabulary, and only when the documentation describes the
   feature as generally available. Features in public or private beta are left out and listed under
   *Left out on purpose*. A capability may need a particular tier or option of the product; that is
-  noted where it applies.
+  noted where it applies, as **Needs:** on the capability's line, and **Scope:** says where an offering
+  meets only part of the taxonomy's definition.
 
 ## Declared EU regions
 
@@ -86,9 +99,10 @@ Category `kubernetes.managed`. Pages: <https://www.scaleway.com/en/docs/kubernet
 <https://www.scaleway.com/en/docs/kubernetes/reference-content/kubernetes-control-plane-offers/>.
 
 - `autoscaling`: pools autoscale between a minimum and maximum node count (concepts *Autoscale*, FAQ).
-- `high-availability`: the Dedicated control-plane tiers run two API server replicas "for HA" with etcd
-  replicated three times across zones, and regional clusters spread the control plane across zones. The
-  free Mutualized tier runs a single API server replica.
+- `high-availability`. **Needs:** a Dedicated control plane (Dedicated 4, 8 or 16). Those tiers run two
+  API server replicas "for HA" (control-plane offers page); the free Mutualized tier runs one API server
+  replica, so a cluster on it does not have this capability. On every tier etcd keeps three replicas
+  across zones, and regional clusters spread the control plane across zones.
 - Regions `fr-par`, `it-mil`, `nl-ams`, `pl-waw`: SDK `api/k8s/v1` serves all four regions. Milan rests
   on the SDK alone; the Milan changelog entry does not name Kapsule.
 
@@ -100,9 +114,12 @@ features. Pages: <https://www.scaleway.com/en/docs/managed-databases-for-postgre
 <https://www.scaleway.com/en/docs/managed-databases-for-postgresql-and-mysql/how-to/manage-read-replicas/>.
 
 - `encryption-at-rest`: LUKS volume encryption, generally available since 2025-01-16 (changelog).
-- `high-availability`: an HA standby node with synchronous replication takes over when the main node
-  fails. Main and standby are in the same data centre, in separate racks: it survives a node failure, not
-  a zone failure.
+- `high-availability`. **Needs:** the High Availability option (a standalone node can be upgraded to it,
+  not back). **Scope: node-level only.** A hot standby node, kept current by synchronous replication,
+  takes over when the main node fails (concepts *High availability*). The FAQ says the two nodes are in
+  the same data centre, in separate racks. So the pair survives the failure of a node, not the loss of
+  the data centre or zone: it meets the "node" half of the taxonomy's definition (surviving the loss of
+  a node or zone), never the "zone" half.
 - `read-replicas`: Read Replicas for PostgreSQL and MySQL Database Instances.
 - `snapshots`: Database snapshots of the instance's volume (concepts *Database snapshot*).
 - Regions `fr-par`, `nl-ams`, `pl-waw`: SDK `api/rdb/v1` serves these three regions.
@@ -114,8 +131,10 @@ Category `storage.object`. Pages: <https://www.scaleway.com/en/docs/object-stora
 
 - `encryption-at-rest`: server-side encryption with SSE-C, SSE-ONE and SSE-KMS (FAQ *How can I encrypt
   my objects?*).
-- `high-availability`: the Standard Multi-AZ class spreads data across three zones and survives the loss
-  of a data centre. Standard One Zone and Glacier do not.
+- `high-availability`. **Needs:** the Standard Multi-AZ storage class (S3 class `STANDARD`). The FAQ
+  says that class spreads data across three Availability Zones, one data centre each, and can rebuild it
+  after a whole data centre fails. Standard One Zone keeps data in three racks of a single zone, and
+  Glacier is archive storage: objects in either class do not have this capability.
 - `object-versioning`: bucket versioning (concepts *Versioning*; the 2026-05-20 changelog adds full
   versioning and Object Lock support to the console).
 - Regions `fr-par`, `it-mil`, `nl-ams`, `pl-waw`: the concepts page lists an S3 endpoint in each. Object
@@ -144,7 +163,18 @@ Category `serverless.function`. Pages: <https://www.scaleway.com/en/docs/serverl
 Category `database.postgresql`: a PostgreSQL-compatible database with documented differences from
 default PostgreSQL. Generally available since 2024-06-28 (changelog). Pages:
 <https://www.scaleway.com/en/docs/serverless-sql-databases/faq/>,
-<https://www.scaleway.com/en/docs/serverless-sql-databases/reference-content/serverless-sql-databases-overview/>.
+<https://www.scaleway.com/en/docs/serverless-sql-databases/reference-content/serverless-sql-databases-overview/>,
+<https://www.scaleway.com/en/docs/serverless-sql-databases/reference-content/known-differences/>.
+
+- **Compatibility caveat:** the known-differences page lists what does not behave as in standard
+  PostgreSQL, because of connection pooling and scaling to zero. In summary: no temporary tables or
+  views, no subscriptions (so no change-data-capture), no prepared transactions, and no concurrent
+  materialized-view refresh; `LISTEN`/`NOTIFY` delivery, advisory locks (and so state locking of the
+  Terraform/OpenTofu `pg` backend) and session settings are not guaranteed; databases and users are
+  managed through the console, API or IAM, not DDL; and some clients need recent versions for SNI. The
+  page points to Managed Database for PostgreSQL where strict compatibility is needed. The
+  `database.postgresql` category does not capture these differences; a workload that relies on any of
+  them needs Managed Database for PostgreSQL instead.
 
 - `autoscaling`: compute scales up and down with vCPU use, down to zero.
 - Region `fr-par`: SDK `api/serverless_sqldb/v1alpha1` serves Paris only.
