@@ -204,7 +204,7 @@ both use is issue #13.
 - Until issue #13 lands, two token walkers implement the same rules, one per format. A fix to one is
   checked against the other. The snapshot reader already puts the column of a malformed multi-byte
   character on its first byte; the inventory-file reader does not yet.
-- `.golangci.yml` holds four rules for this decision:
+- `.golangci.yml` holds five rules for this decision:
   - `target-snapshot-reader-parses-bytes` limits the snapshot package to a list of parsing packages
     from the standard library and the three domain packages it uses (`catalog`, `taxonomy`, `text`),
     so a target that reads its snapshot through it stays offline. An import rule cannot see a call, so
@@ -227,5 +227,12 @@ both use is issue #13.
     that is not a `_test.go` file, `cmd/eusov` included. A source adapter, a reporter, `internal/config`
     and the CLI have no snapshot to read, and the composition root gets each catalog through the target
     adapter it constructs.
+  - `embedded-snapshot-targets-stay-offline` denies `io/fs`, `io/ioutil`, `net`, `os`, `plugin`,
+    `syscall` and `unsafe`, each with its subpackages, to every file of a target that serves an embedded
+    snapshot (OVHcloud and Scaleway) that is not a `_test.go` file. Such a target reads only the bytes it
+    embeds, so with the reader held to parsing packages the whole path from embedded bytes to catalog
+    stays offline. The targets are named one by one, because a target that calls its provider's API
+    needs the network: a new embedded-snapshot target is added to the rule. An import rule cannot see a
+    call through an allowed package, so review holds that line, as for the reader.
 - The embedded snapshot is parsed on every `Catalog` and `Regions` call. That is cheap at a few
   kilobytes, and it keeps the adapter free of package-level state.

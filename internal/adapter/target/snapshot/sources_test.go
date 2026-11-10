@@ -29,10 +29,11 @@ const (
 	offeringsHeading = "## Offerings"
 )
 
-// scalewaySnapshot is the snapshot the rule is known to apply to today: the one
-// target adapter with an embedded snapshot. Finding no snapshot at all would
-// make the glob below pass while checking nothing, so its absence is a failure.
-const scalewaySnapshot = "../scaleway/catalog.json"
+// requiredSnapshots are the snapshots the rule is known to apply to today: every
+// target adapter that embeds one. Finding none of them would make the glob below
+// pass while checking nothing, so the absence of any one is a failure, and a new
+// target's snapshot is added here so the check cannot silently skip it.
+var requiredSnapshots = []string{"../scaleway/catalog.json", "../ovhcloud/catalog.json"}
 
 // TestEveryOfferingHasASourcesSection pins that every offering in an embedded
 // snapshot has exactly one section of its own in the SOURCES.md beside it, that
@@ -54,8 +55,10 @@ func TestEveryOfferingHasASourcesSection(t *testing.T) {
 		t.Fatalf("found no embedded snapshot: no %s matches ../*/%s", catalogFileName, catalogFileName)
 	}
 
-	if !slices.Contains(paths, scalewaySnapshot) {
-		t.Fatalf("the snapshots found are %v, want them to include %s", paths, scalewaySnapshot)
+	for _, want := range requiredSnapshots {
+		if !slices.Contains(paths, want) {
+			t.Fatalf("the snapshots found are %v, want them to include %s", paths, want)
+		}
 	}
 
 	for _, path := range paths {

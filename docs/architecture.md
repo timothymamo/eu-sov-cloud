@@ -53,7 +53,7 @@ The shapes and their alternatives are in [ADR 0005](adr/0005-context-first-ports
 | Port | Method | Implemented by | Pinned by |
 |---|---|---|---|
 | `InventorySource` | `Inventory(ctx) (inventory.Inventory, error)` | `adapter/source/inventoryfile` (the JSON inventory file, [ADR 0006](adr/0006-json-inventory-file-format-v1.md)), `adapter/source/{aws,azure,gcp}` | Contract suite `adapter/source/sourcetest` |
-| `CatalogSource` | `Catalog(ctx) (catalog.Catalog, error)` | `adapter/target/{ovhcloud,scaleway,upcloud}`, each serving an embedded, dated snapshot read through the shared reader `adapter/target/snapshot` ([ADR 0007](adr/0007-shared-target-catalog-snapshot-format-v1.md)) | Contract suite `adapter/target/targettest`; the snapshot format once, in `adapter/target/snapshot` |
+| `CatalogSource` | `Catalog(ctx) (catalog.Catalog, error)` | `adapter/target/{ovhcloud,scaleway,upcloud}`. Scaleway and OVHcloud each serve an embedded, dated snapshot read through the shared reader `adapter/target/snapshot` ([ADR 0007](adr/0007-shared-target-catalog-snapshot-format-v1.md)) | Contract suite `adapter/target/targettest`; the snapshot format once, in `adapter/target/snapshot` |
 | `Reporter` | `Report(ctx, w io.Writer, assessment.Assessment, ReportMeta) error` | `adapter/report/{markdown,jsonreport}` | Golden files |
 
 The use case is `analysis.New(inventorySource, catalogSource, reporter)` followed by
