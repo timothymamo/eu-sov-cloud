@@ -122,7 +122,9 @@ func goldenPath(name string) string {
 // environment, turns the fixture inventory into the report in assess.golden. The
 // golden is the specification of the walking skeleton: it shows the target, the
 // catalog snapshot, the inventory's base name, the summary, one row per resource
-// with its fit and reasons, the required changes and the blockers.
+// with its fit and reasons, the required changes and the blockers. The fixture
+// lists its resources in an order of its own, not in ID order, because the
+// report orders the rows itself and must not depend on the file's order.
 func TestAssessReport(t *testing.T) {
 	t.Parallel()
 
@@ -218,20 +220,24 @@ func TestAssessErrors(t *testing.T) {
 	cases := []struct {
 		name      string
 		inventory string
-		// wantStderr lists values stderr must hold besides the quoted file name.
+		// wantStderr lists the values stderr must hold besides the quoted file
+		// name: the problem with the file, which tells the user what to fix.
 		wantStderr []string
 	}{
 		{
-			name:      "missing file",
-			inventory: filepath.Join("testdata", "no-such-file.json"),
+			name:       "missing file",
+			inventory:  filepath.Join("testdata", "no-such-file.json"),
+			wantStderr: []string{"cannot read"},
 		},
 		{
-			name:      "not JSON",
-			inventory: filepath.Join("testdata", "not-json.json"),
+			name:       "not JSON",
+			inventory:  filepath.Join("testdata", "not-json.json"),
+			wantStderr: []string{"malformed JSON"},
 		},
 		{
-			name:      "unsupported schema version",
-			inventory: filepath.Join("testdata", "schema-version-2.json"),
+			name:       "unsupported schema version",
+			inventory:  filepath.Join("testdata", "schema-version-2.json"),
+			wantStderr: []string{"unsupported schema version"},
 		},
 		{
 			name:       "unknown category",
@@ -295,6 +301,8 @@ func TestAssessUsage(t *testing.T) {
 		args []string
 		// wantStderr lists values stderr must hold besides the usage text.
 		wantStderr []string
+		// wantFirstLine lists values the first line, the error itself, must hold.
+		wantFirstLine []string
 	}{
 		{
 			name: "missing target",
@@ -308,7 +316,8 @@ func TestAssessUsage(t *testing.T) {
 				"assess", "--inventory", filepath.Join("testdata", "inventory.json"),
 				"--target", "nope",
 			},
-			wantStderr: []string{targetKey},
+			wantStderr:    []string{targetKey},
+			wantFirstLine: []string{targetKey},
 		},
 		{
 			name: "unknown flag",
@@ -340,6 +349,15 @@ func TestAssessUsage(t *testing.T) {
 			for _, want := range tc.wantStderr {
 				if !strings.Contains(got.stderr, want) {
 					t.Errorf("stderr = %q, want it to name %q", got.stderr, want)
+				}
+			}
+
+			// The error is the first line; the usage text follows it. A user who
+			// mistypes a target learns the supported ones from that line.
+			firstLine, _, _ := strings.Cut(got.stderr, "\n")
+			for _, want := range tc.wantFirstLine {
+				if !strings.Contains(firstLine, want) {
+					t.Errorf("the first line %q, want it to name %q", firstLine, want)
 				}
 			}
 		})
@@ -416,28 +434,53 @@ func TestAssessPathHasNoNetworkOrCloudSDK(t *testing.T) {
 
 	for _, pkg := range strings.Fields(string(out)) {
 		if forbiddenDependency(pkg) {
-			t.Errorf("the assess path depends on %s; no package on it may import net/http, os/exec "+
-				"or a cloud SDK", pkg)
+			t.Errorf("the assess path depends on %s; no package on it may resolve a name, open a "+
+				"connection, start a process or use a cloud SDK", pkg)
 		}
 	}
 }
 
 // forbiddenDependency reports whether pkg is a network, process or cloud SDK
 // package the assess path must not depend on.
+//
+// net itself resolves names and opens connections, and every net subpackage that
+// does I/O is refused with it. The two exceptions are parsers and value types:
+// net/url turns a string into a URL and net/netip holds an address, and neither
+// reaches the network, so the domain catalog and text packages may use them. A
+// TLS handshake, a Google API client and the Scaleway, OVHcloud and UpCloud SDKs
+// belong to an adapter, never to the assess path.
 func forbiddenDependency(pkg string) bool {
-	for _, denied := range []string{"net/http", "os/exec"} {
+	if pureNetPackage(pkg) {
+		return false
+	}
+
+	for _, denied := range []string{"net", "os/exec", "crypto/tls"} {
 		if pkg == denied || strings.HasPrefix(pkg, denied+"/") {
 			return true
 		}
 	}
 
-	for _, denied := range []string{"github.com/aws/", "cloud.google.com/", "github.com/Azure/"} {
+	for _, denied := range []string{
+		"github.com/aws/",
+		"cloud.google.com/",
+		"github.com/Azure/",
+		"google.golang.org/api/",
+		"github.com/scaleway/",
+		"github.com/ovh/",
+		"github.com/UpCloudLtd/",
+	} {
 		if strings.HasPrefix(pkg, denied) {
 			return true
 		}
 	}
 
 	return false
+}
+
+// pureNetPackage reports whether pkg is a net subpackage that parses text or
+// holds a value and never opens a connection or resolves a name.
+func pureNetPackage(pkg string) bool {
+	return pkg == "net/url" || pkg == "net/netip"
 }
 
 // hasCodeSpan reports whether s holds a Markdown code span whose content is

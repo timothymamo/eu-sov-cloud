@@ -3,23 +3,16 @@
   "source": "aws",
   "resources": [
     {
-      "id": "bucket-example",
-      "rawType": "AWS::S3::Bucket",
-      "category": "storage.object",
+      "id": "partial-example",
+      "rawType": "AWS::EC2::Instance",
+      "category": "compute.vm",
       "region": "eu-west-1",
-      "capabilities": ["object-versioning"]
+      "capabilities": ["high-availability", "snapshots"]
     },
     {
-      "id": "db-example",
-      "rawType": "AWS::RDS::DBInstance",
-      "category": "database.postgresql",
-      "region": "eu-west-1",
-      "capabilities": ["point-in-time-restore", "read-replicas"]
-    },
-    {
-      "id": "fn-example",
-      "rawType": "AWS::Lambda::Function",
-      "category": "serverless.function",
+      "id": "misc-example",
+      "rawType": "AWS::CloudFormation::CustomResource",
+      "category": "unclassified",
       "region": "eu-west-1"
     },
     {
@@ -30,17 +23,24 @@
       "capabilities": ["ipv6"]
     },
     {
-      "id": "misc-example",
-      "rawType": "AWS::CloudFormation::CustomResource",
-      "category": "unclassified",
+      "id": "fn-example",
+      "rawType": "AWS::Lambda::Function",
+      "category": "serverless.function",
       "region": "eu-west-1"
     },
     {
-      "id": "partial-example",
-      "rawType": "AWS::EC2::Instance",
-      "category": "compute.vm",
+      "id": "db-example",
+      "rawType": "AWS::RDS::DBInstance",
+      "category": "database.postgresql",
       "region": "eu-west-1",
-      "capabilities": ["high-availability", "snapshots"]
+      "capabilities": ["point-in-time-restore", "read-replicas"]
+    },
+    {
+      "id": "bucket-example",
+      "rawType": "AWS::S3::Bucket",
+      "category": "storage.object",
+      "region": "eu-west-1",
+      "capabilities": ["object-versioning"]
     }
   ]
 }

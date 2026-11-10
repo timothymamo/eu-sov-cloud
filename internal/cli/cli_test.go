@@ -7,10 +7,13 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"regexp"
 	"runtime"
+	"slices"
 	"strings"
 	"testing"
 	"unicode"
+	"unicode/utf8"
 
 	"github.com/timothymamo/eu-sov-cloud/internal/app/analysis"
 	"github.com/timothymamo/eu-sov-cloud/internal/cli"
@@ -18,9 +21,18 @@ import (
 	"github.com/timothymamo/eu-sov-cloud/internal/domain/catalog"
 	"github.com/timothymamo/eu-sov-cloud/internal/domain/inventory"
 	"github.com/timothymamo/eu-sov-cloud/internal/domain/taxonomy"
+	"github.com/timothymamo/eu-sov-cloud/internal/domain/text"
 	"github.com/timothymamo/eu-sov-cloud/internal/testutil"
 	"github.com/timothymamo/eu-sov-cloud/internal/version"
 )
+
+// truncationRE matches the marker a cut error message ends with, on the one
+// line the message is printed as.
+var truncationRE = regexp.MustCompile(`\.\.\.\(truncated, [0-9]+ bytes\)\n$`)
+
+// escapeRE matches a complete escape of the form sanitise writes: \uXXXX for an
+// escaped rune and \xNN for a byte that is not valid UTF-8.
+var escapeRE = regexp.MustCompile(`\\u[0-9a-f]{4}|\\x[0-9a-f]{2}`)
 
 const (
 	// reportBody is what the fake reporter writes, so a test can tell the
@@ -42,15 +54,22 @@ const (
 )
 
 // fakeInventorySource is an analysis.InventorySource that returns a fixed
-// inventory or a fixed error and records how often it was called.
+// inventory or a fixed error and records how often it was called. onInventory,
+// when set, runs inside Inventory before the inventory is returned, so a test
+// can look at the filesystem while the inventory is being loaded.
 type fakeInventorySource struct {
-	inv   inventory.Inventory
-	err   error
-	calls int
+	inv         inventory.Inventory
+	err         error
+	onInventory func()
+	calls       int
 }
 
 func (s *fakeInventorySource) Inventory(ctx context.Context) (inventory.Inventory, error) {
 	s.calls++
+
+	if s.onInventory != nil {
+		s.onInventory()
+	}
 
 	if err := ctx.Err(); err != nil {
 		return inventory.Inventory{}, err
@@ -78,11 +97,14 @@ func (s *fakeCatalogSource) Catalog(ctx context.Context) (catalog.Catalog, error
 
 // fakeReporter is an analysis.Reporter that writes a fixed body and then
 // returns a fixed error. It records the metadata it was given, so a test can
-// check what the CLI told the reporter about the run.
+// check what the CLI told the reporter about the run. onReport, when set, runs
+// inside Report after the context is checked and before the body is written, so
+// a test can cancel the run in the middle of rendering.
 type fakeReporter struct {
-	body []byte
-	err  error
-	meta analysis.ReportMeta
+	body     []byte
+	err      error
+	onReport func()
+	meta     analysis.ReportMeta
 	// calls is the number of times Report was called.
 	calls int
 }
@@ -93,6 +115,10 @@ func (r *fakeReporter) Report(ctx context.Context, w io.Writer, _ assessment.Ass
 
 	if err := ctx.Err(); err != nil {
 		return err
+	}
+
+	if r.onReport != nil {
+		r.onReport()
 	}
 
 	if len(r.body) > 0 {
@@ -181,6 +207,11 @@ func checkErrorLine(t *testing.T, stderr string) {
 
 	if len(stderr) > maxErrorLine {
 		t.Errorf("stderr is %d bytes, want at most %d", len(stderr), maxErrorLine)
+	}
+
+	// The line is read by a terminal and a log reader, so it must also be text.
+	if !utf8.ValidString(stderr) {
+		t.Errorf("stderr = %q is not valid UTF-8", stderr)
 	}
 
 	for _, r := range stderr {
@@ -373,6 +404,105 @@ func TestRunAssessRuntimeError(t *testing.T) {
 	if !strings.Contains(stderr, "inventory") {
 		t.Errorf("stderr = %q, want it to name the inventory stage", stderr)
 	}
+
+	// Every hostile character is escaped, one by one, as strconv spells it.
+	for _, want := range []string{
+		`\n`, `\x1b`, `\u202e`, `\u2028`, `\u2029`, `\u0085`, `\x7f`, `\xff`, `\ufeff`,
+	} {
+		if !strings.Contains(stderr, want) {
+			t.Errorf("stderr = %q, want the escape %s", stderr, want)
+		}
+	}
+
+	// A message too long for the cap is cut, and says so.
+	if !truncationRE.MatchString(stderr) {
+		t.Errorf("stderr = %q, want it to end with a truncation marker", stderr)
+	}
+}
+
+// TestRunAssessErrorLineEscapes pins that each character a terminal or a log
+// reader would act on rather than show reaches the error line escaped, on the
+// one line, as strconv spells it.
+func TestRunAssessErrorLineEscapes(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		name string
+		msg  string
+		// want is the escape stderr must hold for msg.
+		want string
+	}{
+		{name: "line feed", msg: "a\nb", want: `a\nb`},
+		{name: "carriage return", msg: "a\rb", want: `a\rb`},
+		{name: "terminal escape", msg: "a\x1b[2J", want: `a\x1b[2J`},
+		{name: "right-to-left override", msg: "a" + string(rune(0x202e)) + "b", want: `a\u202eb`},
+		{name: "line separator", msg: "a" + string(rune(0x2028)) + "b", want: `a\u2028b`},
+		{name: "paragraph separator", msg: "a" + string(rune(0x2029)) + "b", want: `a\u2029b`},
+		{name: "next line", msg: "a" + string(rune(0x0085)) + "b", want: `a\u0085b`},
+		{name: "delete", msg: "a" + string(rune(0x7f)) + "b", want: `a\x7fb`},
+		// A lone 0xff byte is not valid UTF-8; it is escaped, never passed on.
+		{name: "invalid UTF-8 byte", msg: "a\xffb", want: `a\xffb`},
+		{name: "byte order mark", msg: "a" + string(rune(0xfeff)) + "b", want: `a\ufeffb`},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			h := newHarness(t)
+			h.inventory.err = errors.New(tc.msg)
+
+			code, stdout, stderr := h.run(t.Context(), "assess", "--inventory", inventoryPath,
+				"--target", targetKey)
+
+			if code != 1 {
+				t.Errorf("Run() = %d, want 1", code)
+			}
+
+			if stdout != "" {
+				t.Errorf("stdout = %q, want empty", stdout)
+			}
+
+			checkErrorLine(t, stderr)
+
+			if !strings.Contains(stderr, tc.want) {
+				t.Errorf("stderr = %q, want it to hold the escape %s", stderr, tc.want)
+			}
+		})
+	}
+}
+
+// TestRunAssessErrorLineCutIsNeverInsideAnEscape pins that a cut made by the cap
+// falls between characters: a message padded so that the cap lands on U+202E
+// still holds that character whole, or not at all, never half its escape.
+func TestRunAssessErrorLineCutIsNeverInsideAnEscape(t *testing.T) {
+	t.Parallel()
+
+	// The pads straddle the cap, so the cut lands on either side of the escape
+	// and inside each of its bytes in turn.
+	for pad := 1000; pad <= 1040; pad++ {
+		h := newHarness(t)
+		h.inventory.err = errors.New(strings.Repeat("x", pad) + string(rune(0x202e)) + "tail")
+
+		code, _, stderr := h.run(t.Context(), "assess", "--inventory", inventoryPath, "--target", targetKey)
+
+		if code != 1 {
+			t.Errorf("Run() = %d, want 1 with a pad of %d", code, pad)
+		}
+
+		checkErrorLine(t, stderr)
+
+		if !truncationRE.MatchString(stderr) {
+			t.Errorf("stderr = %q, want it to end with a truncation marker (pad %d)", stderr, pad)
+		}
+
+		// What is left once the complete escapes are taken out must hold no
+		// backslash: a cut inside \u202e would leave one.
+		if rest := escapeRE.ReplaceAllString(stderr, ""); strings.Contains(rest, `\`) {
+			t.Errorf("stderr = %q holds half an escape; the cut must fall between characters (pad %d)",
+				stderr, pad)
+		}
+	}
 }
 
 // TestRunAssessRuntimeErrorLeavesNoFile pins that a failed run with --output
@@ -415,6 +545,8 @@ func TestRunUsageErrors(t *testing.T) {
 		args []string
 		// wantStderr lists values stderr must hold besides the usage text.
 		wantStderr []string
+		// wantFirstLine lists values the first line, the error itself, must hold.
+		wantFirstLine []string
 	}{
 		{name: "no arguments", args: nil},
 		{name: "unknown command", args: []string{"discover"}},
@@ -430,9 +562,10 @@ func TestRunUsageErrors(t *testing.T) {
 			args: []string{"assess", "--inventory", inventoryPath, "--target", targetKey, "extra"},
 		},
 		{
-			name:       "unknown target",
-			args:       []string{"assess", "--inventory", inventoryPath, "--target", "nope"},
-			wantStderr: []string{targetKey},
+			name:          "unknown target",
+			args:          []string{"assess", "--inventory", inventoryPath, "--target", "nope"},
+			wantStderr:    []string{targetKey},
+			wantFirstLine: []string{targetKey},
 		},
 	}
 
@@ -458,6 +591,15 @@ func TestRunUsageErrors(t *testing.T) {
 			for _, want := range tc.wantStderr {
 				if !strings.Contains(stderr, want) {
 					t.Errorf("stderr = %q, want it to name %q", stderr, want)
+				}
+			}
+
+			// The error is the first line; the usage text follows it. A user who
+			// mistypes a target learns the supported ones from that line.
+			firstLine, _, _ := strings.Cut(stderr, "\n")
+			for _, want := range tc.wantFirstLine {
+				if !strings.Contains(firstLine, want) {
+					t.Errorf("the first line %q, want it to name %q", firstLine, want)
 				}
 			}
 
@@ -522,17 +664,402 @@ func TestRunCancelled(t *testing.T) {
 	}
 }
 
+// TestRunHelp pins every way to ask for help: the usage text on stdout, exit
+// code 0, nothing on stderr and no adapter built.
+func TestRunHelp(t *testing.T) {
+	t.Parallel()
+
+	cases := [][]string{
+		{"help"},
+		{"-h"},
+		{"-help"},
+		{"--help"},
+		{"assess", "-h"},
+		{"assess", "--help"},
+	}
+
+	for _, args := range cases {
+		t.Run(strings.Join(args, " "), func(t *testing.T) {
+			t.Parallel()
+
+			h := newHarness(t)
+			code, stdout, stderr := h.run(t.Context(), args...)
+
+			if code != 0 {
+				t.Errorf("Run(%q) = %d, want 0; stderr = %q", args, code, stderr)
+			}
+
+			if !strings.Contains(stdout, "Usage:") {
+				t.Errorf("stdout = %q, want the usage text", stdout)
+			}
+
+			if stderr != "" {
+				t.Errorf("stderr = %q, want empty", stderr)
+			}
+
+			if len(h.paths) != 0 || h.reporter.calls != 0 {
+				t.Errorf("help built adapters: inventory paths %q, reporter calls %d",
+					h.paths, h.reporter.calls)
+			}
+		})
+	}
+}
+
+// TestRunCancelledWhileRendering pins that a run cancelled after the report was
+// rendered, as SIGINT gives it, writes nothing: no report on stdout, no half
+// report in the --output file and no temporary file left behind.
+func TestRunCancelledWhileRendering(t *testing.T) {
+	t.Parallel()
+
+	t.Run("to standard output", func(t *testing.T) {
+		t.Parallel()
+
+		ctx, cancel := context.WithCancel(t.Context())
+		h := newHarness(t)
+		h.reporter.onReport = cancel
+
+		code, stdout, stderr := h.run(ctx, "assess", "--inventory", inventoryPath, "--target", targetKey)
+
+		if code != 1 {
+			t.Errorf("Run() = %d, want 1", code)
+		}
+
+		if stdout != "" {
+			t.Errorf("stdout = %q, want empty for a run cancelled while rendering", stdout)
+		}
+
+		checkErrorLine(t, stderr)
+
+		if h.reporter.calls != 1 {
+			t.Errorf("the reporter was called %d times, want 1", h.reporter.calls)
+		}
+	})
+
+	t.Run("to an existing file", func(t *testing.T) {
+		t.Parallel()
+
+		dir := t.TempDir()
+		dest := filepath.Join(dir, "report.md")
+		old := []byte("old report\n")
+
+		if err := os.WriteFile(dest, old, 0o600); err != nil {
+			t.Fatalf("writing the existing destination: %v", err)
+		}
+
+		ctx, cancel := context.WithCancel(t.Context())
+		h := newHarness(t)
+		h.reporter.onReport = cancel
+
+		code, stdout, stderr := h.run(ctx, "assess", "--inventory", inventoryPath,
+			"--target", targetKey, "--output", dest)
+
+		if code != 1 {
+			t.Errorf("Run() = %d, want 1", code)
+		}
+
+		if stdout != "" {
+			t.Errorf("stdout = %q, want empty", stdout)
+		}
+
+		checkErrorLine(t, stderr)
+
+		got, err := os.ReadFile(dest)
+		if err != nil {
+			t.Fatalf("reading the destination after a cancelled run: %v", err)
+		}
+
+		if !bytes.Equal(got, old) {
+			t.Errorf("destination = %q, want it unchanged as %q", got, old)
+		}
+
+		checkOnlyFile(t, dir, "report.md")
+	})
+}
+
+// TestRunAssessQuotesInventoryPath pins that a path holding a line feed, which
+// the CLI refuses before it reads anything, reaches the error line quoted by
+// text.Quote: the escape the quoting added appears once, never doubled.
+func TestRunAssessQuotesInventoryPath(t *testing.T) {
+	t.Parallel()
+
+	// A path the shell would let through and a line feed would split.
+	path := "dir/a\nb.json"
+	// The report names the inventory file by its base name, so that is the value
+	// the error shows.
+	quoted := text.Quote(filepath.Base(path))
+
+	h := newHarness(t)
+
+	code, stdout, stderr := h.run(t.Context(), "assess", "--inventory", path, "--target", targetKey)
+
+	if code != 1 {
+		t.Errorf("Run() = %d, want 1", code)
+	}
+
+	if stdout != "" {
+		t.Errorf("stdout = %q, want empty", stdout)
+	}
+
+	checkErrorLine(t, stderr)
+
+	if !strings.Contains(stderr, quoted) {
+		t.Errorf("stderr = %q, want it to hold the quoted name %s", stderr, quoted)
+	}
+
+	if strings.Contains(stderr, `\\n`) {
+		t.Errorf("stderr = %q holds a doubled escape; the quoted name must reach the user as it is", stderr)
+	}
+
+	if h.inventory.calls != 0 || h.reporter.calls != 0 {
+		t.Errorf("a refused inventory name read the inventory %d times and reported %d, want 0 and 0",
+			h.inventory.calls, h.reporter.calls)
+	}
+}
+
+// TestRunAssessOutputHasNoTemporaryFileWhileLoading pins that the --output file
+// is not created, even temporarily, before the report is rendered: while the
+// inventory is loaded the output directory holds nothing.
+func TestRunAssessOutputHasNoTemporaryFileWhileLoading(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	dest := filepath.Join(dir, "report.md")
+
+	h := newHarness(t)
+
+	var seen []string
+	h.inventory.onInventory = func() {
+		seen = append(seen, tempReportFiles(t, dir)...)
+	}
+
+	code, stdout, stderr := h.run(t.Context(), "assess", "--inventory", inventoryPath,
+		"--target", targetKey, "--output", dest)
+
+	if code != 0 {
+		t.Fatalf("Run() = %d, want 0; stderr = %q", code, stderr)
+	}
+
+	if stdout != "" {
+		t.Errorf("stdout = %q, want empty", stdout)
+	}
+
+	if len(seen) != 0 {
+		t.Errorf("the output directory holds %q while the inventory is loaded, want nothing: "+
+			"the report file must not exist before the report is rendered", seen)
+	}
+
+	got, err := os.ReadFile(dest)
+	if err != nil {
+		t.Fatalf("the report file was not written: %v", err)
+	}
+
+	if string(got) != reportBody {
+		t.Errorf("report file = %q, want %q", got, reportBody)
+	}
+
+	checkOnlyFile(t, dir, "report.md")
+}
+
+// TestRunAssessOutputClashWithInventory pins that a report is never written over
+// the inventory it assesses, whether --output repeats the --inventory path or
+// names another hard link to the same file: the run fails, names the clash, and
+// leaves the inventory as it was.
+func TestRunAssessOutputClashWithInventory(t *testing.T) {
+	t.Parallel()
+
+	t.Run("the same path", func(t *testing.T) {
+		t.Parallel()
+
+		dir := t.TempDir()
+		path := filepath.Join(dir, "inventory.json")
+
+		checkOutputClash(t, path, path, dir, "inventory.json")
+	})
+
+	t.Run("a hard link", func(t *testing.T) {
+		t.Parallel()
+
+		dir := t.TempDir()
+		path := filepath.Join(dir, "inventory.json")
+		dest := filepath.Join(dir, "report.md")
+
+		writeInventory(t, path)
+
+		if err := os.Link(path, dest); err != nil {
+			t.Skipf("hard links are not supported here: %v", err)
+		}
+
+		checkOutputClash(t, path, dest, dir, "inventory.json", "report.md")
+	})
+}
+
+// TestRunAssessOutputNotARegularFile pins that --output naming something that is
+// not a report file fails the run and leaves it as it was: a directory is never
+// replaced, and no temporary file is left behind.
+func TestRunAssessOutputNotARegularFile(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	dest := filepath.Join(dir, "reports")
+
+	if err := os.Mkdir(dest, 0o700); err != nil {
+		t.Fatalf("creating the destination directory: %v", err)
+	}
+
+	marker := filepath.Join(dest, "keep.md")
+	if err := os.WriteFile(marker, []byte("keep\n"), 0o600); err != nil {
+		t.Fatalf("writing a file into the destination directory: %v", err)
+	}
+
+	h := newHarness(t)
+
+	code, stdout, stderr := h.run(t.Context(), "assess", "--inventory", inventoryPath,
+		"--target", targetKey, "--output", dest)
+
+	if code != 1 {
+		t.Errorf("Run() = %d, want 1", code)
+	}
+
+	if stdout != "" {
+		t.Errorf("stdout = %q, want empty", stdout)
+	}
+
+	checkErrorLine(t, stderr)
+
+	info, err := os.Stat(dest)
+	if err != nil {
+		t.Fatalf("the destination directory is gone: %v", err)
+	}
+
+	if !info.IsDir() {
+		t.Errorf("the destination is no longer a directory: mode %s", info.Mode())
+	}
+
+	if got, err := os.ReadFile(marker); err != nil || string(got) != "keep\n" {
+		t.Errorf("the file inside the destination directory = %q (error %v), want it unchanged", got, err)
+	}
+
+	if got := tempReportFiles(t, dir); len(got) != 0 {
+		t.Errorf("the output directory holds the temporary files %q, want none", got)
+	}
+
+	checkOnlyFile(t, dir, "reports")
+}
+
+// checkOutputClash pins the run of assess with --inventory path and --output
+// dest, two names of the same file: exit code 1, one error line naming the
+// clash, nothing on stdout, and the inventory unchanged byte for byte.
+func checkOutputClash(t *testing.T, path, dest, dir string, wantEntries ...string) {
+	t.Helper()
+
+	original := writeInventory(t, path)
+
+	h := newHarness(t)
+
+	code, stdout, stderr := h.run(t.Context(), "assess", "--inventory", path,
+		"--target", targetKey, "--output", dest)
+
+	if code != 1 {
+		t.Errorf("Run() = %d, want 1", code)
+	}
+
+	if stdout != "" {
+		t.Errorf("stdout = %q, want empty", stdout)
+	}
+
+	checkErrorLine(t, stderr)
+
+	firstLine, _, _ := strings.Cut(stderr, "\n")
+	if !strings.Contains(firstLine, text.Quote(path)) && !strings.Contains(firstLine, text.Quote(dest)) {
+		t.Errorf("the first line %q, want it to name the clashing file", firstLine)
+	}
+
+	got, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("the inventory file is gone after the run: %v", err)
+	}
+
+	if !bytes.Equal(got, original) {
+		t.Errorf("the inventory file = %q, want it unchanged as %q", got, original)
+	}
+
+	if want := tempReportFiles(t, dir); len(want) != 0 {
+		t.Errorf("the output directory holds the temporary files %q, want none", want)
+	}
+
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		t.Fatalf("reading the output directory: %v", err)
+	}
+
+	names := make([]string, 0, len(entries))
+	for _, e := range entries {
+		names = append(names, e.Name())
+	}
+
+	if !slices.Equal(names, wantEntries) {
+		t.Errorf("the output directory holds %q, want %q", names, wantEntries)
+	}
+}
+
+// writeInventory writes an inventory file at path, which the fake inventory
+// source never reads, and returns what it wrote.
+func writeInventory(t *testing.T, path string) []byte {
+	t.Helper()
+
+	content := []byte("{\"schemaVersion\":1}\n")
+
+	if err := os.WriteFile(path, content, 0o600); err != nil {
+		t.Fatalf("writing the inventory file: %v", err)
+	}
+
+	return content
+}
+
+// tempReportFiles returns the names in dir that are a temporary report file: an
+// entry whose name starts with the prefix the CLI writes one under.
+func tempReportFiles(t *testing.T, dir string) []string {
+	t.Helper()
+
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		t.Fatalf("reading the output directory: %v", err)
+	}
+
+	var names []string
+
+	for _, e := range entries {
+		if strings.HasPrefix(e.Name(), ".eusov-report-") {
+			names = append(names, e.Name())
+		}
+	}
+
+	return names
+}
+
 // hostileMessage is an error text no error line may reproduce: a line feed that
 // would end the line, a terminal escape that would clear the screen, a
-// right-to-left override that would reverse it, and enough length to grow
-// without a cap.
+// right-to-left override that would reverse it, the Unicode line and paragraph
+// separators, the C1 next line, DEL, a byte that is not valid UTF-8, a byte
+// order mark, and enough length to grow without a cap. Every non-ASCII
+// character is built from its code point, so this source file stays ASCII.
 func hostileMessage() string {
 	var b strings.Builder
 
-	b.WriteString("inventory ")
-	b.WriteString("\n")
-	b.WriteString("\x1b[2J")
-	b.WriteString("\u202e")
+	for _, s := range []string{
+		"inventory ",
+		"\n",
+		"\x1b[2J",
+		string(rune(0x202e)),
+		string(rune(0x2028)),
+		string(rune(0x2029)),
+		string(rune(0x0085)),
+		string(rune(0x7f)),
+		"\xff",
+		string(rune(0xfeff)),
+	} {
+		b.WriteString(s)
+	}
 
 	for b.Len() < 5000 {
 		b.WriteString("x")
