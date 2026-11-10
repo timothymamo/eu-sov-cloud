@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"slices"
 	"strings"
+	"unicode"
 
 	"github.com/timothymamo/eu-sov-cloud/internal/domain/taxonomy"
 	"github.com/timothymamo/eu-sov-cloud/internal/domain/text"
@@ -13,7 +14,9 @@ import (
 // Resource is one resource found in a source, classified into the taxonomy.
 type Resource struct {
 	// ID identifies the resource uniquely within its inventory, for example an
-	// EC2 instance ID or an Azure resource ID.
+	// EC2 instance ID or an Azure resource ID. Its only space character is the
+	// ASCII space, and two IDs that differ only in the length of their runs of
+	// white space are the same ID.
 	ID string
 	// RawType is the source's own type name, for example AWS::EC2::Instance. It is
 	// kept for traceability; mapping goes through Category only. It is empty when
@@ -44,7 +47,8 @@ var (
 	ErrEmptySource = errors.New("inventory has an empty source")
 	// ErrEmptyID is returned for a resource whose ID is empty or only whitespace.
 	ErrEmptyID = errors.New("resource has an empty ID")
-	// ErrDuplicateID is returned when two resources share an ID.
+	// ErrDuplicateID is returned when two resources share an ID, compared with
+	// every run of white space treated as a single space.
 	ErrDuplicateID = errors.New("duplicate resource ID")
 )
 
@@ -53,12 +57,20 @@ var (
 // source must not be blank. Every resource needs a unique ID that is not blank, a
 // taxonomy category (Unclassified is valid; an unknown value is an error, never
 // Unclassified) and capabilities from the taxonomy vocabulary. RawType and Region
-// may be empty, for an unknown raw type and a global resource, but a non-empty
-// value that is only whitespace is invalid text. source and each resource's ID,
-// RawType and Region must be valid free text (text.Validate); they are stored as
-// given, never trimmed. The inventory holds its own copy of the resources,
-// sorted by ID, with each resource's capabilities sorted, de-duplicated and nil
-// when there are none.
+// may be empty, for an unknown raw type and a global resource. source and each
+// resource's ID, RawType and Region must be valid free text (text.Validate), so
+// none of them starts or ends with white space or is only white space; they are
+// stored as given, never trimmed.
+//
+// An ID is what a reader copies to find the resource, so it must not contain a
+// Unicode space separator (category Zs) other than the ASCII space U+0020: a
+// no-break or ideographic space looks like a space but cannot be retyped as
+// one. IDs are unique when compared with every run of white space treated as a
+// single space, so "i-0 abc" and "i-0  abc" are duplicates. Look-alike letters
+// (homoglyphs) and Unicode normalisation (NFC and NFD) are not compared.
+//
+// The inventory holds its own copy of the resources, sorted by ID, with each
+// resource's capabilities sorted, de-duplicated and nil when there are none.
 //
 // Errors name the field and the resource at fault: by ID, or by position as
 // resources[i] when the ID itself is at fault. Values echoed in errors are quoted
@@ -80,11 +92,12 @@ func New(source string, resources []Resource) (Inventory, error) {
 			return Inventory{}, fmt.Errorf("resources[%d]: %w", i, err)
 		}
 
-		if _, dup := seen[r.ID]; dup {
+		key := collapseSpace(r.ID)
+		if _, dup := seen[key]; dup {
 			return Inventory{}, fmt.Errorf("resources[%d]: %w %s", i, ErrDuplicateID, text.Quote(r.ID))
 		}
 
-		seen[r.ID] = struct{}{}
+		seen[key] = struct{}{}
 
 		n, err := normalise(r)
 		if err != nil {
@@ -117,7 +130,9 @@ func (inv Inventory) Resources() []Resource {
 	return out
 }
 
-// validateID checks that id is valid free text and not blank.
+// validateID checks that id is not blank, is valid free text and has no space
+// separator other than the ASCII space. The error for invalid text wraps
+// text.ErrInvalid.
 func validateID(id string) error {
 	if strings.TrimSpace(id) == "" {
 		return ErrEmptyID
@@ -127,32 +142,30 @@ func validateID(id string) error {
 		return fmt.Errorf("id: %w", err)
 	}
 
+	for i, r := range id {
+		if r != ' ' && unicode.Is(unicode.Zs, r) {
+			return fmt.Errorf("id: %w: non-ASCII space %U at byte %d", text.ErrInvalid, r, i)
+		}
+	}
+
 	return nil
 }
 
-// validateOptional checks free text that may be empty: when it is set, it must be
-// valid free text and not only whitespace. The error wraps text.ErrInvalid.
-func validateOptional(s string) error {
-	if err := text.Validate(s); err != nil {
-		return err
-	}
-
-	if s != "" && strings.TrimSpace(s) == "" {
-		return fmt.Errorf("%w: only whitespace", text.ErrInvalid)
-	}
-
-	return nil
+// collapseSpace returns s with every run of white space replaced by one ASCII
+// space: the key under which two values that look the same are the same.
+func collapseSpace(s string) string {
+	return strings.Join(strings.Fields(s), " ")
 }
 
 // normalise checks the free text, category and capabilities of a resource with a
 // valid ID and returns a copy of it whose capabilities are sorted, de-duplicated
 // and nil when there are none.
 func normalise(r Resource) (Resource, error) {
-	if err := validateOptional(r.RawType); err != nil {
+	if err := text.Validate(r.RawType); err != nil {
 		return Resource{}, fmt.Errorf("raw type: %w", err)
 	}
 
-	if err := validateOptional(r.Region); err != nil {
+	if err := text.Validate(r.Region); err != nil {
 		return Resource{}, fmt.Errorf("region: %w", err)
 	}
 

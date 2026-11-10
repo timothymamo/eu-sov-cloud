@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"strconv"
+	"strings"
 	"unicode"
 	"unicode/utf8"
 )
@@ -37,6 +38,12 @@ const brailleBlank = '\u2800'
 //   - noncharacters (Noncharacter_Code_Point, such as U+FFFE and U+10FFFF),
 //     which are never text.
 //
+// s must also not start or end with white space (unicode.IsSpace, what
+// strings.TrimSpace removes): padding makes a value look the same as the one it
+// pads, so a value that is only white space is invalid too. White space inside
+// a value is part of it and valid, non-ASCII space separators such as U+00A0
+// included. Validate never trims: values are stored as given or rejected.
+//
 // Private-use code points and combining marks such as the accent in "e\u0301"
 // are valid. The empty string is valid; whether a value may be empty is the
 // caller's decision.
@@ -57,6 +64,10 @@ func Validate(s string) error {
 		if disallowed(r) {
 			return fmt.Errorf("%w: disallowed character %U at byte %d", ErrInvalid, r, i)
 		}
+	}
+
+	if s != strings.TrimSpace(s) {
+		return fmt.Errorf("%w: leading or trailing white space", ErrInvalid)
 	}
 
 	return nil

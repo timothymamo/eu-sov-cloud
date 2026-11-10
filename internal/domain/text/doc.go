@@ -9,7 +9,11 @@
 // characters that render as nothing or as a blank, so two values that differ
 // only by one would look the same in a report (variation selectors, the other
 // default-ignorable code points such as the Hangul fillers, U+2800 BRAILLE
-// PATTERN BLANK), and noncharacters, which are never text. Quote turns any
+// PATTERN BLANK), noncharacters, which are never text, and leading or trailing
+// white space, which pads a value to look like another. Values are never
+// trimmed: they are valid as given or rejected. Look-alike letters (homoglyphs
+// such as Cyrillic а for Latin a) and Unicode normalisation (NFC and NFD
+// spellings of the same text) are not detected. Quote turns any
 // string, valid or not, into a short, escaped form that is safe to echo in an
 // error message.
 //
