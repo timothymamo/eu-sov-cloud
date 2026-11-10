@@ -72,12 +72,13 @@ type Reason struct {
 	Capability taxonomy.Capability
 }
 
-// PartKind says what a Part of a reason is: fixed sentence text, or one of the
-// names the reason mentions.
+// PartKind says what a Part of a reason is: sentence text, or one of the names
+// the reason mentions.
 type PartKind string
 
 const (
-	// PartLiteral is fixed sentence text written by this package.
+	// PartLiteral is sentence text, or an unknown reason code verbatim; renderers
+	// escape it as text; every other part is a value.
 	PartLiteral PartKind = "literal"
 	// PartTarget is a catalog's target display name.
 	PartTarget PartKind = "target"

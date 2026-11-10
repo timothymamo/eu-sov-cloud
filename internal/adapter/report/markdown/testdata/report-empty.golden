@@ -1,0 +1,27 @@
+# Migration assessment: `Scaleway`
+
+- Inventory file: `inventory.json`
+- Source: `aws`
+- Catalog: `Scaleway` snapshot from `https://www.scaleway.com/en/pricing/`, retrieved 2026-11-01
+
+## Summary
+
+| Fit | Resources |
+|---|---|
+| direct | 0 |
+| partial | 0 |
+| none | 0 |
+| total | 0 |
+
+## Resources
+
+| ID | Raw type | Category | Fit | Best offering | Reasons |
+|---|---|---|---|---|---|
+
+## Required changes
+
+None.
+
+## Blockers
+
+None.

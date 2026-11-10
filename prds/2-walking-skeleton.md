@@ -71,15 +71,15 @@ All criteria are pinned by tests that run offline under `make test` or `make tes
   raw type, category, fit, best offering, reasons) and a blockers section.
 - [ ] Given the same inventory twice, the two reports are byte-identical. Resources are ordered by ID,
   never by map or file order.
-- [ ] Every value taken from the inventory or catalog (IDs, raw types, regions, offering names, the
-  target name and the snapshot source URL), and the inventory file name, is escaped for its Markdown
-  context, so `|`, newlines, backticks, HTML and link syntax in an inventory cannot forge table rows,
-  headings, links or images. The source URL is emitted percent-encoding `( ) [ ] < > |`, space and
-  backtick (or as an autolink after encoding `<` `>`). Pinned by a golden test with a hostile fixture
-  that includes a hostile file name and source URL. The inventory file name must pass `text.Validate`;
-  otherwise the command exits 1 with an error that shows the name through `text.Quote`. The reporter
-  emits the stored source URL string, never a decoded form; the hostile fixture's source URL includes
-  `%0A` and `%E2%80%AE`.
+- [ ] Every value taken from the inventory or catalog (IDs, raw types, regions, offering names), the
+  target name, the snapshot source URL and the inventory file name is rendered as an inline code span
+  (fence longer than any backtick run, `|` escaped in table cells), so `|`, newlines, backticks, HTML,
+  link syntax and GitHub's filters (math, mentions, references, emoji, task lists, bare links) cannot
+  forge rows, headings, links or images or rewrite it; the source URL is the stored string, never
+  decoded. Pinned by a golden test with a hostile fixture that includes a hostile file name and source
+  URL; the hostile fixture's source URL includes `%0A` and `%E2%80%AE`. The inventory file name must
+  pass `text.Validate`; otherwise the command exits 1 with an error that shows the name through
+  `text.Quote`.
 
 **CLI**
 
@@ -123,7 +123,7 @@ Each milestone ships as one PR. Milestones 4, 5 and 6 depend only on 3 and can r
    `compute.vm`, `kubernetes.managed`, `storage.object` and `database.postgresql`, with its source URL and
    retrieval date in the file header. Passes `targettest`, plus a golden test of the parsed catalog.
    The reviewer checks the adapter's declared EU region list against Scaleway's published regions.
-6. [ ] **Markdown reporter.** Renders an assessment as described under *Report*. Golden-file tests.
+6. [x] **Markdown reporter.** Renders an assessment as described under *Report*. Golden-file tests.
    Includes a golden test with a hostile inventory fixture (Markdown metacharacters in IDs and raw types).
    Renders reasons from `mapping.Reason.Parts()`, escaping every part and building code spans for
    category and capability parts safely (a fence longer than any backtick run in the value), never from
@@ -192,3 +192,6 @@ fixtures in earlier milestones share a picture of the data:
   resource can require a specific country (data residency) is a later decision.
 - **Open: capability granularity.** Whether capabilities need versions or parameters (engine version,
   storage class) is left until the first live source adapter shows what data is available.
+- **Open: tie-break between equally direct offerings.** When several offerings are direct with nothing
+  missing (e.g. Instances and Elastic Metal for a plain VM), the best offering is the first by name.
+  A product-preference order per category may read better in reports; revisit with the readiness score.

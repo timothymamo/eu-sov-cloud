@@ -1,0 +1,41 @@
+# Migration assessment: ``Evil | `x` <b> [a](b) *s*``
+
+- Inventory file: ``inv|`x`[y](z).json``
+- Source: `# heading`
+- Catalog: ``Evil | `x` <b> [a](b) *s*`` snapshot from `https://example.com/a(b)%0A%E2%80%AE&#8238;x`, retrieved 2026-11-01
+
+## Summary
+
+| Fit | Resources |
+|---|---|
+| direct | 4 |
+| partial | 2 |
+| none | 4 |
+| total | 10 |
+
+## Resources
+
+| ID | Raw type | Category | Fit | Best offering | Reasons |
+|---|---|---|---|---|---|
+| `#1` | `$\Huge X$` | `serverless.function` | none |  | no offering in the ``Evil \| `x` <b> [a](b) *s*`` catalog for `serverless.function` |
+| `[ ] x` | `@octocat` | `unclassified` | none |  | not classified |
+| `[l](javascript:x)` | ``` `` ``` | `serverless.function` | none |  | no offering in the ``Evil \| `x` <b> [a](b) *s*`` catalog for `serverless.function` |
+| `[x] done` | `:x:` | `storage.object` | direct | `` `tick` [row](x) \| Name `` | `` `tick` [row](x) \| Name `` offers every capability the resource uses |
+| `` `tick` `` | `a*b_c` | `unclassified` | none |  | not classified |
+| `a*b_c` | `AWS::X.Y <img src=x>` | `compute.vm` | direct | ``Evil \| `x` <b> [a](b) *s*`` | ``Evil \| `x` <b> [a](b) *s*`` offers every capability the resource uses |
+| ``a`b`` | `https://evil.example/%E2%80%AEmoc.elgoog` | `compute.vm` | partial | ``Evil \| `x` <b> [a](b) *s*`` | ``Evil \| `x` <b> [a](b) *s*`` does not offer `high-availability` |
+| `a\|b` | `x&#x202E;y` | `storage.object` | partial | `` `tick` [row](x) \| Name `` | `` `tick` [row](x) \| Name `` does not offer `object-versioning` |
+| `back\slash` | `# heading` | `storage.object` | direct | `` `tick` [row](x) \| Name `` | `` `tick` [row](x) \| Name `` offers every capability the resource uses |
+| `i-1 \| x` | `[l](javascript:x)` | `compute.vm` | direct | ``Evil \| `x` <b> [a](b) *s*`` | ``Evil \| `x` <b> [a](b) *s*`` offers every capability the resource uses |
+
+## Required changes
+
+- ``a`b``: `high-availability` (not offered by ``Evil | `x` <b> [a](b) *s*``)
+- `a|b`: `object-versioning` (not offered by `` `tick` [row](x) | Name ``)
+
+## Blockers
+
+- `#1`: no offering in the ``Evil | `x` <b> [a](b) *s*`` catalog for `serverless.function`
+- `[ ] x`: not classified
+- `[l](javascript:x)`: no offering in the ``Evil | `x` <b> [a](b) *s*`` catalog for `serverless.function`
+- `` `tick` ``: not classified
