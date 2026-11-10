@@ -2,6 +2,7 @@ package inventory_test
 
 import (
 	"errors"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -9,6 +10,7 @@ import (
 
 	"github.com/timothymamo/eu-sov-cloud/internal/domain/inventory"
 	"github.com/timothymamo/eu-sov-cloud/internal/domain/taxonomy"
+	"github.com/timothymamo/eu-sov-cloud/internal/domain/text"
 )
 
 // newInventory is the only way to build an Inventory, so every test goes through it.
@@ -205,21 +207,38 @@ func TestNewErrors(t *testing.T) {
 
 	tests := []struct {
 		name      string
+		source    string
 		resources []inventory.Resource
 		wantErr   error
 		wantMsg   []string
 	}{
 		{
-			name: "empty id",
-			resources: []inventory.Resource{{
-				RawType:  "AWS::EC2::Instance",
-				Category: taxonomy.ComputeVM,
-				Region:   "eu-west-1",
-			}},
-			wantErr: inventory.ErrEmptyID,
+			name:      "empty source",
+			source:    "",
+			resources: []inventory.Resource{{ID: "i-0123456789abcdef0", Category: taxonomy.ComputeVM, Region: "eu-west-1"}},
+			wantErr:   inventory.ErrEmptySource,
 		},
 		{
-			name: "duplicate id",
+			name:      "whitespace only source",
+			source:    "   ",
+			resources: []inventory.Resource{{ID: "i-0123456789abcdef0", Category: taxonomy.ComputeVM, Region: "eu-west-1"}},
+			wantErr:   inventory.ErrEmptySource,
+		},
+		{
+			name:      "empty id",
+			source:    "aws",
+			resources: []inventory.Resource{{RawType: "AWS::EC2::Instance", Category: taxonomy.ComputeVM, Region: "eu-west-1"}},
+			wantErr:   inventory.ErrEmptyID,
+		},
+		{
+			name:      "whitespace only id",
+			source:    "aws",
+			resources: []inventory.Resource{{ID: "   ", RawType: "AWS::EC2::Instance", Category: taxonomy.ComputeVM, Region: "eu-west-1"}},
+			wantErr:   inventory.ErrEmptyID,
+		},
+		{
+			name:   "duplicate id",
+			source: "aws",
 			resources: []inventory.Resource{
 				{
 					ID:       "i-0123456789abcdef0",
@@ -239,7 +258,8 @@ func TestNewErrors(t *testing.T) {
 		},
 		{
 			// A typo must be an error naming the resource, never an implicit unclassified.
-			name: "unknown category",
+			name:   "unknown category",
+			source: "aws",
 			resources: []inventory.Resource{{
 				ID:       "i-0123456789abcdef0",
 				RawType:  "AWS::EC2::Instance",
@@ -250,7 +270,8 @@ func TestNewErrors(t *testing.T) {
 			wantMsg: []string{"i-0123456789abcdef0", "compute.mv"},
 		},
 		{
-			name: "unknown capability",
+			name:   "unknown capability",
+			source: "aws",
 			resources: []inventory.Resource{{
 				ID:           "db-example",
 				RawType:      "AWS::RDS::DBInstance",
@@ -267,7 +288,7 @@ func TestNewErrors(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 
-			_, err := inventory.New("aws", tc.resources)
+			_, err := inventory.New(tc.source, tc.resources)
 			if !errors.Is(err, tc.wantErr) {
 				t.Fatalf("New() error = %v, want an error wrapping %v", err, tc.wantErr)
 			}
@@ -278,5 +299,182 @@ func TestNewErrors(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+// namesPosition reports whether msg points at the resource at index i. Before a
+// resource has a valid ID the only way to name it is its position, which the
+// package writes as resources[i]; a bare "resource i" is accepted too.
+func namesPosition(msg string, i int) bool {
+	n := strconv.Itoa(i)
+
+	return strings.Contains(msg, "["+n+"]") || strings.Contains(msg, "resource "+n)
+}
+
+// Free text from a file ends up in a report and a terminal, so control
+// characters, bidi overrides, invalid UTF-8 and over-long values are rejected
+// instead of rendered. The error names the field and the resource it came from.
+func TestNewRejectsInvalidText(t *testing.T) {
+	t.Parallel()
+
+	invalid := []struct {
+		name  string
+		value string
+	}{
+		{name: "ansi escape", value: "\x1b[2J"},
+		{name: "newline", value: "row\nvalue"},
+		{name: "pipe and newline", value: "|x\nrow"},
+		{name: "right to left override", value: "a\u202eb"},
+		{name: "zero width space", value: "a\u200bb"},
+		{name: "invalid utf8", value: "a\xffb"},
+		{name: "longer than max len", value: strings.Repeat("a", text.MaxLen+1)},
+	}
+
+	base := inventory.Resource{
+		ID:       "i-0123456789abcdef0",
+		RawType:  "AWS::EC2::Instance",
+		Category: taxonomy.ComputeVM,
+		Region:   "eu-west-1",
+	}
+
+	type testCase struct {
+		name      string
+		source    string
+		resources []inventory.Resource
+		// wantField is the name of the field the error must mention.
+		wantField string
+		// wantID is the resource the error must name, when it has a usable ID.
+		wantID string
+		// wantPos is the index the error must name when the ID itself is broken.
+		wantPos int
+	}
+
+	tests := make([]testCase, 0, len(invalid)*4)
+
+	for _, tc := range invalid {
+		// A resource without a valid ID is named by its position (index 1 here).
+		withBadID := base
+		withBadID.ID = tc.value
+		tests = append(tests, testCase{
+			name:      "id/" + tc.name,
+			source:    "aws",
+			resources: []inventory.Resource{base, withBadID},
+			wantField: "id",
+			wantPos:   1,
+		})
+
+		withBadRawType := base
+		withBadRawType.ID = "db-example"
+		withBadRawType.RawType = tc.value
+		tests = append(tests, testCase{
+			name:      "raw type/" + tc.name,
+			source:    "aws",
+			resources: []inventory.Resource{base, withBadRawType},
+			wantField: "raw type",
+			wantID:    "db-example",
+		})
+
+		withBadRegion := base
+		withBadRegion.ID = "vol-example"
+		withBadRegion.Category = taxonomy.StorageBlock
+		withBadRegion.Region = tc.value
+		tests = append(tests, testCase{
+			name:      "region/" + tc.name,
+			source:    "aws",
+			resources: []inventory.Resource{base, withBadRegion},
+			wantField: "region",
+			wantID:    "vol-example",
+		})
+
+		tests = append(tests, testCase{
+			name:      "source/" + tc.name,
+			source:    tc.value,
+			resources: []inventory.Resource{base},
+			wantField: "source",
+		})
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			_, err := inventory.New(tc.source, tc.resources)
+			if !errors.Is(err, text.ErrInvalid) {
+				t.Fatalf("New() error = %v, want an error wrapping text.ErrInvalid", err)
+			}
+
+			msg := err.Error()
+			if lower := strings.ToLower(msg); !strings.Contains(lower, tc.wantField) {
+				t.Errorf("New() error = %q, want it to name the field %q", msg, tc.wantField)
+			}
+
+			switch {
+			case tc.wantID != "":
+				if !strings.Contains(msg, tc.wantID) {
+					t.Errorf("New() error = %q, want it to name the resource %q", msg, tc.wantID)
+				}
+			case tc.wantField != "source":
+				if !namesPosition(msg, tc.wantPos) {
+					t.Errorf("New() error = %q, want it to name the position %d", msg, tc.wantPos)
+				}
+			}
+		})
+	}
+}
+
+// A resource with no capabilities and one with an empty capability list are the
+// same resource; callers must not have to care which spelling a file uses.
+func TestNewCanonicalisesEmptyCapabilities(t *testing.T) {
+	t.Parallel()
+
+	base := inventory.Resource{
+		ID:       "i-0123456789abcdef0",
+		RawType:  "AWS::EC2::Instance",
+		Category: taxonomy.ComputeVM,
+		Region:   "eu-west-1",
+	}
+
+	withNil := base
+	withNil.Capabilities = nil
+
+	withEmpty := base
+	withEmpty.Capabilities = []taxonomy.Capability{}
+
+	nilInv := newInventory(t, "aws", []inventory.Resource{withNil})
+	emptyInv := newInventory(t, "aws", []inventory.Resource{withEmpty})
+
+	if got := nilInv.Resources()[0].Capabilities; got != nil {
+		t.Errorf("Capabilities = %#v for nil input, want nil", got)
+	}
+
+	if got := emptyInv.Resources()[0].Capabilities; got != nil {
+		t.Errorf("Capabilities = %#v for empty input, want nil", got)
+	}
+
+	if diff := cmp.Diff(nilInv.Resources(), emptyInv.Resources()); diff != "" {
+		t.Errorf("nil and empty capabilities are not canonicalised to the same resource (-nil +empty):\n%s", diff)
+	}
+}
+
+// A file can carry a megabyte-long ID. Whatever rule rejects it, the error must
+// stay readable and must not echo the whole value back.
+func TestNewBoundedErrorForHugeID(t *testing.T) {
+	t.Parallel()
+
+	// 8 MiB, and not valid text for its length either.
+	hugeID := strings.Repeat("i-0123456789abcdef0", 1<<19)
+
+	_, err := inventory.New("aws", []inventory.Resource{{
+		ID:       hugeID,
+		RawType:  "AWS::EC2::Instance",
+		Category: taxonomy.Category("compute.mv"),
+		Region:   "eu-west-1",
+	}})
+	if err == nil {
+		t.Fatalf("New() with a %d-byte ID and an unknown category returned no error", len(hugeID))
+	}
+
+	if n := len(err.Error()); n >= 2048 {
+		t.Errorf("len(error) = %d, want less than 2048", n)
 	}
 }

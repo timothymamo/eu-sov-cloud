@@ -115,6 +115,55 @@ func TestParseCategoryRejectsUnknown(t *testing.T) {
 	}
 }
 
+// An unknown value comes from a file and can be megabytes long, so the error
+// message must stay bounded while still wrapping the sentinel callers check.
+func TestParseErrorsAreBounded(t *testing.T) {
+	t.Parallel()
+
+	// Shared read-only input: one allocation for both subtests.
+	huge := strings.Repeat("x", 8<<20)
+
+	tests := []struct {
+		name    string
+		parse   func(string) error
+		wantErr error
+	}{
+		{
+			name: "category",
+			parse: func(s string) error {
+				_, err := taxonomy.ParseCategory(s)
+
+				return err
+			},
+			wantErr: taxonomy.ErrUnknownCategory,
+		},
+		{
+			name: "capability",
+			parse: func(s string) error {
+				_, err := taxonomy.ParseCapability(s)
+
+				return err
+			},
+			wantErr: taxonomy.ErrUnknownCapability,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			err := tc.parse(huge)
+			if !errors.Is(err, tc.wantErr) {
+				t.Fatalf("parse(8 MiB unknown value) error = %v, want an error wrapping %v", err, tc.wantErr)
+			}
+
+			if n := len(err.Error()); n >= 1024 {
+				t.Errorf("len(error) = %d, want less than 1024", n)
+			}
+		})
+	}
+}
+
 func TestCategories(t *testing.T) {
 	t.Parallel()
 

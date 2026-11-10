@@ -11,7 +11,12 @@ import (
 
 	"github.com/timothymamo/eu-sov-cloud/internal/domain/catalog"
 	"github.com/timothymamo/eu-sov-cloud/internal/domain/taxonomy"
+	"github.com/timothymamo/eu-sov-cloud/internal/domain/text"
 )
+
+// The target is the human-readable display name a report shows, not a slug:
+// Target() returns exactly what was passed, with no case mapping.
+const targetName = "Scaleway"
 
 // validSnapshot is the dated, sourced snapshot every real catalog must carry.
 func validSnapshot() catalog.Snapshot {
@@ -21,47 +26,72 @@ func validSnapshot() catalog.Snapshot {
 	}
 }
 
-// validOfferings is deliberately not in name order: Elastic Metal, Instances,
-// Kapsule, Managed Database for PostgreSQL, Object Storage is the expected order.
+// validOfferings is deliberately not in name order, and its inner slices are
+// deliberately unsorted and duplicated: New must sort and de-duplicate them.
+// Elastic Metal, Instances, Kapsule, Managed Database for PostgreSQL, Managed
+// Database for PostgreSQL and MySQL, Object Storage is the expected order.
 func validOfferings() []catalog.Offering {
 	return []catalog.Offering{
 		{
 			Name:         "Object Storage",
-			Categories:   []taxonomy.Category{taxonomy.StorageObject},
-			Capabilities: []taxonomy.Capability{taxonomy.ObjectVersioning, taxonomy.IPv6},
-			Regions:      []string{"fr-par", "nl-ams", "pl-waw"},
+			Categories:   []taxonomy.Category{taxonomy.StorageObject, taxonomy.StorageObject},
+			Capabilities: []taxonomy.Capability{taxonomy.IPv6, taxonomy.ObjectVersioning, taxonomy.IPv6},
+			Regions:      []string{"pl-waw", "fr-par", "fr-par"},
 		},
 		{
 			Name:         "Instances",
 			Categories:   []taxonomy.Category{taxonomy.ComputeVM},
-			Capabilities: []taxonomy.Capability{taxonomy.IPv6, taxonomy.Autoscaling},
-			Regions:      []string{"fr-par", "nl-ams", "pl-waw"},
+			Capabilities: []taxonomy.Capability{taxonomy.Autoscaling, taxonomy.IPv6, taxonomy.Autoscaling},
+			Regions:      []string{"nl-ams", "fr-par", "nl-ams", "pl-waw"},
 		},
 		{
-			// One offering may serve several categories.
+			// Elastic Metal is a dedicated server: compute.vm only, no block storage.
 			Name:         "Elastic Metal",
-			Categories:   []taxonomy.Category{taxonomy.ComputeVM, taxonomy.StorageBlock},
+			Categories:   []taxonomy.Category{taxonomy.ComputeVM},
 			Capabilities: []taxonomy.Capability{taxonomy.IPv6},
 			Regions:      []string{"fr-par", "nl-ams"},
 		},
 		{
 			Name:         "Kapsule",
 			Categories:   []taxonomy.Category{taxonomy.KubernetesManaged},
-			Capabilities: []taxonomy.Capability{taxonomy.Autoscaling, taxonomy.HighAvailability},
-			Regions:      []string{"fr-par", "nl-ams", "pl-waw"},
+			Capabilities: []taxonomy.Capability{taxonomy.HighAvailability, taxonomy.Autoscaling},
+			Regions:      []string{"pl-waw", "nl-ams", "fr-par"},
 		},
 		{
 			Name:         "Managed Database for PostgreSQL",
 			Categories:   []taxonomy.Category{taxonomy.DatabasePostgreSQL},
-			Capabilities: []taxonomy.Capability{taxonomy.PointInTimeRestore, taxonomy.ReadReplicas},
+			Capabilities: []taxonomy.Capability{taxonomy.ReadReplicas, taxonomy.PointInTimeRestore},
 			Regions:      []string{"fr-par", "nl-ams", "pl-waw"},
+		},
+		{
+			// One offering may serve several categories.
+			Name:         "Managed Database for PostgreSQL and MySQL",
+			Categories:   []taxonomy.Category{taxonomy.DatabaseMySQL, taxonomy.DatabasePostgreSQL},
+			Capabilities: []taxonomy.Capability{taxonomy.PointInTimeRestore, taxonomy.ReadReplicas, taxonomy.ReadReplicas},
+			Regions:      []string{"nl-ams", "fr-par", "pl-waw", "fr-par"},
 		},
 	}
 }
 
-// offeringsSortedByName returns a fresh copy of validOfferings in name order.
+// sortedUnique returns a copy of in sorted ascending and de-duplicated.
+func sortedUnique[T ~string](in []T) []T {
+	out := slices.Clone(in)
+	slices.Sort(out)
+
+	return slices.Compact(out)
+}
+
+// offeringsSortedByName is what the catalog must hold: name order, and every
+// inner slice sorted ascending and de-duplicated.
 func offeringsSortedByName() []catalog.Offering {
 	offerings := validOfferings()
+	for i, o := range offerings {
+		o.Categories = sortedUnique(o.Categories)
+		o.Capabilities = sortedUnique(o.Capabilities)
+		o.Regions = sortedUnique(o.Regions)
+		offerings[i] = o
+	}
+
 	slices.SortFunc(offerings, func(a, b catalog.Offering) int {
 		return strings.Compare(a.Name, b.Name)
 	})
@@ -96,10 +126,11 @@ func offeringNames(offerings []catalog.Offering) []string {
 func TestNewAndAccessors(t *testing.T) {
 	t.Parallel()
 
-	cat := newCatalog(t, "scaleway", validSnapshot(), validOfferings())
+	cat := newCatalog(t, targetName, validSnapshot(), validOfferings())
 
-	if got := cat.Target(); got != "scaleway" {
-		t.Errorf("Target() = %q, want %q", got, "scaleway")
+	// No case mapping: a slug such as "scaleway" would come back unchanged.
+	if got := cat.Target(); got != targetName {
+		t.Errorf("Target() = %q, want %q", got, targetName)
 	}
 
 	if diff := cmp.Diff(validSnapshot(), cat.Snapshot()); diff != "" {
@@ -107,14 +138,14 @@ func TestNewAndAccessors(t *testing.T) {
 	}
 
 	if diff := cmp.Diff(offeringsSortedByName(), cat.Offerings()); diff != "" {
-		t.Errorf("Offerings() are not sorted by name (-want +got):\n%s", diff)
+		t.Errorf("Offerings() are not sorted by name with sorted inner slices (-want +got):\n%s", diff)
 	}
 }
 
 func TestOfferingsReturnsCopy(t *testing.T) {
 	t.Parallel()
 
-	cat := newCatalog(t, "scaleway", validSnapshot(), validOfferings())
+	cat := newCatalog(t, targetName, validSnapshot(), validOfferings())
 
 	got := cat.Offerings()
 	if len(got) == 0 {
@@ -131,21 +162,70 @@ func TestOfferingsReturnsCopy(t *testing.T) {
 	}
 }
 
+func TestOfferingsForReturnsCopy(t *testing.T) {
+	t.Parallel()
+
+	cat := newCatalog(t, targetName, validSnapshot(), validOfferings())
+
+	got := cat.OfferingsFor(taxonomy.DatabasePostgreSQL)
+	if len(got) == 0 {
+		t.Fatal("OfferingsFor(database.postgresql) is empty")
+	}
+
+	got[0].Name = "Tampered"
+	got[0].Categories[0] = taxonomy.Category("tampered")
+	got[0].Capabilities[0] = taxonomy.Capability("tampered")
+	got[0].Regions[0] = "tampered"
+
+	want := []string{"Managed Database for PostgreSQL", "Managed Database for PostgreSQL and MySQL"}
+	if diff := cmp.Diff(want, offeringNames(cat.OfferingsFor(taxonomy.DatabasePostgreSQL))); diff != "" {
+		t.Errorf("OfferingsFor() changed after mutating a previous result (-want +got):\n%s", diff)
+	}
+
+	if diff := cmp.Diff(offeringsSortedByName(), cat.Offerings()); diff != "" {
+		t.Errorf("Offerings() changed after mutating an OfferingsFor() result (-want +got):\n%s", diff)
+	}
+}
+
+// New takes ownership: mutating the slice handed to it, or the slices inside it,
+// must not reach the catalog.
+func TestNewDoesNotAliasInput(t *testing.T) {
+	t.Parallel()
+
+	offerings := validOfferings()
+	cat := newCatalog(t, targetName, validSnapshot(), offerings)
+
+	offerings[0].Name = "Tampered"
+	offerings[0].Categories[0] = taxonomy.Category("tampered")
+	offerings[0].Capabilities[0] = taxonomy.Capability("tampered")
+	offerings[0].Regions[0] = "tampered"
+
+	if diff := cmp.Diff(offeringsSortedByName(), cat.Offerings()); diff != "" {
+		t.Errorf("Offerings() changed after mutating the input slice (-want +got):\n%s", diff)
+	}
+}
+
 func TestOfferingsFor(t *testing.T) {
 	t.Parallel()
 
-	cat := newCatalog(t, "scaleway", validSnapshot(), validOfferings())
+	cat := newCatalog(t, targetName, validSnapshot(), validOfferings())
 
 	tests := []struct {
 		name string
 		in   taxonomy.Category
 		want []string
 	}{
-		{name: "served by two offerings", in: taxonomy.ComputeVM, want: []string{"Elastic Metal", "Instances"}},
-		{name: "served by one offering", in: taxonomy.StorageBlock, want: []string{"Elastic Metal"}},
+		{name: "compute served by two offerings", in: taxonomy.ComputeVM, want: []string{"Elastic Metal", "Instances"}},
+		{
+			// One offering serving several categories: PostgreSQL and MySQL.
+			name: "postgresql served by two offerings",
+			in:   taxonomy.DatabasePostgreSQL,
+			want: []string{"Managed Database for PostgreSQL", "Managed Database for PostgreSQL and MySQL"},
+		},
+		{name: "mysql", in: taxonomy.DatabaseMySQL, want: []string{"Managed Database for PostgreSQL and MySQL"}},
 		{name: "kubernetes", in: taxonomy.KubernetesManaged, want: []string{"Kapsule"}},
-		{name: "postgresql", in: taxonomy.DatabasePostgreSQL, want: []string{"Managed Database for PostgreSQL"}},
-		{name: "no offering serves it", in: taxonomy.DatabaseMySQL, want: nil},
+		{name: "object storage", in: taxonomy.StorageObject, want: []string{"Object Storage"}},
+		{name: "no offering serves block storage", in: taxonomy.StorageBlock, want: nil},
 		{name: "unclassified is never offered", in: taxonomy.Unclassified, want: nil},
 	}
 
@@ -192,6 +272,67 @@ func TestOfferingHas(t *testing.T) {
 	}
 }
 
+// The retrieval instant is normalised to UTC: report renderers format it as a
+// UTC calendar date, so keeping the caller's zone would shift the date.
+func TestSnapshotRetrievedOnIsUTC(t *testing.T) {
+	t.Parallel()
+
+	snapshot := catalog.Snapshot{
+		SourceURL:   "https://www.scaleway.com/en/pricing/",
+		RetrievedOn: time.Date(2026, 11, 1, 20, 0, 0, 0, time.FixedZone("x", -10*60*60)),
+	}
+
+	cat := newCatalog(t, targetName, snapshot, validOfferings())
+
+	got := cat.Snapshot()
+	if got.RetrievedOn.Location() != time.UTC {
+		t.Errorf("Snapshot().RetrievedOn.Location() = %v, want UTC", got.RetrievedOn.Location())
+	}
+
+	if !got.RetrievedOn.Equal(snapshot.RetrievedOn) {
+		t.Errorf("Snapshot().RetrievedOn = %v, want the same instant as %v", got.RetrievedOn, snapshot.RetrievedOn)
+	}
+
+	if got.SourceURL != snapshot.SourceURL {
+		t.Errorf("Snapshot().SourceURL = %q, want %q", got.SourceURL, snapshot.SourceURL)
+	}
+}
+
+// A resource with no capabilities and one with an empty capability list are the
+// same offering; callers must not have to care which spelling a fixture uses.
+func TestNewCanonicalisesEmptyCapabilities(t *testing.T) {
+	t.Parallel()
+
+	withNil := catalog.Offering{
+		Name:         "Instances",
+		Categories:   []taxonomy.Category{taxonomy.ComputeVM},
+		Capabilities: nil,
+		Regions:      []string{"fr-par"},
+	}
+
+	withEmpty := catalog.Offering{
+		Name:         "Instances",
+		Categories:   []taxonomy.Category{taxonomy.ComputeVM},
+		Capabilities: []taxonomy.Capability{},
+		Regions:      []string{"fr-par"},
+	}
+
+	nilCat := newCatalog(t, targetName, validSnapshot(), []catalog.Offering{withNil})
+	emptyCat := newCatalog(t, targetName, validSnapshot(), []catalog.Offering{withEmpty})
+
+	if got := nilCat.Offerings()[0].Capabilities; got != nil {
+		t.Errorf("Capabilities = %#v for nil input, want nil", got)
+	}
+
+	if got := emptyCat.Offerings()[0].Capabilities; got != nil {
+		t.Errorf("Capabilities = %#v for empty input, want nil", got)
+	}
+
+	if diff := cmp.Diff(nilCat.Offerings(), emptyCat.Offerings()); diff != "" {
+		t.Errorf("nil and empty capabilities are not canonicalised to the same offering (-nil +empty):\n%s", diff)
+	}
+}
+
 func TestNewErrors(t *testing.T) {
 	t.Parallel()
 
@@ -211,76 +352,165 @@ func TestNewErrors(t *testing.T) {
 			wantErr:   catalog.ErrInvalidCatalog,
 		},
 		{
+			name:      "whitespace only target",
+			target:    "   ",
+			snapshot:  validSnapshot(),
+			offerings: validOfferings(),
+			wantErr:   catalog.ErrInvalidCatalog,
+		},
+		{
 			name:      "empty snapshot source url",
-			target:    "scaleway",
+			target:    targetName,
 			snapshot:  catalog.Snapshot{RetrievedOn: validSnapshot().RetrievedOn},
 			offerings: validOfferings(),
 			wantErr:   catalog.ErrInvalidCatalog,
 		},
 		{
+			name:      "plain http source url",
+			target:    targetName,
+			snapshot:  catalog.Snapshot{SourceURL: "http://www.scaleway.com/en/pricing/", RetrievedOn: validSnapshot().RetrievedOn},
+			offerings: validOfferings(),
+			wantErr:   catalog.ErrInvalidCatalog,
+		},
+		{
+			name:      "javascript source url",
+			target:    targetName,
+			snapshot:  catalog.Snapshot{SourceURL: "javascript:alert(1)", RetrievedOn: validSnapshot().RetrievedOn},
+			offerings: validOfferings(),
+			wantErr:   catalog.ErrInvalidCatalog,
+		},
+		{
+			name:      "relative source url",
+			target:    targetName,
+			snapshot:  catalog.Snapshot{SourceURL: "www.scaleway.com/en/pricing/", RetrievedOn: validSnapshot().RetrievedOn},
+			offerings: validOfferings(),
+			wantErr:   catalog.ErrInvalidCatalog,
+		},
+		{
+			name:      "https source url without host",
+			target:    targetName,
+			snapshot:  catalog.Snapshot{SourceURL: "https://", RetrievedOn: validSnapshot().RetrievedOn},
+			offerings: validOfferings(),
+			wantErr:   catalog.ErrInvalidCatalog,
+		},
+		{
 			name:      "zero retrieval date",
-			target:    "scaleway",
+			target:    targetName,
 			snapshot:  catalog.Snapshot{SourceURL: validSnapshot().SourceURL},
 			offerings: validOfferings(),
 			wantErr:   catalog.ErrInvalidCatalog,
 		},
 		{
 			name:      "empty offering name",
-			target:    "scaleway",
+			target:    targetName,
 			snapshot:  validSnapshot(),
-			offerings: []catalog.Offering{{Categories: []taxonomy.Category{taxonomy.ComputeVM}}},
+			offerings: []catalog.Offering{{Categories: []taxonomy.Category{taxonomy.ComputeVM}, Regions: []string{"fr-par"}}},
+			wantErr:   catalog.ErrEmptyOfferingName,
+		},
+		{
+			name:      "whitespace only offering name",
+			target:    targetName,
+			snapshot:  validSnapshot(),
+			offerings: []catalog.Offering{{Name: "   ", Categories: []taxonomy.Category{taxonomy.ComputeVM}, Regions: []string{"fr-par"}}},
 			wantErr:   catalog.ErrEmptyOfferingName,
 		},
 		{
 			name:     "duplicate offering name",
-			target:   "scaleway",
+			target:   targetName,
 			snapshot: validSnapshot(),
 			offerings: []catalog.Offering{
-				{Name: "Instances", Categories: []taxonomy.Category{taxonomy.ComputeVM}},
-				{Name: "Instances", Categories: []taxonomy.Category{taxonomy.ComputeVM}},
+				{Name: "Instances", Categories: []taxonomy.Category{taxonomy.ComputeVM}, Regions: []string{"fr-par"}},
+				{Name: "Instances", Categories: []taxonomy.Category{taxonomy.ComputeVM}, Regions: []string{"fr-par"}},
 			},
 			wantErr: catalog.ErrDuplicateOffering,
 			wantMsg: []string{"Instances"},
 		},
 		{
 			name:      "offering serving no category",
-			target:    "scaleway",
+			target:    targetName,
 			snapshot:  validSnapshot(),
-			offerings: []catalog.Offering{{Name: "Instances"}},
+			offerings: []catalog.Offering{{Name: "Instances", Regions: []string{"fr-par"}}},
 			wantErr:   catalog.ErrNoCategory,
 			wantMsg:   []string{"Instances"},
 		},
 		{
+			name:      "offering without regions",
+			target:    targetName,
+			snapshot:  validSnapshot(),
+			offerings: []catalog.Offering{{Name: "Instances", Categories: []taxonomy.Category{taxonomy.ComputeVM}}},
+			wantErr:   catalog.ErrNoRegion,
+			wantMsg:   []string{"Instances"},
+		},
+		{
+			name:     "offering with empty regions",
+			target:   targetName,
+			snapshot: validSnapshot(),
+			offerings: []catalog.Offering{{
+				Name:       "Instances",
+				Categories: []taxonomy.Category{taxonomy.ComputeVM},
+				Regions:    []string{},
+			}},
+			wantErr: catalog.ErrNoRegion,
+			wantMsg: []string{"Instances"},
+		},
+		{
+			name:     "offering with only empty region names",
+			target:   targetName,
+			snapshot: validSnapshot(),
+			offerings: []catalog.Offering{{
+				Name:       "Instances",
+				Categories: []taxonomy.Category{taxonomy.ComputeVM},
+				Regions:    []string{"fr-par", "   "},
+			}},
+			wantErr: catalog.ErrNoRegion,
+			wantMsg: []string{"Instances"},
+		},
+		{
+			name:     "offering with an empty region name",
+			target:   targetName,
+			snapshot: validSnapshot(),
+			offerings: []catalog.Offering{{
+				Name:       "Instances",
+				Categories: []taxonomy.Category{taxonomy.ComputeVM},
+				Regions:    []string{""},
+			}},
+			wantErr: catalog.ErrNoRegion,
+			wantMsg: []string{"Instances"},
+		},
+		{
 			// A target never offers "unclassified": that is the absence of a category.
 			name:     "offering serving unclassified",
-			target:   "scaleway",
+			target:   targetName,
 			snapshot: validSnapshot(),
 			offerings: []catalog.Offering{{
 				Name:       "Mystery",
 				Categories: []taxonomy.Category{taxonomy.Unclassified},
+				Regions:    []string{"fr-par"},
 			}},
 			wantErr: catalog.ErrInvalidCatalog,
 			wantMsg: []string{"Mystery", "unclassified"},
 		},
 		{
 			name:     "offering with unknown category",
-			target:   "scaleway",
+			target:   targetName,
 			snapshot: validSnapshot(),
 			offerings: []catalog.Offering{{
 				Name:       "Instances",
 				Categories: []taxonomy.Category{taxonomy.Category("compute.mv")},
+				Regions:    []string{"fr-par"},
 			}},
 			wantErr: taxonomy.ErrUnknownCategory,
 			wantMsg: []string{"Instances", "compute.mv"},
 		},
 		{
 			name:     "offering with unknown capability",
-			target:   "scaleway",
+			target:   targetName,
 			snapshot: validSnapshot(),
 			offerings: []catalog.Offering{{
 				Name:         "Instances",
 				Categories:   []taxonomy.Category{taxonomy.ComputeVM},
 				Capabilities: []taxonomy.Capability{taxonomy.Capability("pitr")},
+				Regions:      []string{"fr-par"},
 			}},
 			wantErr: taxonomy.ErrUnknownCapability,
 			wantMsg: []string{"Instances", "pitr"},
@@ -300,6 +530,79 @@ func TestNewErrors(t *testing.T) {
 				if msg := err.Error(); !strings.Contains(msg, want) {
 					t.Errorf("New() error = %q, want it to mention %q", msg, want)
 				}
+			}
+		})
+	}
+}
+
+// Free text from a catalog reaches reports and terminals, so control characters,
+// bidi overrides, invalid UTF-8 and over-long values are rejected instead of
+// rendered. The error names the field and, when it has one, the offering.
+func TestNewRejectsInvalidText(t *testing.T) {
+	t.Parallel()
+
+	invalid := []struct {
+		name  string
+		value string
+	}{
+		{name: "ansi escape", value: "\x1b[2J"},
+		{name: "newline", value: "row\nvalue"},
+		{name: "right to left override", value: "a\u202eb"},
+		{name: "zero width space", value: "a\u200bb"},
+		{name: "invalid utf8", value: "a\xffb"},
+		{name: "longer than max len", value: strings.Repeat("a", text.MaxLen+1)},
+	}
+
+	type invalidCase struct {
+		name         string
+		target       string
+		offering     catalog.Offering
+		wantField    string
+		wantOffering string
+	}
+
+	tests := make([]invalidCase, 0, len(invalid)*3)
+
+	for _, tc := range invalid {
+		tests = append(tests, invalidCase{
+			name:      "target/" + tc.name,
+			target:    tc.value,
+			offering:  catalog.Offering{Name: "Instances", Categories: []taxonomy.Category{taxonomy.ComputeVM}, Regions: []string{"fr-par"}},
+			wantField: "target",
+		})
+
+		tests = append(tests, invalidCase{
+			name:      "offering name/" + tc.name,
+			target:    targetName,
+			offering:  catalog.Offering{Name: tc.value, Categories: []taxonomy.Category{taxonomy.ComputeVM}, Regions: []string{"fr-par"}},
+			wantField: "name",
+		})
+
+		tests = append(tests, invalidCase{
+			name:         "region/" + tc.name,
+			target:       targetName,
+			offering:     catalog.Offering{Name: "Instances", Categories: []taxonomy.Category{taxonomy.ComputeVM}, Regions: []string{"fr-par", tc.value}},
+			wantField:    "region",
+			wantOffering: "Instances",
+		})
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			_, err := catalog.New(tc.target, validSnapshot(), []catalog.Offering{tc.offering})
+			if !errors.Is(err, text.ErrInvalid) {
+				t.Fatalf("New() error = %v, want an error wrapping text.ErrInvalid", err)
+			}
+
+			msg := err.Error()
+			if lower := strings.ToLower(msg); !strings.Contains(lower, tc.wantField) {
+				t.Errorf("New() error = %q, want it to name the field %q", msg, tc.wantField)
+			}
+
+			if tc.wantOffering != "" && !strings.Contains(msg, tc.wantOffering) {
+				t.Errorf("New() error = %q, want it to name the offering %q", msg, tc.wantOffering)
 			}
 		})
 	}
