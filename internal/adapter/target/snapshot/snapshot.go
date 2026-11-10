@@ -149,8 +149,8 @@ var (
 )
 
 // decode reads data as a snapshot of schema version 1, in this order: at most
-// MaxDocumentBytes; valid UTF-8; one JSON value, which is an object;
-// schemaVersion 1, found before any other key or value is checked, so a
+// MaxDocumentBytes; UTF-8 without a byte order mark; one JSON value, which is an
+// object; schemaVersion 1, found before any other key or value is checked, so a
 // document of another version is refused for its version alone; then, token by
 // token, every key exact, known and not repeated, every field present, not null
 // and of its JSON type, and no string that escapes a lone surrogate.
@@ -160,17 +160,8 @@ func decode(data []byte) (document, error) {
 			ErrDecode, len(data), MaxDocumentBytes)
 	}
 
-	// The JSON decoder reads a byte that is not UTF-8, inside a string, as
-	// U+FFFD and reports nothing, so the document's own bytes are checked first.
-	// A UTF-16 byte order mark is not UTF-8; a UTF-8 one is, but is no JSON.
-	if !utf8.Valid(data) {
-		return document{}, fmt.Errorf("%w: the document is not valid UTF-8 at %s",
-			ErrDecode, position(data, invalidUTF8(data)))
-	}
-
-	if bytes.HasPrefix(data, []byte(utf8BOM)) {
-		return document{}, fmt.Errorf("%w: the document starts with a byte order mark; save it as UTF-8 without one",
-			ErrDecode)
+	if err := checkEncoding(data); err != nil {
+		return document{}, err
 	}
 
 	if !json.Valid(data) {
@@ -194,8 +185,30 @@ func decode(data []byte) (document, error) {
 	return newWalker(data).document()
 }
 
-// utf8BOM is the byte order mark U+FEFF encoded as UTF-8.
-const utf8BOM = "\xef\xbb\xbf"
+// checkEncoding refuses data that is not UTF-8 text without a byte order mark,
+// as the inventory file reader does (ADR 0006). The JSON decoder reads a byte
+// that is not UTF-8, inside a string, as U+FFFD and reports nothing, so the
+// document's own bytes are checked before any decoding. A byte order mark is
+// named whatever its encoding: the UTF-8 one is valid UTF-8 but no JSON, and the
+// UTF-16 ones would otherwise be reported as a byte that is not UTF-8.
+func checkEncoding(data []byte) error {
+	for _, bom := range byteOrderMarks {
+		if bytes.HasPrefix(data, []byte(bom)) {
+			return fmt.Errorf("%w: the document starts with a byte order mark; save it as UTF-8 without one",
+				ErrDecode)
+		}
+	}
+
+	if !utf8.Valid(data) {
+		return fmt.Errorf("%w: the document is not valid UTF-8 at %s", ErrDecode, position(data, invalidUTF8(data)))
+	}
+
+	return nil
+}
+
+// byteOrderMarks are U+FEFF encoded as UTF-8, UTF-16LE and UTF-16BE. They are
+// never modified.
+var byteOrderMarks = [...]string{"\xef\xbb\xbf", "\xff\xfe", "\xfe\xff"}
 
 // invalidUTF8 returns the index of the first byte of data that is not valid
 // UTF-8, or len(data) if there is none.
@@ -244,7 +257,7 @@ func syntaxReason(data []byte) string {
 	}
 
 	// The first value is well formed, so what json.Valid refused comes after it.
-	return "unexpected data after the catalog object at " + position(data, skipSpace(data, int(dec.InputOffset())))
+	return "unexpected data after the first JSON value at " + position(data, skipSpace(data, int(dec.InputOffset())))
 }
 
 // checkVersion checks the raw schemaVersion of a document: present, not null,
@@ -268,11 +281,13 @@ func checkVersion(raw []byte, misspelt string) error {
 }
 
 // describeVersion names a schemaVersion value that is not the one this package
-// reads: an integer as itself, a string by its value through text.Quote, and any
+// reads: an integer written in its own form as itself, any other number as
+// written through text.Quote (-0, 1.0 and 1e0 are not shown as 0 or 1, values the
+// document does not hold), a string by its value through text.Quote, and any
 // other JSON value by its type. raw is one non-empty, well-formed JSON value.
 func describeVersion(raw []byte) string {
-	if n, err := strconv.Atoi(string(raw)); err == nil {
-		return strconv.Itoa(n)
+	if n, err := strconv.Atoi(string(raw)); err == nil && strconv.Itoa(n) == string(raw) {
+		return string(raw)
 	}
 
 	switch kind := kindOf(raw[0]); kind {

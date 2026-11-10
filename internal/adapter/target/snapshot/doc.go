@@ -14,9 +14,10 @@
 // this order:
 //
 //   - it is at most MaxDocumentBytes long, checked before anything else;
-//   - it is valid UTF-8 without a byte order mark, checked before any
-//     decoding, since the JSON decoder would read a byte that is not UTF-8 as
-//     U+FFFD;
+//   - it starts with no byte order mark, UTF-8 or UTF-16, which is refused by
+//     name as the inventory file reader does (ADR 0006), and it is valid UTF-8,
+//     both checked before any decoding, since the JSON decoder would read a
+//     byte that is not UTF-8 as U+FFFD;
 //   - it is one JSON object with nothing after it but white space;
 //   - its schemaVersion is the integer 1, found before any other key or value is
 //     checked, so a document of another version is refused for its version
