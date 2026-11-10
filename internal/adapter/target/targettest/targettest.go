@@ -37,7 +37,8 @@ type Expectations struct {
 //   - catalog: Catalog returns without error;
 //   - target: the catalog's Target is want.Target;
 //   - snapshot: the catalog's snapshot has a source URL and a retrieval date;
-//   - regions: every offering is available only in want.Regions;
+//   - regions: every offering is available only in want.Regions (skipped
+//     when want.Regions is empty, which is already an expectations violation);
 //   - category: every category of want.Categories is served;
 //   - repeat: a second call returns the same catalog as the first;
 //   - cancel: a call with a cancelled context returns an error wrapping
@@ -121,18 +122,34 @@ func checkCatalog(cat catalog.Catalog, want Expectations) []error {
 		errs = append(errs, errors.New("snapshot: RetrievedOn is zero, want the date the catalog was retrieved"))
 	}
 
-	for _, o := range cat.Offerings() {
-		for _, region := range o.Regions {
-			if !slices.Contains(want.Regions, region) {
-				errs = append(errs, fmt.Errorf("regions: offering %s is available in region %s, want one of %s",
-					text.Quote(o.Name), text.Quote(region), quoteAll(want.Regions)))
-			}
-		}
-	}
+	errs = append(errs, checkRegions(cat, want.Regions)...)
 
 	for _, category := range want.Categories {
 		if len(cat.OfferingsFor(category)) == 0 {
 			errs = append(errs, fmt.Errorf("category: no offering serves %s", text.Quote(string(category))))
+		}
+	}
+
+	return errs
+}
+
+// checkRegions returns a regions violation for every offering region of cat
+// outside allowed. With no allowed regions it returns nothing: the empty
+// expectation is already an expectations violation, and repeating it for every
+// offering region would only bury it.
+func checkRegions(cat catalog.Catalog, allowed []string) []error {
+	if len(allowed) == 0 {
+		return nil
+	}
+
+	var errs []error
+
+	for _, o := range cat.Offerings() {
+		for _, region := range o.Regions {
+			if !slices.Contains(allowed, region) {
+				errs = append(errs, fmt.Errorf("regions: offering %s is available in region %s, want one of %s",
+					text.Quote(o.Name), text.Quote(region), quoteAll(allowed)))
+			}
 		}
 	}
 

@@ -49,12 +49,24 @@ linters:
               desc: cloud SDKs belong in internal/adapter/source/gcp
             # The assess path needs no network, process or OS access in the
             # application layer: adapters do I/O behind the ports.
+            # depguard matches import paths exactly, so every subpackage is
+            # listed. net/netip stays allowed: it is a pure value type.
             - pkg: net/http
               desc: the application layer makes no HTTP calls; an adapter behind a port does
+            - pkg: net/rpc
+              desc: the application layer makes no RPC calls; an adapter behind a port does
+            - pkg: net/smtp
+              desc: the application layer sends no mail; an adapter behind a port does
+            - pkg: net/mail
+              desc: the application layer parses no mail; an adapter behind a port does
             - pkg: net
               desc: the application layer has no network access; an adapter behind a port does
             - pkg: os/exec
               desc: the application layer starts no processes
+            - pkg: os/user
+              desc: the application layer looks up no OS users; the driving adapter passes what it needs through the ports
+            - pkg: os/signal
+              desc: the application layer handles no OS signals; the driving adapter cancels the context instead
             - pkg: os
               desc: the application layer has no OS access (files, environment); the driving adapter passes what it needs through the ports
         testutil-only-in-tests:
