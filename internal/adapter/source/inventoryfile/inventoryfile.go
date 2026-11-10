@@ -12,6 +12,8 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"unicode"
+	"unicode/utf16"
 	"unicode/utf8"
 
 	"github.com/timothymamo/eu-sov-cloud/internal/domain/inventory"
@@ -28,6 +30,11 @@ const MaxFileSize = 10 << 20
 // the size.
 const MaxResources = 50000
 
+// MaxCapabilities is the most capabilities one resource may list. The taxonomy
+// vocabulary is far smaller, so a longer list is a malformed file, refused
+// while the document is read, before its capabilities are decoded.
+const MaxCapabilities = 32
+
 // schemaVersion is the only version of the inventory file format this package
 // reads (ADR 0006).
 const schemaVersion = 1
@@ -38,9 +45,10 @@ var (
 	// ErrTooLarge is returned for an inventory file larger than MaxFileSize.
 	ErrTooLarge = errors.New("file too large")
 	// ErrDecode is returned for a file that is not a well-formed inventory
-	// document: not UTF-8 JSON, more than one JSON value, a field of the wrong
-	// type, a key that is unknown, misspelt or repeated, or a required field
-	// missing.
+	// document: not UTF-8 JSON, more than one JSON value, a string that escapes
+	// a lone surrogate, a field of the wrong type, a key that is unknown,
+	// misspelt or repeated, a required field missing, or a resource with more
+	// than MaxCapabilities capabilities.
 	ErrDecode = errors.New("not a valid inventory document")
 	// ErrSchemaVersion is returned for a file whose schemaVersion is missing or
 	// is not a version this package reads.
@@ -122,10 +130,13 @@ type readResult struct {
 //
 // The file is opened and read on a goroutine of its own, so that a cancelled
 // ctx ends the call even while the open or a read blocks. Cancelling closes the
-// file once it is open, which ends a blocked read. An open that blocks (a FIFO
-// with no writer) cannot be interrupted portably: its goroutine then waits until
-// the open returns, or until the process exits, which for the CLI is the end of
-// the run. The file is read once per call, so a pipe serves a single read.
+// file once it is open, which ends a read blocked on a pipe or FIFO. An open
+// that blocks (a FIFO with no writer) cannot be interrupted portably, and
+// neither can a read Go cannot poll (a regular file on a stalled network file
+// system): the goroutine then waits until the open or the read returns, or
+// until the process exits, which for the CLI is the end of the run. The call
+// returns all the same. The file is read once per call, so a pipe serves a
+// single read.
 func (s *Source) read(ctx context.Context) ([]byte, error) {
 	done := make(chan readResult, 1)
 
@@ -238,12 +249,13 @@ var (
 
 // decode decodes data as an inventory document of schema version 1, in this
 // order: UTF-8 text without a byte order mark; one JSON value, which is an
-// object; schemaVersion 1, read before anything else in the document, so a file
+// object; schemaVersion 1, found before any key or type is checked, so a file
 // of another version is refused for its version, never for a field this version
 // does not know; then, token by token (walker), every key exact, known and not
-// repeated, every value of the right JSON type, and at most MaxResources
-// resources; and only then the decoded document, with its required fields
-// present.
+// repeated, every value of the right JSON type, no string that escapes a lone
+// surrogate, at most MaxResources resources and at most MaxCapabilities
+// capabilities in each; and only then the decoded document, with its required
+// fields present.
 func decode(data []byte) (document, error) {
 	if err := checkEncoding(data); err != nil {
 		return document{}, err
@@ -353,7 +365,7 @@ func syntaxReason(data []byte) string {
 
 	// The first value is well formed (its type does not matter here), so what
 	// json.Unmarshal refused comes after it.
-	return "unexpected data after the inventory object at " + position(data, skipSpace(data, int(dec.InputOffset())))
+	return "unexpected data after the first JSON value at " + position(data, skipSpace(data, int(dec.InputOffset())))
 }
 
 // checkVersion checks the raw schemaVersion of a file: present, not null, and
@@ -390,10 +402,11 @@ func checkVersion(raw []byte, misspelt string) error {
 // large the document or its values.
 //
 // encoding/json decodes keys ignoring case (and Unicode folding maps the long s
-// to s), keeps the last of a repeated key, and decodes every resource before
-// any of them can be counted; walker reads the document as it is written, byte
-// for byte, and its errors say where in the file the problem is, as a line and a
-// column.
+// to s), keeps the last of a repeated key, decodes an escaped lone surrogate to
+// U+FFFD, and decodes every resource before any of them can be counted; walker
+// reads the document as it is written, character for character once JSON
+// escapes are decoded, and its errors say where in the file the problem is, as
+// a line and a column.
 type walker struct {
 	data []byte
 	dec  *json.Decoder
@@ -481,8 +494,9 @@ func (w *walker) next() (json.Token, int, error) {
 // document walks the whole document, a JSON object whose exact schemaVersion
 // key findVersion found to be 1. It refuses a key that is not spelt exactly as
 // the format defines it, a key an object already has, a value of the wrong JSON
-// type, and more than MaxResources resources, counted before a single resource
-// is decoded.
+// type, a string that escapes a lone surrogate, more than MaxResources
+// resources and more than MaxCapabilities capabilities in a resource, counted
+// before a single resource is decoded.
 func (w *walker) document() error {
 	// json.Unmarshal decoded the envelope from this object: the first token is
 	// its opening brace.
@@ -518,8 +532,9 @@ func (w *walker) document() error {
 }
 
 // key reads the next key of an object, at path parent ("" for the document),
-// whose keys are known, and refuses a key that is not byte for byte one of
-// them or that seen records the object already has.
+// whose keys are known, and refuses a key that escapes a lone surrogate, that
+// is not character for character one of them once JSON escapes are decoded, or
+// that seen records the object already has.
 func (w *walker) key(known []string, seen *uint, parent string) (string, error) {
 	tok, at, err := w.next()
 	if err != nil {
@@ -528,6 +543,15 @@ func (w *walker) key(known []string, seen *uint, parent string) (string, error) 
 
 	// An object key is always a string token.
 	key, _ := tok.(string)
+
+	what := "a key"
+	if parent != "" {
+		what = "a key of " + text.Quote(parent)
+	}
+
+	if err := w.checkString(what, key, at); err != nil {
+		return "", err
+	}
 
 	i := slices.Index(known, key)
 	if i < 0 {
@@ -562,20 +586,24 @@ func (w *walker) version() error {
 	return checkVersion(w.data[at:w.dec.InputOffset()], "")
 }
 
-// text reads the value of key in the object at path parent: a string, or null
-// for an absent value.
+// text reads the value of key in the object at path parent: a string that
+// escapes no lone surrogate, or null for an absent value.
 func (w *walker) text(parent, key string) error {
 	tok, at, err := w.next()
 	if err != nil {
 		return err
 	}
 
-	switch tok.(type) {
-	case string, nil:
+	path := join(parent, key)
+
+	switch s := tok.(type) {
+	case string:
+		return w.checkString(text.Quote(path), s, at)
+	case nil:
 		return nil
 	}
 
-	return w.wrongType(join(parent, key), at, "a string")
+	return w.wrongType(path, at, "a string")
 }
 
 // resources reads the resources list, counting its elements as it goes: the
@@ -612,7 +640,7 @@ func (w *walker) resources() error {
 
 // resource reads element i of the resources list.
 func (w *walker) resource(i int) error {
-	path := join(keyResources, strconv.Itoa(i))
+	path := element(keyResources, i)
 
 	tok, at, err := w.next()
 	if err != nil {
@@ -647,8 +675,9 @@ func (w *walker) resource(i int) error {
 	return err
 }
 
-// capabilities reads the capabilities list at path: an array of strings, or
-// null for an absent list.
+// capabilities reads the capabilities list at path: an array of at most
+// MaxCapabilities strings, or null for an absent list. The list is refused at
+// its first element past the cap, before that element is read.
 func (w *walker) capabilities(path string) error {
 	tok, at, err := w.next()
 	if err != nil {
@@ -664,19 +693,107 @@ func (w *walker) capabilities(path string) error {
 	}
 
 	for j := 0; w.dec.More(); j++ {
+		if j == MaxCapabilities {
+			at := skipSeparators(w.data, int(w.dec.InputOffset()))
+
+			return fmt.Errorf("%w: %s lists more than %d capabilities, at %s",
+				ErrDecode, text.Quote(path), MaxCapabilities, position(w.data, at))
+		}
+
 		tok, at, err := w.next()
 		if err != nil {
 			return err
 		}
 
-		if _, ok := tok.(string); !ok {
-			return w.wrongType(join(path, strconv.Itoa(j)), at, "a string")
+		s, ok := tok.(string)
+		if !ok {
+			return w.wrongType(element(path, j), at, "a string")
+		}
+
+		if err := w.checkString(text.Quote(element(path, j)), s, at); err != nil {
+			return err
 		}
 	}
 
 	_, _, err = w.next()
 
 	return err
+}
+
+// checkString refuses s, a string token that starts at index at of the
+// document, if its JSON text escapes a lone surrogate: a high surrogate escape
+// (D800 to DBFF) not followed at once by a low one (DC00 to DFFF), or a low one
+// on its own. Such an escape names no character, and encoding/json decodes it
+// to U+FFFD, so the value would differ from the file. what names the string in
+// the error. The JSON text is scanned only when s holds U+FFFD, which every
+// lone surrogate decodes to; checkEncoding has refused invalid UTF-8 already.
+func (w *walker) checkString(what, s string, at int) error {
+	if !strings.ContainsRune(s, utf8.RuneError) {
+		return nil
+	}
+
+	raw := w.data[at:w.dec.InputOffset()]
+
+	i, unit := loneSurrogate(raw)
+	if i < 0 {
+		return nil
+	}
+
+	return fmt.Errorf("%w: %s escapes U+%04X, a surrogate on its own, which is no character, at %s",
+		ErrDecode, what, unit, position(w.data, at+i))
+}
+
+// escapeLen is the length of a JSON escape of one UTF-16 code unit: a
+// backslash, u and four hexadecimal digits.
+const escapeLen = 6
+
+// loneSurrogate returns the index in raw, the JSON text of a well-formed
+// string, of the first escape of a lone surrogate, and the surrogate, or -1 if
+// there is none. It steps over every other escape, so an escaped backslash
+// followed by u is never read as an escape of its own.
+func loneSurrogate(raw []byte) (int, rune) {
+	for i := 0; i < len(raw); i++ {
+		if raw[i] != '\\' {
+			continue
+		}
+
+		r, ok := escapedUnit(raw, i)
+		if !ok {
+			// Any other escape is two bytes: step over the escaped byte.
+			i++
+
+			continue
+		}
+
+		if utf16.IsSurrogate(r) {
+			// A pair decodes to one character; anything else is U+FFFD.
+			if low, ok := escapedUnit(raw, i+escapeLen); !ok || utf16.DecodeRune(r, low) == unicode.ReplacementChar {
+				return i, r
+			}
+
+			i += escapeLen
+		}
+
+		i += escapeLen - 1
+	}
+
+	return -1, 0
+}
+
+// escapedUnit returns the UTF-16 code unit escaped at index i of raw, and
+// whether raw holds such an escape there: a backslash, u and four hexadecimal
+// digits.
+func escapedUnit(raw []byte, i int) (rune, bool) {
+	if i+escapeLen > len(raw) || raw[i] != '\\' || raw[i+1] != 'u' {
+		return 0, false
+	}
+
+	unit, err := strconv.ParseUint(string(raw[i+2:i+escapeLen]), 16, 16)
+	if err != nil {
+		return 0, false
+	}
+
+	return rune(unit), true
 }
 
 // wrongType reports that the value at path, which starts at index at of the
@@ -698,14 +815,20 @@ func (w *walker) where(parent, key string, at int) string {
 	return text.Quote(join(parent, key)) + ", " + position(w.data, at)
 }
 
-// join returns the path of key in the object or array at path parent, "" for
-// the document: resources.1.regoin.
+// join returns the path of key in the object at path parent, "" for the
+// document: resources[1].regoin.
 func join(parent, key string) string {
 	if parent == "" {
 		return key
 	}
 
 	return parent + "." + key
+}
+
+// element returns the path of element i of the array at path parent, with the
+// index in brackets as the domain writes it: resources[1].
+func element(parent string, i int) string {
+	return parent + "[" + strconv.Itoa(i) + "]"
 }
 
 // kindOf names, with its article, the JSON type of the value whose first byte
