@@ -108,7 +108,7 @@ Each milestone ships as one PR. Milestones 4, 5 and 6 depend only on 3 and can r
 2. [x] **Mapping and assessment.** Fit rules (direct, partial, none) with reasons, candidate ordering,
    per-resource verdicts, blockers, required changes and summary counts. Table-driven unit tests covering
    every acceptance criterion under *Mapping*.
-3. [ ] **Use case and ports.** `internal/app/analysis` declares the inventory-source, catalog-source and
+3. [x] **Use case and ports.** `internal/app/analysis` declares the inventory-source, catalog-source and
    reporter ports and runs load, map, assess, report. Tested with fakes. Empty contract suites
    `sourcetest` and `targettest` with their first checks. ADR 0005 records the port shapes. The reporter
    port receives report metadata alongside the assessment, including the inventory file name (checked
