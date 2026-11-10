@@ -76,7 +76,10 @@ All criteria are pinned by tests that run offline under `make test` or `make tes
   context, so `|`, newlines, backticks, HTML and link syntax in an inventory cannot forge table rows,
   headings, links or images. The source URL is emitted percent-encoding `( ) [ ] < > |`, space and
   backtick (or as an autolink after encoding `<` `>`). Pinned by a golden test with a hostile fixture
-  that includes a hostile file name and source URL.
+  that includes a hostile file name and source URL. The inventory file name must pass `text.Validate`;
+  otherwise the command exits 1 with an error that shows the name through `text.Quote`. The reporter
+  emits the stored source URL string, never a decoded form; the hostile fixture's source URL includes
+  `%0A` and `%E2%80%AE`.
 
 **CLI**
 
@@ -161,6 +164,11 @@ fixtures in earlier milestones share a picture of the data:
   if subcommands outgrow it.
 - **Decided: exit codes.** 0 when the assessment ran (blockers are a result, not a failure), 1 for input
   or runtime errors, 2 for usage errors, matching the existing `cmd/eusov` behaviour.
+- **Accepted risk: look-alike text.** The domain rejects control, invisible and format characters, edge
+  white space and non-ASCII spaces in IDs, and compares IDs and offering names ignoring runs of white
+  space. Homoglyphs (e.g. Cyrillic а for Latin a) and NFC/NFD differences are not detected: the standard
+  library has no normaliser, and real cloud IDs are ASCII. Revisit if hand-edited inventories become
+  common.
 - **Open: readiness score.** Deferred until sizing and workload grouping exist, because a score from fit
   counts alone would mislead. Next candidate PRD.
 - **Open: region semantics.** This PRD only reports the EU regions where an offering exists. Whether a
