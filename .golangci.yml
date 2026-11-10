@@ -1,5 +1,14 @@
 version: "2"
 
+# Lint the files behind these build tags too. Without them the linters, gosec
+# and depguard included, skip the e2e tests in test/e2e and every integration
+# test, which runs with real read-only cloud credentials. Every lint run
+# (make lint, make check, CI) reads the tags from here.
+run:
+  build-tags:
+    - e2e
+    - integration
+
 linters:
   default: standard
   enable:
