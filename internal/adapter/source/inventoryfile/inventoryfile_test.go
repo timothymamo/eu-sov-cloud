@@ -210,6 +210,38 @@ func TestInventoryContract(t *testing.T) {
 	sourcetest.Run(t, inventoryfile.New(validPath), wantValidInventory(t))
 }
 
+// TestInventoryReadsNullAsAbsent pins the null policy ADR 0006 gives the
+// optional fields: a resource whose rawType, region and capabilities are null is
+// the same resource as one whose JSON leaves those keys out. The policy is the
+// inventory reader's own - the shared decoder refuses a null no format asks for -
+// so it is pinned here, on the inventory that comes out.
+func TestInventoryReadsNullAsAbsent(t *testing.T) {
+	t.Parallel()
+
+	withNulls := `{"schemaVersion":1,"source":"aws","resources":[` +
+		`{"id":"i-0123456789abcdef0","rawType":null,"category":"compute.vm",` +
+		`"region":null,"capabilities":null}]}`
+	withoutKeys := `{"schemaVersion":1,"source":"aws","resources":[` +
+		`{"id":"i-0123456789abcdef0","category":"compute.vm"}]}`
+
+	read := func(document string) inventory.Inventory {
+		t.Helper()
+
+		return inventoryOf(t, writeFile(t, t.TempDir(), document))
+	}
+
+	want := read(withoutKeys)
+	got := read(withNulls)
+
+	if diff := cmp.Diff(want.Source(), got.Source()); diff != "" {
+		t.Errorf("Source() of the document with nulls differs (-want +got):\n%s", diff)
+	}
+
+	if diff := cmp.Diff(want.Resources(), got.Resources()); diff != "" {
+		t.Errorf("Resources() of the document with nulls differ (-want +got):\n%s", diff)
+	}
+}
+
 // Documents that are written by the test instead of installed as fixtures.
 //
 // A fixture cannot hold them reliably: an editor, a formatter or a git filter
@@ -268,6 +300,15 @@ const (
 	// misspeltSchemaVersionDocument capitalises the top-level schemaVersion key,
 	// so the exact key the format declares is missing.
 	misspeltSchemaVersionDocument = `{"SchemaVersion":1,"source":"aws","resources":[]}`
+	// nullSourceDocument spells the source as null, which ADR 0006 reads as an
+	// absent field: the domain refuses the empty source, not the decoder.
+	nullSourceDocument = `{"schemaVersion":1,"source":null,"resources":[]}`
+	// nullResourcesDocument spells resources as null: the one field whose null is
+	// not an absent value.
+	nullResourcesDocument = `{"schemaVersion":1,"source":"aws","resources":null}`
+	// nullSchemaVersionDocument spells the version as null, which is a missing
+	// version: there is no default.
+	nullSchemaVersionDocument = `{"schemaVersion":null,"source":"aws","resources":[]}`
 	// capabilityNumberDocument puts the number 42 where a capability, a string,
 	// belongs.
 	capabilityNumberDocument = `{"schemaVersion":1,"source":"aws","resources":[` +
@@ -616,20 +657,29 @@ func TestInventoryErrors(t *testing.T) {
 			wantMentions: [][]string{{"schemaVersion"}},
 		},
 		{
-			name:         "missing schema version",
-			path:         fixture("no-schema-version.json"),
-			wantErr:      []error{inventoryfile.ErrSchemaVersion},
-			wantMentions: [][]string{{"schemaVersion"}, {"0", "absent", "missing", "not set", "not present"}},
+			// The version error is worded once, by the shared decoder, so both
+			// readers say a version is an integer: a document without a version is
+			// missing the integer 1, not a bare 1.
+			name:    "missing schema version",
+			path:    fixture("no-schema-version.json"),
+			wantErr: []error{inventoryfile.ErrSchemaVersion},
+			wantMentions: [][]string{
+				{"schemaVersion"},
+				{"0", "absent", "missing", "not set", "not present"},
+				{"schemaVersion is missing, want the integer 1"},
+			},
 		},
 		{
 			// The exact key is missing, so the file is refused for its version,
 			// never for a field the version it claims has: the key that was meant
 			// is named, quoted, and the sentinel says it is about the version.
-			name:         "schema version key misspelt",
-			path:         generated(misspeltSchemaVersionDocument),
-			wantErr:      []error{inventoryfile.ErrSchemaVersion},
-			wantNotErr:   []error{inventoryfile.ErrDecode},
-			wantMentions: [][]string{{"schemaVersion"}},
+			name:       "schema version key misspelt",
+			path:       generated(misspeltSchemaVersionDocument),
+			wantErr:    []error{inventoryfile.ErrSchemaVersion},
+			wantNotErr: []error{inventoryfile.ErrDecode},
+			// The wording is the shared decoder's, and the key that was meant is
+			// still named.
+			wantMentions: [][]string{{"schemaVersion"}, {"schemaVersion is missing, want the integer 1"}},
 			wantQuoted:   []string{"SchemaVersion"},
 		},
 		{
@@ -650,6 +700,30 @@ func TestInventoryErrors(t *testing.T) {
 			name:    "empty source",
 			path:    fixture("empty-source.json"),
 			wantErr: []error{inventory.ErrEmptySource},
+		},
+		{
+			// ADR 0006: null is the same as an absent field, so a null source is the
+			// domain's empty source, never a decode failure.
+			name:       "null source",
+			path:       generated(nullSourceDocument),
+			wantErr:    []error{inventory.ErrEmptySource},
+			wantNotErr: []error{inventoryfile.ErrDecode},
+		},
+		{
+			// resources is the one field a null is not absent for: it is a value of
+			// the wrong type, refused where it is, as the array it should be.
+			name:         "null resources",
+			path:         generated(nullResourcesDocument),
+			wantErr:      []error{inventoryfile.ErrDecode},
+			wantMentions: [][]string{{"resources"}, {"line 1, column "}},
+			wantQuoted:   []string{"resources"},
+		},
+		{
+			// A null version is a missing version: there is no default.
+			name:       "null schema version",
+			path:       generated(nullSchemaVersionDocument),
+			wantErr:    []error{inventoryfile.ErrSchemaVersion},
+			wantNotErr: []error{inventoryfile.ErrDecode},
 		},
 		{
 			name: "file larger than MaxFileSize",
