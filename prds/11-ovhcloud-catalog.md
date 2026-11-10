@@ -72,7 +72,7 @@ All criteria are pinned by tests that run offline under `make test` or `make tes
   undeclared region, or a value the taxonomy or `catalog.New` refuses is an error and is never dropped
   or defaulted. Errors are one line, worded the same for both targets. The reader's own tests pin this
   once. Each adapter's test pins that its embedded snapshot parses.
-- [ ] Moving Scaleway onto the shared reader changes nothing observable: in that milestone's diff, its
+- [x] Moving Scaleway onto the shared reader changes nothing observable: in that milestone's diff, its
   catalog golden file and its `targettest` expectations are unchanged.
 
 **Report**
@@ -101,7 +101,7 @@ All criteria are pinned by tests that run offline under `make test` or `make tes
 Each milestone ships as one PR. This PRD starts after PRD #2: milestone 1 needs PRD #2 milestone 5
 (Scaleway catalog adapter) merged, and milestone 3 needs PRD #2 milestone 7 (CLI and wiring).
 
-1. [ ] **Shared target snapshot format.** Move the Scaleway adapter's snapshot schema and strict reader
+1. [x] **Shared target snapshot format.** Move the Scaleway adapter's snapshot schema and strict reader
    into one package that every target with an embedded snapshot uses. An ADR records it as the target
    snapshot format, the counterpart of ADR 0006 for inventories, and says why it is shared. Scaleway
    reads its snapshot through the shared reader, and its golden file and `targettest` run stay the same.
@@ -158,7 +158,8 @@ Each milestone ships as one PR. This PRD starts after PRD #2: milestone 1 needs 
   not a service that runs user code. Milestone 2 re-checks this against OVHcloud's product pages.
 - **Decided: one shared snapshot format and reader.** Two copies of a strict parser drift apart, and its
   rules (unknown fields, undeclared regions, size cap, one-line errors) protect the correctness and safety
-  of every target. UpCloud will be the third user. The ADR is written in milestone 1.
+  of every target. UpCloud will be the third user. Recorded in
+  [ADR 0007](../docs/adr/0007-shared-target-catalog-snapshot-format-v1.md) (milestone 1).
 - **Decided: the taxonomy is unchanged.** A capability OVHcloud offers that has no vocabulary entry is
   left out and noted in `SOURCES.md`. Extending the vocabulary is a change of its own, with tests across
   every target.
