@@ -50,24 +50,24 @@ All criteria are pinned by tests that run offline under `make test` or `make tes
 
 **Catalog**
 
-- [ ] The OVHcloud catalog serves `compute.vm`, `kubernetes.managed`, `storage.object`, `storage.block`,
+- [x] The OVHcloud catalog serves `compute.vm`, `kubernetes.managed`, `storage.object`, `storage.block`,
   `database.postgresql` and `database.mysql`, each with at least one offering (`targettest` *category*
   check).
-- [ ] Every offering is available only in the declared EU regions (`targettest` *regions* check). No
+- [x] Every offering is available only in the declared EU regions (`targettest` *regions* check). No
   offering lists a UK, Canadian, US or Asia-Pacific region. A test pins the declared region list, so any
   change to it shows up in review.
-- [ ] Given a resource of category `serverless.function` or `messaging.queue`, its fit is `none` with
+- [x] Given a resource of category `serverless.function` or `messaging.queue`, its fit is `none` with
   the reason "no offering in the OVHcloud catalog for `<category>`", and it is listed as a blocker.
-- [ ] Given a resource that needs `high-availability` from a product OVHcloud makes highly available
+- [x] Given a resource that needs `high-availability` from a product OVHcloud makes highly available
   only in its 3-AZ regions, the best offering reported is the 3-AZ variant (see *Decisions*).
-- [ ] A golden file pins the parsed OVHcloud catalog, as for Scaleway.
-- [ ] Every offering in an embedded snapshot has its own section in the `SOURCES.md` beside it. That
+- [x] A golden file pins the parsed OVHcloud catalog, as for Scaleway.
+- [x] Every offering in an embedded snapshot has its own section in the `SOURCES.md` beside it. That
   section names the pages the offering comes from, the fact behind each capability and region, and the
   licence of each source. A test fails when an offering has no section. The test runs for both targets.
 
 **Shared snapshot format**
 
-- [ ] Both target adapters read their embedded snapshot through one reader, with the same schema
+- [x] Both target adapters read their embedded snapshot through one reader, with the same schema
   version and the same strictness. An unknown field, an unsupported schema version, an offering in an
   undeclared region, or a value the taxonomy or `catalog.New` refuses is an error and is never dropped
   or defaulted. Errors are one line, worded the same for both targets. The reader's own tests pin this
@@ -88,7 +88,7 @@ All criteria are pinned by tests that run offline under `make test` or `make tes
 **Architecture**
 
 - [ ] `make check` passes, including depguard.
-- [ ] The OVHcloud adapter passes `targettest` as it stands. If this PRD changes the suite, the change
+- [x] The OVHcloud adapter passes `targettest` as it stands. If this PRD changes the suite, the change
   only adds checks, and both adapters pass them.
 - [ ] *Review:* adding OVHcloud changes no file under `internal/domain`, `internal/app` or
   `internal/adapter/report`. The taxonomy, the capability vocabulary, the mapping rules and the reporter
@@ -107,7 +107,7 @@ Each milestone ships as one PR. This PRD starts after PRD #2: milestone 1 needs 
    reads its snapshot through the shared reader, and its golden file and `targettest` run stay the same.
    Adds the test that every offering in a snapshot has a section in its `SOURCES.md`, run for Scaleway.
    The reader keeps the Scaleway adapter's size cap and one-line error rules.
-2. [ ] **OVHcloud catalog snapshot and adapter.** `internal/adapter/target/ovhcloud` serves an embedded,
+2. [x] **OVHcloud catalog snapshot and adapter.** `internal/adapter/target/ovhcloud` serves an embedded,
    dated snapshot of OVHcloud Public Cloud in its EU regions, read through the shared reader. Its
    `SOURCES.md` is written to the rules under *Decisions*, and a golden test pins the parsed catalog.
    It runs `targettest` with the categories listed under *Scope*, and a test pins the declared region
