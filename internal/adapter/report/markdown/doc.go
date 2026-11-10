@@ -28,6 +28,10 @@
 //     a backslash before each of \ ` * _ [ ] ( ) < > | ! ~ # &. Dots are left as
 //     they are. A line ending, which no valid value holds, becomes a character
 //     reference.
+//   - A resource ID that starts a blocker line also gets a backslash before a
+//     leading - or +, and before the . that follows a leading run of digits, so
+//     the line stays one list item. Elsewhere, table cells included, these
+//     characters are left as they are.
 //   - Categories and capabilities are code spans: the fence is one backtick
 //     longer than the longest backtick run in the value, the value is padded with
 //     a space when it starts or ends with a backtick or a space, and inside a

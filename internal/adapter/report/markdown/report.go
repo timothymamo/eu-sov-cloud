@@ -113,7 +113,8 @@ func writeBlockers(b *strings.Builder, blockers []assessment.Blocker) {
 	}
 
 	for _, blocker := range blockers {
-		b.WriteString("- " + escapeText(blocker.ResourceID) + ": " + renderReason(blocker.Reason, false) + "\n")
+		id := escapeLineStart(escapeText(blocker.ResourceID))
+		b.WriteString("- " + id + ": " + renderReason(blocker.Reason, false) + "\n")
 	}
 }
 
@@ -186,6 +187,27 @@ var textEscaper = strings.NewReplacer(
 // escapeText returns s escaped for Markdown running text and table cells.
 func escapeText(s string) string {
 	return textEscaper.Replace(s)
+}
+
+// asciiDigits are the digits of an ordered list marker.
+const asciiDigits = "0123456789"
+
+// escapeLineStart returns s, text already escaped by escapeText, with a backslash
+// before what would make s start a list item when s starts a line: a leading
+// dash or plus, and the dot after a leading run of digits. A leading star and the
+// parenthesis of an ordered marker are escaped by escapeText already. Nothing
+// later in s changes.
+func escapeLineStart(s string) string {
+	if strings.HasPrefix(s, "-") || strings.HasPrefix(s, "+") {
+		return `\` + s
+	}
+
+	rest := strings.TrimLeft(s, asciiDigits)
+	if digits := len(s) - len(rest); digits > 0 && strings.HasPrefix(rest, ".") {
+		return s[:digits] + `\` + rest
+	}
+
+	return s
 }
 
 // codeSpanLineEndings turns line endings into spaces, as CommonMark does inside a
