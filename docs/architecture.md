@@ -52,7 +52,7 @@ The shapes and their alternatives are in [ADR 0005](adr/0005-context-first-ports
 
 | Port | Method | Implemented by | Pinned by |
 |---|---|---|---|
-| `InventorySource` | `Inventory(ctx) (inventory.Inventory, error)` | The inventory-file adapter (PRD 2), `adapter/source/{aws,azure,gcp}` | Contract suite `adapter/source/sourcetest` |
+| `InventorySource` | `Inventory(ctx) (inventory.Inventory, error)` | `adapter/source/inventoryfile` (the JSON inventory file, [ADR 0006](adr/0006-json-inventory-file-format-v1.md)), `adapter/source/{aws,azure,gcp}` | Contract suite `adapter/source/sourcetest` |
 | `CatalogSource` | `Catalog(ctx) (catalog.Catalog, error)` | `adapter/target/{ovhcloud,scaleway,upcloud}` | Contract suite `adapter/target/targettest` |
 | `Reporter` | `Report(ctx, w io.Writer, assessment.Assessment, ReportMeta) error` | `adapter/report/{markdown,jsonreport}` | Golden files |
 
