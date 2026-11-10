@@ -8,5 +8,7 @@
 // shared reader in the snapshot sub-package: one format, one strictness and one
 // wording of errors for every target (ADR 0007). The provider package adds only
 // what is its own, such as its display name in errors and its contract
-// expectations.
+// expectations. The lint rule target-adapters-read-snapshots-through-the-reader
+// keeps encoding/json out of every package here but the reader, so a provider
+// cannot decode its snapshot on its own.
 package target

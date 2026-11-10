@@ -39,11 +39,24 @@
 // word.
 //
 // Every error is one line and wraps ErrDecode, ErrSchemaVersion,
-// ErrUndeclaredRegion or the error of catalog.New. A problem is placed by line
-// and column and a value named by its path (offerings[1].regions[0]); values
+// ErrUndeclaredRegion or the error of catalog.New. A problem the token walk
+// finds, other than a missing top-level key, is placed by line and column (both
+// from 1, the column in characters), and so are a byte that is not UTF-8,
+// malformed JSON and data after the first JSON value. The other errors carry no
+// position: they name the value by its path (offerings[1].regions[0]) or its
+// name, or speak of the whole document. These are the size cap, a byte order
+// mark, a document that is empty, cut short or not an object, the schema
+// version, a missing top-level key, and the checks after the walk: retrievedOn,
+// the declared regions, an undeclared offering region and catalog.New. Values
 // from the document are shown through text.Quote, and the text of encoding/json
 // and time.Parse errors is never passed on. Errors name neither the input nor
 // any target: the adapter that embeds the document does.
+//
+// Parse takes the whole document in memory, and MaxDocumentBytes caps what it
+// decodes, not what a caller reads. A caller that ever reads a snapshot from a
+// stream, such as a fetched or user-supplied catalog (issue #13), must read at
+// most MaxDocumentBytes+1 bytes (io.LimitReader) before calling Parse, so a
+// larger one is still refused without being read whole.
 //
 // Every snapshot sits beside a SOURCES.md that gives each offering a section of
 // its own, naming the pages it comes from, the fact behind each category,
