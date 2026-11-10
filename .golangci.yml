@@ -93,6 +93,22 @@ linters:
           files:
             - "**/internal/app/**/*_test.go"
           deny: *app-deny
+        # The driving adapter gets its adapters from the composition root
+        # through cli.Deps and never constructs one, so it imports only the
+        # application, the domain, the build metadata and the standard library.
+        cli-gets-adapters-from-cmd:
+          list-mode: strict
+          files:
+            - "**/internal/cli/**"
+            - "!$test"
+          allow:
+            - $gostd
+            - github.com/timothymamo/eu-sov-cloud/internal/app/
+            - github.com/timothymamo/eu-sov-cloud/internal/domain/
+            - github.com/timothymamo/eu-sov-cloud/internal/version$
+          deny:
+            - pkg: github.com/timothymamo/eu-sov-cloud/internal/adapter
+              desc: the CLI gets its adapters through cli.Deps; construct them in cmd/eusov
         testutil-only-in-tests:
           list-mode: lax
           files:
