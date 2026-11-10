@@ -5,8 +5,8 @@ Block Storage | storage.block | snapshots | fr-par, it-mil, nl-ams, pl-waw
 Elastic Metal | compute.vm | ipv6 | fr-par, nl-ams, pl-waw
 Instances | compute.vm | ipv6, snapshots | fr-par, it-mil, nl-ams, pl-waw
 Kubernetes Kapsule | kubernetes.managed | autoscaling, high-availability | fr-par, it-mil, nl-ams, pl-waw
-Managed Database for PostgreSQL and MySQL | database.mysql, database.postgresql | encryption-at-rest, high-availability, read-replicas, snapshots | fr-par, nl-ams, pl-waw
+Managed Database for PostgreSQL and MySQL | database.mysql, database.postgresql | encryption-at-rest, high-availability, read-replicas, snapshots | fr-par, it-mil, nl-ams, pl-waw
 Object Storage | storage.object | encryption-at-rest, high-availability, object-versioning | fr-par, it-mil, nl-ams, pl-waw
 Queues | messaging.queue | dead-letter-queue | fr-par, nl-ams
-Serverless Functions | serverless.function | autoscaling | fr-par, nl-ams, pl-waw
+Serverless Functions | serverless.function | autoscaling, ipv6 | fr-par, nl-ams, pl-waw
 Serverless SQL Database | database.postgresql | autoscaling | fr-par
