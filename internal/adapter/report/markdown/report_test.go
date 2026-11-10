@@ -508,7 +508,8 @@ func TestReportEscapesLineEndings(t *testing.T) {
 // the fence is one backtick longer than the longest run in the value, a value
 // that starts or ends with a space keeps it because CommonMark strips one
 // surrounding space, a value of spaces only is never stripped, a pipe is escaped
-// so it cannot end a table cell, and an empty value renders as an empty cell.
+// so it cannot end a table cell and keeps a backslash already before it, and an
+// empty value renders as an empty cell.
 func TestReportEscapesCodeSpanEdges(t *testing.T) {
 	t.Parallel()
 
@@ -525,6 +526,7 @@ func TestReportEscapesCodeSpanEdges(t *testing.T) {
 		{name: "no edges are not padded", category: taxonomy.ComputeVM, want: "`compute.vm`"},
 		{name: "empty is an empty cell", category: "", want: ""},
 		{name: "pipe is escaped in a table cell", category: "a|b", want: "`a\\|b`"},
+		{name: "backslash before a pipe keeps its backslash", category: "a\\|b", want: "`a\\\\|b`"},
 	}
 
 	for _, test := range tests {
@@ -888,31 +890,27 @@ func checkHeadings(t *testing.T, out []byte, title string) {
 }
 
 // tableCells splits a Markdown table row on the pipes that are not escaped and
-// drops the row's outer pipes. It keeps the escapes in the cell text because only
-// the count matters here.
+// drops the row's outer pipes. A pipe is escaped, as the table extension of
+// CommonMark has it, when the character just before it is a backslash, whatever
+// escapes that backslash; the escapes stay in the cell text because only the
+// count matters here.
 func tableCells(line string) []string {
 	inner := strings.TrimSuffix(strings.TrimPrefix(line, "|"), "|")
 
 	var (
-		cells   []string
-		cell    strings.Builder
-		escaped bool
+		cells []string
+		cell  strings.Builder
 	)
 
-	for _, r := range inner {
-		switch {
-		case escaped:
-			cell.WriteRune(r)
-			escaped = false
-		case r == '\\':
-			cell.WriteRune(r)
-			escaped = true
-		case r == '|':
+	for i, r := range inner {
+		if r == '|' && (i == 0 || inner[i-1] != '\\') {
 			cells = append(cells, cell.String())
 			cell.Reset()
-		default:
-			cell.WriteRune(r)
+
+			continue
 		}
+
+		cell.WriteRune(r)
 	}
 
 	return append(cells, cell.String())
