@@ -2,12 +2,15 @@
 // internal/adapter/target/targettest, the snapshot header the catalog reports, a
 // golden change detector for the parsed catalog, the declared EU regions, and the
 // adapter's own error contract - one line, the sentinel it wraps, every value
-// shown through text.Quote. It is black-box: only the package's exported API is
-// used.
+// shown through text.Quote, the keys a document must carry, the declared regions
+// it must declare once and validly, and the size limit above which a document is
+// refused undecoded. It is black-box: only the package's exported API is used.
 package scaleway_test
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -225,6 +228,44 @@ func doc(t *testing.T, replacements ...string) string {
 	return data
 }
 
+// padTo returns data padded with trailing spaces to exactly n bytes. White space
+// after the catalog object is allowed, so the result is the same document.
+func padTo(t *testing.T, data string, n int) []byte {
+	t.Helper()
+
+	if len(data) > n {
+		t.Fatalf("padTo(): the document is %d bytes, longer than %d", len(data), n)
+	}
+
+	return append([]byte(data), bytes.Repeat([]byte(" "), n-len(data))...)
+}
+
+// without returns validDocument with the top-level key removed, so a case pins a
+// key the format requires. Re-encoding a map of raw fields keeps every nested
+// value as it is; only the order of the top-level keys changes, which no test
+// here depends on.
+func without(t *testing.T, key string) string {
+	t.Helper()
+
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal([]byte(validDocument), &fields); err != nil {
+		t.Fatalf("unmarshalling validDocument: %v", err)
+	}
+
+	if _, ok := fields[key]; !ok {
+		t.Fatalf("without(): validDocument has no %s key", text.Quote(key))
+	}
+
+	delete(fields, key)
+
+	data, err := json.Marshal(fields)
+	if err != nil {
+		t.Fatalf("marshalling the document without %s: %v", text.Quote(key), err)
+	}
+
+	return string(data)
+}
+
 // TestParseErrors pins every way parsing a catalog document fails: the sentinel
 // the error wraps, and that the message is one line naming the offending value
 // through text.Quote. A document the adapter cannot understand is never silently
@@ -239,8 +280,15 @@ func TestParseErrors(t *testing.T) {
 		// wantErr lists every sentinel the error must wrap. An empty list pins
 		// that the document parses.
 		wantErr []error
+		// wantNotErr lists sentinels the error must not wrap, so a case pins
+		// which of two plausible sentinels is the right one.
+		wantNotErr []error
 		// wantQuoted lists values the message must show through text.Quote.
 		wantQuoted []string
+		// wantContains lists substrings the message must contain and wantAbsent
+		// ones it must not, for wording no single text.Quote value carries.
+		wantContains []string
+		wantAbsent   []string
 	}{
 		{
 			name: "valid document",
@@ -307,6 +355,97 @@ func TestParseErrors(t *testing.T) {
 			data:    doc(t, "https://www.scaleway.com/en/docs/", "http://www.scaleway.com/en/docs/"),
 			wantErr: []error{catalog.ErrInvalidCatalog},
 		},
+		{
+			// A document of a version this package does not read is refused for
+			// its version alone: a field only that version defines is no reason
+			// to report it as unreadable.
+			name: "schema version 2 carrying a field version 1 lacks",
+			data: doc(t,
+				`"schemaVersion": 1`, `"schemaVersion": 2`,
+				`  "target": "Scaleway",`,
+				"  \"target\": \"Scaleway\",\n  \"account\": \"123456789012\","),
+			wantErr:    []error{scaleway.ErrSchemaVersion},
+			wantNotErr: []error{scaleway.ErrDecode},
+		},
+		{
+			// The version is a JSON number: a quoted number is another value, and
+			// naming it must not quote the quotes.
+			name:         "schema version as a string",
+			data:         doc(t, `"schemaVersion": 1`, `"schemaVersion": "1"`),
+			wantErr:      []error{scaleway.ErrSchemaVersion},
+			wantContains: []string{"string", "\"1\""},
+			wantAbsent:   []string{`\"`},
+		},
+		{
+			// A field of the wrong type names the field, not the decoder's text.
+			name:       "field of the wrong type",
+			data:       doc(t, `"target": "Scaleway"`, `"target": 5`),
+			wantErr:    []error{scaleway.ErrDecode},
+			wantQuoted: []string{"target"},
+		},
+		{
+			name:    "top-level array",
+			data:    `[{"schemaVersion": 1}]`,
+			wantErr: []error{scaleway.ErrDecode},
+		},
+		{
+			name:    "top-level string",
+			data:    `"a catalog"`,
+			wantErr: []error{scaleway.ErrDecode},
+		},
+		{
+			// null is a document of no schema version at all, not a document of
+			// an unsupported one: the version check never runs.
+			name:       "top-level null",
+			data:       "null",
+			wantErr:    []error{scaleway.ErrDecode},
+			wantNotErr: []error{scaleway.ErrSchemaVersion},
+		},
+		{
+			name:    "missing retrieval date",
+			data:    doc(t, "  \"retrievedOn\": \"2026-11-10\",\n", ""),
+			wantErr: []error{scaleway.ErrDecode},
+		},
+		{
+			// The two header keys a catalog cannot exist without: a document
+			// that omits them describes no offerings or declares no regions,
+			// which is a mistake in the document, not an empty catalog.
+			name:    "missing offerings key",
+			data:    without(t, "offerings"),
+			wantErr: []error{scaleway.ErrDecode},
+		},
+		{
+			name:    "missing regions key",
+			data:    without(t, "regions"),
+			wantErr: []error{scaleway.ErrDecode},
+		},
+		{
+			// Every declared region is a promise too: an entry that is no region
+			// name would be declared for nothing. No offering uses the broken
+			// entry, so the declaration itself is what has to be checked.
+			name:       "declared region that is empty",
+			data:       doc(t, `  "regions": ["fr-par"],`, `  "regions": ["fr-par", ""],`),
+			wantErr:    []error{scaleway.ErrDecode},
+			wantQuoted: []string{""},
+		},
+		{
+			name:       "declared region that is only white space",
+			data:       doc(t, `  "regions": ["fr-par"],`, `  "regions": ["fr-par", " "],`),
+			wantErr:    []error{scaleway.ErrDecode},
+			wantQuoted: []string{" "},
+		},
+		{
+			name:       "declared region that is listed twice",
+			data:       doc(t, `  "regions": ["fr-par"],`, `  "regions": ["fr-par", "fr-par"],`),
+			wantErr:    []error{scaleway.ErrDecode},
+			wantQuoted: []string{"fr-par"},
+		},
+		{
+			name:       "declared region with a control character",
+			data:       doc(t, `  "regions": ["fr-par"],`, "  \"regions\": [\"fr-par\", \"bad\\u0000x\"],"),
+			wantErr:    []error{scaleway.ErrDecode},
+			wantQuoted: []string{"bad\x00x"},
+		},
 	}
 
 	for _, tt := range tests {
@@ -333,10 +472,28 @@ func TestParseErrors(t *testing.T) {
 				}
 			}
 
+			for _, sentinel := range tt.wantNotErr {
+				if errors.Is(err, sentinel) {
+					t.Errorf("Parse() error = %v, want it not to wrap %v", err, sentinel)
+				}
+			}
+
 			msg := err.Error()
 
 			if strings.ContainsAny(msg, "\r\n") {
 				t.Errorf("Parse() error = %q, want a single line", msg)
+			}
+
+			if errors.Is(err, scaleway.ErrDecode) {
+				// The decoder's own text says where it gave up, in its terms, and
+				// is not the package's error contract: the message describes the
+				// problem in the package's words.
+				for _, decoderText := range []string{"json:", "cannot unmarshal", "invalid character"} {
+					if strings.Contains(msg, decoderText) {
+						t.Errorf("Parse() error = %q, want it without the decoder's %s",
+							msg, text.Quote(decoderText))
+					}
+				}
 			}
 
 			for _, value := range tt.wantQuoted {
@@ -344,7 +501,108 @@ func TestParseErrors(t *testing.T) {
 					t.Errorf("Parse() error = %q, want it to name %s through text.Quote", msg, quoted)
 				}
 			}
+
+			for _, want := range tt.wantContains {
+				if !strings.Contains(msg, want) {
+					t.Errorf("Parse() error = %q, want it to contain %s", msg, text.Quote(want))
+				}
+			}
+
+			for _, unwanted := range tt.wantAbsent {
+				if strings.Contains(msg, unwanted) {
+					t.Errorf("Parse() error = %q, want it without %s", msg, text.Quote(unwanted))
+				}
+			}
 		})
+	}
+}
+
+// TestParseRejectsDocumentsOverTheSizeCap pins the size limit on a catalog
+// document: a file over scaleway.MaxDocumentBytes is refused before it is decoded,
+// and a file of exactly the limit is not, so the boundary is not off by one.
+func TestParseRejectsDocumentsOverTheSizeCap(t *testing.T) {
+	t.Parallel()
+
+	const wantCap = 1 << 20
+	if scaleway.MaxDocumentBytes != wantCap {
+		t.Fatalf("MaxDocumentBytes = %d, want %d", scaleway.MaxDocumentBytes, wantCap)
+	}
+
+	atCap := padTo(t, validDocument, scaleway.MaxDocumentBytes)
+	if _, err := scaleway.Parse(atCap); err != nil {
+		t.Fatalf("Parse() of a document of exactly %d bytes returned unexpected error: %v",
+			scaleway.MaxDocumentBytes, err)
+	}
+
+	overCap := padTo(t, validDocument, scaleway.MaxDocumentBytes+1)
+
+	_, err := scaleway.Parse(overCap)
+	if !errors.Is(err, scaleway.ErrDecode) {
+		t.Fatalf("Parse() of a document of %d bytes returned error %v, want one wrapping %v",
+			len(overCap), err, scaleway.ErrDecode)
+	}
+
+	if strings.ContainsAny(err.Error(), "\r\n") {
+		t.Errorf("Parse() error = %q, want a single line", err.Error())
+	}
+}
+
+// TestParseRepeatedRegionMentionIsLinear pins that a document listing one declared
+// region far more often than a real catalog does parses well inside a second:
+// checking each mention against the declared regions, and checking the declared
+// regions themselves, must not scan a list once per entry.
+func TestParseRepeatedRegionMentionIsLinear(t *testing.T) {
+	// Not parallel: the test measures elapsed time, so it must not compete with
+	// the other subtests for the machine.
+	const (
+		declaredCount = 50
+		mentions      = 200_000
+		budget        = time.Second
+	)
+
+	// Fifty distinct two-letter region names keep the document under the size
+	// cap even with every mention spelled out.
+	regions := make([]string, declaredCount)
+	for i := range regions {
+		regions[i] = fmt.Sprintf(`"%c%c"`, 'a'+i/5, 'a'+i%5)
+	}
+
+	repeated := make([]string, mentions)
+	for i := range repeated {
+		repeated[i] = regions[0]
+	}
+
+	data := fmt.Sprintf(`{
+  "schemaVersion": 1,
+  "target": "Scaleway",
+  "sourceURL": "https://www.scaleway.com/en/docs/",
+  "retrievedOn": "2026-11-10",
+  "regions": [%s],
+  "offerings": [
+    {
+      "name": "Instances",
+      "categories": ["compute.vm"],
+      "capabilities": ["ipv6"],
+      "regions": [%s]
+    }
+  ]
+}`, strings.Join(regions, ", "), strings.Join(repeated, ","))
+
+	if len(data) > scaleway.MaxDocumentBytes {
+		t.Fatalf("the test document is %d bytes, over MaxDocumentBytes = %d: shorten the region names",
+			len(data), scaleway.MaxDocumentBytes)
+	}
+
+	start := time.Now()
+
+	if _, err := scaleway.Parse([]byte(data)); err != nil {
+		t.Fatalf("Parse() of a document mentioning a declared region %d times returned unexpected error: %v",
+			mentions, err)
+	}
+
+	if elapsed := time.Since(start); elapsed > budget {
+		t.Errorf("Parse() of a document mentioning a declared region %d times took %s, want under %s",
+			mentions, elapsed, budget)
 	}
 }
 
