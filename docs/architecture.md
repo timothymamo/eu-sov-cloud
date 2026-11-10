@@ -46,15 +46,25 @@ Why a taxonomy: with S sources and T targets, direct service-to-service tables n
 drift independently. With a taxonomy, each provider maps once into a shared vocabulary (S+T), and the
 matching rules live in one place.
 
-## Planned ports (declared in `internal/app/analysis`)
+## Ports (declared in `internal/app/analysis`)
 
-| Port | Implemented by | Purpose |
-|---|---|---|
-| Inventory source | `adapter/source/{aws,azure,gcp}` | Discover and classify source resources, read-only |
-| Catalog source | `adapter/target/{ovhcloud,scaleway,upcloud}` | Describe target offerings |
-| Reporter | `adapter/report/{markdown,jsonreport}` | Render an assessment |
+The shapes and their alternatives are in [ADR 0005](adr/0005-context-first-ports-and-fstest-style-contract-suites.md).
 
-These are intentions, not code yet. The first PRD that implements them will pin their exact shape.
+| Port | Method | Implemented by | Pinned by |
+|---|---|---|---|
+| `InventorySource` | `Inventory(ctx) (inventory.Inventory, error)` | The inventory-file adapter (PRD 2), `adapter/source/{aws,azure,gcp}` | Contract suite `adapter/source/sourcetest` |
+| `CatalogSource` | `Catalog(ctx) (catalog.Catalog, error)` | `adapter/target/{ovhcloud,scaleway,upcloud}` | Contract suite `adapter/target/targettest` |
+| `Reporter` | `Report(ctx, w io.Writer, assessment.Assessment, ReportMeta) error` | `adapter/report/{markdown,jsonreport}` | Golden files |
+
+The use case is `analysis.New(inventorySource, catalogSource, reporter)` followed by
+`Run(ctx, w, meta)`. Run checks `ReportMeta` (the inventory file's base name must pass `text.Validate`)
+before any port is called, loads the inventory and the catalog, assesses, checks the context itself and
+renders to `w`. The driving adapter chooses `w` (standard output or a file) and owns it. Blockers are a
+result, not an error.
+
+A contract suite exports `Check(ctx, src, want) error`, which returns every violation joined and named
+after its check, and `Run(t, src, want)`, which fails the test on a violation. A target adapter declares
+its expectations itself: its display name, its EU regions and the categories its catalog must serve.
 
 ## Testing strategy
 
