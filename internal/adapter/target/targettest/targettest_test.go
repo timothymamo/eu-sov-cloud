@@ -69,13 +69,13 @@ func variantCatalog(t *testing.T, i int, mutate func(*catalog.Offering)) catalog
 	return newCatalog(t, scalewayTarget, offerings)
 }
 
-// catalogWithSourceURL is the Scaleway fixture catalog taken from another URL, so
-// two catalogs can differ in their snapshot alone.
-func catalogWithSourceURL(t *testing.T, sourceURL string) catalog.Catalog {
+// catalogWithSnapshot is the Scaleway fixture catalog taken from a changed
+// snapshot, so two catalogs can differ in their snapshot alone.
+func catalogWithSnapshot(t *testing.T, mutate func(*catalog.Snapshot)) catalog.Catalog {
 	t.Helper()
 
 	snapshot := testutil.ScalewaySnapshot()
-	snapshot.SourceURL = sourceURL
+	mutate(&snapshot)
 
 	cat, err := catalog.New(scalewayTarget, snapshot, testutil.ScalewayOfferings())
 	if err != nil {
@@ -83,6 +83,24 @@ func catalogWithSourceURL(t *testing.T, sourceURL string) catalog.Catalog {
 	}
 
 	return cat
+}
+
+// catalogWithoutOffering is the Scaleway fixture catalog without the offering
+// named name, so two catalogs can differ by a missing offering.
+func catalogWithoutOffering(t *testing.T, name string) catalog.Catalog {
+	t.Helper()
+
+	return newCatalog(t, scalewayTarget, slices.DeleteFunc(testutil.ScalewayOfferings(), func(o catalog.Offering) bool {
+		return o.Name == name
+	}))
+}
+
+// catalogWithOffering is the Scaleway fixture catalog with an extra offering, so
+// two catalogs can differ by an offering that was added.
+func catalogWithOffering(t *testing.T, extra catalog.Offering) catalog.Catalog {
+	t.Helper()
+
+	return newCatalog(t, scalewayTarget, append(testutil.ScalewayOfferings(), extra))
 }
 
 // fakeTarget is an in-memory CatalogSource whose answers a test scripts. It
@@ -258,10 +276,47 @@ func TestCheck(t *testing.T) {
 		// must say what differs without echoing either URL.
 		{
 			name:         "changes only the snapshot source URL between calls",
-			tgt:          &fakeTarget{catalogs: []catalog.Catalog{scaleway, catalogWithSourceURL(t, hostileSourceURL)}},
+			tgt:          &fakeTarget{catalogs: []catalog.Catalog{scaleway, catalogWithSnapshot(t, func(s *catalog.Snapshot) { s.SourceURL = hostileSourceURL })}},
 			wantErr:      true,
 			wantMentions: [][]string{{"repeat"}},
 			wantAbsent:   []string{"SENTINEL", hostileSourceURL, testutil.ScalewaySnapshot().SourceURL},
+		},
+		// An adapter that stamps the retrieval date with the current time is not
+		// stable: the date the data was taken is part of the answer.
+		{
+			name:         "changes only the snapshot retrieval date between calls",
+			tgt:          &fakeTarget{catalogs: []catalog.Catalog{scaleway, catalogWithSnapshot(t, func(s *catalog.Snapshot) { s.RetrievedOn = s.RetrievedOn.AddDate(0, 0, 1) })}},
+			wantErr:      true,
+			wantMentions: [][]string{{"repeat"}},
+		},
+		// The target's display name is part of the catalog, so an adapter that
+		// rewrites itself as another target is not stable either.
+		{
+			name:         "changes only the target between calls",
+			tgt:          &fakeTarget{catalogs: []catalog.Catalog{scaleway, newCatalog(t, "OVHcloud", testutil.ScalewayOfferings())}},
+			wantErr:      true,
+			wantMentions: [][]string{{"repeat"}},
+		},
+		// Object Storage sorts after every other fixture offering, so a missing
+		// offering can only be reported by the length check: a suite that compared
+		// offerings pairwise would pass it.
+		{
+			name:         "drops the last-sorting offering between calls",
+			tgt:          &fakeTarget{catalogs: []catalog.Catalog{scaleway, catalogWithoutOffering(t, "Object Storage")}},
+			wantErr:      true,
+			wantMentions: [][]string{{"repeat"}},
+		},
+		// An extra offering that sorts after every existing one is caught by the
+		// length check on the other side, not by the pairwise compare.
+		{
+			name: "adds an offering that sorts last between calls",
+			tgt: &fakeTarget{catalogs: []catalog.Catalog{scaleway, catalogWithOffering(t, catalog.Offering{
+				Name:       "zz-extra-offering",
+				Categories: []taxonomy.Category{taxonomy.StorageObject},
+				Regions:    []string{"fr-par"},
+			})}},
+			wantErr:      true,
+			wantMentions: [][]string{{"repeat"}},
 		},
 		// Offering names are untrusted text from the target's site: a violation
 		// shows them quoted, never as they are.

@@ -168,6 +168,14 @@ func TestCheck(t *testing.T) {
 			wantMentions: [][]string{{"want", "expect", "differ", "equal"}},
 		},
 		{
+			// The source is a discovery fact like any other: the same resources
+			// from the wrong source is still a broken contract.
+			name:         "returns the wanted resources from another source",
+			src:          &fakeSource{inventories: []inventory.Inventory{newInventory(t, "azure", want.Resources())}},
+			wantErr:      true,
+			wantMentions: [][]string{{"want", "source"}},
+		},
+		{
 			name:         "returns a different inventory on every call",
 			src:          &fakeSource{inventories: []inventory.Inventory{other, third}},
 			wantErr:      true,
@@ -240,6 +248,21 @@ func TestCheck(t *testing.T) {
 			src: &fakeSource{inventories: []inventory.Inventory{newInventory(t, "aws", append(want.Resources(),
 				inventory.Resource{
 					ID:       "extra-example",
+					RawType:  "AWS::SNS::Topic",
+					Category: taxonomy.Unclassified,
+					Region:   "eu-west-1",
+				}))}},
+			wantErr:      true,
+			wantMentions: [][]string{{"want"}},
+		},
+		{
+			// An extra resource that sorts after every wanted one is not a
+			// per-field mismatch: it can only be reported by the length check, so
+			// a suite that compared resources pairwise would pass it.
+			name: "adds an unexpected resource that sorts last",
+			src: &fakeSource{inventories: []inventory.Inventory{newInventory(t, "aws", append(want.Resources(),
+				inventory.Resource{
+					ID:       "zz-extra-example",
 					RawType:  "AWS::SNS::Topic",
 					Category: taxonomy.Unclassified,
 					Region:   "eu-west-1",
