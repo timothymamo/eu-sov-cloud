@@ -705,6 +705,83 @@ func TestParseErrors(t *testing.T) {
 			wantErr:      []error{snapshot.ErrDecode},
 			wantContains: []string{"UTF-8"},
 		},
+		// A region code decides whether an offering is available somewhere and
+		// reaches every report as it stands, so it is a code and not free text:
+		// ASCII letters and digits in groups joined by single hyphens. A value
+		// that only looks like a declared region (a Cyrillic homoglyph, a
+		// no-break space, an underscore) would declare a region no reader can
+		// tell from the real one, and an upper-case variant is the same region
+		// written twice.
+		{
+			// The 'р' and 'а' are U+0440 and U+0430: a look-alike code that a
+			// reader cannot tell from fr-par.
+			name:       "declared region with Cyrillic homoglyphs",
+			data:       doc(t, `  "regions": ["fr-par"],`, `  "regions": ["fr-par", "fr-`+"\u0440\u0430"+`r"],`),
+			wantErr:    []error{snapshot.ErrDecode},
+			wantQuoted: []string{"fr-" + "\u0440\u0430" + "r"},
+		},
+		{
+			// The space is U+00A0: text.Validate accepts it inside a value, and a
+			// reader cannot see that it is not an ASCII space, so the code shape
+			// has to refuse it.
+			name:       "declared region with a no break space",
+			data:       doc(t, `  "regions": ["fr-par"],`, "  \"regions\": [\"fr-par\", \"fr\\u00a0ams\"],"),
+			wantErr:    []error{snapshot.ErrDecode},
+			wantQuoted: []string{"fr\u00a0ams"},
+		},
+		{
+			name:       "declared region with an ASCII space",
+			data:       doc(t, `  "regions": ["fr-par"],`, `  "regions": ["fr-par", "fr ams"],`),
+			wantErr:    []error{snapshot.ErrDecode},
+			wantQuoted: []string{"fr ams"},
+		},
+		{
+			name:       "declared region with an underscore",
+			data:       doc(t, `  "regions": ["fr-par"],`, `  "regions": ["fr-par", "fr_ams"],`),
+			wantErr:    []error{snapshot.ErrDecode},
+			wantQuoted: []string{"fr_ams"},
+		},
+		{
+			name:       "declared region with a dot",
+			data:       doc(t, `  "regions": ["fr-par"],`, `  "regions": ["fr-par", "fr.ams"],`),
+			wantErr:    []error{snapshot.ErrDecode},
+			wantQuoted: []string{"fr.ams"},
+		},
+		{
+			name:       "declared region with a leading hyphen",
+			data:       doc(t, `  "regions": ["fr-par"],`, `  "regions": ["fr-par", "-ams"],`),
+			wantErr:    []error{snapshot.ErrDecode},
+			wantQuoted: []string{"-ams"},
+		},
+		{
+			name:       "declared region with a trailing hyphen",
+			data:       doc(t, `  "regions": ["fr-par"],`, `  "regions": ["fr-par", "ams-"],`),
+			wantErr:    []error{snapshot.ErrDecode},
+			wantQuoted: []string{"ams-"},
+		},
+		{
+			// Groups are joined by one hyphen: two in a row are a hyphen left
+			// behind by a group that was removed.
+			name:       "declared region with a double hyphen",
+			data:       doc(t, `  "regions": ["fr-par"],`, `  "regions": ["fr-par", "nl--ams"],`),
+			wantErr:    []error{snapshot.ErrDecode},
+			wantQuoted: []string{"nl--ams"},
+		},
+		{
+			// Region codes are compared ignoring ASCII case, so this declares
+			// fr-par a second time: an offering listing fr-par would otherwise be
+			// reported in whichever of the two spellings won.
+			name:       "declared region in upper case",
+			data:       doc(t, `  "regions": ["fr-par"],`, `  "regions": ["fr-par", "FR-PAR"],`),
+			wantErr:    []error{snapshot.ErrDecode},
+			wantQuoted: []string{"FR-PAR"},
+		},
+		{
+			name:       "declared region in mixed case",
+			data:       doc(t, `  "regions": ["fr-par"],`, `  "regions": ["fr-par", "Fr-Par"],`),
+			wantErr:    []error{snapshot.ErrDecode},
+			wantQuoted: []string{"Fr-Par"},
+		},
 		{
 			// An invalid byte is refused where it is, not at the start of the
 			// document: the FF of the offering name is line 9's character column
@@ -926,6 +1003,31 @@ func TestParseRegions(t *testing.T) {
 	if !slices.Equal(again.Regions, want) {
 		t.Errorf("Parse().Regions after changing the first result = %v, want %v: the result is not a copy",
 			again.Regions, want)
+	}
+}
+
+// TestParseRegionsAcceptsEveryRegionShape pins the shapes a declared region code
+// may have: ASCII letters and digits in groups joined by single hyphens, in any
+// case, because a real target declares FR-PAR and also GRA and RBX. The document
+// is accepted and its regions come back in the order it declares them.
+func TestParseRegionsAcceptsEveryRegionShape(t *testing.T) {
+	t.Parallel()
+
+	// The offering uses the upper-case region, so the declaration and the
+	// offering are matched as the document spells them.
+	data := doc(t,
+		`  "regions": ["fr-par"],`, `  "regions": ["fr-par", "GRA", "europe-west1", "eu-central-1"],`,
+		`      "regions": ["fr-par"]`, `      "regions": ["GRA"]`)
+
+	want := []string{"fr-par", "GRA", "europe-west1", "eu-central-1"}
+
+	document, err := snapshot.Parse([]byte(data))
+	if err != nil {
+		t.Fatalf("Parse() of a document declaring the region shapes %v returned unexpected error: %v", want, err)
+	}
+
+	if !slices.Equal(document.Regions, want) {
+		t.Errorf("Parse().Regions = %v, want the document's order %v", document.Regions, want)
 	}
 }
 

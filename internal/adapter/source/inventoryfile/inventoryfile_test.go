@@ -551,6 +551,28 @@ func TestInventoryErrors(t *testing.T) {
 			wantPosition: "line 1, column 56",
 		},
 		{
+			// A multi-byte character where the next key belongs is malformed
+			// JSON, and the JSON decoder counts the rune's last byte: the message
+			// must place the character at its first byte, which is line 3's
+			// column 2.
+			name:         "malformed two-byte character where a key is expected",
+			path:         generated("{\n \"schemaVersion\": 1,\n é\n}"),
+			wantErr:      []error{inventoryfile.ErrDecode},
+			wantMentions: [][]string{{"malformed JSON"}},
+			wantPosition: "line 3, column 2",
+			wantAbsent:   []string{"column 3"},
+		},
+		{
+			// The same for a character of three bytes: the step back to the
+			// first byte of the rune covers every byte of it.
+			name:         "malformed three-byte character where a key is expected",
+			path:         generated("{\n \"schemaVersion\": 1,\n €\n}"),
+			wantErr:      []error{inventoryfile.ErrDecode},
+			wantMentions: [][]string{{"malformed JSON"}},
+			wantPosition: "line 3, column 2",
+			wantAbsent:   []string{"column 4"},
+		},
+		{
 			// JSON spells a character outside the BMP as a pair of escaped
 			// surrogates. A surrogate escape on its own names no character, and a
 			// decoder that accepts it writes U+FFFD into the id instead.
@@ -756,6 +778,60 @@ func TestInventoryErrors(t *testing.T) {
 				t.Errorf("Inventory() error = %q, want it not to pass the OS error for the path through unquoted", msg)
 			}
 		})
+	}
+}
+
+// TestInventoryErrorKeepsLongPathBaseName pins that an error quotes a path
+// longer than 128 runes with both of its ends, not only its start: the base name
+// is what says which file failed, and a deep checkout path must not hide it. The
+// quoted form is text.QuotePath's: the first 32 runes, an ellipsis, the last 96
+// runes, then the original byte length. It is written out here because this
+// package's tests must compile while text.QuotePath does not exist yet - an
+// undefined function would hide every other failure in the table above.
+func TestInventoryErrorKeepsLongPathBaseName(t *testing.T) {
+	t.Parallel()
+
+	const base = "inventory-long-path.json"
+
+	// The file does not exist, so the long directory is only joined, never made.
+	path := filepath.Join(t.TempDir(), strings.Repeat("d", 150), base)
+
+	// The path is ASCII, so its runes are its bytes, and 32 + 96 is the number of
+	// runes the quoted form keeps.
+	if len(path) <= 128 {
+		t.Fatalf("the test path is %d bytes, want more than 128", len(path))
+	}
+
+	wantQuoted := strconv.Quote(path[:32]) + "..." + strconv.Quote(path[len(path)-96:]) +
+		"(" + strconv.Itoa(len(path)) + " bytes)"
+
+	_, err := inventoryfile.New(path).Inventory(t.Context())
+	if err == nil {
+		t.Fatalf("Inventory() for %s returned no error, want one wrapping %v", text.Quote(path), inventoryfile.ErrRead)
+	}
+
+	if !errors.Is(err, inventoryfile.ErrRead) {
+		t.Errorf("Inventory() error = %v, want it to wrap %v", err, inventoryfile.ErrRead)
+	}
+
+	msg := err.Error()
+
+	if !strings.Contains(msg, wantQuoted) {
+		t.Errorf("Inventory() error = %q, want it to name the file through text.QuotePath(path) = %s", msg, wantQuoted)
+	}
+
+	// text.Quote keeps the first 128 runes only, so its form of the path loses the
+	// base name: the error must not hold that form any more.
+	if truncated := text.Quote(path); strings.Contains(msg, truncated) {
+		t.Errorf("Inventory() error = %q, want it without text.Quote(path) = %s", msg, truncated)
+	}
+
+	if !strings.Contains(msg, base+`"`) {
+		t.Errorf("Inventory() error = %q, want it to keep the base name %s", msg, text.Quote(base))
+	}
+
+	if strings.ContainsAny(msg, "\r\n") {
+		t.Errorf("Inventory() error = %q, want a single line", msg)
 	}
 }
 

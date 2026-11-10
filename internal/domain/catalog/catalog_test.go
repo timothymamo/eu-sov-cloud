@@ -325,6 +325,14 @@ func TestSnapshotSourceURL(t *testing.T) {
 		{name: "parentheses", url: "https://example.com/a(b)"},
 		{name: "escaped space", url: "https://example.com/a%20b"},
 		{name: "sub domain", url: "https://sub-domain.example.com/x"},
+		// Hardening against an HTML or Markdown renderer must not refuse what is
+		// a plain URL: an ampersand between query parameters is not an entity,
+		// and a percent escape that decodes to text is part of the URL.
+		{name: "bare ampersands between query parameters", url: "https://example.com/?a=1&b=2"},
+		{name: "ampersand and equals before a semicolon", url: "https://example.com/?a=1&b=2;c=3"},
+		{name: "percent encoded non ascii", url: "https://example.com/caf%C3%A9"},
+		{name: "percent encoded ampersand", url: "https://example.com/?q=AT%26T"},
+		{name: "percent encoded percent sign", url: "https://example.com/100%25"},
 
 		// Invalid free text: rejected before the URL is even parsed.
 		{
@@ -380,6 +388,29 @@ func TestSnapshotSourceURL(t *testing.T) {
 		{name: "backslash", url: "https://example.com/a\\b", wantErrs: []error{catalog.ErrInvalidCatalog}},
 		{name: "caret", url: "https://example.com/a^b", wantErrs: []error{catalog.ErrInvalidCatalog}},
 		{name: "braces", url: "https://example.com/a{b}", wantErrs: []error{catalog.ErrInvalidCatalog}},
+
+		// Defence in depth: a report shows the source URL as a code span, and an
+		// HTML or Markdown renderer would turn an entity reference into the
+		// character it names, so the URL a reader sees would not be the URL the
+		// catalog holds. Entity shapes are refused rather than rendered.
+		{name: "named entity reference", url: "https://example.com/?q=&amp;", wantErrs: []error{catalog.ErrInvalidCatalog}},
+		// A named entity followed by a digit is the shape some parsers accept and
+		// others do not (&lt without its semicolon), so it is refused: the URL a
+		// reader sees would depend on the renderer.
+		{name: "named entity with digits", url: "https://example.com/a&lt1;b", wantErrs: []error{catalog.ErrInvalidCatalog}},
+		{name: "decimal numeric entity", url: "https://example.com/?q=&#38;", wantErrs: []error{catalog.ErrInvalidCatalog}},
+		{name: "hex numeric entity with a lower x", url: "https://example.com/?q=&#x26;", wantErrs: []error{catalog.ErrInvalidCatalog}},
+		{name: "hex numeric entity with an upper X", url: "https://example.com/?q=&#X26;", wantErrs: []error{catalog.ErrInvalidCatalog}},
+
+		// A percent escape decodes to a byte, and a byte that is not valid text
+		// has nothing a report can show: %0A is a line break, %00 a NUL,
+		// %E2%80%AE a bidi override and %FF no UTF-8 at all.
+		{name: "escape decoding to a line feed", url: "https://example.com/a%0Ab", wantErrs: []error{catalog.ErrInvalidCatalog}},
+		{name: "escape decoding to NUL", url: "https://example.com/a%00b", wantErrs: []error{catalog.ErrInvalidCatalog}},
+		{name: "escape decoding to a right to left override", url: "https://example.com/a%E2%80%AEb", wantErrs: []error{catalog.ErrInvalidCatalog}},
+		{name: "escape decoding to a right to left override in lower case hex", url: "https://example.com/a%e2%80%aeb", wantErrs: []error{catalog.ErrInvalidCatalog}},
+		{name: "escape decoding to a byte that is not UTF-8", url: "https://example.com/a%FFb", wantErrs: []error{catalog.ErrInvalidCatalog}},
+		{name: "right to left override escape in the query", url: "https://example.com/?q=%E2%80%AE", wantErrs: []error{catalog.ErrInvalidCatalog}},
 	}
 
 	for _, tc := range tests {
