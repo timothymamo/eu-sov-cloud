@@ -34,6 +34,10 @@
 // Help (help, -h, --help, or -h after assess) prints the usage text to standard
 // output and exits 0.
 //
+// SIGQUIT is not part of this contract: it is the Go runtime's debugging
+// signal, which dumps every goroutine to standard error and exits with code 2
+// without running the command to its end.
+//
 // # Errors
 //
 // Every error, run-time or usage, is printed by printError as one line,

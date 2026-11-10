@@ -70,6 +70,9 @@ in the binary, so `assess` runs offline and needs no credentials.
 | 1 | The inventory, the catalog, the report or the output failed, or the run was interrupted (SIGINT, SIGTERM, SIGHUP): one `eusov: ...` line on standard error. |
 | 2 | Usage error: missing or unknown flag, command or target. Usage text on standard error. |
 
+SIGQUIT is not part of the exit-code contract: it is the Go runtime's debugging signal, which dumps
+every goroutine to standard error and exits with code 2.
+
 `eusov version` prints the version, `eusov help` the usage.
 
 ## Repository layout

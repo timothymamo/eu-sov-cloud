@@ -22,9 +22,11 @@ import (
 
 func main() {
 	// SIGINT, SIGTERM and SIGHUP (the terminal closed) cancel ctx, which ends a
-	// run with exit code 1 and writes no report. Once ctx is cancelled, stop
-	// restores the default behaviour, so a second signal ends the process at
-	// once.
+	// run with exit code 1; a signal before the final write writes no report.
+	// A signal during the final write or rename may still let it complete. Once
+	// ctx is cancelled, stop restores the default behaviour, so a second signal
+	// ends the process at once. SIGQUIT keeps the Go runtime's default: a
+	// goroutine dump and exit code 2.
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM, syscall.SIGHUP)
 	context.AfterFunc(ctx, stop)
 
