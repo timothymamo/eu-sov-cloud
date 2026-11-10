@@ -116,14 +116,29 @@ that is not set is skipped. Two things read the file:
 
 ## Agent permissions
 
-The Claude Code roles in `.dot-agent-deck.toml` start in Claude Code's normal permission mode
-(`acceptEdits` for the coder), so a worker can stop at an approval prompt and wait. Either approve
-prompts as they come, or add a project allowlist in `.claude/settings.json` for the routine commands
-(`make`, `go`, `git`, `gh pr`, `dot-agent-deck work-done`).
+Each role's command in `.dot-agent-deck.toml` sets its permission mode explicitly, so no role depends
+on the machine's default:
 
-Because the VM confines the agents to this repository, running those workers with
-`--dangerously-skip-permissions` inside it is a reasonable trade-off. It is not the default here. Never
-use it for agents running directly on the Mac.
+| Role | Agent | Starts in |
+|---|---|---|
+| orchestrator, coder, reviewer, auditor | Claude Code (Opus) | `--permission-mode auto` |
+| releaser | Claude Code (Sonnet) | `--permission-mode auto` |
+| tester | pi | no permission modes (see below) |
+
+In auto mode Claude Code checks every action before it runs. It approves routine actions, such as
+reading files, editing in the worktree and running `make`, `go`, `git` and `gh`, without a prompt, so a
+worker does not stop mid-task to wait for a human. It still refuses actions it judges risky, or asks
+about them first. A worker reports a refused action rather than working around it. Permission rules
+apply on top of the mode: an allow rule skips the check, and a deny rule refuses the action. The allow
+and deny rules (deny: `--no-verify`, force pushes, `git branch -D`) are in `.claude/settings.local.json`.
+That file is not checked in, so a fresh clone or a rebuilt VM has none of them. The coder used to start in
+`acceptEdits`. That mode approves file edits only, so the coder stopped at almost every shell command that
+was not on the allowlist (#16).
+
+Because the VM confines the agents to this repository, running the Claude Code workers with
+`--dangerously-skip-permissions` inside it is a reasonable trade-off. It is not the default here: auto
+mode already lets routine work run and still checks risky actions. Never use it for agents running
+directly on the Mac.
 
 pi, which runs the tester, has no permission prompts at all: it reads, edits and runs commands without
 asking. Its `--approve` flag only makes it load the project's `.pi/settings.json` (and with it the
