@@ -2,8 +2,8 @@ package mapping_test
 
 import (
 	"slices"
+	"strings"
 	"testing"
-	"time"
 
 	"github.com/google/go-cmp/cmp"
 
@@ -11,6 +11,7 @@ import (
 	"github.com/timothymamo/eu-sov-cloud/internal/domain/inventory"
 	"github.com/timothymamo/eu-sov-cloud/internal/domain/mapping"
 	"github.com/timothymamo/eu-sov-cloud/internal/domain/taxonomy"
+	"github.com/timothymamo/eu-sov-cloud/internal/testutil"
 )
 
 // newResource is the only way to build a Resource, so a test hands Map the same
@@ -31,63 +32,12 @@ func newResource(t *testing.T, r inventory.Resource) inventory.Resource {
 func newCatalog(t *testing.T, offerings []catalog.Offering) catalog.Catalog {
 	t.Helper()
 
-	snapshot := catalog.Snapshot{
-		SourceURL:   "https://www.scaleway.com/en/pricing/",
-		RetrievedOn: time.Date(2026, 11, 1, 0, 0, 0, 0, time.UTC),
-	}
-
-	cat, err := catalog.New("Scaleway", snapshot, offerings)
+	cat, err := catalog.New("Scaleway", testutil.ScalewaySnapshot(), offerings)
 	if err != nil {
 		t.Fatalf("catalog.New() returned unexpected error: %v", err)
 	}
 
 	return cat
-}
-
-// scalewayOfferings is the catalog most cases start from, named after real
-// Scaleway products.
-func scalewayOfferings() []catalog.Offering {
-	return []catalog.Offering{
-		{
-			Name:         "Object Storage",
-			Categories:   []taxonomy.Category{taxonomy.StorageObject},
-			Capabilities: []taxonomy.Capability{taxonomy.IPv6, taxonomy.ObjectVersioning},
-			Regions:      []string{"fr-par", "nl-ams"},
-		},
-		{
-			Name:         "Instances",
-			Categories:   []taxonomy.Category{taxonomy.ComputeVM},
-			Capabilities: []taxonomy.Capability{taxonomy.Autoscaling, taxonomy.IPv6},
-			Regions:      []string{"fr-par", "nl-ams", "pl-waw"},
-		},
-		{
-			// Elastic Metal is a dedicated server: compute.vm with IPv6, but no
-			// autoscaling.
-			Name:         "Elastic Metal",
-			Categories:   []taxonomy.Category{taxonomy.ComputeVM},
-			Capabilities: []taxonomy.Capability{taxonomy.IPv6},
-			Regions:      []string{"fr-par", "nl-ams"},
-		},
-		{
-			Name:         "Managed Database for PostgreSQL",
-			Categories:   []taxonomy.Category{taxonomy.DatabasePostgreSQL},
-			Capabilities: []taxonomy.Capability{taxonomy.PointInTimeRestore, taxonomy.ReadReplicas},
-			Regions:      []string{"fr-par", "nl-ams", "pl-waw"},
-		},
-		{
-			// One offering serving several categories.
-			Name:         "Managed Database for PostgreSQL and MySQL",
-			Categories:   []taxonomy.Category{taxonomy.DatabaseMySQL, taxonomy.DatabasePostgreSQL},
-			Capabilities: []taxonomy.Capability{taxonomy.PointInTimeRestore, taxonomy.ReadReplicas},
-			Regions:      []string{"fr-par", "nl-ams", "pl-waw"},
-		},
-		{
-			Name:         "Kapsule",
-			Categories:   []taxonomy.Category{taxonomy.KubernetesManaged},
-			Capabilities: []taxonomy.Capability{taxonomy.Autoscaling, taxonomy.HighAvailability},
-			Regions:      []string{"fr-par"},
-		},
-	}
 }
 
 // computeOffering is a compute.vm offering sold in fr-par only, which is also how
@@ -115,11 +65,11 @@ func computeResource(id string, capabilities ...taxonomy.Capability) inventory.R
 func TestMap(t *testing.T) {
 	t.Parallel()
 
-	real := scalewayOfferings()
+	scaleway := testutil.ScalewayOfferings()
 
-	instances := real[1]
-	elasticMetal := real[2]
-	postgresMySQL := real[4]
+	instances := scaleway[1]
+	elasticMetal := scaleway[2]
+	postgresMySQL := scaleway[4]
 
 	// Direct before a partial whose name sorts first.
 	zuluDirect := computeOffering("Zulu Compute", taxonomy.IPv6)
@@ -133,6 +83,11 @@ func TestMap(t *testing.T) {
 	// disagree: Alpha lacks three capabilities, Zulu one.
 	alphaNoCapabilities := computeOffering("Alpha Compute")
 	zuluTwoCapabilities := computeOffering("Zulu Compute", taxonomy.Autoscaling, taxonomy.IPv6)
+
+	// Two partial candidates missing exactly one capability each, so the counts
+	// tie and only the name can decide.
+	alphaOneCapability := computeOffering("Alpha Compute", taxonomy.IPv6)
+	zuluOneCapability := computeOffering("Zulu Compute", taxonomy.Autoscaling)
 
 	tests := []struct {
 		name      string
@@ -153,7 +108,7 @@ func TestMap(t *testing.T) {
 				Region:       "eu-west-1",
 				Capabilities: []taxonomy.Capability{taxonomy.IPv6},
 			},
-			offerings: real,
+			offerings: scaleway,
 			wantFit:   mapping.None,
 			wantCands: nil,
 			wantReas:  []mapping.Reason{{Code: mapping.NotClassified}},
@@ -166,7 +121,7 @@ func TestMap(t *testing.T) {
 				Category: taxonomy.ServerlessFunction,
 				Region:   "eu-west-1",
 			},
-			offerings: real,
+			offerings: scaleway,
 			wantFit:   mapping.None,
 			wantCands: nil,
 			wantReas: []mapping.Reason{{
@@ -178,7 +133,7 @@ func TestMap(t *testing.T) {
 		{
 			name:      "every capability offered is direct",
 			resource:  computeResource("i-0123456789abcdef0", taxonomy.IPv6),
-			offerings: real,
+			offerings: scaleway,
 			wantFit:   mapping.Direct,
 			wantCands: []mapping.Candidate{
 				{Offering: elasticMetal, Fit: mapping.Direct},
@@ -191,7 +146,7 @@ func TestMap(t *testing.T) {
 			// that serves its category.
 			name:      "resource using no capabilities is direct",
 			resource:  computeResource("i-0123456789abcdef0"),
-			offerings: real,
+			offerings: scaleway,
 			wantFit:   mapping.Direct,
 			wantCands: []mapping.Candidate{
 				{Offering: elasticMetal, Fit: mapping.Direct},
@@ -200,28 +155,28 @@ func TestMap(t *testing.T) {
 			wantReas: []mapping.Reason{{Code: mapping.AllCapabilities, Offering: "Elastic Metal"}},
 		},
 		{
-			// A capability no candidate offers makes the fit partial, and the
-			// reasons are the best candidate's missing capabilities in
-			// capability order.
+			// A capability no candidate offers makes the fit partial. Instances
+			// misses fewer capabilities than Elastic Metal, so Instances is the
+			// best candidate even though Elastic Metal sorts first, and the reason
+			// is the best candidate's one missing capability.
 			name:      "missing capabilities make it partial",
 			resource:  computeResource("i-0123456789abcdef0", taxonomy.Autoscaling, taxonomy.IPv6, taxonomy.Snapshots),
-			offerings: real,
+			offerings: scaleway,
 			wantFit:   mapping.Partial,
 			wantCands: []mapping.Candidate{
-				{
-					Offering: elasticMetal,
-					Fit:      mapping.Partial,
-					Missing:  []taxonomy.Capability{taxonomy.Autoscaling, taxonomy.Snapshots},
-				},
 				{
 					Offering: instances,
 					Fit:      mapping.Partial,
 					Missing:  []taxonomy.Capability{taxonomy.Snapshots},
 				},
+				{
+					Offering: elasticMetal,
+					Fit:      mapping.Partial,
+					Missing:  []taxonomy.Capability{taxonomy.Autoscaling, taxonomy.Snapshots},
+				},
 			},
 			wantReas: []mapping.Reason{
-				{Code: mapping.MissingCapability, Offering: "Elastic Metal", Capability: taxonomy.Autoscaling},
-				{Code: mapping.MissingCapability, Offering: "Elastic Metal", Capability: taxonomy.Snapshots},
+				{Code: mapping.MissingCapability, Offering: "Instances", Capability: taxonomy.Snapshots},
 			},
 		},
 		{
@@ -247,27 +202,48 @@ func TestMap(t *testing.T) {
 			wantReas: []mapping.Reason{{Code: mapping.AllCapabilities, Offering: "Alpha Compute"}},
 		},
 		{
-			// Name order, never the number of missing capabilities.
-			name:      "two partial candidates are ordered by name",
+			// The number of missing capabilities comes before the name: Zulu
+			// lacks one, Alpha three.
+			name:      "fewer missing capabilities comes before the name",
 			resource:  computeResource("i-0123456789abcdef0", taxonomy.Autoscaling, taxonomy.IPv6, taxonomy.Snapshots),
 			offerings: []catalog.Offering{zuluTwoCapabilities, alphaNoCapabilities},
 			wantFit:   mapping.Partial,
 			wantCands: []mapping.Candidate{
 				{
-					Offering: alphaNoCapabilities,
-					Fit:      mapping.Partial,
-					Missing:  []taxonomy.Capability{taxonomy.Autoscaling, taxonomy.IPv6, taxonomy.Snapshots},
-				},
-				{
 					Offering: zuluTwoCapabilities,
 					Fit:      mapping.Partial,
 					Missing:  []taxonomy.Capability{taxonomy.Snapshots},
 				},
+				{
+					Offering: alphaNoCapabilities,
+					Fit:      mapping.Partial,
+					Missing:  []taxonomy.Capability{taxonomy.Autoscaling, taxonomy.IPv6, taxonomy.Snapshots},
+				},
+			},
+			wantReas: []mapping.Reason{
+				{Code: mapping.MissingCapability, Offering: "Zulu Compute", Capability: taxonomy.Snapshots},
+			},
+		},
+		{
+			// One missing capability each: the counts tie, so the name decides.
+			name:      "equally many missing capabilities are ordered by name",
+			resource:  computeResource("i-0123456789abcdef0", taxonomy.Autoscaling, taxonomy.IPv6),
+			offerings: []catalog.Offering{zuluOneCapability, alphaOneCapability},
+			wantFit:   mapping.Partial,
+			wantCands: []mapping.Candidate{
+				{
+					Offering: alphaOneCapability,
+					Fit:      mapping.Partial,
+					Missing:  []taxonomy.Capability{taxonomy.Autoscaling},
+				},
+				{
+					Offering: zuluOneCapability,
+					Fit:      mapping.Partial,
+					Missing:  []taxonomy.Capability{taxonomy.IPv6},
+				},
 			},
 			wantReas: []mapping.Reason{
 				{Code: mapping.MissingCapability, Offering: "Alpha Compute", Capability: taxonomy.Autoscaling},
-				{Code: mapping.MissingCapability, Offering: "Alpha Compute", Capability: taxonomy.IPv6},
-				{Code: mapping.MissingCapability, Offering: "Alpha Compute", Capability: taxonomy.Snapshots},
 			},
 		},
 		{
@@ -280,7 +256,7 @@ func TestMap(t *testing.T) {
 				Region:       "eu-west-1",
 				Capabilities: []taxonomy.Capability{taxonomy.ReadReplicas},
 			},
-			offerings: real,
+			offerings: scaleway,
 			wantFit:   mapping.Direct,
 			wantCands: []mapping.Candidate{{Offering: postgresMySQL, Fit: mapping.Direct}},
 			wantReas: []mapping.Reason{
@@ -341,7 +317,7 @@ func TestMapDoesNotMutateInputs(t *testing.T) {
 	t.Parallel()
 
 	resource := newResource(t, computeResource("i-0123456789abcdef0", taxonomy.Autoscaling, taxonomy.IPv6))
-	cat := newCatalog(t, scalewayOfferings())
+	cat := newCatalog(t, testutil.ScalewayOfferings())
 
 	wantResource := resource
 	wantResource.Capabilities = slices.Clone(resource.Capabilities)
@@ -372,12 +348,17 @@ func TestResultBest(t *testing.T) {
 	}{
 		{name: "no candidates", in: mapping.Result{Fit: mapping.None}, want: mapping.Candidate{}, ok: false},
 		{
-			name: "first candidate",
-			in: mapping.Result{Fit: mapping.Partial, Candidates: []mapping.Candidate{
-				{Fit: mapping.Partial, Offering: catalog.Offering{Name: "Alpha Compute"}},
-				{Fit: mapping.Direct, Offering: catalog.Offering{Name: "Zulu Compute"}},
+			// A Result Map produces: Direct candidates come before Partial ones.
+			name: "first candidate of a mapped result",
+			in: mapping.Result{Fit: mapping.Direct, Candidates: []mapping.Candidate{
+				{Fit: mapping.Direct, Offering: catalog.Offering{Name: "Alpha Compute"}},
+				{
+					Fit:      mapping.Partial,
+					Offering: catalog.Offering{Name: "Zulu Compute"},
+					Missing:  []taxonomy.Capability{taxonomy.IPv6},
+				},
 			}},
-			want: mapping.Candidate{Fit: mapping.Partial, Offering: catalog.Offering{Name: "Alpha Compute"}},
+			want: mapping.Candidate{Fit: mapping.Direct, Offering: catalog.Offering{Name: "Alpha Compute"}},
 			ok:   true,
 		},
 	}
@@ -399,7 +380,8 @@ func TestResultBest(t *testing.T) {
 }
 
 // Every reason a report shows is one of these sentences, so they are pinned
-// exactly, backticks included.
+// exactly. They are plain text: how to escape one for a report format is the
+// renderer's job, not the domain's.
 func TestReasonString(t *testing.T) {
 	t.Parallel()
 
@@ -420,7 +402,7 @@ func TestReasonString(t *testing.T) {
 				Target:   "Scaleway",
 				Category: taxonomy.ServerlessFunction,
 			},
-			want: "no offering in the Scaleway catalog for `serverless.function`",
+			want: "no offering in the Scaleway catalog for serverless.function",
 		},
 		{
 			name: "all capabilities",
@@ -434,7 +416,7 @@ func TestReasonString(t *testing.T) {
 				Offering:   "Elastic Metal",
 				Capability: taxonomy.PointInTimeRestore,
 			},
-			want: "Elastic Metal does not offer `point-in-time-restore`",
+			want: "Elastic Metal does not offer point-in-time-restore",
 		},
 	}
 
@@ -446,5 +428,115 @@ func TestReasonString(t *testing.T) {
 				t.Errorf("String() = %q, want %q", got, tc.want)
 			}
 		})
+	}
+}
+
+// A reason is rendered from parts, so a reporter can style or escape the names a
+// reason mentions without parsing a sentence: the text is split exactly at the
+// names, and String is the concatenation of the part texts.
+func TestReasonParts(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name string
+		in   mapping.Reason
+		want []mapping.Part
+	}{
+		{
+			name: "not classified",
+			in:   mapping.Reason{Code: mapping.NotClassified},
+			want: []mapping.Part{{Kind: mapping.PartLiteral, Text: "not classified"}},
+		},
+		{
+			name: "no offering",
+			in: mapping.Reason{
+				Code:     mapping.NoOffering,
+				Target:   "Scaleway",
+				Category: taxonomy.ServerlessFunction,
+			},
+			want: []mapping.Part{
+				{Kind: mapping.PartLiteral, Text: "no offering in the "},
+				{Kind: mapping.PartTarget, Text: "Scaleway"},
+				{Kind: mapping.PartLiteral, Text: " catalog for "},
+				{Kind: mapping.PartCategory, Text: "serverless.function"},
+			},
+		},
+		{
+			name: "all capabilities",
+			in:   mapping.Reason{Code: mapping.AllCapabilities, Offering: "Instances"},
+			want: []mapping.Part{
+				{Kind: mapping.PartOffering, Text: "Instances"},
+				{Kind: mapping.PartLiteral, Text: " offers every capability the resource uses"},
+			},
+		},
+		{
+			name: "missing capability",
+			in: mapping.Reason{
+				Code:       mapping.MissingCapability,
+				Offering:   "Elastic Metal",
+				Capability: taxonomy.PointInTimeRestore,
+			},
+			want: []mapping.Part{
+				{Kind: mapping.PartOffering, Text: "Elastic Metal"},
+				{Kind: mapping.PartLiteral, Text: " does not offer "},
+				{Kind: mapping.PartCapability, Text: "point-in-time-restore"},
+			},
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			got := tc.in.Parts()
+			if diff := cmp.Diff(tc.want, got); diff != "" {
+				t.Errorf("Parts() mismatch (-want +got):\n%s", diff)
+			}
+
+			if want := joinParts(tc.want); tc.in.String() != want {
+				t.Errorf("String() = %q, want the concatenation of the part texts %q", tc.in.String(), want)
+			}
+		})
+	}
+}
+
+// joinParts is what String must be: every part text, in order, with nothing
+// between them.
+func joinParts(parts []mapping.Part) string {
+	var b strings.Builder
+
+	for _, p := range parts {
+		b.WriteString(p.Text)
+	}
+
+	return b.String()
+}
+
+// The domain never escapes the names it renders: a name full of markup reaches a
+// reporter unchanged in one part, so the reporter can escape it for its own
+// format.
+func TestReasonPartsDoNotEscapeNames(t *testing.T) {
+	t.Parallel()
+
+	const name = "a|b `c` <x>"
+
+	reason := mapping.Reason{
+		Code:       mapping.MissingCapability,
+		Offering:   name,
+		Capability: taxonomy.Snapshots,
+	}
+
+	want := []mapping.Part{
+		{Kind: mapping.PartOffering, Text: name},
+		{Kind: mapping.PartLiteral, Text: " does not offer "},
+		{Kind: mapping.PartCapability, Text: "snapshots"},
+	}
+
+	if diff := cmp.Diff(want, reason.Parts()); diff != "" {
+		t.Errorf("Parts() mismatch (-want +got):\n%s", diff)
+	}
+
+	if got := reason.String(); !strings.Contains(got, name) {
+		t.Errorf("String() = %q, want it to contain the offering name %q verbatim", got, name)
 	}
 }

@@ -3,15 +3,14 @@ package assessment_test
 import (
 	"slices"
 	"testing"
-	"time"
 
 	"github.com/google/go-cmp/cmp"
 
 	"github.com/timothymamo/eu-sov-cloud/internal/domain/assessment"
-	"github.com/timothymamo/eu-sov-cloud/internal/domain/catalog"
 	"github.com/timothymamo/eu-sov-cloud/internal/domain/inventory"
 	"github.com/timothymamo/eu-sov-cloud/internal/domain/mapping"
 	"github.com/timothymamo/eu-sov-cloud/internal/domain/taxonomy"
+	"github.com/timothymamo/eu-sov-cloud/internal/testutil"
 )
 
 const sourceName = "aws"
@@ -27,68 +26,6 @@ func newInventory(t *testing.T, resources []inventory.Resource) inventory.Invent
 	}
 
 	return inv
-}
-
-func snapshot() catalog.Snapshot {
-	return catalog.Snapshot{
-		SourceURL:   "https://www.scaleway.com/en/pricing/",
-		RetrievedOn: time.Date(2026, 11, 1, 0, 0, 0, 0, time.UTC),
-	}
-}
-
-// newCatalog is the only way to build a Catalog, so Assess receives the same
-// canonical form the rest of the program does.
-func newCatalog(t *testing.T, offerings []catalog.Offering) catalog.Catalog {
-	t.Helper()
-
-	cat, err := catalog.New("Scaleway", snapshot(), offerings)
-	if err != nil {
-		t.Fatalf("catalog.New() returned unexpected error: %v", err)
-	}
-
-	return cat
-}
-
-// scalewayOfferings is named after real Scaleway products.
-func scalewayOfferings() []catalog.Offering {
-	return []catalog.Offering{
-		{
-			Name:         "Object Storage",
-			Categories:   []taxonomy.Category{taxonomy.StorageObject},
-			Capabilities: []taxonomy.Capability{taxonomy.IPv6, taxonomy.ObjectVersioning},
-			Regions:      []string{"fr-par", "nl-ams"},
-		},
-		{
-			Name:         "Instances",
-			Categories:   []taxonomy.Category{taxonomy.ComputeVM},
-			Capabilities: []taxonomy.Capability{taxonomy.Autoscaling, taxonomy.IPv6},
-			Regions:      []string{"fr-par", "nl-ams", "pl-waw"},
-		},
-		{
-			Name:         "Elastic Metal",
-			Categories:   []taxonomy.Category{taxonomy.ComputeVM},
-			Capabilities: []taxonomy.Capability{taxonomy.IPv6},
-			Regions:      []string{"fr-par", "nl-ams"},
-		},
-		{
-			Name:         "Managed Database for PostgreSQL",
-			Categories:   []taxonomy.Category{taxonomy.DatabasePostgreSQL},
-			Capabilities: []taxonomy.Capability{taxonomy.PointInTimeRestore, taxonomy.ReadReplicas},
-			Regions:      []string{"fr-par", "nl-ams", "pl-waw"},
-		},
-		{
-			Name:         "Managed Database for PostgreSQL and MySQL",
-			Categories:   []taxonomy.Category{taxonomy.DatabaseMySQL, taxonomy.DatabasePostgreSQL},
-			Capabilities: []taxonomy.Capability{taxonomy.PointInTimeRestore, taxonomy.ReadReplicas},
-			Regions:      []string{"fr-par", "nl-ams", "pl-waw"},
-		},
-		{
-			Name:         "Kapsule",
-			Categories:   []taxonomy.Category{taxonomy.KubernetesManaged},
-			Capabilities: []taxonomy.Capability{taxonomy.Autoscaling, taxonomy.HighAvailability},
-			Regions:      []string{"fr-par"},
-		},
-	}
 }
 
 // awsResources is one inventory covering every fit: direct, partial and none, and
@@ -187,7 +124,7 @@ func TestAssess(t *testing.T) {
 	t.Parallel()
 
 	inv := newInventory(t, awsResources())
-	cat := newCatalog(t, scalewayOfferings())
+	cat := testutil.ScalewayCatalog(t)
 
 	got := assessment.Assess(inv, cat)
 
@@ -348,7 +285,7 @@ func TestAssessVerdictsComeFromMapping(t *testing.T) {
 	t.Parallel()
 
 	inv := newInventory(t, awsResources())
-	cat := newCatalog(t, scalewayOfferings())
+	cat := testutil.ScalewayCatalog(t)
 
 	got := assessment.Assess(inv, cat)
 
@@ -404,7 +341,7 @@ func TestAssessEmptyInventory(t *testing.T) {
 	t.Parallel()
 
 	inv := newInventory(t, nil)
-	cat := newCatalog(t, scalewayOfferings())
+	cat := testutil.ScalewayCatalog(t)
 
 	got := assessment.Assess(inv, cat)
 
@@ -435,7 +372,7 @@ func TestAssessIsDeterministic(t *testing.T) {
 	t.Parallel()
 
 	resources := awsResources()
-	cat := newCatalog(t, scalewayOfferings())
+	cat := testutil.ScalewayCatalog(t)
 
 	first := assessment.Assess(newInventory(t, resources), cat)
 	second := assessment.Assess(newInventory(t, resources), cat)
