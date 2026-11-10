@@ -312,13 +312,19 @@ func TestSnapshotSourceURL(t *testing.T) {
 		// wantErrs are the sentinel errors the error must wrap; nil means the URL
 		// is accepted.
 		wantErrs []error
+		// secret is the part of a rejected URL that must never be echoed. Saying
+		// which character of a password is wrong would put that character in a
+		// report, so the error must be silent about it.
+		secret string
 	}{
 		// Accepted: a plain page, the same page with a query and a fragment, and
-		// parentheses, which are legal URL characters. Escaping them for a Markdown
-		// table is the reporter's job.
+		// parentheses and escaped characters, which are legal URL characters.
+		// Escaping them for a Markdown table is the reporter's job.
 		{name: "pricing page", url: "https://www.scaleway.com/en/pricing/"},
 		{name: "query and fragment", url: "https://www.scaleway.com/en/pricing/?tab=compute#instances"},
 		{name: "parentheses", url: "https://example.com/a(b)"},
+		{name: "escaped space", url: "https://example.com/a%20b"},
+		{name: "sub domain", url: "https://sub-domain.example.com/x"},
 
 		// Invalid free text: rejected before the URL is even parsed.
 		{
@@ -334,10 +340,36 @@ func TestSnapshotSourceURL(t *testing.T) {
 
 		// Not a plain page: credentials in the URL would end up in a report, and a
 		// host in front of an at sign hides the real one.
-		{name: "userinfo with password", url: "https://user:pass@example.com/", wantErrs: []error{catalog.ErrInvalidCatalog}},
-		{name: "look-alike host before at sign", url: "https://www.scaleway.com@evil.example/", wantErrs: []error{catalog.ErrInvalidCatalog}},
+		{name: "userinfo with password", url: "https://user:pass@example.com/", wantErrs: []error{catalog.ErrInvalidCatalog}, secret: "pass"},
+		{name: "look-alike host before at sign", url: "https://www.scaleway.com@evil.example/", wantErrs: []error{catalog.ErrInvalidCatalog}, secret: "www.scaleway.com"},
 		{name: "port without host", url: "https://:443/", wantErrs: []error{catalog.ErrInvalidCatalog}},
 		{name: "opaque url", url: "https:example.com/opaque", wantErrs: []error{catalog.ErrInvalidCatalog}},
+
+		// A host must be a plain DNS name. Percent-encoding lets an invisible,
+		// blank or non-ASCII character into the host, which a reader cannot see and
+		// a report would print as an ordinary-looking domain.
+		{name: "percent encoded right to left override host", url: "https://%E2%80%AEmoc.elgoog/", wantErrs: []error{catalog.ErrInvalidCatalog}},
+		{name: "percent encoded hangul filler host", url: "https://%E3%85%A4/", wantErrs: []error{catalog.ErrInvalidCatalog}},
+		{name: "percent encoded braille blank host", url: "https://%E2%A0%80/", wantErrs: []error{catalog.ErrInvalidCatalog}},
+		{name: "percent encoded invalid byte host", url: "https://%ff/", wantErrs: []error{catalog.ErrInvalidCatalog}},
+		{name: "percent encoded no break space host", url: "https://%C2%A0/", wantErrs: []error{catalog.ErrInvalidCatalog}},
+		// A host that is only an escape for '%' is not a host name at all.
+		{name: "percent encoded percent host", url: "https://%25/", wantErrs: []error{catalog.ErrInvalidCatalog}},
+		// Characters that are only legal in a path or a query, or not at all.
+		{name: "parentheses in host", url: "https://exa(mple).com/", wantErrs: []error{catalog.ErrInvalidCatalog}},
+		{name: "ampersand in host", url: "https://example.com&evil/", wantErrs: []error{catalog.ErrInvalidCatalog}},
+		// An IP literal is not a host name, and square brackets anywhere in a URL
+		// are the syntax of a link in Markdown.
+		{name: "ipv6 literal host", url: "https://[2001:db8::1]/", wantErrs: []error{catalog.ErrInvalidCatalog}},
+		{name: "ipv4 literal host", url: "https://192.0.2.1/", wantErrs: []error{catalog.ErrInvalidCatalog}},
+		{
+			name:     "markdown image in path",
+			url:      "https://example.com/a)![i](https://evil.example/x.png)",
+			wantErrs: []error{catalog.ErrInvalidCatalog},
+		},
+		// A percent sign must start a complete two-digit escape, in a query too.
+		{name: "invalid escape in query", url: "https://example.com/?q=%zz", wantErrs: []error{catalog.ErrInvalidCatalog}},
+		{name: "truncated escape in path", url: "https://example.com/a%2", wantErrs: []error{catalog.ErrInvalidCatalog}},
 
 		// Characters a URL does not allow as given.
 		{name: "space", url: "https://example.com/a b", wantErrs: []error{catalog.ErrInvalidCatalog}},
@@ -375,8 +407,103 @@ func TestSnapshotSourceURL(t *testing.T) {
 			if lower := strings.ToLower(msg); !strings.Contains(lower, "source url") {
 				t.Errorf("New() error = %q, want it to name the field %q", msg, "source URL")
 			}
+
+			// The URL may carry credentials, so it is never echoed back.
+			if strings.Contains(msg, tc.url) {
+				t.Errorf("New() error = %q, want it not to echo the source URL", msg)
+			}
+
+			assertNoSecret(t, msg, tc.secret)
 		})
 	}
+}
+
+// assertNoSecret fails when msg echoes secret or any three-rune run of it: an
+// error that prints part of a credential is as bad as one that prints it all.
+func assertNoSecret(t *testing.T, msg, secret string) {
+	t.Helper()
+
+	if secret == "" {
+		return
+	}
+
+	runes := []rune(secret)
+	for i := 0; i+2 < len(runes); i++ {
+		if part := string(runes[i : i+3]); strings.Contains(msg, part) {
+			t.Errorf("error = %q, want it not to echo %q of the credential", msg, part)
+		}
+	}
+}
+
+// The reason a source URL is rejected must not depend on the credentials it
+// carries: an error that named the offending character, or where it was, would
+// put part of a password into a report. So a URL that differs from a rejected one
+// only in its user info produces exactly the same message.
+func TestSnapshotSourceURLErrorDoesNotEchoUserInfo(t *testing.T) {
+	t.Parallel()
+
+	baseline := sourceURLError(t, "https://user:pass@example.com/").Error()
+
+	tests := []struct {
+		name string
+		url  string
+		// secrets are the strings whose presence in the message would mean it
+		// echoed the credentials: the secret itself, and the code point the
+		// offending character has.
+		secrets []string
+	}{
+		{
+			name:    "non ascii password",
+			url:     "https://user:péss@example.com/",
+			secrets: []string{"péss", "U+00E9"},
+		},
+		{
+			name:    "character an rfc 3986 url does not allow",
+			url:     "https://user:pa^ss@example.com/",
+			secrets: []string{"pa^ss", "pa", "U+005E"},
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			msg := sourceURLError(t, tc.url).Error()
+
+			if msg != baseline {
+				t.Errorf("New() error = %q, want the same message as for a rejected URL with other user info (%q)", msg, baseline)
+			}
+
+			for _, secret := range tc.secrets {
+				if strings.Contains(msg, secret) {
+					t.Errorf("New() error = %q, want it not to echo %q", msg, secret)
+				}
+			}
+
+			if strings.Contains(msg, tc.url) {
+				t.Errorf("New() error = %q, want it not to echo the source URL", msg)
+			}
+		})
+	}
+}
+
+// sourceURLError returns the error New rejects rawURL with, failing the test when
+// the URL is accepted or the error does not say the catalog is invalid.
+func sourceURLError(t *testing.T, rawURL string) error {
+	t.Helper()
+
+	snapshot := catalog.Snapshot{SourceURL: rawURL, RetrievedOn: validSnapshot().RetrievedOn}
+
+	_, err := catalog.New(targetName, snapshot, validOfferings())
+	if err == nil {
+		t.Fatalf("New() with source URL %q returned no error, want one wrapping %v", rawURL, catalog.ErrInvalidCatalog)
+	}
+
+	if !errors.Is(err, catalog.ErrInvalidCatalog) {
+		t.Fatalf("New() with source URL %q error = %v, want an error wrapping %v", rawURL, err, catalog.ErrInvalidCatalog)
+	}
+
+	return err
 }
 
 // A resource with no capabilities and one with an empty capability list are the
@@ -507,6 +634,18 @@ func TestNewErrors(t *testing.T) {
 			wantMsg: []string{"Instances"},
 		},
 		{
+			// A run of spaces is not a difference: two names that collapse to the
+			// same text would appear as the same offering in a report.
+			name:     "duplicate offering name differing in inner whitespace",
+			target:   targetName,
+			snapshot: validSnapshot(),
+			offerings: []catalog.Offering{
+				{Name: "Object Storage", Categories: []taxonomy.Category{taxonomy.StorageObject}, Regions: []string{"fr-par"}},
+				{Name: "Object  Storage", Categories: []taxonomy.Category{taxonomy.StorageObject}, Regions: []string{"fr-par"}},
+			},
+			wantErr: catalog.ErrDuplicateOffering,
+		},
+		{
 			name:      "offering serving no category",
 			target:    targetName,
 			snapshot:  validSnapshot(),
@@ -635,6 +774,10 @@ func TestNewRejectsInvalidText(t *testing.T) {
 		{name: "paragraph separator", value: "a\u2029b"},
 		{name: "invalid utf8", value: "a\xffb"},
 		{name: "longer than max len", value: strings.Repeat("a", text.MaxLen+1)},
+		// Leading and trailing whitespace is padding, not part of the value: a
+		// padded name or region is not the same string as the name it pads.
+		{name: "leading space", value: " Scaleway"},
+		{name: "trailing space", value: "Scaleway "},
 	}
 
 	type invalidCase struct {
@@ -700,6 +843,88 @@ func TestNewRejectsInvalidText(t *testing.T) {
 
 			if tc.wantOffering != "" && !strings.Contains(msg, tc.wantOffering) {
 				t.Errorf("New() error = %q, want it to name the offering %q", msg, tc.wantOffering)
+			}
+		})
+	}
+}
+
+// A non-ASCII space separator is legitimate text inside a name or a region: a
+// target may sell "Offre\u00a0Pro" and name a region in its own language. Only an
+// ID, which a reader retypes, rejects these characters, so an offering keeps them
+// exactly as given.
+func TestNewAcceptsNonASCIISpaceInFreeText(t *testing.T) {
+	t.Parallel()
+
+	separators := []struct {
+		name string
+		sep  string
+	}{
+		{name: "no break space", sep: "\u00a0"},
+		{name: "ogham space mark", sep: "\u1680"},
+		{name: "figure space", sep: "\u2007"},
+		{name: "narrow no break space", sep: "\u202f"},
+		{name: "ideographic space", sep: "\u3000"},
+	}
+
+	for _, tc := range separators {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			name := "Offre" + tc.sep + "Pro"
+			region := "fr" + tc.sep + "par"
+
+			cat := newCatalog(t, targetName, validSnapshot(), []catalog.Offering{{
+				Name:       name,
+				Categories: []taxonomy.Category{taxonomy.ComputeVM},
+				Regions:    []string{region},
+			}})
+
+			got := cat.Offerings()
+			if len(got) != 1 {
+				t.Fatalf("Offerings() returned %d offerings, want 1", len(got))
+			}
+
+			if got[0].Name != name {
+				t.Errorf("Name = %q, want %q stored as given", got[0].Name, name)
+			}
+
+			if diff := cmp.Diff([]string{region}, got[0].Regions); diff != "" {
+				t.Errorf("Regions are not stored as given (-want +got):\n%s", diff)
+			}
+		})
+	}
+}
+
+// Duplicate detection ignores runs of inner whitespace, but a stored value is
+// never normalised: a report shows the target's own spelling of the name.
+func TestNewKeepsNameAsGiven(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name         string
+		offeringName string
+	}{
+		{name: "single inner space", offeringName: "Object Storage"},
+		{name: "double inner space", offeringName: "Object  Storage"},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			cat := newCatalog(t, targetName, validSnapshot(), []catalog.Offering{{
+				Name:       tc.offeringName,
+				Categories: []taxonomy.Category{taxonomy.StorageObject},
+				Regions:    []string{"fr-par"},
+			}})
+
+			got := cat.Offerings()
+			if len(got) != 1 {
+				t.Fatalf("Offerings() returned %d offerings, want 1", len(got))
+			}
+
+			if got[0].Name != tc.offeringName {
+				t.Errorf("Name = %q, want %q stored as given", got[0].Name, tc.offeringName)
 			}
 		})
 	}

@@ -36,6 +36,11 @@ func TestValidateAccepts(t *testing.T) {
 		{name: "raw type", in: "AWS::EC2::Instance"},
 		{name: "region", in: "eu-west-1"},
 		{name: "offering name", in: "Managed Database for PostgreSQL"},
+		// Whitespace inside a value is part of it; only the ends are padding.
+		{name: "inner space", in: "a b"},
+		// A non-ASCII space separator inside a value is legitimate text: a target
+		// may sell "Offre\u00a0Pro".
+		{name: "inner no break space", in: "Offre\u00a0Pro"},
 		{name: "arn", in: "arn:aws:rds:eu-west-1:123456789012:db:db-example"},
 		{name: "non ascii", in: "Zürich"},
 		// A precomposed accent is one printable rune, and a combining mark after a
@@ -99,6 +104,12 @@ func TestValidateRejectsInvalidText(t *testing.T) {
 		{name: "halfwidth hangul filler", in: "a\uffa0b"},
 		{name: "khmer inherent vowel", in: "a\u17b4b"},
 		{name: "braille pattern blank", in: "\u2800"},
+		// Leading and trailing whitespace is padding, not part of the value: it
+		// makes a value that differs from another look the same in a report.
+		{name: "leading space", in: " a"},
+		{name: "trailing space", in: "a "},
+		{name: "leading and trailing space", in: " a "},
+		{name: "space", in: " "},
 		// Noncharacters are permanently unassigned and never text.
 		{name: "noncharacter fffe", in: "a\ufffeb"},
 		{name: "noncharacter 10ffff", in: "a\U0010ffffb"},
@@ -216,6 +227,13 @@ func TestQuoteTruncatesTo128Runes(t *testing.T) {
 			name: "129 runes",
 			in:   strings.Repeat("a", 129),
 			want: strconv.Quote(strings.Repeat("a", 128)) + "...(129 bytes)",
+		},
+		{
+			// The cut counts runes, not bytes: 128 multibyte runes survive, and the
+			// reported length is the original byte length, 129 * 2 here.
+			name: "129 multibyte runes",
+			in:   strings.Repeat("é", 129),
+			want: strconv.Quote(strings.Repeat("é", 128)) + "...(258 bytes)",
 		},
 		{
 			// The invalid byte is the 129th rune, so it falls outside the kept

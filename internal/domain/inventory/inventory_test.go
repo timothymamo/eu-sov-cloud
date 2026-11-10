@@ -257,6 +257,27 @@ func TestNewErrors(t *testing.T) {
 			wantMsg: []string{"i-0123456789abcdef0"},
 		},
 		{
+			// A run of spaces is not a difference: two IDs that collapse to the same
+			// text name the same resource to a reader and in a report.
+			name:   "duplicate id differing in inner whitespace",
+			source: "aws",
+			resources: []inventory.Resource{
+				{
+					ID:       "i-0 abc",
+					RawType:  "AWS::EC2::Instance",
+					Category: taxonomy.ComputeVM,
+					Region:   "eu-west-1",
+				},
+				{
+					ID:       "i-0  abc",
+					RawType:  "AWS::EC2::Instance",
+					Category: taxonomy.ComputeVM,
+					Region:   "eu-west-1",
+				},
+			},
+			wantErr: inventory.ErrDuplicateID,
+		},
+		{
 			// A typo must be an error naming the resource, never an implicit unclassified.
 			name:   "unknown category",
 			source: "aws",
@@ -331,6 +352,10 @@ func TestNewRejectsInvalidText(t *testing.T) {
 		{name: "paragraph separator", value: "a\u2029b"},
 		{name: "invalid utf8", value: "a\xffb"},
 		{name: "longer than max len", value: strings.Repeat("a", text.MaxLen+1)},
+		// Leading and trailing whitespace is padding, not part of the value: it
+		// makes a value that differs from another look the same in a report.
+		{name: "leading space", value: " i-0abc"},
+		{name: "trailing space", value: "i-0abc "},
 	}
 
 	base := inventory.Resource{
@@ -362,7 +387,7 @@ func TestNewRejectsInvalidText(t *testing.T) {
 			name:      "id/" + tc.name,
 			source:    "aws",
 			resources: []inventory.Resource{base, withBadID},
-			wantField: "id",
+			wantField: "id:",
 			wantPos:   1,
 		})
 
@@ -373,7 +398,7 @@ func TestNewRejectsInvalidText(t *testing.T) {
 			name:      "raw type/" + tc.name,
 			source:    "aws",
 			resources: []inventory.Resource{base, withBadRawType},
-			wantField: "raw type",
+			wantField: "raw type:",
 			wantID:    "db-example",
 		})
 
@@ -385,7 +410,7 @@ func TestNewRejectsInvalidText(t *testing.T) {
 			name:      "region/" + tc.name,
 			source:    "aws",
 			resources: []inventory.Resource{base, withBadRegion},
-			wantField: "region",
+			wantField: "region:",
 			wantID:    "vol-example",
 		})
 
@@ -393,7 +418,7 @@ func TestNewRejectsInvalidText(t *testing.T) {
 			name:      "source/" + tc.name,
 			source:    tc.value,
 			resources: []inventory.Resource{base},
-			wantField: "source",
+			wantField: "source:",
 		})
 	}
 
@@ -416,7 +441,7 @@ func TestNewRejectsInvalidText(t *testing.T) {
 				if !strings.Contains(msg, tc.wantID) {
 					t.Errorf("New() error = %q, want it to name the resource %q", msg, tc.wantID)
 				}
-			case tc.wantField != "source":
+			case tc.wantField != "source:":
 				if !namesPosition(msg, tc.wantPos) {
 					t.Errorf("New() error = %q, want it to name the position %d", msg, tc.wantPos)
 				}
@@ -478,7 +503,7 @@ func TestNewRejectsBlankRawTypeAndRegion(t *testing.T) {
 				Category: taxonomy.DatabasePostgreSQL,
 				Region:   "eu-west-1",
 			},
-			wantField: "raw type",
+			wantField: "raw type:",
 		},
 		{
 			name: "whitespace only region",
@@ -488,7 +513,7 @@ func TestNewRejectsBlankRawTypeAndRegion(t *testing.T) {
 				Category: taxonomy.StorageBlock,
 				Region:   "   ",
 			},
-			wantField: "region",
+			wantField: "region:",
 		},
 	}
 
@@ -536,8 +561,144 @@ func TestNewRejectsIDWithLookAlikeCharacter(t *testing.T) {
 		t.Fatalf("New() error = %v, want an error wrapping text.ErrInvalid", err)
 	}
 
-	if msg := err.Error(); !strings.Contains(strings.ToLower(msg), "id") {
-		t.Errorf("New() error = %q, want it to name the field %q", msg, "id")
+	msg := err.Error()
+	if !strings.Contains(msg, "id:") {
+		t.Errorf("New() error = %q, want it to name the field %q", msg, "id:")
+	}
+
+	if !namesPosition(msg, 1) {
+		t.Errorf("New() error = %q, want it to name the position %d", msg, 1)
+	}
+}
+
+// An ID ends up in a report and is what a reader copies to find the resource, so
+// a non-ASCII space separator inside it is rejected: it looks like a space but is
+// a different character, and no reader can retype it.
+func TestNewRejectsNonASCIISpaceInID(t *testing.T) {
+	t.Parallel()
+
+	base := inventory.Resource{
+		ID:       "i-0123456789abcdef0",
+		RawType:  "AWS::EC2::Instance",
+		Category: taxonomy.ComputeVM,
+		Region:   "eu-west-1",
+	}
+
+	separators := []struct {
+		name string
+		sep  string
+	}{
+		{name: "no break space", sep: "\u00a0"},
+		{name: "ogham space mark", sep: "\u1680"},
+		{name: "figure space", sep: "\u2007"},
+		{name: "narrow no break space", sep: "\u202f"},
+		{name: "ideographic space", sep: "\u3000"},
+	}
+
+	for _, tc := range separators {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			lookAlike := base
+			lookAlike.ID = "i-0" + tc.sep + "abc"
+
+			_, err := inventory.New("aws", []inventory.Resource{base, lookAlike})
+			if !errors.Is(err, text.ErrInvalid) {
+				t.Fatalf("New() with a %q in an ID error = %v, want an error wrapping text.ErrInvalid", tc.sep, err)
+			}
+
+			msg := err.Error()
+			if !strings.Contains(msg, "id:") {
+				t.Errorf("New() error = %q, want it to name the field %q", msg, "id:")
+			}
+
+			if !namesPosition(msg, 1) {
+				t.Errorf("New() error = %q, want it to name the position %d", msg, 1)
+			}
+		})
+	}
+}
+
+// A raw type and a region are the source's own strings, kept for traceability:
+// a non-ASCII space separator in them is legitimate text and is stored as given.
+// Only an ID, which a reader retypes, rejects it.
+func TestNewAcceptsNonASCIISpaceInRawTypeAndRegion(t *testing.T) {
+	t.Parallel()
+
+	separators := []struct {
+		name string
+		sep  string
+	}{
+		{name: "no break space", sep: "\u00a0"},
+		{name: "ogham space mark", sep: "\u1680"},
+		{name: "figure space", sep: "\u2007"},
+		{name: "narrow no break space", sep: "\u202f"},
+		{name: "ideographic space", sep: "\u3000"},
+	}
+
+	for _, tc := range separators {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			rawType := "AWS::EC2" + tc.sep + "Instance"
+			region := "eu-west" + tc.sep + "1"
+
+			inv := newInventory(t, "aws", []inventory.Resource{{
+				ID:       "i-0123456789abcdef0",
+				RawType:  rawType,
+				Category: taxonomy.ComputeVM,
+				Region:   region,
+			}})
+
+			got := inv.Resources()
+			if len(got) != 1 {
+				t.Fatalf("Resources() returned %d resources, want 1", len(got))
+			}
+
+			if got[0].RawType != rawType {
+				t.Errorf("RawType = %q, want %q", got[0].RawType, rawType)
+			}
+
+			if got[0].Region != region {
+				t.Errorf("Region = %q, want %q", got[0].Region, region)
+			}
+		})
+	}
+}
+
+// Duplicate detection ignores runs of inner whitespace, but a stored value is
+// never normalised: a report shows the source's own spelling of the ID.
+func TestNewKeepsIDAsGiven(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name string
+		id   string
+	}{
+		{name: "single inner space", id: "i-0 abc"},
+		{name: "double inner space", id: "i-0  abc"},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			inv := newInventory(t, "aws", []inventory.Resource{{
+				ID:       tc.id,
+				RawType:  "AWS::EC2::Instance",
+				Category: taxonomy.ComputeVM,
+				Region:   "eu-west-1",
+			}})
+
+			got := inv.Resources()
+			if len(got) != 1 {
+				t.Fatalf("Resources() returned %d resources, want 1", len(got))
+			}
+
+			if got[0].ID != tc.id {
+				t.Errorf("ID = %q, want %q stored as given", got[0].ID, tc.id)
+			}
+		})
 	}
 }
 
