@@ -47,6 +47,16 @@ linters:
               desc: cloud SDKs belong in internal/adapter/source/gcp
             - pkg: google.golang.org/api
               desc: cloud SDKs belong in internal/adapter/source/gcp
+            # The assess path needs no network, process or OS access in the
+            # application layer: adapters do I/O behind the ports.
+            - pkg: net/http
+              desc: the application layer makes no HTTP calls; an adapter behind a port does
+            - pkg: net
+              desc: the application layer has no network access; an adapter behind a port does
+            - pkg: os/exec
+              desc: the application layer starts no processes
+            - pkg: os
+              desc: the application layer has no OS access (files, environment); the driving adapter passes what it needs through the ports
         testutil-only-in-tests:
           list-mode: lax
           files:
@@ -56,6 +66,18 @@ linters:
           deny:
             - pkg: github.com/timothymamo/eu-sov-cloud/internal/testutil
               desc: testutil may only be imported from _test.go files
+        contract-suites-only-in-tests:
+          list-mode: lax
+          files:
+            - "$all"
+            - "!$test"
+            - "!**/internal/adapter/source/sourcetest/**"
+            - "!**/internal/adapter/target/targettest/**"
+          deny:
+            - pkg: github.com/timothymamo/eu-sov-cloud/internal/adapter/source/sourcetest
+              desc: the source contract suite may only be imported from _test.go files
+            - pkg: github.com/timothymamo/eu-sov-cloud/internal/adapter/target/targettest
+              desc: the target contract suite may only be imported from _test.go files
         go-cmp-only-in-tests:
           list-mode: lax
           files:
