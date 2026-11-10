@@ -15,15 +15,20 @@ in taxonomy terms. This file records where each fact comes from, so the snapshot
   tick relied on below is a generally available product.
 - **Product pages** on `www.ovhcloud.com` and **documentation** on `docs.ovhcloud.com` give the
   capabilities. Each was read live on the retrieval date.
-- **Documentation source.** `docs.ovhcloud.com` is built from
-  [`ovh/ovhcloud-docs`](https://github.com/ovh/ovhcloud-docs). Its files were read at commit
-  `2df4cc152902b880880b77955ab9e52de4a2c2ff` (branch `develop`, 2026-11-10) to find the relevant pages, and
-  every fact used was then checked on the published page cited. The repository named in PRD #11,
-  [`ovh/docs`](https://github.com/ovh/docs), is archived: its README at commit
-  `989d55b1b8f7ca0d8c39280cb469e4d40513f18d` (2026-09-01) says the documentation has moved to
-  `ovh/ovhcloud-docs` and `docs.ovhcloud.com`. No fact was taken from `ovh/docs`.
-- **Roadmap.** OVHcloud's public roadmap, [`ovh/public-cloud-roadmap`](https://github.com/ovh/public-cloud-roadmap),
-  was read for the rollout state of one feature (Block Storage encryption in Warsaw).
+- **Documentation source.** `docs.ovhcloud.com` is built from `ovh/ovhcloud-docs`. Its files were read at
+  commit
+  [`2df4cc152902b880880b77955ab9e52de4a2c2ff`](https://github.com/ovh/ovhcloud-docs/tree/2df4cc152902b880880b77955ab9e52de4a2c2ff)
+  (branch `develop`, 2026-11-10) to find the relevant pages, and every fact used was then checked on the
+  published page cited. The repository named in PRD #11, `ovh/docs`, is archived by a notice in its README
+  at commit
+  [`989d55b1b8f7ca0d8c39280cb469e4d40513f18d`](https://github.com/ovh/docs/tree/989d55b1b8f7ca0d8c39280cb469e4d40513f18d)
+  (2026-09-01), which says the repository is no longer maintained and the documentation has moved to
+  `ovh/ovhcloud-docs` and `docs.ovhcloud.com`. GitHub's archive flag is not set on the repository. No fact
+  was taken from `ovh/docs`.
+- **Roadmap.** OVHcloud's public roadmap, `ovh/public-cloud-roadmap`, was read for the state of a few
+  features: the Block Storage encryption rollouts, the general availability of the Managed Kubernetes
+  Standard plan and etcd encryption at rest. Each issue is linked where it is used and was read on the
+  retrieval date.
 
 ## Licences of the sources
 
@@ -32,10 +37,12 @@ in taxonomy terms. This file records where each fact comes from, so the snapshot
 - **`docs.ovhcloud.com`** and its source **`ovh/ovhcloud-docs`**: no licence is stated. The repository has no
   licence file at the commit above, its README states none, and GitHub detects none. So the content is
   under OVH SAS's copyright with all rights reserved.
-- **`ovh/docs`** (archived, not used for facts) is licensed CC BY-NC-SA 4.0 (Creative Commons
-  Attribution-NonCommercial-ShareAlike 4.0 International), as its `LICENSE` file and README state at the
-  commit above.
-- **`ovh/public-cloud-roadmap`** issues: no licence is stated. Only an issue's open or closed state is used.
+- **`ovh/docs`** (archived by its README, not used for facts) is licensed CC BY-NC-SA 4.0 (Creative
+  Commons Attribution-NonCommercial-ShareAlike 4.0 International), as its `LICENSE` file states at the
+  commit above. Its README (`readme.md`) says the content "remains under the terms provided in the
+  LICENSE file".
+- **`ovh/public-cloud-roadmap`** issues: no licence is stated. Only an issue's open or closed state, its
+  dates and a brief quotation from a comment are used.
 - **Rule for this file and `catalog.json`:** take facts only (which product exists, in which locations, with
   which feature) and brief quotations, each in quotation marks and attributed to the page it comes from.
   Paraphrase everything else. Never copy documentation or web text in bulk, and keep it out of
@@ -67,7 +74,12 @@ in taxonomy terms. This file records where each fact comes from, so the snapshot
   nodes with automatic failover, or data and control plane spread across zones. Redundant copies of data
   inside one zone (replication or erasure coding), which every storage offering in a category has, are
   durability and are not counted, as in the Scaleway snapshot (Standard One Zone object storage, Block
-  Storage). OVHcloud's own pages likewise reserve "high availability" for 3-AZ deployments of storage.
+  Storage). OVHcloud's Object Storage pages and the Block Storage class guide likewise tie high
+  availability to 3-AZ deployments. The Block Storage product page also uses the phrase for every class
+  ("Thanks to its high availability, you can choose between One-Zone, Multi-Zone, or Local Zone
+  configuration"). That use is not counted: for the one-zone classes the same page names only data
+  "replicated in the same datacentre", which is durability, and it says high availability "is guaranteed in
+  our 3-AZ regions" with the Regional Classic Volume class.
 
 ## Declared EU regions
 
@@ -78,7 +90,7 @@ The regions page's EMEA tables list eight locations on 2026-11-10: Strasbourg `S
 Roubaix `RBX`, "3-AZ Paris" `PAR`, "3-AZ Milan" `MIL`, London `ERI`, Frankfurt `LIM` and Warsaw `WAW`, plus a
 "Local Zones" column with no location named. The column for `LIM` is headed "Frankfurt" in most tables and
 "Limburg" in the identity table. London (`ERI`, Erith) is in the United Kingdom, which is not an EU member
-state, so it is not declared. The North America (Beauharnois, Toronto, Seattle, Washington DC) and Asia
+state, so it is not declared. The North America (Montreal `BHS`, Toronto, Seattle, Washington DC) and Asia
 Pacific (Singapore, Sydney, Mumbai) tabs list no EU location. Local Zones are excluded (PRD #11).
 
 Product-level names each code covers:
@@ -152,8 +164,9 @@ every 1-AZ region. Pages: <https://docs.ovhcloud.com/en/guides/public-cloud/comp
 - `encryption-at-rest`: volumes "encrypted at rest using LUKS", with an OVHcloud Managed Key by default or
   a Customer Managed Key in OKMS (encryption page). The storage class page says each class has an encrypted
   version "depending on the region".
-- `snapshots`: volume snapshots as for *Block Storage*; the encryption page warns that deleting the key
-  makes the volume "and all its snapshots" unrecoverable, so encrypted volumes have snapshots.
+- `snapshots`: volume snapshots as for *Block Storage*. The Managed Kubernetes volume snapshot page
+  (<https://docs.ovhcloud.com/en/guides/public-cloud/containers-orchestration/managed-kubernetes/backup-restore-pv-volume-snapshot>)
+  says "Volume snapshots work with all storage classes, including LUKS encrypted volumes".
 - Regions `GRA`, `LIM`, `RBX`, `SBG`: the Managed Kubernetes regions page lists the regions where LUKS
   encrypted storage "is currently available": RBX, SBG, GRA, EU-WEST-PAR, DE1 and EU-SOUTH-MIL in the EU.
   OVHcloud's roadmap closed the rollouts for GRA and DE1 on 2026-02-19
@@ -189,8 +202,10 @@ type `high-speed-gen2-luks`). Each volume sits in one availability zone of the r
 
 ### Instances
 
-Category `compute.vm`: Public Cloud virtual machine instances ("Virtual Machine Instances": General Purpose,
-Compute and Memory optimized, Discovery, GPU and Storage optimized ranges). Pages:
+Category `compute.vm`: Public Cloud virtual machine instances (General Purpose, Compute and Memory
+optimized, Discovery, GPU and Storage optimized ranges). "Instances" is the name the OVHcloud Console and
+documentation use (the getting-started page's navigation path ends in "Compute > Instances"); the product
+page is titled "Virtual Machine Instances". Pages:
 <https://www.ovhcloud.com/en/public-cloud/virtual-instances/>,
 <https://docs.ovhcloud.com/en/guides/public-cloud/network-services/ipv6-configuration>,
 <https://docs.ovhcloud.com/en/guides/public-cloud/compute/getting-started>,
@@ -239,9 +254,15 @@ Category `kubernetes.managed`: Managed Kubernetes on the Standard plan in the 3-
   regions. Paris and Milan offer only the Standard plan (Kubernetes regions page), so every cluster there
   has this capability. Node pools are spread over the zones by the customer (product page FAQ).
 - Regions `MIL`, `PAR`: the Kubernetes regions page lists EU-WEST-PAR and EU-SOUTH-MIL as Standard plan, 3-AZ.
-- **Status:** the regions page ticks both without the beta mark, and the plans page gives the Standard
-  plan's SLAs. One FAQ line on the product page still says the 99.99% SLA "will be offered after the beta
-  phase"; it is taken as stale.
+- **Status:** generally available. OVHcloud's roadmap closed "MKS Standard offer"
+  (<https://github.com/ovh/public-cloud-roadmap/issues/693>) on 2025-09-17 with a collaborator's comment
+  that the "Managed Kubernetes Standard plan is now available on General Availability", and closed
+  "Multi-AZs clusters" (<https://github.com/ovh/public-cloud-roadmap/issues/22>) on 2025-10-02 after a
+  comment that the Standard plan is in General Availability in EU-WEST-PAR with 3-AZ deployment. The
+  regions page ticks both regions without the beta mark. Three lines still describe the plan as before
+  GA, and are taken as stale: the product page FAQ says the 99.99% SLA "will be offered after the beta
+  phase", the plans page gives a "99.99% SLA at General Availability", and the architecture page's
+  comparison table gives "99.99% SLA (at GA)".
 
 ### Managed MySQL
 
@@ -249,7 +270,8 @@ Category `database.mysql`: Public Cloud Databases for MySQL ("Managed MySQL" on 
 1-AZ regions. Pages: <https://www.ovhcloud.com/en/public-cloud/mysql/>,
 <https://docs.ovhcloud.com/en/guides/public-cloud/databases/capabilities>,
 <https://docs.ovhcloud.com/en/guides/public-cloud/databases/mysql-capabilities>,
-<https://docs.ovhcloud.com/en/guides/public-cloud/databases/public-cloud-databases-regions-comparison>,
+<https://docs.ovhcloud.com/en/guides/public-cloud/databases/public-cloud-databases-regions-comparison>
+(the deployment modes page),
 <https://docs.ovhcloud.com/en/guides/public-cloud/databases/backups>,
 <https://docs.ovhcloud.com/en/guides/public-cloud/databases/concepts-security-overview>,
 <https://docs.ovhcloud.com/en/guides/public-cloud/databases/faq>.
@@ -266,8 +288,8 @@ Category `database.mysql`: Public Cloud Databases for MySQL ("Managed MySQL" on 
 - `read-replicas`: "Read-only nodes" for MySQL (capabilities page); replica nodes accept reads only (FAQ).
   **Needs:** a multi-node plan; the product page lists "Read replica included" on the Advanced plan.
 - Regions `GRA`, `LIM`, `RBX`, `SBG`, `WAW`: the regions page ticks MySQL in each, and the backups page lists
-  GRA, DE, RBX, SBG and WAW as service locations. The MySQL page says the offer is available "in all Public
-  Cloud 1-AZ and 3-AZ regions".
+  GRA, DE, RBX, SBG and WAW as service locations. The MySQL capabilities page (`mysql-capabilities`) says
+  the Public Cloud Databases offer is available "in all Public Cloud 1-AZ and 3-AZ regions".
 
 ### Managed MySQL 3-AZ
 
@@ -275,7 +297,8 @@ Category `database.mysql`: Public Cloud Databases for MySQL in the 3-AZ regions.
 <https://www.ovhcloud.com/en/public-cloud/mysql/>,
 <https://docs.ovhcloud.com/en/guides/public-cloud/databases/capabilities>,
 <https://docs.ovhcloud.com/en/guides/public-cloud/databases/mysql-capabilities>,
-<https://docs.ovhcloud.com/en/guides/public-cloud/databases/public-cloud-databases-regions-comparison>,
+<https://docs.ovhcloud.com/en/guides/public-cloud/databases/public-cloud-databases-regions-comparison>
+(the deployment modes page),
 <https://docs.ovhcloud.com/en/guides/public-cloud/databases/migrate-from-1az-to-3az>,
 <https://docs.ovhcloud.com/en/guides/public-cloud/databases/backups>,
 <https://docs.ovhcloud.com/en/guides/public-cloud/databases/concepts-security-overview>.
@@ -283,10 +306,10 @@ Category `database.mysql`: Public Cloud Databases for MySQL in the 3-AZ regions.
 - `encryption-at-rest`, `point-in-time-restore` and `read-replicas`: as for *Managed MySQL*; the pages
   state them per engine and plan, not per region.
 - `high-availability`. **Needs:** a multi-node plan (Production or Advanced in "Multi AZ"). **Scope:
-  zone-level.** A multi-node service is deployed across three independent availability zones and keeps
-  running if one zone fails (deployment modes page); its data is replicated synchronously across the three
-  zones (1-AZ to 3-AZ migration page). The capabilities page gives 99.95% and 99.99% SLAs for the Multi AZ
-  plans.
+  zone-level.** The deployment modes page says a multi-node service "is deployed across three independent
+  availability zones" and keeps running through the outage of one zone; its data is replicated
+  synchronously across the three zones (1-AZ to 3-AZ migration page). The capabilities page gives 99.95%
+  and 99.99% SLAs for the Multi AZ plans.
 - Regions `MIL`, `PAR`: the regions page ticks MySQL in "3-AZ Paris" and "3-AZ Milan"; the backups page lists
   EU-WEST-PAR and EU-SOUTH-MIL as service locations.
 
@@ -296,7 +319,8 @@ Category `database.postgresql`: Public Cloud Databases for PostgreSQL ("Managed 
 page) in the 1-AZ regions. Pages: <https://www.ovhcloud.com/en/public-cloud/postgresql/>,
 <https://docs.ovhcloud.com/en/guides/public-cloud/databases/capabilities>,
 <https://docs.ovhcloud.com/en/guides/public-cloud/databases/postgresql-capabilities>,
-<https://docs.ovhcloud.com/en/guides/public-cloud/databases/public-cloud-databases-regions-comparison>,
+<https://docs.ovhcloud.com/en/guides/public-cloud/databases/public-cloud-databases-regions-comparison>
+(the deployment modes page),
 <https://docs.ovhcloud.com/en/guides/public-cloud/databases/backups>,
 <https://docs.ovhcloud.com/en/guides/public-cloud/databases/concepts-security-overview>,
 <https://docs.ovhcloud.com/en/guides/public-cloud/databases/faq>.
@@ -310,8 +334,9 @@ page) in the 1-AZ regions. Pages: <https://www.ovhcloud.com/en/public-cloud/post
 - `read-replicas`: "Read-only nodes" for PostgreSQL (capabilities page). **Needs:** a multi-node plan; the
   product page lists "Read replica included" on the Advanced plan.
 - Regions `GRA`, `LIM`, `RBX`, `SBG`, `WAW`: the regions page ticks PostgreSQL in each, and the backups page
-  lists GRA, DE, RBX, SBG and WAW as service locations. The PostgreSQL page says the offer is available "in
-  all Public Cloud 1-AZ and 3-AZ regions".
+  lists GRA, DE, RBX, SBG and WAW as service locations. The PostgreSQL capabilities page
+  (`postgresql-capabilities`) says the Public Cloud Databases offer is available "in all Public Cloud 1-AZ
+  and 3-AZ regions".
 
 ### Managed PostgreSQL 3-AZ
 
@@ -319,7 +344,8 @@ Category `database.postgresql`: Public Cloud Databases for PostgreSQL in the 3-A
 <https://www.ovhcloud.com/en/public-cloud/postgresql/>,
 <https://docs.ovhcloud.com/en/guides/public-cloud/databases/capabilities>,
 <https://docs.ovhcloud.com/en/guides/public-cloud/databases/postgresql-capabilities>,
-<https://docs.ovhcloud.com/en/guides/public-cloud/databases/public-cloud-databases-regions-comparison>,
+<https://docs.ovhcloud.com/en/guides/public-cloud/databases/public-cloud-databases-regions-comparison>
+(the deployment modes page),
 <https://docs.ovhcloud.com/en/guides/public-cloud/databases/migrate-from-1az-to-3az>,
 <https://docs.ovhcloud.com/en/guides/public-cloud/databases/backups>,
 <https://docs.ovhcloud.com/en/guides/public-cloud/databases/concepts-security-overview>.
@@ -351,7 +377,8 @@ Pages: <https://www.ovhcloud.com/en/public-cloud/metal-instances/>,
 Category `storage.object`: S3-compatible Object Storage in the 1-AZ regions (High Performance, Standard and
 Infrequent Access classes). Pages: <https://www.ovhcloud.com/en/public-cloud/object-storage/>,
 <https://docs.ovhcloud.com/en/guides/storage-and-backup/object-storage/s3-location>,
-<https://docs.ovhcloud.com/en/guides/storage-and-backup/object-storage/s3-regions-comparison>,
+<https://docs.ovhcloud.com/en/guides/storage-and-backup/object-storage/s3-regions-comparison>
+(the deployment modes page),
 <https://docs.ovhcloud.com/en/guides/storage-and-backup/object-storage/s3-versioning>,
 <https://docs.ovhcloud.com/en/guides/storage-and-backup/object-storage/s3-encrypt-your-objects-with-sse-c>,
 <https://docs.ovhcloud.com/en/guides/storage-and-backup/object-storage/s3-s3-compliancy>.
@@ -361,9 +388,12 @@ Infrequent Access classes). Pages: <https://www.ovhcloud.com/en/public-cloud/obj
   opposed to Local Zones).
 - `object-versioning`: bucket versioning, enabled per bucket and then only suspendable (versioning page);
   marked supported in every region on the compliance page.
-- No `high-availability`: in a 1-AZ region data is erasure-coded across servers of one zone and "may become
-  unavailable" if the data centre hosting the service has an outage (deployment modes page). That is
-  durability under the rules above.
+- No `high-availability`: in a 1-AZ region the service sits in one data centre, and erasure coding across
+  its servers keeps it running through server and disk failures ("continuity in the event of hardware
+  failures", deployment modes page), but data "may become unavailable" if that data centre has an outage
+  (same page). Surviving a server failure could read as node-level high availability. It is not counted,
+  for consistency with Scaleway's Standard One Zone class, whose redundancy within one zone is not counted
+  either, until issue #14 settles node versus zone granularity.
 - Regions `GRA`, `LIM`, `RBX`, `SBG`, `WAW`: the endpoints page lists `gra`, `de`, `rbx`, `sbg` and `waw` as
   "1-AZ region" endpoints, and the regions page ticks Object Storage there.
 
@@ -372,7 +402,8 @@ Infrequent Access classes). Pages: <https://www.ovhcloud.com/en/public-cloud/obj
 Category `storage.object`: S3-compatible Object Storage in the 3-AZ regions (Standard, Infrequent Access,
 Active Archive, and Cold Archive in Paris only). Pages: <https://www.ovhcloud.com/en/public-cloud/object-storage/>,
 <https://docs.ovhcloud.com/en/guides/storage-and-backup/object-storage/s3-location>,
-<https://docs.ovhcloud.com/en/guides/storage-and-backup/object-storage/s3-regions-comparison>,
+<https://docs.ovhcloud.com/en/guides/storage-and-backup/object-storage/s3-regions-comparison>
+(the deployment modes page),
 <https://docs.ovhcloud.com/en/guides/storage-and-backup/object-storage/s3-choosing-the-right-storage-class-for-your-needs>,
 <https://docs.ovhcloud.com/en/guides/storage-and-backup/object-storage/s3-versioning>,
 <https://docs.ovhcloud.com/en/guides/storage-and-backup/object-storage/s3-encrypt-your-objects-with-sse-c>,
@@ -413,13 +444,17 @@ Active Archive, and Cold Archive in Paris only). Pages: <https://www.ovhcloud.co
   including the advanced parameters reference
   (<https://docs.ovhcloud.com/en/guides/public-cloud/databases/kafka-advanced-parameters-references>), do not
   mention them, so they are not counted.
-- **Managed Kubernetes Service (1-AZ) `high-availability`:** the product page FAQ says that in a Free cluster
-  the control plane components "also have high availability, but within a single zone". The documentation
-  does not describe how: the architecture page draws the Free plan's control plane as one shared component,
-  and the plans page calls it a "single zone managed control plane" with a 99.5% SLO, and says a Free cluster
-  would go down with its zone. The Standard plan in Roubaix (1-AZ) is not described as replicated either. Unlike the
-  databases, no failover mechanism is documented, so node-level high availability is not claimed. Check
-  this in review; issue #14 covers node versus zone granularity.
+- **Managed Kubernetes Service (1-AZ) `high-availability`:** two pages claim it in general terms. The
+  product page FAQ says that in a Free cluster the control plane components "also have high availability,
+  but within a single zone", and the architecture page's table of what OVHcloud manages gives the API
+  Server "Deployment, scaling, high availability, security patches", with no distinction between plans.
+  Neither says how. The plans page calls the Free plan's control plane a "single zone managed control
+  plane" with a 99.5% SLO and says a Free cluster relies on a single zone, and the architecture page's
+  diagram draws it as one shared control plane, against three control plane replicas, one per zone, for
+  the Standard plan. The Standard plan in Roubaix (1-AZ) is not described as replicated either. Unlike the
+  databases, no replica or failover mechanism is documented, so node-level high availability is not
+  claimed. That is the standard the Scaleway snapshot applies to Kapsule's free Mutualized tier, which
+  runs one API server replica. Check this in review; issue #14 covers node versus zone granularity.
 - **Block Storage `encryption-at-rest` in Warsaw, and on *Block Storage 3-AZ*:** not in Warsaw (rollout
   open, see *Block Storage LUKS*). In Paris and Milan, encrypted volumes are zonal and are listed as *Block
   Storage LUKS Zonal*. *Block Storage 3-AZ* does not have the capability: its class cannot be encrypted, and
@@ -437,8 +472,10 @@ Active Archive, and Cold Archive in Paris only). Pages: <https://www.ovhcloud.co
   volume. Storage and node size are increased by hand
   (<https://docs.ovhcloud.com/en/guides/public-cloud/databases/update-cluster-plan>). IPv6 is not mentioned.
 - **Managed Kubernetes `encryption-at-rest` and `ipv6`:** the architecture page lists etcd encryption at rest
-  among OVHcloud's tasks, but OVHcloud's roadmap still has "etcd encrypted at rest" open
-  (<https://github.com/ovh/public-cloud-roadmap/issues/1035>); IPv6 for clusters is not documented.
+  among OVHcloud's tasks, and its security features include "Secrets encryption in transit and at rest".
+  Kubernetes keeps Secrets in etcd, and OVHcloud's roadmap still has "etcd encrypted at rest" open
+  (<https://github.com/ovh/public-cloud-roadmap/issues/1035>), so neither line is counted. IPv6 for
+  clusters is not documented.
 - **Object Storage `ipv6`:** not stated on the pages read.
 - **Features with no vocabulary entry**, left out under PRD #11 (*the taxonomy is unchanged*): Object
   Storage Object Lock (immutability) and asynchronous cross-region replication; customer-managed keys
