@@ -337,7 +337,7 @@ func TestReport(t *testing.T) {
 			testutil.Golden(t, test.goldenFile, got)
 
 			checkTableShape(t, got)
-			checkHeadings(t, got)
+			checkHeadings(t, got, "# Migration assessment: `Scaleway`")
 		})
 	}
 }
@@ -356,7 +356,7 @@ func TestReportHostileValues(t *testing.T) {
 	testutil.Golden(t, "testdata/report-hostile.golden", got)
 
 	checkTableShape(t, got)
-	checkHeadings(t, got)
+	checkHeadings(t, got, "# Migration assessment: ``Evil | `x` <b> [a](b) *s*``")
 
 	spans := codeSpans(string(got))
 	for _, value := range hostileValues() {
@@ -861,9 +861,9 @@ func checkTableShape(t *testing.T, out []byte) {
 }
 
 // checkHeadings asserts that the only lines that start a Markdown heading are the
-// title and the four section headings, in layout order, so no value can forge
-// one or move a section.
-func checkHeadings(t *testing.T, out []byte) {
+// title it is given and the four section headings, in layout order, so no value
+// can forge one or move a section.
+func checkHeadings(t *testing.T, out []byte, title string) {
 	t.Helper()
 
 	var headings []string
@@ -875,7 +875,7 @@ func checkHeadings(t *testing.T, out []byte) {
 	}
 
 	want := []string{
-		"# Migration assessment: ``Evil | `x` <b> [a](b) *s*``",
+		title,
 		"## Summary",
 		"## Resources",
 		"## Required changes",
