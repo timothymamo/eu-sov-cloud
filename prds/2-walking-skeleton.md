@@ -71,9 +71,12 @@ All criteria are pinned by tests that run offline under `make test` or `make tes
   raw type, category, fit, best offering, reasons) and a blockers section.
 - [ ] Given the same inventory twice, the two reports are byte-identical. Resources are ordered by ID,
   never by map or file order.
-- [ ] Every value taken from the inventory or catalog (IDs, raw types, regions, offering names) is
-  escaped for its Markdown context, so `|`, newlines, backticks, HTML and link syntax in an inventory
-  cannot forge table rows, headings, links or images. Pinned by a golden test with a hostile fixture.
+- [ ] Every value taken from the inventory or catalog (IDs, raw types, regions, offering names, the
+  target name and the snapshot source URL), and the inventory file name, is escaped for its Markdown
+  context, so `|`, newlines, backticks, HTML and link syntax in an inventory cannot forge table rows,
+  headings, links or images. The source URL is emitted percent-encoding `( ) [ ] < > |`, space and
+  backtick (or as an autolink after encoding `<` `>`). Pinned by a golden test with a hostile fixture
+  that includes a hostile file name and source URL.
 
 **CLI**
 

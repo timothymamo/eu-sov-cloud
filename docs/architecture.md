@@ -40,6 +40,7 @@ The rule is enforced by `depguard` in `.golangci.yml`, so `make lint` fails on a
 | `catalog` | Offerings of a target: categories, capabilities, plans and sizes, EU regions |
 | `mapping` | Rules that match a resource to candidate offerings and assign a fit (direct, partial, none) with reasons |
 | `assessment` | Per-resource and per-workload verdicts, blockers, required changes, readiness score |
+| `text` | Validation and bounded quoting of untrusted free text (IDs, raw types, regions, names); no output-format escaping |
 
 Why a taxonomy: with S sources and T targets, direct service-to-service tables need S×T mappings that
 drift independently. With a taxonomy, each provider maps once into a shared vocabulary (S+T), and the
