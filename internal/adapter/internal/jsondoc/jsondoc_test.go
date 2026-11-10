@@ -690,6 +690,60 @@ func TestMisuse(t *testing.T) {
 				})
 			},
 		},
+		{
+			// A read has already found the value is not a string, so the walk is
+			// over: a callback that swallows that error and returns nil hides it,
+			// and the walk must not blame the document for what is left over.
+			name: "object value callback that swallows a wrong type error",
+			misuse: func(t *testing.T) error {
+				t.Helper()
+
+				w := open(t, `{"x": {"a": 1}}`).Walker()
+
+				return w.Object([]jsondoc.Key{{Name: "x"}}, func(string) error {
+					_, _ = w.String()
+
+					return nil
+				})
+			},
+			wantAbsent: []string{"unknown key"},
+		},
+		{
+			name: "array element callback that swallows a wrong type error",
+			misuse: func(t *testing.T) error {
+				t.Helper()
+
+				w := open(t, `{"s": [{"a": 1}, "b"]}`).Walker()
+
+				return w.Object([]jsondoc.Key{{Name: "s"}}, func(string) error {
+					return w.Array("an array", func(int) error {
+						_, _ = w.String()
+
+						return nil
+					})
+				})
+			},
+			wantAbsent: []string{"unknown key"},
+		},
+		{
+			// Reading again after a read has failed cannot work: the failure says
+			// the walk has given up, so the second read is the callback's mistake.
+			name: "callback that swallows a wrong type error and reads again",
+			misuse: func(t *testing.T) error {
+				t.Helper()
+
+				w := open(t, `{"x": {"a": 1}}`).Walker()
+
+				return w.Object([]jsondoc.Key{{Name: "x"}}, func(string) error {
+					_, _ = w.String()
+
+					_, err := w.String()
+
+					return err
+				})
+			},
+			wantAbsent: []string{"unknown key"},
+		},
 	}
 
 	for _, tt := range tests {
