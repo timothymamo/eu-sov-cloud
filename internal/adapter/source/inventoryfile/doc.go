@@ -9,16 +9,16 @@
 // UTF-8 without a byte order mark; one JSON object with nothing after it; every
 // key spelt exactly as the format defines it, character for character once
 // JSON escapes are decoded, and never repeated; every value of the right JSON
-// type; and no string that escapes a lone surrogate. This package keeps the
-// format's own decisions: its keys; schemaVersion 1, found before any key or
-// type is checked (any other version, or none, is refused); null read as an
-// absent value for every field but resources, and refused as an element of
-// resources or capabilities; a resources list (which may be empty) of at most
-// MaxResources entries and at most MaxCapabilities capabilities in each,
-// counted as they are read, so a list is refused at its first element past the
-// cap before that element is read; and its sentinels. The values are validated
-// by the domain, through inventory.New: an unknown category is an error, never
-// unclassified.
+// type; no string that escapes a lone surrogate; and the schema version check,
+// with its wording. This package keeps the format's own decisions: its keys;
+// schemaVersion 1, found before any key or type is checked (any other version,
+// or none, is refused); null read as an absent value for every field but
+// resources, and refused as an element of resources or capabilities; a
+// resources list (which may be empty) of at most MaxResources entries and at
+// most MaxCapabilities capabilities in each, counted as they are read, so a
+// list is refused at its first element past the cap before that element is
+// read; and its sentinels. The values are validated by the domain, through
+// inventory.New: an unknown category is an error, never unclassified.
 //
 // Errors are one line, name the file through text.QuotePath (which keeps the
 // base name of a long path), and wrap ErrRead, ErrTooLarge, ErrDecode,

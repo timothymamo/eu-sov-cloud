@@ -3,7 +3,6 @@ package snapshot
 import (
 	"errors"
 	"fmt"
-	"strconv"
 	"strings"
 	"time"
 
@@ -161,47 +160,23 @@ var (
 
 // decode reads data as a snapshot of schema version 1 through the shared strict
 // decoder (jsondoc), in this order: at most MaxDocumentBytes; UTF-8 without a
-// byte order mark; one JSON value, which is an object; schemaVersion 1, found
-// before any other key or value is checked, so a document of another version is
-// refused for its version alone; then, token by token (walk), every key exact,
-// known and not repeated, every field present, not null and of its JSON type,
-// and no string that escapes a lone surrogate.
+// byte order mark; one JSON value, which is an object; schemaVersion 1
+// (jsondoc.Document.Version), found before any other key or value is checked,
+// so a document of another version is refused for its version alone; then,
+// token by token (walk), every key exact, known and not repeated, every field
+// present, not null and of its JSON type, and no string that escapes a lone
+// surrogate.
 func decode(data []byte) (document, error) {
 	doc, err := jsondoc.Open(data, MaxDocumentBytes, ErrDecode)
 	if err != nil {
 		return document{}, err
 	}
 
-	raw, misspelt, err := doc.Lookup(keySchemaVersion)
-	if err != nil {
-		return document{}, err
-	}
-
-	if err := checkVersion(raw, misspelt); err != nil {
+	if err := doc.Version(keySchemaVersion, schemaVersion, ErrSchemaVersion); err != nil {
 		return document{}, err
 	}
 
 	return walk(doc.Walker())
-}
-
-// checkVersion checks the raw schemaVersion of a document: present, not null,
-// and exactly the integer this package reads, spelt as such: 1.0 and "1" are not
-// it. misspelt is a top-level key that differs from schemaVersion only in case,
-// or "", and is named when the version is missing.
-func checkVersion(raw []byte, misspelt string) error {
-	switch string(raw) {
-	case strconv.Itoa(schemaVersion):
-		return nil
-	case "", "null":
-		if misspelt != "" {
-			return fmt.Errorf("%w: schemaVersion is missing, want the integer %d (keys are exact: %s is not schemaVersion)",
-				ErrSchemaVersion, schemaVersion, text.Quote(misspelt))
-		}
-
-		return fmt.Errorf("%w: schemaVersion is missing, want the integer %d", ErrSchemaVersion, schemaVersion)
-	}
-
-	return fmt.Errorf("%w: schemaVersion is %s, want the integer %d", ErrSchemaVersion, jsondoc.Describe(raw), schemaVersion)
 }
 
 // parseDate reads the retrieval date of a document: a YYYY-MM-DD calendar date,

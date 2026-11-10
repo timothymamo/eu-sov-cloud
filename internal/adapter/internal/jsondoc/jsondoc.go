@@ -129,6 +129,53 @@ func (d Document) Lookup(key string) (raw []byte, folded string, err error) {
 	return nil, folded, nil
 }
 
+// Version checks the schema version of the document: the value of its key spelt
+// exactly key, found with Lookup before anything else is checked, must be the
+// JSON number want written as an integer, so 1.0, 1e0 and the string "1" are
+// not version 1. A format reads its schema version with Version first, so a
+// document of another version is refused for its version, never for a key or a
+// value that version may define.
+//
+// Every error wraps sentinel, the format's sentinel for a version it does not
+// read, and is worded once for every format: a key that is absent or null is
+// "missing, want the integer 1", with a hint that names a key of the object
+// equal to it ignoring case ("SchemaVersion" is not schemaVersion); any other
+// value is described as Describe describes it ("is 2", "is the string "1"").
+// The key is named as the format spells it, unquoted. A nil sentinel and the
+// zero Document are refused as ErrMisuse.
+func (d Document) Version(key string, want int, sentinel error) error {
+	if sentinel == nil {
+		return errNilSentinel("Version")
+	}
+
+	raw, folded, err := d.Lookup(key)
+	if err != nil {
+		return err
+	}
+
+	return checkVersion(key, raw, folded, want, sentinel)
+}
+
+// checkVersion checks raw, the JSON text of the schema version named name, or
+// nil when the document has none, against want, as Document.Version says.
+// folded is a key that equals name ignoring case, or "", and is named when the
+// version is missing. sentinel is not nil.
+func checkVersion(name string, raw []byte, folded string, want int, sentinel error) error {
+	switch string(raw) {
+	case strconv.Itoa(want):
+		return nil
+	case "", "null":
+		if folded != "" {
+			return fmt.Errorf("%w: %s is missing, want the integer %d (keys are exact: %s is not %s)",
+				sentinel, name, want, text.Quote(folded), name)
+		}
+
+		return fmt.Errorf("%w: %s is missing, want the integer %d", sentinel, name, want)
+	}
+
+	return fmt.Errorf("%w: %s is %s, want the integer %d", sentinel, name, Describe(raw), want)
+}
+
 // errNilSentinel reports that a format passed fn a nil sentinel, which every
 // error fn returns would fail to wrap.
 func errNilSentinel(fn string) error {

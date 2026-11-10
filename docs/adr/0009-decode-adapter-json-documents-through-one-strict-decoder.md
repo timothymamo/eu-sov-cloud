@@ -52,8 +52,13 @@ Every adapter that reads a JSON document decodes it through one package,
   name; valid UTF-8; one JSON value with nothing after it but white space ("unexpected data after the
   first JSON value"); and that value an object.
 - `Document.Lookup(key)` returns the JSON text of the first top-level key spelt exactly `key`, and the
-  first key before it that equals `key` ignoring case. A format reads its schema version with it,
-  before any other key or value is checked.
+  first key before it that equals `key` ignoring case (or anywhere, when the exact key is absent).
+- `Document.Version(key, want, sentinel)` reads a format's schema version with `Lookup`, before any
+  other key or value is checked, and refuses anything but the integer `want`, in one wording for
+  every format: `schemaVersion is missing, want the integer 1` (absent or `null`, with
+  `(keys are exact: "SchemaVersion" is not schemaVersion)` when a case variant is there),
+  `schemaVersion is 2, want the integer 1`, `schemaVersion is the string "1", want the integer 1`.
+  `Walker.Version` checks the same value again when the walk reaches it.
 - `Document.Walker()` reads the document token by token. `Walker.Object(keys, value)` reads an object
   whose keys the format lists as `Key{Name, Required}` and calls `value` for each key, with the walker
   at the key's value; `Walker.Array(want, element)` calls `element` for each element;
@@ -87,7 +92,7 @@ blamed on the document. The package returns it; it does not panic.
 | Required keys | `resources`; the version is checked first, and an absent `source`, `id` or `category` reaches the domain as empty | every key |
 | `null` | an absent value for every field but `resources`; never an element of `resources` or `capabilities` | never a value |
 | Caps and counts | `MaxFileSize` (also enforced while reading the file, `ErrTooLarge`), `MaxResources` (`ErrTooManyResources`), `MaxCapabilities` | `MaxDocumentBytes` |
-| Read first | `schemaVersion`, exactly the integer 1 (`ErrSchemaVersion`) | the same |
+| Read first | `schemaVersion`, exactly the integer 1 (`ErrSchemaVersion`), through `Document.Version` | the same |
 | After the walk | `inventory.New` | the date, the declared regions, undeclared offering regions, `catalog.New` |
 | Sentinels and wording | its own, for its own checks | its own, for its own checks |
 
@@ -199,11 +204,13 @@ length. The inventory-file reader names its file with it, so the base name of a 
   the document a second time, so it passes over the file three times (syntax check, version scan,
   walk), not four. Memory still follows the file: a resources list is refused at its first element
   past `MaxResources`, after at most that many resources are built.
-- Some inventory-file error wording changed, none of it pinned by a test: the encoding and syntax
-  errors now speak of "the document"; a missing `resources` list is a missing required key and a
-  `null` one a value of the wrong type, placed by line and column; and a schema version that is not an
-  integer is described as the snapshot reader describes it (`the string "1"`, `the number "-0"`, which
-  was shown as `0`). A malformed multi-byte character is placed at its first byte.
+- Some inventory-file error wording changed: the encoding and syntax errors now speak of "the
+  document"; a missing `resources` list is a missing required key and a `null` one a value of the
+  wrong type, placed by line and column; and the schema version errors are the snapshot reader's,
+  now shared through `Document.Version`: a missing version is `missing, want the integer 1` (it was
+  `want 1`), a wrong integer `is 2, want the integer 1`, and a value that is not an integer is
+  described as `the string "1"` or `the number "-0"` (which was shown as `0`). A malformed multi-byte
+  character is placed at its first byte.
 - A new target whose provider names regions outside the code shape (with spaces, dots or non-ASCII
   letters) declares an ASCII code for each, as ADR 0007 already asks for one code per location.
 - A provider page whose URL needs an escape for a control or format character, or holds an entity

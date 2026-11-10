@@ -58,8 +58,8 @@ type segment struct {
 // keys (at most MaxKeys). For each key of the object, in document order, it
 // calls value with the key's Name, with the walker at the key's value and Path
 // naming it. value must read that value whole, with one call of Object, Array,
-// String or Raw, or with Null and, when Null returns false, one of those, or
-// return an error.
+// String, Raw or Version, or with Null and, when Null returns false, one of
+// those, or return an error.
 //
 // Object refuses, with an error that wraps the format's sentinel: a value that
 // is not an object, null included; a key that escapes a lone surrogate; a key
@@ -232,6 +232,25 @@ func (w *Walker) Raw() ([]byte, error) {
 	}
 
 	return w.data[start:w.dec.InputOffset()], nil
+}
+
+// Version reads the next value whole, as Raw does, and checks it against want
+// as Document.Version checks a schema version, naming it by its Path, with
+// errors that wrap sentinel. A format calls it in the walk for the value of its
+// schema version key, which it has read first with Document.Version, so the
+// walk checks the value it reads instead of relying on that earlier read. A nil
+// sentinel is refused as ErrMisuse.
+func (w *Walker) Version(want int, sentinel error) error {
+	if sentinel == nil {
+		return errNilSentinel("Version")
+	}
+
+	raw, err := w.Raw()
+	if err != nil {
+		return err
+	}
+
+	return checkVersion(w.Path(), raw, "", want, sentinel)
 }
 
 // Path returns the path of the value the walker reads next, as the domain

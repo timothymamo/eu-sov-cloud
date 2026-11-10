@@ -17,11 +17,14 @@
 //   - a value that is not an object.
 //
 // Document.Lookup then finds the value of one top-level key, spelt exactly, before
-// anything else is checked, which is how a format reads its schema version
-// first. Document.Walker reads the document token by token: Walker.Object reads
-// an object whose keys a format lists as Key values and calls back for each key,
-// and Walker.Array, Walker.String, Walker.Null and Walker.Raw read the values a
-// callback finds. As it reads, the walker refuses:
+// anything else is checked, and Document.Version reads a format's schema version
+// that way: the value must be exactly the integer the format reads, and the
+// errors are worded once for every format ("schemaVersion is missing, want the
+// integer 1"). Document.Walker reads the document token by token: Walker.Object
+// reads an object whose keys a format lists as Key values and calls back for
+// each key, and Walker.Array, Walker.String, Walker.Null, Walker.Raw and
+// Walker.Version read the values a callback finds. As it reads, the walker
+// refuses:
 //
 //   - a key that is not character for character one of the keys the format
 //     lists, once JSON escapes are decoded (encoding/json matches keys ignoring
@@ -41,8 +44,9 @@
 //
 // Each format decides which keys exist and which are required, its null policy
 // per field (Walker.Null), its caps and counts (the size cap it passes to Open,
-// and any count it checks in a callback), whether and how it reads a key first
-// (its schema version), its sentinels, and the wording of its own errors.
+// and any count it checks in a callback), its schema version (the key and the
+// one integer it reads, which Document.Version checks), its sentinels, and the
+// wording of its own errors.
 //
 // Errors are one line. Every error about the document wraps the sentinel the
 // format passes to Open, and an error a callback returns is passed on as it is,

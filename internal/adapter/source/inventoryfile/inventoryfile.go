@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"strconv"
 
 	"github.com/timothymamo/eu-sov-cloud/internal/adapter/internal/jsondoc"
 	"github.com/timothymamo/eu-sov-cloud/internal/domain/inventory"
@@ -142,50 +141,22 @@ var (
 // decode decodes data as an inventory document of schema version 1 through the
 // shared strict decoder (jsondoc), in this order: at most MaxFileSize; UTF-8
 // text without a byte order mark; one JSON value, which is an object;
-// schemaVersion 1, found before any key or type is checked, so a file of
-// another version is refused for its version, never for a field this version
-// does not know; then, token by token (walk), every key exact, known and not
-// repeated, every value of the right JSON type, no string that escapes a lone
-// surrogate, a resources list, at most MaxResources resources and at most
-// MaxCapabilities capabilities in each, each counted before it is read.
+// schemaVersion 1 (jsondoc.Document.Version), found before any key or type is
+// checked, so a file of another version is refused for its version, never for a
+// field this version does not know; then, token by token (walk), every key
+// exact, known and not repeated, every value of the right JSON type, no string
+// that escapes a lone surrogate, a resources list, at most MaxResources
+// resources and at most MaxCapabilities capabilities in each, each counted
+// before it is read.
 func decode(data []byte) (document, error) {
 	doc, err := jsondoc.Open(data, MaxFileSize, ErrDecode)
 	if err != nil {
 		return document{}, err
 	}
 
-	raw, misspelt, err := doc.Lookup(keySchemaVersion)
-	if err != nil {
-		return document{}, err
-	}
-
-	if err := checkVersion(raw, misspelt); err != nil {
+	if err := doc.Version(keySchemaVersion, schemaVersion, ErrSchemaVersion); err != nil {
 		return document{}, err
 	}
 
 	return walk(doc.Walker())
-}
-
-// checkVersion checks the raw schemaVersion of a file: present, not null, and
-// exactly the integer this package reads, spelt as such: 1.0 and "1" are not it.
-// misspelt is a top-level key that differs from schemaVersion only in case, or
-// "", and is named when the version is missing.
-func checkVersion(raw []byte, misspelt string) error {
-	switch string(raw) {
-	case strconv.Itoa(schemaVersion):
-		return nil
-	case "", "null":
-		if misspelt != "" {
-			return fmt.Errorf("%w: schemaVersion is missing, want %d (keys are exact: %s is not schemaVersion)",
-				ErrSchemaVersion, schemaVersion, text.Quote(misspelt))
-		}
-
-		return fmt.Errorf("%w: schemaVersion is missing, want %d", ErrSchemaVersion, schemaVersion)
-	}
-
-	if n, err := strconv.Atoi(string(raw)); err == nil && strconv.Itoa(n) == string(raw) {
-		return fmt.Errorf("%w: schemaVersion is %d, want %d", ErrSchemaVersion, n, schemaVersion)
-	}
-
-	return fmt.Errorf("%w: schemaVersion is %s, want the integer %d", ErrSchemaVersion, jsondoc.Describe(raw), schemaVersion)
 }

@@ -11,11 +11,11 @@
 // empty.
 //
 // Parse decodes a document through jsondoc, the strict JSON decoder adapters
-// share (ADR 0009), which holds the rules of the first, second, third and fifth
-// items below, worded as it words them for the inventory file reader too. This
-// package keeps the format's own decisions: its keys, every one required; null
-// refused everywhere; the size cap; the schema version read first; the checks
-// after the walk; and its sentinels. Parse refuses a document, with an error,
+// share (ADR 0009), which holds the rules of the first five items below, worded
+// as it words them for the inventory file reader too. This package keeps the
+// format's own decisions: its keys, every one required; null refused
+// everywhere; the size cap; the schema version it reads, 1; the checks after
+// the walk; and its sentinels. Parse refuses a document, with an error,
 // unless all of these hold, checked in this order:
 //
 //   - it is at most MaxDocumentBytes long, checked before anything else;

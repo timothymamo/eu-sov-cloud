@@ -26,7 +26,11 @@ func walk(w *jsondoc.Walker) (document, error) {
 
 		switch key {
 		case keySchemaVersion:
-			err = version(w)
+			// decode has found the version to be 1, and jsondoc refuses a
+			// second schemaVersion key as repeated before its value is read;
+			// the walk checks the value again all the same, so it never relies
+			// on that.
+			err = w.Version(schemaVersion, ErrSchemaVersion)
 		case keySource:
 			doc.source, err = optionalText(w)
 		case keyResources:
@@ -40,18 +44,6 @@ func walk(w *jsondoc.Walker) (document, error) {
 	}
 
 	return doc, nil
-}
-
-// version reads the value of the schemaVersion key. decode has found it to be
-// 1, and jsondoc refuses a second schemaVersion key as repeated before its value
-// is read; it is checked again all the same, so the walk never relies on it.
-func version(w *jsondoc.Walker) error {
-	raw, err := w.Raw()
-	if err != nil {
-		return err
-	}
-
-	return checkVersion(raw, "")
 }
 
 // optionalText reads the next value: a string, or null for an absent value,
