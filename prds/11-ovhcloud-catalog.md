@@ -165,10 +165,14 @@ Each milestone ships as one PR. This PRD starts after PRD #2: milestone 1 needs 
   every target.
 - **Decided: snapshot sources and licences.** Unlike `www.scaleway.com`, `www.ovhcloud.com` and
   `docs.ovhcloud.com` are reachable from the development VM. The snapshot cites those pages and may use
-  the [`ovh/docs`](https://github.com/ovh/docs) repository at a pinned commit. `ovh/docs` is licensed
-  CC BY-NC-SA 4.0, so `SOURCES.md` takes only facts and brief attributed quotes from it and states the
-  licence of every source, which PRD #2's Scaleway audit asked for. No authenticated OVHcloud API is
-  called (CLAUDE.md rule 3).
+  their source repository at a pinned commit. `SOURCES.md` takes only facts and brief attributed quotes
+  and states the licence of every source, which PRD #2's Scaleway audit asked for. No authenticated
+  OVHcloud API is called (CLAUDE.md rule 3).
+  *Corrected in milestone 2:* this decision first named [`ovh/docs`](https://github.com/ovh/docs)
+  (CC BY-NC-SA 4.0) as the source repository. It is archived, and its README points to
+  [`ovh/ovhcloud-docs`](https://github.com/ovh/ovhcloud-docs), which states no licence (all rights
+  reserved). So the snapshot takes facts and brief attributed quotes only from `docs.ovhcloud.com` and
+  `ovh/ovhcloud-docs` at the commit pinned in `SOURCES.md`, and nothing from `ovh/docs`.
 - **Accepted risk: the snapshot goes stale.** As for Scaleway, the report shows the retrieval date, and
   the adapter's `doc.go` documents how to refresh the snapshot.
 - **Open: several targets in one run** (`--target ovhcloud,scaleway`, or a comparison report). Left
