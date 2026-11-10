@@ -15,8 +15,8 @@ import (
 )
 
 // Expectations is what a target adapter declares about the catalog it must
-// produce. Set every field: a check with nothing to compare against passes
-// vacuously.
+// produce. Every field is required; Check reports an expectations violation for
+// an empty one.
 type Expectations struct {
 	// Target is the target's display name the catalog must carry, for example
 	// Scaleway.
@@ -33,6 +33,7 @@ type Expectations struct {
 // finds, joined with errors.Join, or nil if src conforms. Each violation starts
 // with the name of the check it breaks:
 //
+//   - expectations: every field of want is set;
 //   - catalog: Catalog returns without error;
 //   - target: the catalog's Target is want.Target;
 //   - snapshot: the catalog's snapshot has a source URL and a retrieval date;
@@ -41,19 +42,22 @@ type Expectations struct {
 //   - repeat: a second call returns the same catalog as the first;
 //   - cancel: a call with a cancelled context returns an error wrapping
 //     context.Canceled (the violation wraps context.Canceled too).
+//
+// An error from src is shown through text.Quote and stays in the violation's
+// chain.
 func Check(ctx context.Context, src analysis.CatalogSource, want Expectations) error {
-	var errs []error
+	errs := checkExpectations(want)
 
 	first, firstErr := src.Catalog(ctx)
 	if firstErr != nil {
-		errs = append(errs, fmt.Errorf("catalog: Catalog() returned error: %w", firstErr))
+		errs = append(errs, fmt.Errorf("catalog: Catalog() returned error: %w", adapterError{firstErr}))
 	} else {
 		errs = append(errs, checkCatalog(first, want)...)
 	}
 
 	second, secondErr := src.Catalog(ctx)
 	if secondErr != nil {
-		errs = append(errs, fmt.Errorf("repeat: second Catalog() call returned error: %w", secondErr))
+		errs = append(errs, fmt.Errorf("repeat: second Catalog() call returned error: %w", adapterError{secondErr}))
 	} else if firstErr == nil {
 		if d := diff(second, first); d != "" {
 			errs = append(errs, fmt.Errorf("repeat: second Catalog() call differs from the first (want): %s", d))
@@ -75,6 +79,27 @@ func Run(t *testing.T, src analysis.CatalogSource, want Expectations) {
 	if err := Check(t.Context(), src, want); err != nil {
 		t.Fatalf("target contract violated:\n%v", err)
 	}
+}
+
+// checkExpectations returns an expectations violation for every empty field
+// of want, naming the field: a check with nothing to compare against would pass
+// vacuously.
+func checkExpectations(want Expectations) []error {
+	var errs []error
+
+	if want.Target == "" {
+		errs = append(errs, errors.New("expectations: Target is empty, want the target's display name"))
+	}
+
+	if len(want.Regions) == 0 {
+		errs = append(errs, errors.New("expectations: Regions is empty, want every EU region the offerings may be in"))
+	}
+
+	if len(want.Categories) == 0 {
+		errs = append(errs, errors.New("expectations: Categories is empty, want every category the catalog must serve"))
+	}
+
+	return errs
 }
 
 // checkCatalog returns the violations of the target, snapshot, regions and
@@ -114,6 +139,24 @@ func checkCatalog(cat catalog.Catalog, want Expectations) []error {
 	return errs
 }
 
+// adapterError is an error returned by the adapter under test, as a violation
+// shows it: Error quotes the adapter's message through text.Quote, so a newline
+// or an escape sequence in it never reaches a terminal raw, and Unwrap keeps the
+// adapter's error in the chain for errors.Is and errors.As.
+type adapterError struct {
+	err error
+}
+
+// Error returns the adapter's message through text.Quote.
+func (e adapterError) Error() string {
+	return text.Quote(e.err.Error())
+}
+
+// Unwrap returns the adapter's error.
+func (e adapterError) Unwrap() error {
+	return e.err
+}
+
 // checkCancel calls src with an already-cancelled context and returns a
 // violation wrapping context.Canceled unless src returns an error wrapping it.
 func checkCancel(ctx context.Context, src analysis.CatalogSource) error {
@@ -128,7 +171,7 @@ func checkCancel(ctx context.Context, src analysis.CatalogSource) error {
 			context.Canceled)
 	case !errors.Is(err, context.Canceled):
 		return fmt.Errorf("cancel: Catalog() with a cancelled context returned error %w, want one wrapping %w",
-			err, context.Canceled)
+			adapterError{err}, context.Canceled)
 	default:
 		return nil
 	}

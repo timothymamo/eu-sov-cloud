@@ -5,7 +5,7 @@
 //
 // It declares the ports it consumes, next to the consumer: InventorySource,
 // CatalogSource and Reporter, each taking a context. ReportMeta carries what a
-// report shows besides the assessment (the inventory file name), and Run
+// report shows besides the assessment (the inventory file's base name), and Run
 // validates it before any port is called. The writer a report goes to is
 // chosen by the driving adapter and passed through Run to the reporter.
 //

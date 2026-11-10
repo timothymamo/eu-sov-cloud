@@ -22,20 +22,21 @@ import (
 //     context.Canceled (the violation wraps context.Canceled too).
 //
 // want is the inventory src must produce from its recorded input. Inventories
-// are compared exactly: source, then every resource field by field.
+// are compared exactly: source, then every resource field by field. An error
+// from src is shown through text.Quote and stays in the violation's chain.
 func Check(ctx context.Context, src analysis.InventorySource, want inventory.Inventory) error {
 	var errs []error
 
 	first, firstErr := src.Inventory(ctx)
 	if firstErr != nil {
-		errs = append(errs, fmt.Errorf("want: Inventory() returned error: %w", firstErr))
+		errs = append(errs, fmt.Errorf("want: Inventory() returned error: %w", adapterError{firstErr}))
 	} else if d := diff(first, want); d != "" {
 		errs = append(errs, fmt.Errorf("want: Inventory() differs from the wanted inventory: %s", d))
 	}
 
 	second, secondErr := src.Inventory(ctx)
 	if secondErr != nil {
-		errs = append(errs, fmt.Errorf("repeat: second Inventory() call returned error: %w", secondErr))
+		errs = append(errs, fmt.Errorf("repeat: second Inventory() call returned error: %w", adapterError{secondErr}))
 	} else if firstErr == nil {
 		if d := diff(second, first); d != "" {
 			errs = append(errs, fmt.Errorf("repeat: second Inventory() call differs from the first (want): %s", d))
@@ -59,6 +60,24 @@ func Run(t *testing.T, src analysis.InventorySource, want inventory.Inventory) {
 	}
 }
 
+// adapterError is an error returned by the adapter under test, as a violation
+// shows it: Error quotes the adapter's message through text.Quote, so a newline
+// or an escape sequence in it never reaches a terminal raw, and Unwrap keeps the
+// adapter's error in the chain for errors.Is and errors.As.
+type adapterError struct {
+	err error
+}
+
+// Error returns the adapter's message through text.Quote.
+func (e adapterError) Error() string {
+	return text.Quote(e.err.Error())
+}
+
+// Unwrap returns the adapter's error.
+func (e adapterError) Unwrap() error {
+	return e.err
+}
+
 // checkCancel calls src with an already-cancelled context and returns a
 // violation wrapping context.Canceled unless src returns an error wrapping it.
 func checkCancel(ctx context.Context, src analysis.InventorySource) error {
@@ -73,7 +92,7 @@ func checkCancel(ctx context.Context, src analysis.InventorySource) error {
 			context.Canceled)
 	case !errors.Is(err, context.Canceled):
 		return fmt.Errorf("cancel: Inventory() with a cancelled context returned error %w, want one wrapping %w",
-			err, context.Canceled)
+			adapterError{err}, context.Canceled)
 	default:
 		return nil
 	}
