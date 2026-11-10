@@ -47,15 +47,18 @@ type Reporter interface {
 
 `analysis.New(inv, cat, rep)` rejects a nil port (`ErrNilPort`). `(*Analysis).Run(ctx, w, meta)`:
 
-1. validates `meta.InventoryName` with `text.Validate` before any port is called (empty is allowed);
-   the error wraps `ErrInvalidReportMeta` and `text.ErrInvalid` and shows the name through
-   `text.Quote`;
-2. loads the inventory, then the catalog, wrapping a failure as `load inventory: ...` or
+1. validates `meta.InventoryName` before any port is called (empty is allowed): it must be valid free
+   text (`text.Validate`) and a base name, never a path. The base-name rule rejects a name that holds
+   `/` or `\`, or is `.` or `..`, the same on every OS, so a report never shows the analyst's directory
+   layout. The error wraps `ErrInvalidReportMeta` (and `text.ErrInvalid` when the name is not valid free
+   text) and shows the name through `text.Quote`;
+2. checks `ctx.Err()` itself, so a run cancelled before it starts calls no port;
+3. loads the inventory, then the catalog, wrapping a failure as `load inventory: ...` or
    `load catalog: ...`;
-3. assesses with `assessment.Assess`;
-4. checks `ctx.Err()` itself, so a cancelled run never starts a report even if an adapter ignored the
-   context;
-5. renders to `w`, wrapping a failure as `render report: ...`.
+4. assesses with `assessment.Assess`;
+5. checks `ctx.Err()` itself again, so a cancelled run never starts a report even if an adapter ignored
+   the context; the error says the run was cancelled before rendering and does not blame the reporter;
+6. renders to `w`, wrapping a failure as `render report: ...`.
 
 Blockers are a result, not an error. The driving adapter chooses and owns `w`; the reporter neither
 opens nor closes it.
@@ -71,13 +74,14 @@ tested against fakes that violate it on purpose.
   (the result equals it), **repeat** (a second call returns the same inventory), **cancel** (an
   already-cancelled context gives an error wrapping `context.Canceled`).
 - `targettest` takes `Expectations{Target, Regions, Categories}` that the adapter declares for itself:
-  its display name, its EU regions and the categories its catalog must serve. Checks: **catalog** (no
-  error), **target**, **snapshot** (source URL and retrieval date set), **regions** (every offering is
+  its display name, its EU regions and the categories its catalog must serve. Checks: **expectations**
+  (every field is set), **catalog** (no error), **target**, **snapshot** (source URL and retrieval date set), **regions** (every offering is
   only in the declared EU regions), **category** (every declared category is served), **repeat** and
   **cancel**.
 
 The suites compare through the domain accessors (`Source()`, `Resources()`, `Target()`, `Snapshot()`,
-`Offerings()`) and `slices.Equal`, not go-cmp, and quote every value they print with `text.Quote`.
+`Offerings()`) and `slices.Equal`, not go-cmp, and quote every value they print with `text.Quote`,
+an adapter's own error included; that error stays in the violation's chain for `errors.Is`.
 
 ## Alternatives considered
 
@@ -116,10 +120,13 @@ The suites compare through the domain accessors (`Source()`, `Resources()`, `Tar
 - An adapter must honour cancellation even when it does no I/O (checking `ctx.Err()` before it starts),
   and must return the same result on every call. A source that can be read only once, such as standard
   input, must buffer its input.
-- `targettest.Expectations` must be filled in completely: an empty `Categories` makes the category
-  check pass without checking anything.
+- `targettest.Expectations` must be filled in completely: empty Expectations fields are reported as
+  **expectations** violations, so a check with nothing to compare against never passes vacuously.
 - Every reporter receives a valid `ReportMeta` and still escapes every value for its own format; the
   use case validates text, it does not escape it.
+- Any field added to `ReportMeta` must be validated in `Run` the same way, before any port is called.
+  It must never carry account IDs, profile names or anything derived from credentials unless a PRD
+  decides the report shows it.
 - A reporter may write part of its output before failing. The driving adapter decides what to do about a
   partial file (for example, write to a temporary file and rename it), in PRD 2 milestone 7.
 - The use case handles one target per run. Comparing several targets in one run will need a new use

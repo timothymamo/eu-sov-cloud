@@ -117,10 +117,12 @@ Each milestone ships as one PR. Milestones 4, 5 and 6 depend only on 3 and can r
    `sourcetest`. Sanitised fixtures under `testdata/`. ADR 0006 records the file format, because it becomes
    the interchange format between future `discover` and `assess` commands. Caps the inventory file size
    before decoding. Caps the number of resources as well as the file size (each resource is mapped
-   against every candidate offering).
+   against every candidate offering). The adapter's errors name the file through `text.Quote(path)` and
+   never pass `*os.PathError` or decoder text through unquoted.
 5. [ ] **Scaleway catalog adapter.** Embedded, dated catalog snapshot (`//go:embed`) covering at least
    `compute.vm`, `kubernetes.managed`, `storage.object` and `database.postgresql`, with its source URL and
    retrieval date in the file header. Passes `targettest`, plus a golden test of the parsed catalog.
+   The reviewer checks the adapter's declared EU region list against Scaleway's published regions.
 6. [ ] **Markdown reporter.** Renders an assessment as described under *Report*. Golden-file tests.
    Includes a golden test with a hostile inventory fixture (Markdown metacharacters in IDs and raw types).
    Renders reasons from `mapping.Reason.Parts()`, escaping every part and building code spans for
@@ -128,10 +130,16 @@ Each milestone ships as one PR. Milestones 4, 5 and 6 depend only on 3 and can r
    `String()` or by passing domain values to fmt/templates as Stringers. Escapes the inventory source too.
    The hostile fixture includes a catalog whose target and offering names contain `|`, a backtick, `<`,
    `[`, `](` and `*`. Regions are not a table column; offering regions appear only if a later milestone
-   adds them, escaped like every other value.
+   adds them, escaped like every other value. Defines how an empty inventory name renders (the line is
+   omitted).
 7. [ ] **CLI and wiring.** `eusov assess` in `internal/cli`, adapters wired in `cmd/eusov`, exit codes,
    e2e test in `test/e2e` against a fixture inventory that exercises direct, partial, none and
-   unclassified. README gains a usage section. Moves this PRD to `prds/done/` and closes #2.
+   unclassified. README gains a usage section. Moves this PRD to `prds/done/` and closes #2. The CLI
+   prints every error as `eusov: <err>` through one sanitiser (control, format, Zl/Zp characters
+   escaped, one line, capped at 1 KiB). `--output` is written atomically (temp file in the target
+   directory, mode 0600, rename on success, removed on failure; the destination is never truncated
+   before success). A test runs `go list -deps` on the assess path and asserts no net/http, os/exec or
+   cloud SDK.
 
 ## Inventory file format (illustrative)
 
