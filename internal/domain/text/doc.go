@@ -5,8 +5,13 @@
 // reports and terminals. Validate rejects what would corrupt either (control
 // characters, invisible formatting characters such as bidi overrides, the
 // Unicode line and paragraph separators U+2028 and U+2029, invalid UTF-8,
-// over-long values) instead of rendering it. Quote turns any string, valid
-// or not, into a short, escaped form that is safe to echo in an error message.
+// over-long values) instead of rendering it. It also rejects look-alike
+// characters that render as nothing or as a blank, so two values that differ
+// only by one would look the same in a report (variation selectors, the other
+// default-ignorable code points such as the Hangul fillers, U+2800 BRAILLE
+// PATTERN BLANK), and noncharacters, which are never text. Quote turns any
+// string, valid or not, into a short, escaped form that is safe to echo in an
+// error message.
 //
 // Escaping for an output format, such as a Markdown table cell, is not done here:
 // that belongs to the reporter for that format.

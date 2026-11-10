@@ -16,11 +16,14 @@ type Resource struct {
 	// EC2 instance ID or an Azure resource ID.
 	ID string
 	// RawType is the source's own type name, for example AWS::EC2::Instance. It is
-	// kept for traceability; mapping goes through Category only.
+	// kept for traceability; mapping goes through Category only. It is empty when
+	// the raw type is unknown, but never only whitespace.
 	RawType string
 	// Category is the taxonomy category the source classified the resource into.
 	Category taxonomy.Category
 	// Region is the source region the resource runs in, as the source names it.
+	// It is empty for a global resource that is not bound to a region, but never
+	// only whitespace.
 	Region string
 	// Capabilities lists the features the resource depends on. In an Inventory
 	// they are sorted and free of duplicates, and nil when there are none.
@@ -49,11 +52,13 @@ var (
 //
 // source must not be blank. Every resource needs a unique ID that is not blank, a
 // taxonomy category (Unclassified is valid; an unknown value is an error, never
-// Unclassified) and capabilities from the taxonomy vocabulary. source and each
-// resource's ID, RawType and Region must be valid free text (text.Validate); they
-// are stored as given, never trimmed. The inventory holds its own copy of the
-// resources, sorted by ID, with each resource's capabilities sorted,
-// de-duplicated and nil when there are none.
+// Unclassified) and capabilities from the taxonomy vocabulary. RawType and Region
+// may be empty, for an unknown raw type and a global resource, but a non-empty
+// value that is only whitespace is invalid text. source and each resource's ID,
+// RawType and Region must be valid free text (text.Validate); they are stored as
+// given, never trimmed. The inventory holds its own copy of the resources,
+// sorted by ID, with each resource's capabilities sorted, de-duplicated and nil
+// when there are none.
 //
 // Errors name the field and the resource at fault: by ID, or by position as
 // resources[i] when the ID itself is at fault. Values echoed in errors are quoted
@@ -125,15 +130,29 @@ func validateID(id string) error {
 	return nil
 }
 
+// validateOptional checks free text that may be empty: when it is set, it must be
+// valid free text and not only whitespace. The error wraps text.ErrInvalid.
+func validateOptional(s string) error {
+	if err := text.Validate(s); err != nil {
+		return err
+	}
+
+	if s != "" && strings.TrimSpace(s) == "" {
+		return fmt.Errorf("%w: only whitespace", text.ErrInvalid)
+	}
+
+	return nil
+}
+
 // normalise checks the free text, category and capabilities of a resource with a
 // valid ID and returns a copy of it whose capabilities are sorted, de-duplicated
 // and nil when there are none.
 func normalise(r Resource) (Resource, error) {
-	if err := text.Validate(r.RawType); err != nil {
+	if err := validateOptional(r.RawType); err != nil {
 		return Resource{}, fmt.Errorf("raw type: %w", err)
 	}
 
-	if err := text.Validate(r.Region); err != nil {
+	if err := validateOptional(r.Region); err != nil {
 		return Resource{}, fmt.Errorf("region: %w", err)
 	}
 

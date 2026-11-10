@@ -15,7 +15,8 @@ import (
 // Snapshot records where and when a catalog's data was taken, so a report can say
 // how current it is.
 type Snapshot struct {
-	// SourceURL is the page or API the data was taken from: an absolute https URL.
+	// SourceURL is the page or API the data was taken from: an absolute https URL
+	// with a host name, no user info, RFC 3986 characters only.
 	SourceURL string
 	// RetrievedOn is when the data was retrieved. In a Catalog it is in UTC, and
 	// reporters format it as a UTC calendar date.
@@ -60,8 +61,8 @@ type Catalog struct {
 
 var (
 	// ErrInvalidCatalog is returned for a catalog without a valid target or a
-	// dated snapshot sourced from an absolute https URL, or with an offering that
-	// claims to serve taxonomy.Unclassified.
+	// dated snapshot sourced from a valid source URL (see New), or with an
+	// offering that claims to serve taxonomy.Unclassified.
 	ErrInvalidCatalog = errors.New("invalid catalog")
 	// ErrEmptyOfferingName is returned for an offering whose name is empty or only
 	// whitespace.
@@ -80,8 +81,12 @@ var (
 //
 // target is the target's human-readable display name, used as is in reports, for
 // example Scaleway. It must not be blank and must be valid free text
-// (text.Validate). snapshot.SourceURL must be an absolute https URL with a host,
-// and snapshot.RetrievedOn must be set; the catalog keeps it in UTC.
+// (text.Validate). snapshot.SourceURL must be valid free text and an absolute
+// https URL with a host name, no user info, RFC 3986 characters only: unreserved
+// characters, the reserved general and sub-delimiters, and '%' for valid
+// percent-encoding. A query and a fragment are allowed; escaping the URL for an
+// output format is the reporter's job. snapshot.RetrievedOn must be set; the
+// catalog keeps it in UTC.
 //
 // Every offering needs a unique name that is not blank, at least one category and
 // at least one region. Names and regions must be valid free text and are stored as
@@ -91,7 +96,8 @@ var (
 // categories, capabilities and regions sorted, de-duplicated and nil when empty.
 //
 // Errors name the field and the offering at fault. Values echoed in errors are
-// quoted with text.Quote, so errors stay short however long the input is.
+// quoted with text.Quote, so errors stay short however long the input is. The
+// source URL is never echoed: it may carry credentials.
 func New(target string, snapshot Snapshot, offerings []Offering) (Catalog, error) {
 	if err := validateTarget(target); err != nil {
 		return Catalog{}, err
@@ -183,22 +189,10 @@ func validateTarget(target string) error {
 	return nil
 }
 
-// validateSnapshot checks that snapshot is dated and sourced from an absolute
-// https URL with a host.
+// validateSnapshot checks that snapshot is dated and has a valid source URL.
 func validateSnapshot(snapshot Snapshot) error {
-	if snapshot.SourceURL == "" {
-		return fmt.Errorf("%w: snapshot has no source URL", ErrInvalidCatalog)
-	}
-
-	if err := text.Validate(snapshot.SourceURL); err != nil {
+	if err := validateSourceURL(snapshot.SourceURL); err != nil {
 		return fmt.Errorf("%w: snapshot source URL: %w", ErrInvalidCatalog, err)
-	}
-
-	// The parse error is not wrapped: it echoes the whole URL.
-	u, err := url.Parse(snapshot.SourceURL)
-	if err != nil || u.Scheme != "https" || u.Host == "" {
-		return fmt.Errorf("%w: snapshot source URL %s is not an absolute https URL",
-			ErrInvalidCatalog, text.Quote(snapshot.SourceURL))
 	}
 
 	if snapshot.RetrievedOn.IsZero() {
@@ -206,6 +200,50 @@ func validateSnapshot(snapshot Snapshot) error {
 	}
 
 	return nil
+}
+
+// errBadSourceURL is the reason given for a source URL that is valid free text
+// but not an acceptable URL. The URL itself is never echoed: it may carry
+// credentials.
+var errBadSourceURL = errors.New(
+	"not an absolute https URL with a host name, no user info, RFC 3986 characters only")
+
+// validateSourceURL checks that raw is valid free text and an absolute https URL
+// with a host name, no user info and only RFC 3986 characters.
+func validateSourceURL(raw string) error {
+	if raw == "" {
+		return errors.New("missing")
+	}
+
+	if err := text.Validate(raw); err != nil {
+		return err
+	}
+
+	for i, r := range raw {
+		if !isURLChar(r) {
+			return fmt.Errorf("%w: disallowed character %U at byte %d", errBadSourceURL, r, i)
+		}
+	}
+
+	// The parse error is not wrapped: it echoes the whole URL.
+	u, err := url.Parse(raw)
+	if err != nil || u.Scheme != "https" || u.Opaque != "" || u.User != nil || u.Hostname() == "" {
+		return errBadSourceURL
+	}
+
+	return nil
+}
+
+// isURLChar reports whether r may appear as given in a URL (RFC 3986): an
+// ASCII unreserved character, a general or sub-delimiter, or the '%' that
+// starts a percent-encoded byte.
+func isURLChar(r rune) bool {
+	switch {
+	case 'a' <= r && r <= 'z', 'A' <= r && r <= 'Z', '0' <= r && r <= '9':
+		return true
+	default:
+		return strings.ContainsRune("-._~:/?#[]@!$&'()*+,;=%", r)
+	}
 }
 
 // validateName checks that an offering name is valid free text and not blank.

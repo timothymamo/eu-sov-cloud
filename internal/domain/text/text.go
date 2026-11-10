@@ -17,12 +17,29 @@ const quoteRunes = 128
 // ErrInvalid is returned for free text that is not valid.
 var ErrInvalid = errors.New("invalid text")
 
+// brailleBlank is U+2800 BRAILLE PATTERN BLANK: a printable symbol (category So)
+// that renders as an empty cell, so it can pass for a space.
+const brailleBlank = '\u2800'
+
 // Validate reports whether s is valid free text: at most MaxLen bytes of valid
-// UTF-8 with no control character (C0, DEL or C1, including tab and newline), no
-// format character (Unicode category Cf: bidi controls, zero-width characters,
-// the byte order mark) and no line or paragraph separator (categories Zl and
-// Zp: U+2028, U+2029), which some renderers treat as line breaks. The empty
-// string is valid; whether a value may be empty is the caller's decision.
+// UTF-8 with none of these characters:
+//
+//   - control characters (C0, DEL or C1, including tab and newline);
+//   - format characters (Unicode category Cf: bidi controls, zero-width
+//     characters, the byte order mark);
+//   - line and paragraph separators (categories Zl and Zp: U+2028, U+2029),
+//     which some renderers treat as line breaks;
+//   - characters that render as nothing or as a blank and so make two different
+//     values look the same: variation selectors (Variation_Selector), the other
+//     default-ignorable code points (Other_Default_Ignorable_Code_Point, such as
+//     the combining grapheme joiner, the Hangul fillers and the Khmer inherent
+//     vowels) and U+2800 BRAILLE PATTERN BLANK;
+//   - noncharacters (Noncharacter_Code_Point, such as U+FFFE and U+10FFFF),
+//     which are never text.
+//
+// Private-use code points and combining marks such as the accent in "e\u0301"
+// are valid. The empty string is valid; whether a value may be empty is the
+// caller's decision.
 //
 // The error wraps ErrInvalid and says what is wrong and where, without echoing s.
 func Validate(s string) error {
@@ -37,12 +54,22 @@ func Validate(s string) error {
 			}
 		}
 
-		if unicode.IsControl(r) || unicode.In(r, unicode.Cf, unicode.Zl, unicode.Zp) {
+		if disallowed(r) {
 			return fmt.Errorf("%w: disallowed character %U at byte %d", ErrInvalid, r, i)
 		}
 	}
 
 	return nil
+}
+
+// disallowed reports whether r is a character Validate rejects.
+func disallowed(r rune) bool {
+	return r == brailleBlank || unicode.IsControl(r) || unicode.In(r,
+		unicode.Cf, unicode.Zl, unicode.Zp,
+		unicode.Variation_Selector,
+		unicode.Other_Default_Ignorable_Code_Point,
+		unicode.Noncharacter_Code_Point,
+	)
 }
 
 // Quote returns s as a Go double-quoted string literal (strconv.Quote), safe to

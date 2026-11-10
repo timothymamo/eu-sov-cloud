@@ -5,11 +5,13 @@
 //
 // An Inventory is validated when it is built with New: a source that is not
 // blank, unique IDs that are not blank, free text (source, IDs, raw types,
-// regions) that passes text.Validate, and known categories and capabilities.
-// Values are stored as given, never trimmed. Its resources are kept in ID order,
-// each with its capabilities sorted and de-duplicated, so everything derived
-// from it is deterministic. A zero Inventory has not been validated; later
-// layers only receive inventories built by New.
+// regions) that passes text.Validate, and known categories and capabilities. A
+// raw type or region may be empty (unknown raw type, global resource) but is
+// never only whitespace. Values are stored as given, never trimmed. Its
+// resources are kept in ID order, each with its capabilities sorted and
+// de-duplicated, so everything derived from it is deterministic. A zero
+// Inventory has not been validated; later layers only receive inventories
+// built by New.
 //
 // Domain layer: standard library and other domain packages only, no I/O.
 package inventory
