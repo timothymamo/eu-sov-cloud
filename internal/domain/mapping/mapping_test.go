@@ -482,6 +482,13 @@ func TestReasonParts(t *testing.T) {
 				{Kind: mapping.PartCapability, Text: "point-in-time-restore"},
 			},
 		},
+		{
+			// A reason whose code the domain does not know is one literal part
+			// holding the code, never a name: a renderer escapes it as text.
+			name: "unknown code is one literal part",
+			in:   mapping.Reason{Code: "x"},
+			want: []mapping.Part{{Kind: mapping.PartLiteral, Text: "x"}},
+		},
 	}
 
 	for _, tc := range tests {

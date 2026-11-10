@@ -1,7 +1,7 @@
-# Migration assessment: Scaleway
+# Migration assessment: `Scaleway`
 
-- Source: aws
-- Catalog: Scaleway snapshot from <https://www.scaleway.com/en/pricing/>, retrieved 2026-11-01
+- Source: `aws`
+- Catalog: `Scaleway` snapshot from `https://www.scaleway.com/en/pricing/`, retrieved 2026-11-01
 
 ## Summary
 
@@ -16,14 +16,18 @@
 
 | ID | Raw type | Category | Fit | Best offering | Reasons |
 |---|---|---|---|---|---|
-| bucket-example | AWS::S3::Bucket | `storage.object` | direct | Object Storage | Object Storage offers every capability the resource uses |
-| db-example | AWS::RDS::DBInstance | `database.postgresql` | direct | Managed Database for PostgreSQL | Managed Database for PostgreSQL offers every capability the resource uses |
-| fn-example | AWS::Lambda::Function | `serverless.function` | none |  | no offering in the Scaleway catalog for `serverless.function` |
-| i-0123456789abcdef0 | AWS::EC2::Instance | `compute.vm` | direct | Elastic Metal | Elastic Metal offers every capability the resource uses |
-| misc-example | AWS::CloudFormation::CustomResource | `unclassified` | none |  | not classified |
-| partial-example | AWS::EC2::Instance | `compute.vm` | partial | Elastic Metal | Elastic Metal does not offer `high-availability`; Elastic Metal does not offer `snapshots` |
+| `bucket-example` | `AWS::S3::Bucket` | `storage.object` | direct | `Object Storage` | `Object Storage` offers every capability the resource uses |
+| `db-example` | `AWS::RDS::DBInstance` | `database.postgresql` | direct | `Managed Database for PostgreSQL` (tie: `Managed Database for PostgreSQL and MySQL`) | `Managed Database for PostgreSQL` offers every capability the resource uses |
+| `fn-example` | `AWS::Lambda::Function` | `serverless.function` | none |  | no offering in the `Scaleway` catalog for `serverless.function` |
+| `i-0123456789abcdef0` | `AWS::EC2::Instance` | `compute.vm` | direct | `Elastic Metal` (tie: `Instances`) | `Elastic Metal` offers every capability the resource uses |
+| `misc-example` | `AWS::CloudFormation::CustomResource` | `unclassified` | none |  | not classified |
+| `partial-example` | `AWS::EC2::Instance` | `compute.vm` | partial | `Elastic Metal` (tie: `Instances`) | `Elastic Metal` does not offer `high-availability`; `Elastic Metal` does not offer `snapshots` |
+
+## Required changes
+
+- `partial-example`: `high-availability`, `snapshots` (not offered by `Elastic Metal`)
 
 ## Blockers
 
-- fn-example: no offering in the Scaleway catalog for `serverless.function`
-- misc-example: not classified
+- `fn-example`: no offering in the `Scaleway` catalog for `serverless.function`
+- `misc-example`: not classified

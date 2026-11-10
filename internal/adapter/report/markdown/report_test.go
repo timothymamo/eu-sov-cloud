@@ -2,6 +2,7 @@ package markdown_test
 
 import (
 	"bytes"
+	"context"
 	"errors"
 	"slices"
 	"strings"
@@ -28,25 +29,69 @@ const (
 	inventoryFileName = "inventory.json"
 	// sourceName is the source the ordinary fixture inventory was taken from.
 	sourceName = "aws"
-	// hostileSource is an inventory source full of Markdown metacharacters: it
-	// must be escaped like every other text value, so a source cannot forge a
+	// hostileSource is an inventory source full of Markdown metacharacters. It is
+	// shown as a code span like every other value, so a source cannot forge a
 	// heading.
 	hostileSource = "# heading"
 	// hostileTarget is a catalog target whose name carries every Markdown
-	// metacharacter the reporter escapes. It is also the name of one offering.
+	// metacharacter that matters. It is also the name of one offering.
 	hostileTarget = "Evil | `x` <b> [a](b) *s*"
 	// hostileOffering is an offering name with the same characters as
 	// hostileTarget, in a different order.
 	hostileOffering = "`tick` [row](x) | Name"
-	// hostileInventoryName is a file name that must be escaped before a report
-	// shows it.
+	// hostileInventoryName is a file name whose Markdown syntax must reach the
+	// report as text.
 	hostileInventoryName = "inv|`x`[y](z).json"
+	// scalewayTarget is the display name of the fixture catalog, as the test cases
+	// that build their own catalog spell it.
+	scalewayTarget = "Scaleway"
 	// hostileSourceURL is a catalog source URL with parentheses, a stored newline
-	// escape and a stored right-to-left override escape. The reporter emits the
-	// stored string, never a decoded form, so "%0A" and "%E2%80%AE" appear as
-	// given.
-	hostileSourceURL = "https://example.com/a(b)%0A%E2%80%AE"
+	// escape, a stored right-to-left override escape and a character reference.
+	// Renderers decode all three, so a report that showed the URL as an autolink
+	// would end its line and display a right-to-left override the provider never
+	// sent; the stored bytes are shown in a code span instead.
+	hostileSourceURL = "https://example.com/a(b)%0A%E2%80%AE&#8238;x"
 )
+
+// hostileValues returns every fixture value a report must show verbatim, each
+// inside a code span.
+//
+// Markdown escapes do not survive the trip through a renderer: GitHub resolves
+// them before it applies its math ($...$), mention (@x), reference (#1, GH-1,
+// SHA), emoji (:x:), task-list ([ ] at the start of a list item) and bare-link
+// filters, and the last of those would turn a bare URL into a link. A code span
+// is literal in every renderer, and GitHub's filters skip code, so it is the one
+// form that keeps a value from being read as anything but text.
+func hostileValues() []string {
+	return []string{
+		// The catalog, its offerings and the inventory's own metadata.
+		hostileTarget,
+		hostileOffering,
+		hostileInventoryName,
+		hostileSource,
+		hostileSourceURL,
+		// IDs and raw types from the earlier hostile fixture.
+		"[l](javascript:x)",
+		"`tick`",
+		"a*b_c",
+		"AWS::X.Y <img src=x>",
+		"# heading",
+		`back\slash`,
+		"i-1 | x",
+		// IDs and raw types that a renderer's extensions would otherwise rewrite.
+		"#1",
+		"$\\Huge X$",
+		"@octocat",
+		":x:",
+		"[ ] x",
+		"[x] done",
+		"https://evil.example/%E2%80%AEmoc.elgoog",
+		"x&#x202E;y",
+		"a`b",
+		"``",
+		"a|b",
+	}
+}
 
 // awsResources is one inventory covering every fit: direct, partial, none for a
 // category no offering serves, and unclassified. The IDs sort into the order the
@@ -87,7 +132,8 @@ func awsResources() []inventory.Resource {
 			Region:   "eu-west-1",
 		},
 		{
-			// Two missing capabilities, so the reason cell joins two sentences.
+			// Two missing capabilities, so the reason cell joins two sentences and
+			// the required-changes section lists both.
 			ID:           "partial-example",
 			RawType:      "AWS::EC2::Instance",
 			Category:     taxonomy.ComputeVM,
@@ -97,17 +143,35 @@ func awsResources() []inventory.Resource {
 	}
 }
 
-// hostileResources is an inventory whose every text value carries Markdown
-// metacharacters: an ID with a stored pipe, an ID with link syntax, an ID with a
-// backslash, a raw type with HTML and a source that looks like a heading. The
-// raw type also carries dots, which are not Markdown metacharacters here and so
-// must stay unescaped.
+// hostileResources is an inventory whose every text value would be syntax in a
+// renderer: an ID with link syntax, an ID with a pipe, an ID with a backslash, a
+// raw type with HTML, a raw type that looks like a heading, math, a mention, a
+// reference, an emoji, a task list, a bare link and an HTML character reference.
+// A value must reach the report verbatim, inside a code span.
 func hostileResources() []inventory.Resource {
 	return []inventory.Resource{
 		{
-			ID:       "[l](javascript:x)",
-			RawType:  "`tick`",
+			ID:       "#1",
+			RawType:  "$\\Huge X$",
 			Category: taxonomy.ServerlessFunction,
+			Region:   "eu-west-1",
+		},
+		{
+			ID:       "[ ] x",
+			RawType:  "@octocat",
+			Category: taxonomy.Unclassified,
+			Region:   "eu-west-1",
+		},
+		{
+			ID:       "[l](javascript:x)",
+			RawType:  "``",
+			Category: taxonomy.ServerlessFunction,
+			Region:   "eu-west-1",
+		},
+		{
+			ID:       "[x] done",
+			RawType:  ":x:",
+			Category: taxonomy.StorageObject,
 			Region:   "eu-west-1",
 		},
 		{
@@ -124,11 +188,25 @@ func hostileResources() []inventory.Resource {
 			Capabilities: []taxonomy.Capability{taxonomy.IPv6},
 		},
 		{
+			ID:           "a`b",
+			RawType:      "https://evil.example/%E2%80%AEmoc.elgoog",
+			Category:     taxonomy.ComputeVM,
+			Region:       "eu-west-1",
+			Capabilities: []taxonomy.Capability{taxonomy.HighAvailability},
+		},
+		{
+			ID:           "a|b",
+			RawType:      "x&#x202E;y",
+			Category:     taxonomy.StorageObject,
+			Region:       "eu-west-1",
+			Capabilities: []taxonomy.Capability{taxonomy.ObjectVersioning},
+		},
+		{
 			ID:           `back\slash`,
 			RawType:      "# heading",
 			Category:     taxonomy.StorageObject,
 			Region:       "eu-west-1",
-			Capabilities: []taxonomy.Capability{taxonomy.ObjectVersioning},
+			Capabilities: []taxonomy.Capability{taxonomy.IPv6},
 		},
 		{
 			ID:       "i-1 | x",
@@ -149,6 +227,29 @@ func newInventory(t *testing.T, source string, resources []inventory.Resource) i
 	}
 
 	return inv
+}
+
+// newCatalog builds a catalog from offerings on the shared Scaleway snapshot.
+func newCatalog(t *testing.T, offerings []catalog.Offering) catalog.Catalog {
+	t.Helper()
+
+	cat, err := catalog.New(scalewayTarget, testutil.ScalewaySnapshot(), offerings)
+	if err != nil {
+		t.Fatalf("catalog.New() returned unexpected error: %v", err)
+	}
+
+	return cat
+}
+
+// computeOffering is a compute.vm offering in one region, with the capabilities
+// the candidate ordering compares.
+func computeOffering(name string, capabilities ...taxonomy.Capability) catalog.Offering {
+	return catalog.Offering{
+		Name:         name,
+		Categories:   []taxonomy.Category{taxonomy.ComputeVM},
+		Capabilities: capabilities,
+		Regions:      []string{"fr-par"},
+	}
 }
 
 // hostileCatalog is a catalog whose target, offering names and source URL carry
@@ -195,7 +296,8 @@ func render(tb testing.TB, a assessment.Assessment, meta analysis.ReportMeta) []
 }
 
 // TestReport pins the whole rendering against the Scaleway fixture catalog: the
-// header, the summary, one table row per resource and the blockers.
+// header, the summary, one table row per resource, the required changes and the
+// blockers, with every value from the assessment in a code span.
 func TestReport(t *testing.T) {
 	t.Parallel()
 
@@ -233,14 +335,18 @@ func TestReport(t *testing.T) {
 
 			got := render(t, assessment.Assess(test.inventory, scaleway), test.meta)
 			testutil.Golden(t, test.goldenFile, got)
+
+			checkTableShape(t, got)
+			checkHeadings(t, got)
 		})
 	}
 }
 
-// TestReportHostileValues pins the escaping of every untrusted value: a value
-// with a pipe, a backtick, HTML, link syntax or a star may neither end a table
-// cell nor start a heading, and the catalog's source URL is emitted as stored,
-// percent-encoded only where a Markdown autolink needs it.
+// TestReportHostileValues pins that every untrusted value, and the source URL,
+// reaches the report verbatim inside a code span: a renderer decodes the escapes
+// an autolink needed and then applies its own filters, so no value may be left
+// as running text. A value with a pipe may neither end a table cell nor start a
+// heading, and nothing the provider stored is decoded or percent-encoded.
 func TestReportHostileValues(t *testing.T) {
 	t.Parallel()
 
@@ -251,6 +357,14 @@ func TestReportHostileValues(t *testing.T) {
 
 	checkTableShape(t, got)
 	checkHeadings(t, got)
+
+	spans := codeSpans(string(got))
+	for _, value := range hostileValues() {
+		if !slices.Contains(spans, value) {
+			t.Errorf("the report does not show %q inside a code span, so a renderer can read it as syntax:\n%s",
+				value, got)
+		}
+	}
 }
 
 // controlSnapshot is a snapshot for the assessments the escaping tests build by
@@ -262,88 +376,45 @@ var controlSnapshot = catalog.Snapshot{
 	RetrievedOn: time.Date(2026, 11, 2, 0, 0, 0, 0, time.UTC),
 }
 
-// TestReportAutolinksSourceURL pins that a source URL is emitted as stored,
-// percent-encoded only where a Markdown autolink cannot hold the character: the
-// characters that would end the autolink, end the line or end the table cell are
-// escaped, and an escape the provider stored is shown as given, never decoded.
-func TestReportAutolinksSourceURL(t *testing.T) {
+// TestReportSourceURLIsVerbatimCodeSpan pins that the catalog's source URL is a
+// code span of the stored bytes: nothing is decoded, so a stored "%0A",
+// "%E2%80%AE" or "&#8238;" stays the text the provider stored, and nothing is
+// percent-encoded or wrapped in an autolink, both of which a renderer would
+// decode into a line break or a right-to-left override. The one conversion left
+// is CommonMark's own: a line ending inside a code span is a space.
+func TestReportSourceURLIsVerbatimCodeSpan(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
 		name string
 		url  string
+		// want is the source URL as the report shows it: a code span.
 		want string
 	}{
-		{
-			name: "parentheses",
-			url:  "https://example.com/a(b)",
-			want: "https://example.com/a%28b%29",
-		},
-		{
-			name: "square brackets",
-			url:  "https://example.com/a[b]",
-			want: "https://example.com/a%5Bb%5D",
-		},
-		{
-			name: "angle brackets",
-			url:  "https://example.com/a<b>",
-			want: "https://example.com/a%3Cb%3E",
-		},
-		{
-			name: "pipe",
-			url:  "https://example.com/a|b",
-			want: "https://example.com/a%7Cb",
-		},
-		{
-			name: "backtick",
-			url:  "https://example.com/a`b",
-			want: "https://example.com/a%60b",
-		},
-		{
-			name: "space",
-			url:  "https://example.com/a b",
-			want: "https://example.com/a%20b",
-		},
-		{
-			name: "line feed",
-			url:  "https://example.com/a\nb",
-			want: "https://example.com/a%0Ab",
-		},
-		{
-			name: "carriage return",
-			url:  "https://example.com/a\rb",
-			want: "https://example.com/a%0Db",
-		},
-		{
-			name: "tab",
-			url:  "https://example.com/a\tb",
-			want: "https://example.com/a%09b",
-		},
-		{
-			name: "null",
-			url:  "https://example.com/a\x00b",
-			want: "https://example.com/a%00b",
-		},
-		{
-			name: "unit separator",
-			url:  "https://example.com/a\x1fb",
-			want: "https://example.com/a%1Fb",
-		},
-		{
-			name: "delete",
-			url:  "https://example.com/a\x7fb",
-			want: "https://example.com/a%7Fb",
-		},
+		{name: "parentheses", url: "https://example.com/a(b)", want: "`https://example.com/a(b)`"},
+		{name: "square brackets", url: "https://example.com/a[b]", want: "`https://example.com/a[b]`"},
+		{name: "angle brackets", url: "https://example.com/a<b>", want: "`https://example.com/a<b>`"},
+		{name: "pipe", url: "https://example.com/a|b", want: "`https://example.com/a|b`"},
+		{name: "backtick takes a longer fence", url: "https://example.com/a`b", want: "``https://example.com/a`b``"},
+		{name: "space", url: "https://example.com/a b", want: "`https://example.com/a b`"},
+		{name: "line feed becomes a space", url: "https://example.com/a\nb", want: "`https://example.com/a b`"},
+		{name: "carriage return becomes a space", url: "https://example.com/a\rb", want: "`https://example.com/a b`"},
 		{
 			name: "stored line feed escape stays literal",
 			url:  "https://example.com/a%0Ab",
-			want: "https://example.com/a%0Ab",
+			want: "`https://example.com/a%0Ab`",
 		},
 		{
 			name: "stored override escape stays literal",
 			url:  "https://example.com/%E2%80%AE",
-			want: "https://example.com/%E2%80%AE",
+			want: "`https://example.com/%E2%80%AE`",
 		},
+		{
+			name: "character reference stays literal",
+			url:  "https://example.com/&#8238;x",
+			want: "`https://example.com/&#8238;x`",
+		},
+		{name: "every hostile form at once", url: hostileSourceURL, want: "`" + hostileSourceURL + "`"},
 	}
 
 	for _, test := range tests {
@@ -356,50 +427,64 @@ func TestReportAutolinksSourceURL(t *testing.T) {
 				Source:   sourceName,
 			}
 
-			out := string(render(t, a, analysis.ReportMeta{}))
+			out := render(t, a, analysis.ReportMeta{})
 
-			want := " snapshot from <" + test.want + ">, retrieved 2026-11-02"
-			if !strings.Contains(out, want) {
-				t.Errorf("report does not contain the autolink %q:\n%s", want, out)
+			want := "- Catalog: `ovhcloud` snapshot from " + test.want + ", retrieved 2026-11-02"
+			if got := lineWithPrefix(t, out, "- Catalog: "); got != want {
+				t.Errorf("catalog line = %q, want %q", got, want)
 			}
 		})
 	}
 }
 
 // TestReportEscapesLineEndings pins that a line ending inside a value never
-// reaches the report as one: running text shows it as a character reference and
-// a code span shows it as a space, as CommonMark would, so no value can end a
-// line, a heading or a table row.
+// reaches the report as one: a code span shows it as a space, as CommonMark
+// would, and running text, which only a literal reason part is, shows it as a
+// character reference. No value can end a line, a heading or a table row.
 func TestReportEscapesLineEndings(t *testing.T) {
 	t.Parallel()
 
-	reason := mapping.Reason{Code: mapping.NotClassified}
 	a := assessment.Assessment{
 		Target:   "tar\nget",
 		Snapshot: catalog.Snapshot{SourceURL: "https://example.com/a%0Ab", RetrievedOn: controlSnapshot.RetrievedOn},
 		Source:   "sou\rce",
-		Verdicts: []assessment.Verdict{{
-			Resource: inventory.Resource{
-				ID:       "i\nd",
-				RawType:  "AWS::X\rY",
-				Category: taxonomy.Category("cat\nx"),
+		Verdicts: []assessment.Verdict{
+			{
+				Resource: inventory.Resource{
+					ID:       "i\nd",
+					RawType:  "AWS::X\rY",
+					Category: taxonomy.Category("cat\nx"),
+				},
+				Fit:          mapping.None,
+				BestOffering: "off\rering",
+				Reasons:      []mapping.Reason{{Code: mapping.NotClassified}},
 			},
-			Fit:          mapping.None,
-			BestOffering: "off\rering",
-			Reasons:      []mapping.Reason{reason},
-		}},
-		Blockers: []assessment.Blocker{{ResourceID: "i\nd", Reason: reason}},
-		Summary:  assessment.Summary{Total: 1, None: 1},
+			{
+				Resource: inventory.Resource{
+					ID:       "x\ny",
+					Category: taxonomy.Unclassified,
+				},
+				Fit:     mapping.None,
+				Reasons: []mapping.Reason{{Code: "lit\neral"}},
+			},
+		},
+		Blockers: []assessment.Blocker{
+			{ResourceID: "i\nd", Reason: mapping.Reason{Code: mapping.NotClassified}},
+			{ResourceID: "x\ny", Reason: mapping.Reason{Code: "lit\neral"}},
+		},
+		Summary: assessment.Summary{Total: 2, None: 2},
 	}
 
 	out := string(render(t, a, analysis.ReportMeta{InventoryName: "i\nnv.json"}))
 
 	escaped := []string{
-		"# Migration assessment: tar&#10;get",
-		"- Inventory file: i&#10;nv.json",
-		"- Source: sou&#13;ce",
-		"| i&#10;d | AWS::X&#13;Y | `cat x` | none | off&#13;ering | not classified |",
-		"- i&#10;d: not classified",
+		"# Migration assessment: `tar get`",
+		"- Inventory file: `i nv.json`",
+		"- Source: `sou ce`",
+		"| `i d` | `AWS::X Y` | `cat x` | none | `off ering` | not classified |",
+		"| `x y` |  | `unclassified` | none |  | lit&#10;eral |",
+		"- `i d`: not classified",
+		"- `x y`: lit&#10;eral",
 	}
 	for _, want := range escaped {
 		if !strings.Contains(out, want) {
@@ -407,7 +492,9 @@ func TestReportEscapesLineEndings(t *testing.T) {
 		}
 	}
 
-	lines := []string{"tar\nget", "i\nnv.json", "sou\rce", "i\nd", "AWS::X\rY", "cat\nx", "off\rering"}
+	lines := []string{
+		"tar\nget", "i\nnv.json", "sou\rce", "i\nd", "AWS::X\rY", "cat\nx", "off\rering", "x\ny", "lit\neral",
+	}
 	for _, line := range lines {
 		if strings.Contains(out, line) {
 			t.Errorf("report contains the raw value %q, so a line ending was not escaped:\n%s", line, out)
@@ -417,10 +504,11 @@ func TestReportEscapesLineEndings(t *testing.T) {
 	checkTableShape(t, []byte(out))
 }
 
-// TestReportEscapesCodeSpanEdges pins the padding rule of a code span: a value
-// that starts or ends with a space keeps it, because CommonMark strips one
-// surrounding space; a value of spaces only is never stripped, and an empty
-// value renders as an empty cell.
+// TestReportEscapesCodeSpanEdges pins the fence and padding rule of a code span:
+// the fence is one backtick longer than the longest run in the value, a value
+// that starts or ends with a space keeps it because CommonMark strips one
+// surrounding space, a value of spaces only is never stripped, a pipe is escaped
+// so it cannot end a table cell, and an empty value renders as an empty cell.
 func TestReportEscapesCodeSpanEdges(t *testing.T) {
 	t.Parallel()
 
@@ -436,6 +524,7 @@ func TestReportEscapesCodeSpanEdges(t *testing.T) {
 		{name: "backtick edges are padded", category: "`x`", want: "`` `x` ``"},
 		{name: "no edges are not padded", category: taxonomy.ComputeVM, want: "`compute.vm`"},
 		{name: "empty is an empty cell", category: "", want: ""},
+		{name: "pipe is escaped in a table cell", category: "a|b", want: "`a\\|b`"},
 	}
 
 	for _, test := range tests {
@@ -458,7 +547,7 @@ func TestReportEscapesCodeSpanEdges(t *testing.T) {
 				Summary: assessment.Summary{Total: 1, None: 1},
 			}
 
-			cells := tableRow(t, render(t, a, analysis.ReportMeta{}), "i-1")
+			cells := tableRow(t, render(t, a, analysis.ReportMeta{}), "`i-1`")
 			if len(cells) != 6 {
 				t.Fatalf("the resource row has %d cells, want 6: %q", len(cells), cells)
 			}
@@ -470,36 +559,35 @@ func TestReportEscapesCodeSpanEdges(t *testing.T) {
 	}
 }
 
-// TestReportBlockersStartWithResourceID pins that a blocker line is one list
-// item whose text starts with the escaped resource ID: an ID that would start a
-// list item of its own is escaped where the line starts, so the line stays flat.
-// The same ID in a table cell is not escaped that way, because a cell is not a
-// line of its own. A star and a closing parenthesis are escaped on every line
-// already, as emphasis and link syntax; a dash, a plus and the dot of an ordered
-// marker are harmless anywhere but at the start of a line, so only there do they
-// need the escape.
+// TestReportBlockersStartWithResourceID pins that a blocker is one list item
+// whose text starts with the resource ID as a code span: a dash or a plus
+// cannot start a second list item, a star or the parenthesis of an ordered
+// marker cannot close one, and "[ ]" or "[x]" cannot turn the line into a task
+// list, because nothing inside a code span is syntax in any renderer.
 func TestReportBlockersStartWithResourceID(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
 		name string
 		id   string
-		// want is the ID as it starts a blocker line.
-		want string
-		// wantCell is the ID as it appears in a table cell.
-		wantCell string
 	}{
-		{name: "dash starts a bullet", id: "- x", want: `\- x`, wantCell: "- x"},
-		{name: "plus starts a bullet", id: "+ x", want: `\+ x`, wantCell: "+ x"},
-		{name: "star starts a bullet", id: "* x", want: `\* x`, wantCell: `\* x`},
-		{name: "digit and dot start an ordered item", id: "1. x", want: `1\. x`, wantCell: "1. x"},
-		{name: "digits and parenthesis start an ordered item", id: "12) x", want: `12\) x`, wantCell: `12\) x`},
-		{name: "dot inside the ID is not escaped", id: "x 1. y", want: "x 1. y", wantCell: "x 1. y"},
+		{name: "dash that would start a bullet", id: "- x"},
+		{name: "plus that would start a bullet", id: "+ x"},
+		{name: "star that would start a bullet", id: "* x"},
+		{name: "digit and dot that would start an ordered item", id: "1. x"},
+		{name: "digits and parenthesis that would start an ordered item", id: "12) x"},
+		{name: "dot inside the ID", id: "x 1. y"},
+		{name: "unchecked task list marker", id: "[ ] x"},
+		{name: "checked task list marker", id: "[x] x"},
 	}
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			t.Parallel()
+
+			// None of these IDs holds a backtick, so a one-backtick fence is the
+			// code span the report must use.
+			want := "`" + test.id + "`"
 
 			reason := mapping.Reason{Code: mapping.NotClassified}
 			a := assessment.Assessment{
@@ -521,12 +609,217 @@ func TestReportBlockersStartWithResourceID(t *testing.T) {
 
 			out := render(t, a, analysis.ReportMeta{})
 
-			want := "- " + test.want + ": not classified"
-			if got := blockerLines(t, out); !slices.Equal(got, []string{want}) {
-				t.Errorf("blockers = %q, want the one list item %q", got, want)
+			wantBlockers := []string{"- " + want + ": not classified"}
+			if got := blockerLines(t, out); !slices.Equal(got, wantBlockers) {
+				t.Errorf("blockers = %q, want the one list item %q", got, wantBlockers)
 			}
 
-			wantTableRow(t, out, test.wantCell)
+			if cells := tableRow(t, out, want); len(cells) != 6 {
+				t.Errorf("the resource row %q has %d cells, want 6: %q", want, len(cells), cells)
+			}
+		})
+	}
+}
+
+// verdictOf is a verdict for the layout tests that pin one part of the report
+// without mapping a resource against a catalog.
+func verdictOf(id string, fit mapping.Fit, best string, changes []taxonomy.Capability) assessment.Verdict {
+	return assessment.Verdict{
+		Resource: inventory.Resource{
+			ID:       id,
+			RawType:  "AWS::EC2::Instance",
+			Category: taxonomy.ComputeVM,
+		},
+		Fit:             fit,
+		BestOffering:    best,
+		RequiredChanges: changes,
+	}
+}
+
+// TestReportRequiredChanges pins the section that tells a reader what to change
+// to move a resource: one item per partial verdict, in verdict order, naming the
+// best offering's missing capabilities in one code span each and the offering
+// after them; and "None." when nothing is partial, whatever the other fits are.
+func TestReportRequiredChanges(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name     string
+		verdicts []assessment.Verdict
+		want     []string
+	}{
+		{
+			name: "no partial verdict renders None",
+			verdicts: []assessment.Verdict{
+				verdictOf("a-direct", mapping.Direct, "Elastic Metal", nil),
+				verdictOf("b-none", mapping.None, "", nil),
+			},
+			want: []string{"None."},
+		},
+		{
+			name: "one item per partial verdict in verdict order",
+			verdicts: []assessment.Verdict{
+				verdictOf("a-direct", mapping.Direct, "Elastic Metal", nil),
+				verdictOf("b-partial", mapping.Partial, "Elastic Metal",
+					[]taxonomy.Capability{taxonomy.HighAvailability, taxonomy.Snapshots}),
+				verdictOf("c-partial", mapping.Partial, "Instances",
+					[]taxonomy.Capability{taxonomy.IPv6}),
+				verdictOf("d-none", mapping.None, "", nil),
+			},
+			want: []string{
+				"- `b-partial`: `high-availability`, `snapshots` (not offered by `Elastic Metal`)",
+				"- `c-partial`: `ipv6` (not offered by `Instances`)",
+			},
+		},
+		{
+			name: "a partial verdict without a candidate renders None",
+			verdicts: []assessment.Verdict{
+				verdictOf("a-partial", mapping.Partial, "", nil),
+			},
+			want: []string{"None."},
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+
+			var summary assessment.Summary
+			for _, v := range test.verdicts {
+				summary.Total++
+
+				switch v.Fit {
+				case mapping.Direct:
+					summary.Direct++
+				case mapping.Partial:
+					summary.Partial++
+				case mapping.None:
+					summary.None++
+				}
+			}
+
+			a := assessment.Assessment{
+				Target:   "Scaleway",
+				Snapshot: controlSnapshot,
+				Source:   sourceName,
+				Verdicts: test.verdicts,
+				Summary:  summary,
+			}
+
+			if got := requiredChangeLines(t, render(t, a, analysis.ReportMeta{})); !slices.Equal(got, test.want) {
+				t.Errorf("required changes = %q, want %q", got, test.want)
+			}
+		})
+	}
+}
+
+// TestReportBestOfferingTie pins the best-offering cell: the best candidate's
+// name in a code span, followed by the other candidates that a reader could
+// mistake for it, that is the ones with the same fit and as many missing
+// capabilities, in candidate order. A candidate that fits worse, or misses more,
+// is not shown beside the best one.
+func TestReportBestOfferingTie(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name         string
+		offerings    []catalog.Offering
+		capabilities []taxonomy.Capability
+		want         string
+	}{
+		{
+			name:         "the only candidate has no tie",
+			offerings:    []catalog.Offering{computeOffering("Instances", taxonomy.IPv6)},
+			capabilities: []taxonomy.Capability{taxonomy.IPv6},
+			want:         "`Instances`",
+		},
+		{
+			name: "direct candidates with nothing missing tie in candidate order",
+			offerings: []catalog.Offering{
+				computeOffering("Zulu Compute", taxonomy.IPv6),
+				computeOffering("Alpha Compute", taxonomy.IPv6),
+			},
+			capabilities: []taxonomy.Capability{taxonomy.IPv6},
+			want:         "`Alpha Compute` (tie: `Zulu Compute`)",
+		},
+		{
+			name: "three tied candidates list the others in candidate order",
+			offerings: []catalog.Offering{
+				computeOffering("Charlie Compute", taxonomy.IPv6),
+				computeOffering("Alpha Compute", taxonomy.IPv6),
+				computeOffering("Bravo Compute", taxonomy.IPv6),
+			},
+			capabilities: []taxonomy.Capability{taxonomy.IPv6},
+			want:         "`Alpha Compute` (tie: `Bravo Compute`, `Charlie Compute`)",
+		},
+		{
+			name: "a direct best takes no tie with a partial candidate",
+			offerings: []catalog.Offering{
+				computeOffering("Alpha Compute", taxonomy.IPv6),
+				computeOffering("Bravo Compute", taxonomy.Autoscaling, taxonomy.IPv6),
+			},
+			capabilities: []taxonomy.Capability{taxonomy.Autoscaling, taxonomy.IPv6},
+			want:         "`Bravo Compute`",
+		},
+		{
+			name: "partial candidates missing one capability each tie",
+			offerings: []catalog.Offering{
+				computeOffering("Alpha Compute", taxonomy.IPv6),
+				computeOffering("Bravo Compute", taxonomy.Autoscaling),
+			},
+			capabilities: []taxonomy.Capability{taxonomy.Autoscaling, taxonomy.IPv6},
+			want:         "`Alpha Compute` (tie: `Bravo Compute`)",
+		},
+		{
+			name: "partial candidates missing the same number tie",
+			offerings: []catalog.Offering{
+				computeOffering("Alpha Compute", taxonomy.IPv6),
+				computeOffering("Bravo Compute", taxonomy.IPv6),
+			},
+			capabilities: []taxonomy.Capability{
+				taxonomy.Autoscaling,
+				taxonomy.IPv6,
+				taxonomy.Snapshots,
+			},
+			want: "`Alpha Compute` (tie: `Bravo Compute`)",
+		},
+		{
+			name: "a candidate missing more is no tie",
+			offerings: []catalog.Offering{
+				computeOffering("Alpha Compute", taxonomy.IPv6),
+				computeOffering("Bravo Compute", taxonomy.Autoscaling, taxonomy.IPv6),
+			},
+			capabilities: []taxonomy.Capability{
+				taxonomy.Autoscaling,
+				taxonomy.IPv6,
+				taxonomy.Snapshots,
+			},
+			want: "`Bravo Compute`",
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+
+			inv := newInventory(t, sourceName, []inventory.Resource{{
+				ID:           "i-1",
+				RawType:      "AWS::EC2::Instance",
+				Category:     taxonomy.ComputeVM,
+				Region:       "eu-west-1",
+				Capabilities: test.capabilities,
+			}})
+
+			a := assessment.Assess(inv, newCatalog(t, test.offerings))
+
+			cells := tableRow(t, render(t, a, analysis.ReportMeta{}), "`i-1`")
+			if len(cells) != 6 {
+				t.Fatalf("the resource row has %d cells, want 6: %q", len(cells), cells)
+			}
+
+			if got := cells[4]; got != test.want {
+				t.Errorf("Best offering cell = %q, want %q", got, test.want)
+			}
 		})
 	}
 }
@@ -568,7 +861,8 @@ func checkTableShape(t *testing.T, out []byte) {
 }
 
 // checkHeadings asserts that the only lines that start a Markdown heading are the
-// title and the three section headings, so no value can forge one.
+// title and the four section headings, in layout order, so no value can forge
+// one or move a section.
 func checkHeadings(t *testing.T, out []byte) {
 	t.Helper()
 
@@ -581,14 +875,15 @@ func checkHeadings(t *testing.T, out []byte) {
 	}
 
 	want := []string{
-		"# Migration assessment: Evil \\| \\`x\\` \\<b\\> \\[a\\]\\(b\\) \\*s\\*",
+		"# Migration assessment: ``Evil | `x` <b> [a](b) *s*``",
 		"## Summary",
 		"## Resources",
+		"## Required changes",
 		"## Blockers",
 	}
 
 	if !slices.Equal(headings, want) {
-		t.Errorf("headings = %q, want the title and the three sections %q", headings, want)
+		t.Errorf("headings = %q, want the title and the four sections %q", headings, want)
 	}
 }
 
@@ -651,37 +946,132 @@ func tableRow(t *testing.T, out []byte, firstCell string) []string {
 	return nil
 }
 
-// wantTableRow fails the test unless the table has a row whose first cell is
-// firstCell, as given, with the six cells of a resources row.
-func wantTableRow(t *testing.T, out []byte, firstCell string) {
-	t.Helper()
-
-	if cells := tableRow(t, out, firstCell); len(cells) != 6 {
-		t.Errorf("the resource row %q has %d cells, want 6: %q", firstCell, len(cells), cells)
-	}
-}
-
-// blockerLines returns the non-empty lines of the report's Blockers section, in
+// sectionLines returns the non-empty lines of the section headed by heading, in
 // the order they appear.
-func blockerLines(t *testing.T, out []byte) []string {
+func sectionLines(t *testing.T, out []byte, heading string) []string {
 	t.Helper()
 
 	lines := strings.Split(string(out), "\n")
 
-	start := slices.Index(lines, "## Blockers")
+	start := slices.Index(lines, heading)
 	if start < 0 {
-		t.Fatalf("report has no Blockers section:\n%s", out)
+		t.Fatalf("report has no %q section:\n%s", heading, out)
 	}
 
-	var blockers []string
+	var body []string
 
 	for _, line := range lines[start+1:] {
+		if strings.HasPrefix(line, "## ") {
+			break
+		}
+
 		if line != "" {
-			blockers = append(blockers, line)
+			body = append(body, line)
 		}
 	}
 
-	return blockers
+	return body
+}
+
+// blockerLines returns the lines of the report's Blockers section, in the order
+// they appear.
+func blockerLines(t *testing.T, out []byte) []string {
+	t.Helper()
+
+	return sectionLines(t, out, "## Blockers")
+}
+
+// requiredChangeLines returns the lines of the report's Required changes section,
+// in the order they appear.
+func requiredChangeLines(t *testing.T, out []byte) []string {
+	t.Helper()
+
+	return sectionLines(t, out, "## Required changes")
+}
+
+// lineWithPrefix returns the one line of the report that starts with prefix.
+func lineWithPrefix(t *testing.T, out []byte, prefix string) string {
+	t.Helper()
+
+	var found []string
+
+	for _, line := range strings.Split(string(out), "\n") {
+		if strings.HasPrefix(line, prefix) {
+			found = append(found, line)
+		}
+	}
+
+	if len(found) != 1 {
+		t.Fatalf("report has %d lines starting with %q, want 1:\n%s", len(found), prefix, out)
+	}
+
+	return found[0]
+}
+
+// codeSpans returns the content of every inline code span of a report, as
+// CommonMark renders it: the fence is stripped, one surrounding space is removed
+// from content that has one on each side, and the "\|" a table cell needs is a
+// pipe again. It is how the test sees what a renderer will show literally.
+func codeSpans(out string) []string {
+	var spans []string
+
+	for _, line := range strings.Split(out, "\n") {
+		i := 0
+		for i < len(line) {
+			if line[i] != '`' {
+				i++
+
+				continue
+			}
+
+			start := i
+			for i < len(line) && line[i] == '`' {
+				i++
+			}
+
+			fence := i - start
+
+			end := closingFence(line, i, fence)
+			if end < 0 {
+				continue
+			}
+
+			content := line[i:end]
+			if len(content) > 2 && strings.HasPrefix(content, " ") && strings.HasSuffix(content, " ") &&
+				strings.Trim(content, " ") != "" {
+				content = content[1 : len(content)-1]
+			}
+
+			spans = append(spans, strings.ReplaceAll(content, `\|`, "|"))
+
+			i = end + fence
+		}
+	}
+
+	return spans
+}
+
+// closingFence returns the index of the first run of exactly n backticks at or
+// after from, or -1 when there is none.
+func closingFence(line string, from, n int) int {
+	for j := from; j < len(line); {
+		if line[j] != '`' {
+			j++
+
+			continue
+		}
+
+		start := j
+		for j < len(line) && line[j] == '`' {
+			j++
+		}
+
+		if j-start == n {
+			return start
+		}
+	}
+
+	return -1
 }
 
 // isSeparatorRow reports whether cells is a table's header separator row, the
@@ -724,7 +1114,8 @@ func TestReportIsDeterministic(t *testing.T) {
 
 // TestReportEscapesUnknownReasonCode pins that a reason the domain does not know
 // renders as escaped literal text: an unknown code arrives as a literal part, and
-// a literal part is escaped like any other text value.
+// a literal part is the only part that is not a code span, so it is escaped for
+// running text.
 func TestReportEscapesUnknownReasonCode(t *testing.T) {
 	t.Parallel()
 
@@ -781,5 +1172,28 @@ func TestReportReturnsWriteError(t *testing.T) {
 		analysis.ReportMeta{InventoryName: inventoryFileName})
 	if !errors.Is(err, writeErr) {
 		t.Fatalf("Report() error = %v, want an error wrapping %v", err, writeErr)
+	}
+}
+
+// TestReportCancelledContext pins that a cancelled context stops Report before
+// anything is rendered: the caller gets the cancellation, and the writer never
+// sees a report the caller has stopped waiting for.
+func TestReportCancelledContext(t *testing.T) {
+	t.Parallel()
+
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+
+	a := assessment.Assess(newInventory(t, sourceName, awsResources()), testutil.ScalewayCatalog(t))
+
+	var out bytes.Buffer
+
+	err := markdown.New().Report(ctx, &out, a, analysis.ReportMeta{InventoryName: inventoryFileName})
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("Report() error = %v, want an error wrapping context.Canceled", err)
+	}
+
+	if out.Len() != 0 {
+		t.Errorf("Report() wrote %d bytes to the writer, want none:\n%s", out.Len(), out.String())
 	}
 }
