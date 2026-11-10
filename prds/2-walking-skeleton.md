@@ -113,7 +113,7 @@ Each milestone ships as one PR. Milestones 4, 5 and 6 depend only on 3 and can r
    `sourcetest` and `targettest` with their first checks. ADR 0005 records the port shapes. The reporter
    port receives report metadata alongside the assessment, including the inventory file name (checked
    with `text.Validate`).
-4. [ ] **Inventory-file source adapter.** Reads the versioned JSON inventory format, validates it, passes
+4. [x] **Inventory-file source adapter.** Reads the versioned JSON inventory format, validates it, passes
    `sourcetest`. Sanitised fixtures under `testdata/`. ADR 0006 records the file format, because it becomes
    the interchange format between future `discover` and `assess` commands. Caps the inventory file size
    before decoding. Caps the number of resources as well as the file size (each resource is mapped

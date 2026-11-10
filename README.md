@@ -53,6 +53,7 @@ internal/
     assessment/                 verdicts, blockers, readiness
   app/analysis/               The analyse use case and the ports it needs
   adapter/
+    source/inventoryfile        the JSON inventory file
     source/{aws,azure,gcp}      read-only discovery   (+ sourcetest contract suite)
     target/{ovhcloud,scaleway,upcloud}  EU catalogs   (+ targettest contract suite)
     report/{markdown,jsonreport}        renderers
