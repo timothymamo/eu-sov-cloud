@@ -56,6 +56,14 @@ linters:
           deny:
             - pkg: github.com/timothymamo/eu-sov-cloud/internal/testutil
               desc: testutil may only be imported from _test.go files
+        go-cmp-only-in-tests:
+          list-mode: lax
+          files:
+            - "$all"
+            - "!$test"
+          deny:
+            - pkg: github.com/google/go-cmp
+              desc: go-cmp is a test-only dependency
     exhaustive:
       default-signifies-exhaustive: true
     gosec:
