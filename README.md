@@ -51,8 +51,11 @@ make build
 `assess` reads an inventory file, compares every resource with the target's catalog and writes a
 Markdown report: per resource its taxonomy category, best offering, fit (direct, partial, none) and the
 reasons, then the required changes and the blockers. Without `--output` the report goes to standard
-output. With it, the report is written to the file with mode 0600, and an existing file is replaced
-only once the whole report is written.
+output. With it, the report is written to the file with mode 0600, and an existing regular file is
+replaced atomically, only once the whole report is rendered; a failed or cancelled run leaves it as it
+was. A symbolic link at that path is replaced, not followed. `--output` naming anything else (a
+directory, a named pipe, a socket, a device) or the inventory file itself (the same path, a hard link or
+a symbolic link to it) is refused with exit code 1 before the inventory is read.
 
 The inventory file is versioned JSON, described in
 [ADR 0006](docs/adr/0006-json-inventory-file-format-v1.md). `--inventory` takes a path; standard input
@@ -62,7 +65,7 @@ in the binary, so `assess` runs offline and needs no credentials.
 | Exit code | Meaning |
 |---|---|
 | 0 | The assessment ran. Blockers are a result, not a failure. |
-| 1 | The inventory, the catalog, the report or the output failed: one `eusov: ...` line on standard error. |
+| 1 | The inventory, the catalog, the report or the output failed, or the run was interrupted (SIGINT, SIGTERM, SIGHUP): one `eusov: ...` line on standard error. |
 | 2 | Usage error: missing or unknown flag, command or target. Usage text on standard error. |
 
 `eusov version` prints the version, `eusov help` the usage.

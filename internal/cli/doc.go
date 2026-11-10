@@ -23,9 +23,9 @@
 //     Only the command's output is written, to standard output or to the
 //     --output file; nothing goes to standard error.
 //   - 1: a run-time error: the inventory, the catalog, the report or the output
-//     failed, or the run was cancelled (SIGINT or SIGTERM cancel the context in
-//     cmd/eusov). Exactly one error line goes to standard error and nothing to
-//     standard output.
+//     failed, or the run was cancelled (SIGINT, SIGTERM or SIGHUP cancel the
+//     context in cmd/eusov). Exactly one error line goes to standard error and
+//     nothing to standard output.
 //   - 2: a usage error: no command or an unknown one, a missing --inventory or
 //     --target, an unknown target (the error lists the supported ones), an
 //     unknown flag or an extra argument. An error line and the usage text go to
@@ -41,19 +41,31 @@
 // format (Cf), line separator (Zl) and paragraph separator (Zp) characters and
 // invalid UTF-8 bytes as strconv does (\n, \x1b, \u202e), so a message never
 // breaks the line, moves the cursor or reorders the text, whatever the input
-// file, the OS or an adapter put in it. It caps the message at 1 KiB, ending a
-// longer one with a truncation marker. The flag package prints nothing itself:
+// file, the OS or an adapter put in it. The escaped message is capped at 1 KiB,
+// then a truncation marker; the cut falls between characters, never inside an
+// escape. The flag package prints nothing itself:
 // its errors also go through printError.
 //
 // # Writing the report
 //
-// The report is rendered in full before anything is written, so a failed run
-// leaves no partial report anywhere. Without --output it is rendered into memory
-// and written to standard output once complete. With --output it is rendered
-// into a temporary file created in the destination's directory, set to mode
-// 0600, synced and closed, then renamed onto the destination, which replaces an
-// existing file in one step (a symbolic link at the destination is replaced,
-// not followed). On any error the temporary file is removed and an existing
-// destination is left untouched, never truncated. A run cancelled before the
-// report is written writes nothing.
+// The report is rendered into memory in full before anything is written, so a
+// failed run leaves no partial report anywhere. Without --output it is written
+// to standard output once complete. With --output it is written to a temporary
+// file created in the destination's directory only after rendering, set to
+// mode 0600, synced and closed, then renamed onto the destination. On any error
+// the temporary file is removed and an existing destination is left untouched,
+// never truncated. A run cancelled before the report is written writes nothing.
+//
+// What --output may name is checked before the inventory is read:
+//
+//   - a path that does not exist yet: the report is created there;
+//   - an existing regular file: it is replaced atomically, in one rename;
+//   - a symbolic link: the link itself is replaced, never followed;
+//   - anything else (a directory, a named pipe, a socket, a device): refused
+//     with exit code 1;
+//   - the inventory file itself, by the same path, a hard link or a symbolic
+//     link to it: refused with exit code 1, so a report never replaces the
+//     inventory it assesses.
+//
+// A refused destination is left as it was and no temporary file is created.
 package cli

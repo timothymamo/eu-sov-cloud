@@ -204,8 +204,18 @@ fixtures in earlier milestones share a picture of the data:
   number of missing capabilities but different ones, Required changes lists only the best offering's
   gaps, not those of the tied offerings. Accepted for now: the case is rare, and it understates the
   options rather than overstating portability.
-- **Note: fit `none` by "no offering" is pinned at the mapping level only.** The current Scaleway
-  snapshot serves every in-scope category, so no inventory can reach that verdict end to end. The
-  mapping tests pin it, and the e2e fixture covers `none` through `unclassified` instead. A target
-  without an offering for some category (OVHcloud for `serverless.function`, PRD #11) will make it
-  reachable.
+- **Note: fit `none` by "no offering" is pinned at the mapping and report levels, not end to end.** The
+  current Scaleway snapshot serves every in-scope category, so no inventory can reach that verdict end
+  to end. The mapping and Markdown report tests pin it, and the e2e fixture covers `none` through
+  `unclassified` instead. A target without an offering for some category (OVHcloud for
+  `serverless.function`, PRD #11) will make it reachable.
+- **Accepted: long inventory paths in errors.** `text.Quote` caps the inventory path at 128 runes in
+  adapter errors, so a very long path can lose its base name; the report always shows the base name, and
+  the path is still recognisable from its start. Revisit with the shared decoder (#13).
+- **Decided: what `--output` may name.** The report is rendered into memory in full; only then is a
+  temporary file created next to the destination, written, synced and renamed onto it, so a failed or
+  cancelled run leaves no partial report and no temporary file. A path that does not exist is created,
+  an existing regular file is replaced atomically, and a symbolic link is replaced, not followed.
+  Anything else (a directory, a named pipe, a socket, a device) and the inventory file itself (the same
+  path, a hard link or a symbolic link to it) are refused with exit code 1 before the inventory is read,
+  and left as they were. SIGINT, SIGTERM and SIGHUP cancel a run, which then writes nothing.
