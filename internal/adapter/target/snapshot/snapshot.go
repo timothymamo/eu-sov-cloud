@@ -28,11 +28,12 @@ const MaxDocumentBytes = 1 << 20
 
 var (
 	// ErrDecode is returned for data that is not a well-formed snapshot: larger
-	// than MaxDocumentBytes, not valid UTF-8, not one JSON object, a key that is
-	// unknown, not spelt exactly or repeated, a field that is missing, null or of
-	// the wrong JSON type, a string that escapes a lone surrogate, a retrieval
-	// date that is not a YYYY-MM-DD date, or a declared region that is blank, not
-	// valid text (text.Validate) or declared twice.
+	// than MaxDocumentBytes, starting with a byte order mark, not valid UTF-8,
+	// not one JSON object, a key that is unknown, not spelt exactly or repeated,
+	// a field that is missing, null or of the wrong JSON type, a string that
+	// escapes a lone surrogate, a retrieval date that is not a YYYY-MM-DD date,
+	// or a declared region that is blank, not valid text (text.Validate) or
+	// declared twice.
 	ErrDecode = errors.New("not a valid catalog document")
 	// ErrSchemaVersion is returned for a document whose schemaVersion is missing
 	// or is not a version this package reads.
