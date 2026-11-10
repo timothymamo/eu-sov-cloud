@@ -33,7 +33,7 @@
       "name": "Managed Database for PostgreSQL and MySQL",
       "categories": ["database.mysql", "database.postgresql"],
       "capabilities": ["encryption-at-rest", "high-availability", "read-replicas", "snapshots"],
-      "regions": ["fr-par", "it-mil", "nl-ams", "pl-waw"]
+      "regions": ["fr-par", "nl-ams", "pl-waw"]
     },
     {
       "name": "Object Storage",

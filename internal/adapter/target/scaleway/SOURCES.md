@@ -9,12 +9,14 @@ records where each fact comes from, so the snapshot can be checked and refreshed
 - **Compiled, then verified against the live pages.** The snapshot was first compiled from Scaleway's
   documentation source and Go SDK at the commits below, because `www.scaleway.com` then answered HTTP 403.
   On the same date every region and capability was checked against the live public pages cited below
-  (issue #15), without credentials and without calling any Scaleway API. The check changed two facts:
-  Managed Database for PostgreSQL and MySQL gained the region `it-mil`, and Serverless Functions gained
-  the capability `ipv6`. Their sections say why.
-- **Availability page:** <https://www.scaleway.com/en/product-availability-by-region/>, the source of
-  every offering's regions. It has one column per region (Paris, Amsterdam, Warsaw, Milan). For a zonal
-  product it gives one mark per zone, and for a regional product it says "Available across the region".
+  (issue #15), without credentials and without calling any Scaleway API. The check changed one fact:
+  Serverless Functions gained the capability `ipv6`, and its section says why. It also found one
+  conflict: the availability page lists Managed Database for PostgreSQL and MySQL in Milan, but the
+  product's API does not serve Milan. The region stays out, as that offering's section explains.
+- **Availability page:** <https://www.scaleway.com/en/product-availability-by-region/>, where every
+  offering's regions come from, subject to the API check under *Rules applied*. It has one column per
+  region (Paris, Amsterdam, Warsaw, Milan). For a zonal product it gives one mark per zone, and for a
+  regional product it says "Available across the region".
   The legend has three marks: "Available", "Available soon" and "Not available". The page warns that
   "upcoming availability is based on our current roadmap and is subject to change". A plain HTTP client
   gets a JavaScript challenge instead of this page, so no copy of it was saved. It was read twice through
@@ -30,13 +32,13 @@ records where each fact comes from, so the snapshot can be checked and refreshed
 - **Changelog:** <https://www.scaleway.com/en/docs/changelog/>, read through its RSS feed
   <https://www.scaleway.com/en/docs/changelog/rss.xml>. The page draws its entries in the browser. The
   changelog gives the dates of launches and betas.
-- **API reference and SDK, for cross-checking regions:** the API reference pages under
+- **API reference and SDK, for checking regions:** the API reference pages under
   <https://www.scaleway.com/en/developers/api/> with the OpenAPI schemas they publish, and Scaleway's
   official Go SDK, [`scaleway/scaleway-sdk-go`](https://github.com/scaleway/scaleway-sdk-go), at commit
   `f408edc91a855d0b585a8fd0458f7f4761c4eefe`. That commit was still the head of `main` on the retrieval
   date. Each product API declares the regions or zones it serves (`Regions()` or `Zones()` in the SDK,
-  the `region` or `zone` enum in the schema). They agree with the availability page except in one case,
-  recorded under Managed Database for PostgreSQL and MySQL.
+  the `region` or `zone` enum in the schema). They agree with the availability page except for Managed
+  Database for PostgreSQL and MySQL in Milan.
 - **`sourceURL`** remains the documentation root, because the capabilities come from the documentation.
   The regions come from the availability page, which each offering's section cites. The pricing page was
   not read, and it does not list per-product regions or features anyway.
@@ -61,11 +63,15 @@ records where each fact comes from, so the snapshot can be checked and refreshed
 
 ## Rules applied
 
-- **Regions:** an offering lists a region when the availability page marks the product "Available" there,
-  either across the region or in at least one of its zones. "Available soon" does not count, and zones are
-  not modelled. Each region was also compared with the SDK, the API reference and the changelog. Where
-  they disagree with the availability page, the offering's section says so. Regions are within the
-  declared list below.
+- **Regions:** an offering lists a region only when both of these hold:
+  - the availability page marks the product "Available" there, either across the region or in at least
+    one of its zones ("Available soon" does not count);
+  - the product's API serves the region: the SDK declares it (or at least one zone in it), or the API
+    reference's schema accepts it. Object Storage has no API in the SDK (it is S3-compatible), so for it
+    the documentation must name an S3 endpoint in the region.
+
+  Where the two disagree, the region is left out until they agree, and the offering's section says so.
+  Zones are not modelled. Regions are within the declared list below.
 - **Capabilities:** only from the taxonomy vocabulary, and only when the documentation describes the
   feature as generally available. Features in public or private beta are left out and listed under
   *Left out on purpose*. A capability may need a particular tier or option of the product; that is
@@ -165,16 +171,16 @@ features. Pages: <https://www.scaleway.com/en/docs/managed-databases-for-postgre
   a node or zone), never the "zone" half.
 - `read-replicas`: Read Replicas for PostgreSQL and MySQL Database Instances.
 - `snapshots`: Database snapshots of the instance's volume (concepts *Database snapshot*).
-- Regions `fr-par`, `it-mil`, `nl-ams`, `pl-waw`: the availability page marks the product "Available
-  across the region" in all four regions. **Changed on verification:** `it-mil` was added. The first
-  compilation listed only `fr-par`, `nl-ams` and `pl-waw`, from the SDK.
-- **Unresolved conflict over `it-mil`.** The Managed Database API reference
-  (<https://www.scaleway.com/en/developers/api/managed-database-postgre-mysql/>) says the product "is
-  available in the Paris, Amsterdam and Warsaw regions". Its OpenAPI schema accepts only `fr-par`,
-  `nl-ams` and `pl-waw`, and SDK `api/rdb/v1` declares the same three. Unlike the Kubernetes API, whose
-  schema accepts `it-mil`, nothing in this API does. The changelog entry opening MIL-1 names "Databases"
-  without saying which product. The snapshot follows the availability page, as the region rule says, but
-  Milan rests on that page alone. Check it before relying on this offering in Milan.
+- Regions `fr-par`, `nl-ams`, `pl-waw`: the availability page marks the product "Available across the
+  region" in each of them. SDK `api/rdb/v1` and the schema of the Managed Database API reference
+  (<https://www.scaleway.com/en/developers/api/managed-database-postgre-mysql/>) accept these three
+  regions.
+- **Milan is left out until the API serves it.** The availability page also marks the product "Available
+  across the region" in Milan, but nothing in its API accepts `it-mil`. The API reference says the
+  product "is available in the Paris, Amsterdam and Warsaw regions", its OpenAPI schema has no `it-mil`,
+  and SDK `api/rdb/v1` declares the same three regions. The Kubernetes API's schema, by contrast, does
+  accept `it-mil`. The changelog entry opening MIL-1 names "Databases" without saying which product. Add
+  `it-mil` once the SDK or the API reference's schema accepts it.
 
 ### Object Storage
 
