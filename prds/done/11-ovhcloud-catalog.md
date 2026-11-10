@@ -1,6 +1,6 @@
 # PRD #11: Assess an inventory file against the OVHcloud catalog
 
-**Status:** Draft
+**Status:** Complete
 **Issue:** #11
 
 ## Problem
@@ -40,12 +40,12 @@ All criteria are pinned by tests that run offline under `make test` or `make tes
 
 **Target selection**
 
-- [ ] Given a valid inventory file, when I run `eusov assess --inventory <file> --target ovhcloud`, then
+- [x] Given a valid inventory file, when I run `eusov assess --inventory <file> --target ovhcloud`, then
   the command exits 0 and prints a Markdown report naming the target `OVHcloud`, the snapshot's source URL
   and its retrieval date.
-- [ ] `--target` accepts `ovhcloud` and `scaleway`. Given an unknown target, the command exits 2 and the
+- [x] `--target` accepts `ovhcloud` and `scaleway`. Given an unknown target, the command exits 2 and the
   usage error lists both, sorted.
-- [ ] `eusov assess --target ovhcloud` needs no credentials or network. The e2e test runs it with an empty
+- [x] `eusov assess --target ovhcloud` needs no credentials or network. The e2e test runs it with an empty
   environment and gets the same report.
 
 **Catalog**
@@ -77,23 +77,23 @@ All criteria are pinned by tests that run offline under `make test` or `make tes
 
 **Report**
 
-- [ ] Given one fixture inventory, the report for `--target ovhcloud` has the same sections, columns and
+- [x] Given one fixture inventory, the report for `--target ovhcloud` has the same sections, columns and
   resource order as the report for `--target scaleway`. Only the target name, the snapshot's source and
   date, the offerings, the fits and the reasons differ. Pinned by e2e golden reports of the same fixture
   against both targets.
-- [ ] No report text or error message says "Scaleway" when the target is OVHcloud, or "OVHcloud" when
+- [x] No report text or error message says "Scaleway" when the target is OVHcloud, or "OVHcloud" when
   it is Scaleway.
-- [ ] Given the same inventory twice with `--target ovhcloud`, the two reports are byte-identical.
+- [x] Given the same inventory twice with `--target ovhcloud`, the two reports are byte-identical.
 
 **Architecture**
 
-- [ ] `make check` passes, including depguard.
+- [x] `make check` passes, including depguard.
 - [x] The OVHcloud adapter passes `targettest` as it stands. If this PRD changes the suite, the change
   only adds checks, and both adapters pass them.
-- [ ] *Review:* adding OVHcloud changes no file under `internal/domain`, `internal/app` or
+- [x] *Review:* adding OVHcloud changes no file under `internal/domain`, `internal/app` or
   `internal/adapter/report`. The taxonomy, the capability vocabulary, the mapping rules and the reporter
   are reused as they are. Needing such a change is a finding against PRD #2's design and gets an ADR.
-- [ ] The `go list -deps` test from PRD #2 milestone 7 covers the OVHcloud adapter on the assess path:
+- [x] The `go list -deps` test from PRD #2 milestone 7 covers the OVHcloud adapter on the assess path:
   no `net/http`, no `os/exec`, no cloud SDK.
 
 ## Milestones
@@ -115,7 +115,7 @@ Each milestone ships as one PR. This PRD starts after PRD #2: milestone 1 needs 
    `messaging.queue`. If one does, it updates this PRD's scope and criteria in the same PR. The reviewer
    checks every region against OVHcloud's published regions page and every capability against the
    product documentation. Depends on 1.
-3. [ ] **CLI, e2e and docs.** `--target ovhcloud` is wired in `cmd/eusov`, and the usage error lists
+3. [x] **CLI, e2e and docs.** `--target ovhcloud` is wired in `cmd/eusov`, and the usage error lists
    both targets. The e2e test runs one fixture inventory against both targets and compares the output
    with golden reports. For OVHcloud the fixture exercises direct, partial, `none` (from a category
    OVHcloud does not serve) and unclassified. The `go list -deps` check includes the OVHcloud adapter,
@@ -159,7 +159,7 @@ Each milestone ships as one PR. This PRD starts after PRD #2: milestone 1 needs 
 - **Decided: one shared snapshot format and reader.** Two copies of a strict parser drift apart, and its
   rules (unknown fields, undeclared regions, size cap, one-line errors) protect the correctness and safety
   of every target. UpCloud will be the third user. Recorded in
-  [ADR 0007](../docs/adr/0007-shared-target-catalog-snapshot-format-v1.md) (milestone 1).
+  [ADR 0007](../../docs/adr/0007-shared-target-catalog-snapshot-format-v1.md) (milestone 1).
 - **Decided: the taxonomy is unchanged.** A capability OVHcloud offers that has no vocabulary entry is
   left out and noted in `SOURCES.md`. Extending the vocabulary is a change of its own, with tests across
   every target.
