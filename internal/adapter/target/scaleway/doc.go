@@ -18,8 +18,8 @@
 //
 //   - it is at most MaxDocumentBytes long, checked before any decoding;
 //   - it is one JSON object with nothing after it but white space;
-//   - its schemaVersion is the integer 1, checked first, so a document of
-//     another version is refused for its version alone;
+//   - its schemaVersion is the integer 1, checked before any other field, so a
+//     document of another version is refused for its version alone;
 //   - it has no field the format does not define, at the top level or in an
 //     offering, and every field has the JSON type the format gives it;
 //   - its regions and offerings lists are present and not null;
@@ -29,12 +29,14 @@
 //   - catalog.New accepts its target, its source URL and every offering's
 //     name, categories, capabilities and regions.
 //
-// Two things are not refused yet. encoding/json matches field names without
-// regard to case and, of a key given twice, keeps the last value; and
-// catalog.New sorts an offering's lists and drops duplicates in them. Refusing
-// keys that are not spelled exactly, and duplicate keys, through one strict
-// decoder shared with the inventory-file source adapter, is a tracked
-// follow-up.
+// Some things are not refused yet. encoding/json matches field names without
+// regard to case and, of a key given twice, keeps the last value; a null value
+// for any field other than regions and offerings is read as if the field were
+// absent; and an escaped lone surrogate, such as \ud800, or a byte that is not
+// UTF-8, inside a string is read as U+FFFD. catalog.New also sorts an
+// offering's lists and drops duplicates in them. Refusing keys that are not
+// spelled exactly, duplicate keys and lone surrogates through one strict
+// decoder shared with the inventory-file source adapter is issue #13.
 //
 // To refresh the snapshot: edit catalog.json, update SOURCES.md and the
 // retrievedOn date to match, run
