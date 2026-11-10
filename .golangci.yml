@@ -1,5 +1,20 @@
 version: "2"
 
+# The files behind these build tags are loaded, so every lint run (make lint,
+# make check, CI) lints the e2e tests in test/e2e and the integration tests,
+# which run with real read-only cloud credentials. What applies to them:
+#   - gosec runs on every _test.go file except for G204 and G304, which tests
+#     trip by design (see the exclusion rules at the end of this file).
+#   - test/e2e has a depguard rule of its own, e2e-is-black-box. Every other
+#     depguard rule but app-tests-use-fakes-not-adapters leaves _test.go files
+#     out, so an integration test gets no depguard rule.
+# e2e and integration are the only custom build tags. Never negate them: lint
+# always sets both, so a file behind !e2e or !integration is never linted.
+run:
+  build-tags:
+    - e2e
+    - integration
+
 linters:
   default: standard
   enable:
@@ -323,6 +338,32 @@ linters:
           deny:
             - pkg: github.com/google/go-cmp
               desc: go-cmp is a test-only dependency
+        # The e2e tier builds the binary and runs it as a black box, offline,
+        # against the fixtures in test/e2e/testdata. It imports only the
+        # standard library, go-cmp and internal/testutil: no adapter,
+        # application, domain or CLI package and no cloud SDK. The glob covers
+        # _test.go files too; it is the only depguard rule that does outside
+        # internal/app. The allow entry for testutil ends in $ and is longer
+        # than the module-wide deny entry, so it wins for that package only.
+        e2e-is-black-box:
+          list-mode: strict
+          files:
+            - "**/test/e2e/**"
+          allow:
+            - $gostd
+            - github.com/google/go-cmp
+            - github.com/timothymamo/eu-sov-cloud/internal/testutil$
+          deny:
+            - pkg: github.com/timothymamo/eu-sov-cloud/
+              desc: the e2e tier runs the built binary as a black box; it imports no adapter, application, domain or CLI package
+            - pkg: github.com/aws/aws-sdk-go-v2
+              desc: the e2e tier runs offline and calls no cloud SDK
+            - pkg: github.com/Azure/azure-sdk-for-go
+              desc: the e2e tier runs offline and calls no cloud SDK
+            - pkg: cloud.google.com/go
+              desc: the e2e tier runs offline and calls no cloud SDK
+            - pkg: google.golang.org/api
+              desc: the e2e tier runs offline and calls no cloud SDK
     exhaustive:
       default-signifies-exhaustive: true
     gosec:
@@ -345,8 +386,25 @@ linters:
     rules:
       - path: _test\.go
         linters:
-          - gosec
           - unparam
+      # Tests get gosec too, the e2e and integration tests included, apart
+      # from two rules they trip by design: G204 (a subprocess launched with a
+      # variable), because test/e2e runs the built binary, and G304 (a file
+      # opened from a variable path), because tests open fixture and golden
+      # files. gosec's message starts with its rule ID, so text matches it.
+      - path: _test\.go
+        linters:
+          - gosec
+        text: "^G(204|304):"
+      # The URL-rejection tests feed sanitised userinfo placeholders such as
+      # https://user:pass@example.com/ to the catalog to prove it refuses
+      # them, and G101 (hard-coded credentials) reads them as secrets. They
+      # are none. The rule covers G101 in this one file only, so a hard-coded
+      # credential in any other file is still reported.
+      - path: internal/domain/catalog/catalog_test\.go
+        linters:
+          - gosec
+        text: "^G101:"
 
 formatters:
   enable:
