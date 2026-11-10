@@ -67,10 +67,18 @@
 //
 // An error that wraps ErrMisuse is a mistake in the format's use of this
 // package, not in the document: a callback that returns without reading the
-// value it was called for, or reads it a second time; a list of keys longer
-// than MaxKeys or that holds a Name twice; a nil sentinel; the zero Document. It
-// starts with "jsondoc:" and never wraps the format's sentinel. The package
-// returns such an error and never panics for it.
+// value it was called for, or reads it a second time; a walker read after the
+// walk has ended, which reads the document's object a second time; a read, or
+// a callback that returns no error, after a read has failed; a list of keys
+// longer than MaxKeys or that holds a Name twice; a nil sentinel; and the zero
+// Document. It starts with "jsondoc:" and never wraps the format's sentinel.
+// The package returns such an error and never panics for it.
+//
+// An error from any read stops the walk, and the callback that gets it returns
+// it, so the first document error reaches the format as it is. A further read,
+// or a callback that returns no error, after it is misuse: the walker may be
+// inside the value that failed, and what it would read next is no fault of the
+// document.
 //
 // Adapter layer, shared by adapters: parses bytes it is given, opens no file and
 // makes no network call. Go's internal rule keeps it to packages under

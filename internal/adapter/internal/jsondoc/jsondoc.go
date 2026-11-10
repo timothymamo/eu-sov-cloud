@@ -16,10 +16,12 @@ import (
 // ErrMisuse is wrapped by every error that reports a mistake in a format's use
 // of this package, not a problem with the document: a callback that returns
 // without reading the value it was called for, or reads it a second time; a
-// list of keys longer than MaxKeys or that holds a Name twice; a nil sentinel;
-// the zero Document; and a walker read after the walk has ended. Such an error
-// starts with "jsondoc:" and never wraps the format's sentinel. Reading a
-// document, however malformed, never causes one: it is a bug in the format.
+// walker read after the walk has ended, which reads the document's object a
+// second time; a read, or a callback that returns no error, after a read has
+// failed; a list of keys longer than MaxKeys or that holds a Name twice; a nil
+// sentinel; and the zero Document. Such an error starts with "jsondoc:" and
+// never wraps the format's sentinel. Reading a document, however malformed,
+// never causes one: it is a bug in the format.
 var ErrMisuse = errors.New("jsondoc: misused by the format")
 
 // Document is a JSON document Open has checked as a whole: at most the caller's

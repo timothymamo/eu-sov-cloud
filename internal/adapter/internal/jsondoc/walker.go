@@ -32,6 +32,12 @@ type Key struct {
 // down: Walker.Object calls back for each key, and the callback reads the key's
 // value with one of the methods below, which may call back in turn. Get a
 // Walker from Document.Walker; a Walker is not safe for concurrent use.
+//
+// An error from any read method stops the walk, and the callback that gets it
+// returns it, so it reaches the format as it is. After a read has returned an
+// error, a further read, and a callback that returns no error, are refused as
+// ErrMisuse: the walker may be inside the value that failed, and what it would
+// read next is no fault of the document.
 type Walker struct {
 	data    []byte
 	dec     *json.Decoder
@@ -42,6 +48,10 @@ type Walker struct {
 	// read is set once the document's object, the value of the empty path, has
 	// started to be read: a walker reads it once.
 	read bool
+	// failed is set once a read method has returned an error, which stops the
+	// walk: the walker may be inside the value that failed, so a later read
+	// would blame the document for what a callback left over.
+	failed bool
 }
 
 // segment is one step of a path: an object key, or an array index when index
@@ -69,8 +79,11 @@ type segment struct {
 // as it is, and stops the walk. keys longer than MaxKeys or holding a Name
 // twice, a value callback that reads its value a second time or returns no
 // error without reading it, and a value read a second time are refused as
-// ErrMisuse.
-func (w *Walker) Object(keys []Key, value func(key string) error) error {
+// ErrMisuse, as is any read, or a callback that returns no error, after a read
+// has failed (see Walker).
+func (w *Walker) Object(keys []Key, value func(key string) error) (err error) {
+	defer w.stop(&err)
+
 	if err := checkKeys(keys); err != nil {
 		return err
 	}
@@ -150,8 +163,11 @@ func checkKeys(keys []Key) error {
 // array at its first element past a cap by returning an error before it reads
 // that element. An element callback that reads its element a second time or
 // returns no error without reading it, and a value read a second time, are
-// refused as ErrMisuse.
-func (w *Walker) Array(want string, element func(i int) error) error {
+// refused as ErrMisuse, as is any read, or a callback that returns no error,
+// after a read has failed (see Walker).
+func (w *Walker) Array(want string, element func(i int) error) (err error) {
+	defer w.stop(&err)
+
 	tok, at, err := w.value()
 	if err != nil {
 		return err
@@ -177,7 +193,9 @@ func (w *Walker) Array(want string, element func(i int) error) error {
 // String reads the next value, which must be a string, and returns it with its
 // JSON escapes decoded. It refuses a value that is not a string, null included,
 // and a string that escapes a lone surrogate.
-func (w *Walker) String() (string, error) {
+func (w *Walker) String() (_ string, err error) {
+	defer w.stop(&err)
+
 	tok, at, err := w.value()
 	if err != nil {
 		return "", err
@@ -200,7 +218,9 @@ func (w *Walker) String() (string, error) {
 // a field that may be null, as an absent value, by calling Null first; a field
 // whose value is read without Null refuses null as a value of the wrong type.
 // Null on a value read already is refused as ErrMisuse.
-func (w *Walker) Null() (bool, error) {
+func (w *Walker) Null() (_ bool, err error) {
+	defer w.stop(&err)
+
 	if err := w.readable(); err != nil {
 		return false, err
 	}
@@ -221,7 +241,9 @@ func (w *Walker) Null() (bool, error) {
 // returns its JSON text as the document spells it. It checks nothing in the
 // value: a format reads a value with Raw to check it itself, as it checks its
 // schema version, and Describe names it in an error.
-func (w *Walker) Raw() ([]byte, error) {
+func (w *Walker) Raw() (_ []byte, err error) {
+	defer w.stop(&err)
+
 	if err := w.begin(); err != nil {
 		return nil, err
 	}
@@ -240,7 +262,9 @@ func (w *Walker) Raw() ([]byte, error) {
 // schema version key, which it has read first with Document.Version, so the
 // walk checks the value it reads instead of relying on that earlier read. A nil
 // sentinel is refused as ErrMisuse.
-func (w *Walker) Version(want int, sentinel error) error {
+func (w *Walker) Version(want int, sentinel error) (err error) {
+	defer w.stop(&err)
+
 	if sentinel == nil {
 		return errNilSentinel("Version")
 	}
@@ -294,15 +318,29 @@ func (w *Walker) enter(s segment) {
 
 // leave takes the segment enter put on the path off it, once the callback has
 // returned err. It passes err on, and refuses a callback that returned no error
-// without reading its value.
+// after a read failed, or without reading its value.
 func (w *Walker) leave(err error) error {
-	if err == nil && !w.path[len(w.path)-1].read {
-		err = fmt.Errorf("%w: the value at %s was not read", ErrMisuse, text.Quote(w.Path()))
+	if err == nil {
+		switch {
+		case w.failed:
+			err = fmt.Errorf("%w: the callback for the value at %s went on after the walk failed; return the error",
+				ErrMisuse, text.Quote(w.Path()))
+		case !w.path[len(w.path)-1].read:
+			err = fmt.Errorf("%w: the value at %s was not read", ErrMisuse, text.Quote(w.Path()))
+		}
 	}
 
 	w.path = w.path[:len(w.path)-1]
 
 	return err
+}
+
+// stop records that the walk has failed when *err, the error a read method
+// returns, is not nil. A read method defers it.
+func (w *Walker) stop(err *error) {
+	if *err != nil {
+		w.failed = true
+	}
 }
 
 // value starts reading the next value (begin) and returns its first token and
@@ -333,12 +371,21 @@ func (w *Walker) begin() error {
 }
 
 // readable refuses, as ErrMisuse, to read the value the walker is at when the
-// walker has no document, the zero Document's, or has started to read that
-// value already: a callback reads its value once, and a walker the document's
-// object once.
+// walker has no document, the zero Document's, when a read has failed already,
+// which stops the walk, or when it has started to read that value already: a
+// callback reads its value once, and a walker the document's object once.
 func (w *Walker) readable() error {
 	if err := w.checkDocument(); err != nil {
 		return err
+	}
+
+	if w.failed {
+		what := "the document's object"
+		if len(w.path) > 0 {
+			what = "the value at " + text.Quote(w.Path())
+		}
+
+		return fmt.Errorf("%w: a read of %s went on after the walk failed; return the error", ErrMisuse, what)
 	}
 
 	if n := len(w.path); n > 0 && w.path[n-1].read {
