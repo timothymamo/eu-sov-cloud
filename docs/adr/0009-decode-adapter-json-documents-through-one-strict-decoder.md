@@ -84,10 +84,15 @@ the input (the format adds that), places the problem by line and column (both fr
 characters, a malformed multi-byte character at its first byte) unless it speaks of the whole
 document, names a value by its path (`resources[1].capabilities[0]`), shows document values only
 through `text.Quote`, and never passes on the text of `encoding/json`. A mistake in the format's use
-of the package (a callback that returns without reading its value or reads it a second time, a list
-of keys longer than `MaxKeys` or holding a name twice, a nil sentinel, the zero `Document`) is an error
-that starts with `jsondoc:` and wraps `jsondoc.ErrMisuse`, never the format's sentinel, so it is never
-blamed on the document. The package returns it; it does not panic.
+of the package is an error that starts with `jsondoc:` and wraps `jsondoc.ErrMisuse`, never the
+format's sentinel, so it is never blamed on the document: a callback that returns without reading its
+value or reads it a second time; a walker read after the walk has ended, which reads the document's
+object a second time; a read, or a callback that returns no error, after a read has failed; a list of
+keys longer than `MaxKeys` or holding a name twice; a nil sentinel; the zero `Document`. The package
+returns it; it does not panic. An error from any read stops the walk, and the callback that gets it
+returns it, so the first document error reaches the format as it is; a callback that swallows it and
+goes on is caught, because the walker may be inside the value that failed and what it would read next
+is no fault of the document.
 
 **What each format decides.**
 
@@ -139,8 +144,7 @@ snapshot can come from outside the repository (a fetched or user-supplied catalo
 tightening of the format is a new version, as ADR 0007 says.
 
 **Source URLs.** As defence in depth for a reader who sees a source URL rendered, `catalog.New`
-tightens two of the checks it already makes and adds two. User info is still checked first, so
-nothing that could be a password is described:
+tightens two of the checks it already makes and adds two:
 
 - user info is found as a browser's URL parser (the WHATWG URL Standard) finds it in an https URL:
   an `@` in the authority, which starts after the scheme and any run of `/` or `\`, none included,
@@ -160,8 +164,16 @@ nothing that could be a password is described:
   decodes as one), fail `text.Validate` are refused: a byte that is not UTF-8 (`%FF`), a control or
   format character (`%0A`, `%00`, `%E2%80%AE`), or white space at the end of the URL.
 
-The reference and escape errors say what was found and at which byte of the URL, and never show the
-URL or a part of it.
+User info is still checked first, and nothing that could be a password is described. The browser
+rule above finds user info that `url.Parse` misses, but no one rule finds it for every parser: a
+browser strips leading spaces and C0 controls before it parses (a space before
+`https://user:p\u200bss@host`), and an RFC 3986 parser such as curl's does not end the authority at
+a `\` (`https://user:p\ss@host`). So until `url.Parse` has confirmed that a URL has no user info,
+every error for a URL that holds an `@` anywhere is the bare message, with no character, code point
+or offset: the text, character and percent-escape checks that run before the parse give no detail
+for such a URL. The cost is only the detail of the error for a URL with an `@` in its path or query
+that also fails one of those checks. The reference and escape errors, which come after the parse,
+say what was found and at which byte of the URL, and never show the URL or a part of it.
 
 The reference check is sized for the reporter that exists, Markdown. CommonMark decodes a character
 reference only with its `;`; HTML decodes a numeric reference without it too, so numeric references
@@ -187,6 +199,10 @@ not land until its adapter meets these preconditions. Nothing changes in code no
   gains count caps (offerings, declared regions, and per offering its categories, capabilities and
   regions), or mapping bounds the candidates it keeps per resource.
 - The adapter reads at most `MaxDocumentBytes` plus one byte before it calls `Parse` (ADR 0007).
+- **The fetch guards itself against SSRF at connect time**, by checking the address a name resolves
+  to before it connects. `catalog.New` refuses a source URL whose host is an IP literal, but not one
+  whose name resolves to a private, loopback or link-local address, such as `localhost`, a
+  single-label host or a wildcard-DNS name.
 - From the first such catalog on, the one-time exception to the schema version policy above has
   ended: any tightening of the format is a new version.
 
@@ -273,5 +289,5 @@ length. The inventory-file reader names its file with it, so the base name of a 
 - The first adapter that serves a catalog that is not embedded must meet the preconditions under
   "Fetched catalogs" before it lands: refuse a source URL with a query string, with a `targettest`
   check; bound the snapshot's counts or mapping's candidates per resource; read at most the format's
-  cap plus one byte before calling `Parse` (ADR 0007); and treat any later tightening of the format
-  as a new version.
+  cap plus one byte before calling `Parse` (ADR 0007); guard the fetch against SSRF by checking the
+  resolved address at connect time; and treat any later tightening of the format as a new version.
