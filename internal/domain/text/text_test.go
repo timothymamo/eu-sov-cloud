@@ -38,6 +38,10 @@ func TestValidateAccepts(t *testing.T) {
 		{name: "offering name", in: "Managed Database for PostgreSQL"},
 		{name: "arn", in: "arn:aws:rds:eu-west-1:123456789012:db:db-example"},
 		{name: "non ascii", in: "Zürich"},
+		// A precomposed accent is one printable rune, and a combining mark after a
+		// letter is legitimate text: neither is a look-alike blank.
+		{name: "precomposed accent", in: "caf\u00e9"},
+		{name: "combining acute after a letter", in: "e\u0301"},
 		// A private-use code point is not a control or format character: the source
 		// named it, so it is kept and left to the renderer to escape.
 		{name: "private use code point", in: "a\ue000b"},
@@ -85,6 +89,19 @@ func TestValidateRejectsInvalidText(t *testing.T) {
 		// Some renderers treat Zl and Zp as line breaks, the same risk as "\n".
 		{name: "line separator", in: "a\u2028b"},
 		{name: "paragraph separator", in: "a\u2029b"},
+		// Invisible characters that render as nothing or as a blank: in a report
+		// they hide the difference between two values.
+		{name: "combining grapheme joiner", in: "a\u034fb"},
+		{name: "variation selector", in: "a\ufe0fb"},
+		{name: "variation selector supplement", in: "a\U000e0100b"},
+		{name: "hangul filler", in: "\u3164"},
+		{name: "hangul choseong filler", in: "a\u115fb"},
+		{name: "halfwidth hangul filler", in: "a\uffa0b"},
+		{name: "khmer inherent vowel", in: "a\u17b4b"},
+		{name: "braille pattern blank", in: "\u2800"},
+		// Noncharacters are permanently unassigned and never text.
+		{name: "noncharacter fffe", in: "a\ufffeb"},
+		{name: "noncharacter 10ffff", in: "a\U0010ffffb"},
 		{name: "invalid utf8", in: "a\xffb"},
 		{name: "truncated utf8", in: "Zürich"[0:2]},
 		{name: "one byte too long", in: strings.Repeat("a", text.MaxLen+1)},
@@ -122,7 +139,7 @@ func TestQuoteMatchesStrconvForShortInput(t *testing.T) {
 		{name: "invalid utf8 is escaped", in: "a\xffb"},
 		{name: "quote is escaped", in: `a"b`},
 		{name: "backslash is escaped", in: `a\b`},
-		// Exactly MaxLen runes fit; only longer input is truncated.
+		// Exactly 128 runes fit; only longer input is truncated.
 		{name: "128 runes is not truncated", in: strings.Repeat("a", 128)},
 	}
 
@@ -184,6 +201,43 @@ func TestQuoteTruncatesLongInput(t *testing.T) {
 	}
 }
 
+// Truncation has an exact shape: the first 128 runes, quoted, then the original
+// byte length. Report golden files and the maximum error size depend on it, and an
+// invalid byte counts as one rune, so it is never split by the cut.
+func TestQuoteTruncatesTo128Runes(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name string
+		in   string
+		want string
+	}{
+		{
+			name: "129 runes",
+			in:   strings.Repeat("a", 129),
+			want: strconv.Quote(strings.Repeat("a", 128)) + "...(129 bytes)",
+		},
+		{
+			// The invalid byte is the 129th rune, so it falls outside the kept
+			// prefix but still counts as the one byte it is in the reported length:
+			// 128 + 1 + 1 bytes.
+			name: "invalid byte at the boundary",
+			in:   strings.Repeat("a", 128) + "\xffb",
+			want: strconv.Quote(strings.Repeat("a", 128)) + "...(130 bytes)",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			if got := text.Quote(tc.in); got != tc.want {
+				t.Errorf("Quote(%q) = %q, want %q", tc.in, got, tc.want)
+			}
+		})
+	}
+}
+
 // Truncation is a summary, so a truncated value still shows a prefix of it.
 func TestQuoteKeepsPrefixOfLongInput(t *testing.T) {
 	t.Parallel()
@@ -221,6 +275,10 @@ func TestQuoteEmitsNoRawControlOrInvalidBytes(t *testing.T) {
 
 			if strings.ContainsRune(got, '\x1b') {
 				t.Errorf("Quote(%d bytes) = %q, want no raw escape character", len(tc.in), got)
+			}
+
+			if strings.ContainsRune(got, '\u202e') {
+				t.Errorf("Quote(%d bytes) = %q, want no raw right-to-left override", len(tc.in), got)
 			}
 
 			if strings.Contains(got, "\xff") {

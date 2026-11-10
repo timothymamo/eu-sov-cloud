@@ -298,6 +298,87 @@ func TestSnapshotRetrievedOnIsUTC(t *testing.T) {
 	}
 }
 
+// SourceURL is what a report cites as the origin of the data, so it must be a
+// plain absolute https URL: no credentials, no host hidden behind an at sign, no
+// characters that are unsafe outside a URL. It is free text as well, so control
+// characters and over-long values are rejected by text.Validate. Errors name the
+// source URL and stay bounded whatever the input.
+func TestSnapshotSourceURL(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name string
+		url  string
+		// wantErrs are the sentinel errors the error must wrap; nil means the URL
+		// is accepted.
+		wantErrs []error
+	}{
+		// Accepted: a plain page, the same page with a query and a fragment, and
+		// parentheses, which are legal URL characters. Escaping them for a Markdown
+		// table is the reporter's job.
+		{name: "pricing page", url: "https://www.scaleway.com/en/pricing/"},
+		{name: "query and fragment", url: "https://www.scaleway.com/en/pricing/?tab=compute#instances"},
+		{name: "parentheses", url: "https://example.com/a(b)"},
+
+		// Invalid free text: rejected before the URL is even parsed.
+		{
+			name:     "right to left override",
+			url:      "https://example.com/a\u202eb",
+			wantErrs: []error{catalog.ErrInvalidCatalog, text.ErrInvalid},
+		},
+		{
+			name:     "longer than max len",
+			url:      "https://example.com/" + strings.Repeat("a", text.MaxLen),
+			wantErrs: []error{catalog.ErrInvalidCatalog, text.ErrInvalid},
+		},
+
+		// Not a plain page: credentials in the URL would end up in a report, and a
+		// host in front of an at sign hides the real one.
+		{name: "userinfo with password", url: "https://user:pass@example.com/", wantErrs: []error{catalog.ErrInvalidCatalog}},
+		{name: "look-alike host before at sign", url: "https://www.scaleway.com@evil.example/", wantErrs: []error{catalog.ErrInvalidCatalog}},
+		{name: "port without host", url: "https://:443/", wantErrs: []error{catalog.ErrInvalidCatalog}},
+		{name: "opaque url", url: "https:example.com/opaque", wantErrs: []error{catalog.ErrInvalidCatalog}},
+
+		// Characters a URL does not allow as given.
+		{name: "space", url: "https://example.com/a b", wantErrs: []error{catalog.ErrInvalidCatalog}},
+		{name: "double quote", url: "https://example.com/a\"b", wantErrs: []error{catalog.ErrInvalidCatalog}},
+		{name: "angle brackets", url: "https://example.com/<x>", wantErrs: []error{catalog.ErrInvalidCatalog}},
+		{name: "backtick", url: "https://example.com/a`b", wantErrs: []error{catalog.ErrInvalidCatalog}},
+		{name: "pipe", url: "https://example.com/a|b", wantErrs: []error{catalog.ErrInvalidCatalog}},
+		{name: "backslash", url: "https://example.com/a\\b", wantErrs: []error{catalog.ErrInvalidCatalog}},
+		{name: "caret", url: "https://example.com/a^b", wantErrs: []error{catalog.ErrInvalidCatalog}},
+		{name: "braces", url: "https://example.com/a{b}", wantErrs: []error{catalog.ErrInvalidCatalog}},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			snapshot := catalog.Snapshot{SourceURL: tc.url, RetrievedOn: validSnapshot().RetrievedOn}
+
+			_, err := catalog.New(targetName, snapshot, validOfferings())
+			if len(tc.wantErrs) == 0 {
+				if err != nil {
+					t.Fatalf("New() with source URL %q returned unexpected error: %v", tc.url, err)
+				}
+
+				return
+			}
+
+			for _, wantErr := range tc.wantErrs {
+				if !errors.Is(err, wantErr) {
+					t.Fatalf("New() with source URL %q error = %v, want an error wrapping %v", tc.url, err, wantErr)
+				}
+			}
+
+			msg := err.Error()
+			if lower := strings.ToLower(msg); !strings.Contains(lower, "source url") {
+				t.Errorf("New() error = %q, want it to name the field %q", msg, "source URL")
+			}
+		})
+	}
+}
+
 // A resource with no capabilities and one with an empty capability list are the
 // same offering; callers must not have to care which spelling a fixture uses.
 func TestNewCanonicalisesEmptyCapabilities(t *testing.T) {
@@ -454,7 +535,7 @@ func TestNewErrors(t *testing.T) {
 			wantMsg: []string{"Instances"},
 		},
 		{
-			name:     "offering with only empty region names",
+			name:     "offering with a blank region among valid ones",
 			target:   targetName,
 			snapshot: validSnapshot(),
 			offerings: []catalog.Offering{{
@@ -549,6 +630,9 @@ func TestNewRejectsInvalidText(t *testing.T) {
 		{name: "newline", value: "row\nvalue"},
 		{name: "right to left override", value: "a\u202eb"},
 		{name: "zero width space", value: "a\u200bb"},
+		// Some renderers treat Zl and Zp as line breaks, the same risk as a newline.
+		{name: "line separator", value: "a\u2028b"},
+		{name: "paragraph separator", value: "a\u2029b"},
 		{name: "invalid utf8", value: "a\xffb"},
 		{name: "longer than max len", value: strings.Repeat("a", text.MaxLen+1)},
 	}
@@ -559,6 +643,10 @@ func TestNewRejectsInvalidText(t *testing.T) {
 		offering     catalog.Offering
 		wantField    string
 		wantOffering string
+		// wantErrs are the sentinel errors the error must wrap. The target is part
+		// of the catalog's own validity, so its errors say ErrInvalidCatalog too;
+		// an offering's name or region is only invalid free text.
+		wantErrs []error
 	}
 
 	tests := make([]invalidCase, 0, len(invalid)*3)
@@ -569,6 +657,7 @@ func TestNewRejectsInvalidText(t *testing.T) {
 			target:    tc.value,
 			offering:  catalog.Offering{Name: "Instances", Categories: []taxonomy.Category{taxonomy.ComputeVM}, Regions: []string{"fr-par"}},
 			wantField: "target",
+			wantErrs:  []error{catalog.ErrInvalidCatalog, text.ErrInvalid},
 		})
 
 		tests = append(tests, invalidCase{
@@ -576,6 +665,7 @@ func TestNewRejectsInvalidText(t *testing.T) {
 			target:    targetName,
 			offering:  catalog.Offering{Name: tc.value, Categories: []taxonomy.Category{taxonomy.ComputeVM}, Regions: []string{"fr-par"}},
 			wantField: "name",
+			wantErrs:  []error{text.ErrInvalid},
 		})
 
 		tests = append(tests, invalidCase{
@@ -584,6 +674,7 @@ func TestNewRejectsInvalidText(t *testing.T) {
 			offering:     catalog.Offering{Name: "Instances", Categories: []taxonomy.Category{taxonomy.ComputeVM}, Regions: []string{"fr-par", tc.value}},
 			wantField:    "region",
 			wantOffering: "Instances",
+			wantErrs:     []error{text.ErrInvalid},
 		})
 	}
 
@@ -592,8 +683,14 @@ func TestNewRejectsInvalidText(t *testing.T) {
 			t.Parallel()
 
 			_, err := catalog.New(tc.target, validSnapshot(), []catalog.Offering{tc.offering})
-			if !errors.Is(err, text.ErrInvalid) {
-				t.Fatalf("New() error = %v, want an error wrapping text.ErrInvalid", err)
+			for _, wantErr := range tc.wantErrs {
+				if !errors.Is(err, wantErr) {
+					t.Fatalf("New() error = %v, want an error wrapping %v", err, wantErr)
+				}
+			}
+
+			if err == nil {
+				t.Fatalf("New() returned no error, want an error naming the field %q", tc.wantField)
 			}
 
 			msg := err.Error()

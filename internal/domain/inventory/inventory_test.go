@@ -326,6 +326,9 @@ func TestNewRejectsInvalidText(t *testing.T) {
 		{name: "pipe and newline", value: "|x\nrow"},
 		{name: "right to left override", value: "a\u202eb"},
 		{name: "zero width space", value: "a\u200bb"},
+		// Some renderers treat Zl and Zp as line breaks, the same risk as a newline.
+		{name: "line separator", value: "a\u2028b"},
+		{name: "paragraph separator", value: "a\u2029b"},
 		{name: "invalid utf8", value: "a\xffb"},
 		{name: "longer than max len", value: strings.Repeat("a", text.MaxLen+1)},
 	}
@@ -394,21 +397,6 @@ func TestNewRejectsInvalidText(t *testing.T) {
 		})
 	}
 
-	// U+2028 and U+2029 are Unicode white space, so the blank checks of source and
-	// of the ID hide them before text.Validate sees them. A raw type has no blank
-	// check, and some renderers still treat a line separator as a line break, so it
-	// is rejected exactly like a newline.
-	withLineSeparatorRawType := base
-	withLineSeparatorRawType.ID = "db-example"
-	withLineSeparatorRawType.RawType = "AWS::RDS::DBInstance\u2028example"
-	tests = append(tests, testCase{
-		name:      "raw type/line separator",
-		source:    "aws",
-		resources: []inventory.Resource{base, withLineSeparatorRawType},
-		wantField: "raw type",
-		wantID:    "db-example",
-	})
-
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
@@ -434,6 +422,122 @@ func TestNewRejectsInvalidText(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+// An unknown raw type and a resource outside any region are both facts about the
+// source: they are kept as the empty string, not rejected. Mapping then goes
+// through the category alone, and a global resource is simply not region-bound.
+func TestNewAllowsEmptyRawTypeAndRegion(t *testing.T) {
+	t.Parallel()
+
+	inv := newInventory(t, "aws", []inventory.Resource{{
+		ID:       "dns-example",
+		RawType:  "",
+		Category: taxonomy.Unclassified,
+		Region:   "",
+	}})
+
+	got := inv.Resources()
+	if len(got) != 1 {
+		t.Fatalf("Resources() returned %d resources, want 1", len(got))
+	}
+
+	if diff := cmp.Diff("", got[0].RawType); diff != "" {
+		t.Errorf("RawType mismatch (-want +got):\n%s", diff)
+	}
+
+	if diff := cmp.Diff("", got[0].Region); diff != "" {
+		t.Errorf("Region mismatch (-want +got):\n%s", diff)
+	}
+}
+
+// A blank raw type or region is a value a file got wrong, not an absence of one:
+// the field is present but says nothing, so it is rejected like any invalid text
+// and the error names the field and the resource.
+func TestNewRejectsBlankRawTypeAndRegion(t *testing.T) {
+	t.Parallel()
+
+	base := inventory.Resource{
+		ID:       "i-0123456789abcdef0",
+		RawType:  "AWS::EC2::Instance",
+		Category: taxonomy.ComputeVM,
+		Region:   "eu-west-1",
+	}
+
+	tests := []struct {
+		name      string
+		resource  inventory.Resource
+		wantField string
+	}{
+		{
+			name: "whitespace only raw type",
+			resource: inventory.Resource{
+				ID:       "db-example",
+				RawType:  "   ",
+				Category: taxonomy.DatabasePostgreSQL,
+				Region:   "eu-west-1",
+			},
+			wantField: "raw type",
+		},
+		{
+			name: "whitespace only region",
+			resource: inventory.Resource{
+				ID:       "vol-example",
+				RawType:  "AWS::EC2::Volume",
+				Category: taxonomy.StorageBlock,
+				Region:   "   ",
+			},
+			wantField: "region",
+		},
+	}
+
+	// The resource at fault is the only one with a usable ID, so the error must
+	// name it by ID rather than by position.
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			_, err := inventory.New("aws", []inventory.Resource{base, tc.resource})
+			if !errors.Is(err, text.ErrInvalid) {
+				t.Fatalf("New() error = %v, want an error wrapping text.ErrInvalid", err)
+			}
+
+			msg := err.Error()
+			if lower := strings.ToLower(msg); !strings.Contains(lower, tc.wantField) {
+				t.Errorf("New() error = %q, want it to name the field %q", msg, tc.wantField)
+			}
+
+			if !strings.Contains(msg, tc.resource.ID) {
+				t.Errorf("New() error = %q, want it to name the resource %q", msg, tc.resource.ID)
+			}
+		})
+	}
+}
+
+// Two IDs that differ only by an invisible variation selector are the same name to
+// a reader and to a report, so the second one is rejected as invalid text instead
+// of appearing as a duplicate-looking pair.
+func TestNewRejectsIDWithLookAlikeCharacter(t *testing.T) {
+	t.Parallel()
+
+	base := inventory.Resource{
+		ID:       "i-0123456789abcdef0",
+		RawType:  "AWS::EC2::Instance",
+		Category: taxonomy.ComputeVM,
+		Region:   "eu-west-1",
+	}
+
+	lookAlike := base
+	lookAlike.ID = base.ID + "\ufe0f"
+
+	_, err := inventory.New("aws", []inventory.Resource{base, lookAlike})
+	if !errors.Is(err, text.ErrInvalid) {
+		t.Fatalf("New() error = %v, want an error wrapping text.ErrInvalid", err)
+	}
+
+	if msg := err.Error(); !strings.Contains(strings.ToLower(msg), "id") {
+		t.Errorf("New() error = %q, want it to name the field %q", msg, "id")
 	}
 }
 
