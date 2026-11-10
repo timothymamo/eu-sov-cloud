@@ -262,6 +262,38 @@ linters:
           deny:
             - pkg: encoding/json
               desc: read the snapshot through internal/adapter/target/snapshot (ADR 0007)
+        # A target that serves an embedded snapshot (ADR 0007) reads only the
+        # bytes it embeds with //go:embed: it opens no file, reads no
+        # environment, makes no network or system call and loads no code. The
+        # snapshot reader is held to the same by
+        # target-snapshot-reader-parses-bytes; this rule holds the adapters
+        # that embed a snapshot to it. List each such target here. The globs
+        # end in /** so they match the files directly in each package and any
+        # subpackage added later. The deny entries have no $, so each also
+        # covers its subpackages: os covers os/exec, os/signal and os/user, and
+        # net covers net/http and net/http/httptest. A target that calls its
+        # provider's API is not listed.
+        embedded-snapshot-targets-stay-offline:
+          list-mode: lax
+          files:
+            - "**/internal/adapter/target/ovhcloud/**"
+            - "**/internal/adapter/target/scaleway/**"
+            - "!$test"
+          deny:
+            - pkg: io/fs
+              desc: an embedded-snapshot target reads only its embedded bytes
+            - pkg: io/ioutil
+              desc: an embedded-snapshot target reads only its embedded bytes
+            - pkg: net
+              desc: an embedded-snapshot target makes no network call
+            - pkg: os
+              desc: an embedded-snapshot target reads no file and no environment
+            - pkg: plugin
+              desc: an embedded-snapshot target loads no code
+            - pkg: syscall
+              desc: an embedded-snapshot target makes no system call
+            - pkg: unsafe
+              desc: an embedded-snapshot target needs no unsafe code
         testutil-only-in-tests:
           list-mode: lax
           files:

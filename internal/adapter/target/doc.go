@@ -11,5 +11,9 @@
 // what is its own, such as its display name in errors and its contract
 // expectations. The lint rule target-adapters-read-snapshots-through-the-reader
 // keeps encoding/json out of every package here but the reader, so a provider
-// cannot decode its snapshot on its own.
+// cannot decode its snapshot on its own. The lint rule
+// embedded-snapshot-targets-stay-offline keeps io/fs, io/ioutil, net, os,
+// plugin, syscall and unsafe, with their subpackages, out of every provider
+// that serves an embedded snapshot, so it reads only the bytes it embeds; a
+// provider that starts serving one is added to that rule by name.
 package target
