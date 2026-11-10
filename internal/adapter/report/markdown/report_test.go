@@ -183,12 +183,12 @@ func hostileCatalog(t *testing.T) catalog.Catalog {
 }
 
 // render writes the report of a and meta and returns it.
-func render(tba testing.TB, a assessment.Assessment, meta analysis.ReportMeta) []byte {
-	tba.Helper()
+func render(tb testing.TB, a assessment.Assessment, meta analysis.ReportMeta) []byte {
+	tb.Helper()
 
 	var out bytes.Buffer
-	if err := markdown.New().Report(tba.Context(), &out, a, meta); err != nil {
-		tba.Fatalf("Report() returned unexpected error: %v", err)
+	if err := markdown.New().Report(tb.Context(), &out, a, meta); err != nil {
+		tb.Fatalf("Report() returned unexpected error: %v", err)
 	}
 
 	return out.Bytes()
@@ -251,6 +251,284 @@ func TestReportHostileValues(t *testing.T) {
 
 	checkTableShape(t, got)
 	checkHeadings(t, got)
+}
+
+// controlSnapshot is a snapshot for the assessments the escaping tests build by
+// hand: the domain constructors reject the line endings, control characters and
+// edge spaces those tests must reach the renderer with, so the guard, not the
+// constructor, is what is under test.
+var controlSnapshot = catalog.Snapshot{
+	SourceURL:   "https://example.com/catalog",
+	RetrievedOn: time.Date(2026, 11, 2, 0, 0, 0, 0, time.UTC),
+}
+
+// TestReportAutolinksSourceURL pins that a source URL is emitted as stored,
+// percent-encoded only where a Markdown autolink cannot hold the character: the
+// characters that would end the autolink, end the line or end the table cell are
+// escaped, and an escape the provider stored is shown as given, never decoded.
+func TestReportAutolinksSourceURL(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name string
+		url  string
+		want string
+	}{
+		{
+			name: "parentheses",
+			url:  "https://example.com/a(b)",
+			want: "https://example.com/a%28b%29",
+		},
+		{
+			name: "square brackets",
+			url:  "https://example.com/a[b]",
+			want: "https://example.com/a%5Bb%5D",
+		},
+		{
+			name: "angle brackets",
+			url:  "https://example.com/a<b>",
+			want: "https://example.com/a%3Cb%3E",
+		},
+		{
+			name: "pipe",
+			url:  "https://example.com/a|b",
+			want: "https://example.com/a%7Cb",
+		},
+		{
+			name: "backtick",
+			url:  "https://example.com/a`b",
+			want: "https://example.com/a%60b",
+		},
+		{
+			name: "space",
+			url:  "https://example.com/a b",
+			want: "https://example.com/a%20b",
+		},
+		{
+			name: "line feed",
+			url:  "https://example.com/a\nb",
+			want: "https://example.com/a%0Ab",
+		},
+		{
+			name: "carriage return",
+			url:  "https://example.com/a\rb",
+			want: "https://example.com/a%0Db",
+		},
+		{
+			name: "tab",
+			url:  "https://example.com/a\tb",
+			want: "https://example.com/a%09b",
+		},
+		{
+			name: "null",
+			url:  "https://example.com/a\x00b",
+			want: "https://example.com/a%00b",
+		},
+		{
+			name: "unit separator",
+			url:  "https://example.com/a\x1fb",
+			want: "https://example.com/a%1Fb",
+		},
+		{
+			name: "delete",
+			url:  "https://example.com/a\x7fb",
+			want: "https://example.com/a%7Fb",
+		},
+		{
+			name: "stored line feed escape stays literal",
+			url:  "https://example.com/a%0Ab",
+			want: "https://example.com/a%0Ab",
+		},
+		{
+			name: "stored override escape stays literal",
+			url:  "https://example.com/%E2%80%AE",
+			want: "https://example.com/%E2%80%AE",
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+
+			a := assessment.Assessment{
+				Target:   "ovhcloud",
+				Snapshot: catalog.Snapshot{SourceURL: test.url, RetrievedOn: controlSnapshot.RetrievedOn},
+				Source:   sourceName,
+			}
+
+			out := string(render(t, a, analysis.ReportMeta{}))
+
+			want := " snapshot from <" + test.want + ">, retrieved 2026-11-02"
+			if !strings.Contains(out, want) {
+				t.Errorf("report does not contain the autolink %q:\n%s", want, out)
+			}
+		})
+	}
+}
+
+// TestReportEscapesLineEndings pins that a line ending inside a value never
+// reaches the report as one: running text shows it as a character reference and
+// a code span shows it as a space, as CommonMark would, so no value can end a
+// line, a heading or a table row.
+func TestReportEscapesLineEndings(t *testing.T) {
+	t.Parallel()
+
+	reason := mapping.Reason{Code: mapping.NotClassified}
+	a := assessment.Assessment{
+		Target:   "tar\nget",
+		Snapshot: catalog.Snapshot{SourceURL: "https://example.com/a%0Ab", RetrievedOn: controlSnapshot.RetrievedOn},
+		Source:   "sou\rce",
+		Verdicts: []assessment.Verdict{{
+			Resource: inventory.Resource{
+				ID:       "i\nd",
+				RawType:  "AWS::X\rY",
+				Category: taxonomy.Category("cat\nx"),
+			},
+			Fit:          mapping.None,
+			BestOffering: "off\rering",
+			Reasons:      []mapping.Reason{reason},
+		}},
+		Blockers: []assessment.Blocker{{ResourceID: "i\nd", Reason: reason}},
+		Summary:  assessment.Summary{Total: 1, None: 1},
+	}
+
+	out := string(render(t, a, analysis.ReportMeta{InventoryName: "i\nnv.json"}))
+
+	escaped := []string{
+		"# Migration assessment: tar&#10;get",
+		"- Inventory file: i&#10;nv.json",
+		"- Source: sou&#13;ce",
+		"| i&#10;d | AWS::X&#13;Y | `cat x` | none | off&#13;ering | not classified |",
+		"- i&#10;d: not classified",
+	}
+	for _, want := range escaped {
+		if !strings.Contains(out, want) {
+			t.Errorf("report does not contain %q:\n%s", want, out)
+		}
+	}
+
+	lines := []string{"tar\nget", "i\nnv.json", "sou\rce", "i\nd", "AWS::X\rY", "cat\nx", "off\rering"}
+	for _, line := range lines {
+		if strings.Contains(out, line) {
+			t.Errorf("report contains the raw value %q, so a line ending was not escaped:\n%s", line, out)
+		}
+	}
+
+	checkTableShape(t, []byte(out))
+}
+
+// TestReportEscapesCodeSpanEdges pins the padding rule of a code span: a value
+// that starts or ends with a space keeps it, because CommonMark strips one
+// surrounding space; a value of spaces only is never stripped, and an empty
+// value renders as an empty cell.
+func TestReportEscapesCodeSpanEdges(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name     string
+		category taxonomy.Category
+		want     string
+	}{
+		{name: "leading space is padded", category: " x", want: "`  x `"},
+		{name: "trailing space is padded", category: "x ", want: "` x  `"},
+		{name: "both edges are padded", category: " x ", want: "`  x  `"},
+		{name: "spaces only are not padded", category: "   ", want: "`   `"},
+		{name: "backtick edges are padded", category: "`x`", want: "`` `x` ``"},
+		{name: "no edges are not padded", category: taxonomy.ComputeVM, want: "`compute.vm`"},
+		{name: "empty is an empty cell", category: "", want: ""},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+
+			a := assessment.Assessment{
+				Target:   "ovhcloud",
+				Snapshot: controlSnapshot,
+				Source:   sourceName,
+				Verdicts: []assessment.Verdict{{
+					Resource: inventory.Resource{
+						ID:       "i-1",
+						RawType:  "AWS::EC2::Instance",
+						Category: test.category,
+					},
+					Fit:     mapping.None,
+					Reasons: []mapping.Reason{{Code: mapping.NotClassified}},
+				}},
+				Summary: assessment.Summary{Total: 1, None: 1},
+			}
+
+			cells := tableRow(t, render(t, a, analysis.ReportMeta{}), "i-1")
+			if len(cells) != 6 {
+				t.Fatalf("the resource row has %d cells, want 6: %q", len(cells), cells)
+			}
+
+			if got := cells[2]; got != test.want {
+				t.Errorf("Category cell = %q, want %q", got, test.want)
+			}
+		})
+	}
+}
+
+// TestReportBlockersStartWithResourceID pins that a blocker line is one list
+// item whose text starts with the escaped resource ID: an ID that would start a
+// list item of its own is escaped where the line starts, so the line stays flat.
+// The same ID in a table cell is not escaped that way, because a cell is not a
+// line of its own. A star and a closing parenthesis are escaped on every line
+// already, as emphasis and link syntax; a dash, a plus and the dot of an ordered
+// marker are harmless anywhere but at the start of a line, so only there do they
+// need the escape.
+func TestReportBlockersStartWithResourceID(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name string
+		id   string
+		// want is the ID as it starts a blocker line.
+		want string
+		// wantCell is the ID as it appears in a table cell.
+		wantCell string
+	}{
+		{name: "dash starts a bullet", id: "- x", want: `\- x`, wantCell: "- x"},
+		{name: "plus starts a bullet", id: "+ x", want: `\+ x`, wantCell: "+ x"},
+		{name: "star starts a bullet", id: "* x", want: `\* x`, wantCell: `\* x`},
+		{name: "digit and dot start an ordered item", id: "1. x", want: `1\. x`, wantCell: "1. x"},
+		{name: "digits and parenthesis start an ordered item", id: "12) x", want: `12\) x`, wantCell: `12\) x`},
+		{name: "dot inside the ID is not escaped", id: "x 1. y", want: "x 1. y", wantCell: "x 1. y"},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+
+			reason := mapping.Reason{Code: mapping.NotClassified}
+			a := assessment.Assessment{
+				Target:   "ovhcloud",
+				Snapshot: controlSnapshot,
+				Source:   sourceName,
+				Verdicts: []assessment.Verdict{{
+					Resource: inventory.Resource{
+						ID:       test.id,
+						RawType:  "AWS::S3::Bucket",
+						Category: taxonomy.Unclassified,
+					},
+					Fit:     mapping.None,
+					Reasons: []mapping.Reason{reason},
+				}},
+				Blockers: []assessment.Blocker{{ResourceID: test.id, Reason: reason}},
+				Summary:  assessment.Summary{Total: 1, None: 1},
+			}
+
+			out := render(t, a, analysis.ReportMeta{})
+
+			want := "- " + test.want + ": not classified"
+			if got := blockerLines(t, out); !slices.Equal(got, []string{want}) {
+				t.Errorf("blockers = %q, want the one list item %q", got, want)
+			}
+
+			wantTableRow(t, out, test.wantCell)
+		})
+	}
 }
 
 // checkTableShape asserts that every row of every table has as many cells as its
@@ -343,6 +621,67 @@ func tableCells(line string) []string {
 	}
 
 	return append(cells, cell.String())
+}
+
+// tableRow returns the cells of the table row whose first cell is firstCell, with
+// the padding writeRow puts around every cell removed. It fails the test when no
+// row starts with that cell.
+func tableRow(t *testing.T, out []byte, firstCell string) []string {
+	t.Helper()
+
+	for _, line := range strings.Split(string(out), "\n") {
+		if !strings.HasPrefix(line, "|") {
+			continue
+		}
+
+		cells := tableCells(line)
+		if isSeparatorRow(cells) || strings.TrimSpace(cells[0]) != firstCell {
+			continue
+		}
+
+		for i, cell := range cells {
+			cells[i] = strings.TrimSpace(cell)
+		}
+
+		return cells
+	}
+
+	t.Fatalf("no table row starts with %q:\n%s", firstCell, out)
+
+	return nil
+}
+
+// wantTableRow fails the test unless the table has a row whose first cell is
+// firstCell, as given, with the six cells of a resources row.
+func wantTableRow(t *testing.T, out []byte, firstCell string) {
+	t.Helper()
+
+	if cells := tableRow(t, out, firstCell); len(cells) != 6 {
+		t.Errorf("the resource row %q has %d cells, want 6: %q", firstCell, len(cells), cells)
+	}
+}
+
+// blockerLines returns the non-empty lines of the report's Blockers section, in
+// the order they appear.
+func blockerLines(t *testing.T, out []byte) []string {
+	t.Helper()
+
+	lines := strings.Split(string(out), "\n")
+
+	start := slices.Index(lines, "## Blockers")
+	if start < 0 {
+		t.Fatalf("report has no Blockers section:\n%s", out)
+	}
+
+	var blockers []string
+
+	for _, line := range lines[start+1:] {
+		if line != "" {
+			blockers = append(blockers, line)
+		}
+	}
+
+	return blockers
 }
 
 // isSeparatorRow reports whether cells is a table's header separator row, the
