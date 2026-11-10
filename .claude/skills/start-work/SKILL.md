@@ -38,5 +38,9 @@ The PR's merge step (skill `pr-create`) removes the worktree with
 
 - Never commit or push to `main`, and never pass `--no-verify`: the hooks in `.githooks/` that refuse
   it are the safety net, not an obstacle.
-- Worktrees live inside the repository because the Lima VM mounts only the repository. Never create one
-  elsewhere (for example `../`), and never `git switch` the repository root to another branch.
+- A pull request's worktree lives under `.worktrees/` in the main checkout. Never create one elsewhere
+  (for example `../`), and never `git switch` the repository root to another branch.
+- The directories beside the repository, `../eu-sov-cloud-dispatch-*` on `agent/dispatch-*` branches,
+  belong to dot-agent-deck's dispatcher, which creates and removes them
+  (`docs/adr/0008-mount-a-workspace-directory-for-dispatcher-mode.md`). An orchestration started in one
+  still runs `make worktree` for each pull request, and never commits on the `agent/dispatch-*` branch.

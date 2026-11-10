@@ -1,6 +1,7 @@
 # 0002. Run the agent team in a Lima VM rather than devbox
 
-- Status: Accepted
+- Status: Accepted; the mount (repository only) is superseded by
+  [0008](0008-mount-a-workspace-directory-for-dispatcher-mode.md)
 - Date: 2026-11-09
 
 ## Context

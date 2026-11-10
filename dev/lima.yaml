@@ -1,8 +1,10 @@
 # Isolated environment for running dot-agent-deck and its agents.
 #
-# Create it with `make vm-up`, which passes `--mount-only <repo>:w`: this
-# repository is the ONLY host path the VM can see. Agents running inside cannot
-# read ~/.ssh, ~/.aws, ~/.azure, ~/.config/gcloud or anything else on the Mac.
+# Create it with `make vm-up`, which passes `--mount-only <workspace>:w`: the
+# repository's parent directory, which holds only this repository and the
+# worktrees dot-agent-deck's dispatcher creates beside it, is the ONLY host path
+# the VM can see. Agents running inside cannot read ~/.ssh, ~/.aws, ~/.azure,
+# ~/.config/gcloud or anything else on the Mac.
 #
 # Everything the agents need is installed here, so nothing about the agent
 # toolchain has to be installed on the host. See docs/dev-environment.md.
