@@ -100,13 +100,20 @@ blamed on the document. The package returns it; it does not panic.
 
 - `jsondoc-parses-bytes` (new) limits jsondoc's non-test files to the standard parsing packages it uses
   and `internal/domain/text`, so it opens no file and makes no network call.
-- `inventory-file-reader-decodes-through-jsondoc` (new) denies `encoding/json`, and with it
-  `encoding/json/v2` and `encoding/json/jsontext`, to the inventory-file reader's non-test files.
+- `inventory-file-reader-reads-one-file` (new) limits the inventory-file reader's non-test files to
+  the standard packages it uses to open, read and decode one file (`context`, `errors`, `fmt`, `io`,
+  `io/fs`, `os`), jsondoc, and the domain packages it builds the inventory with, so the source reader
+  stays offline by rule. It denies `encoding/json`, and with it `encoding/json/v2` and
+  `encoding/json/jsontext`, by name, so the reason is given.
 - `target-snapshot-reader-parses-bytes` lets the snapshot reader import jsondoc, and drops the parsing
   packages it no longer imports, `encoding/json` among them.
 - `target-adapters-read-snapshots-through-the-reader` loses its exception for the reader: with the
   reader decoding through jsondoc, no non-test file under `internal/adapter/target` imports
   `encoding/json`.
+- `adapters-are-built-in-cmd` allows every package under `internal/adapter/internal/` and says
+  nothing about what such a helper imports. Every helper package added there needs a strict
+  allow-list rule of its own, as jsondoc has (`jsondoc-parses-bytes`); the comment beside
+  `adapters-are-built-in-cmd` says so.
 
 **Declared region codes.** The snapshot format adds a rule for the values of its top-level `regions`
 list: each is a region code, ASCII letters and digits in groups joined by single hyphens

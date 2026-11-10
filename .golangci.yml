@@ -192,6 +192,13 @@ linters:
         # file the rule covers, so on its own it would let any package import
         # the reader; snapshot-reader-only-in-targets keeps it to the packages
         # under internal/adapter/target.
+        #
+        # The allow entry for internal/adapter/internal/ admits every helper
+        # package added there, and this rule says nothing about what a helper
+        # imports. So every helper package added under internal/adapter/internal/
+        # needs a strict allow-list rule of its own, as jsondoc has
+        # (jsondoc-parses-bytes), or an adapter that must stay offline could
+        # reach I/O through it.
         adapters-are-built-in-cmd:
           list-mode: lax
           files:
@@ -303,17 +310,46 @@ linters:
             - unicode/utf16$
             - unicode/utf8$
             - github.com/timothymamo/eu-sov-cloud/internal/domain/text$
-        # The inventory-file reader decodes the file only through jsondoc (ADR
-        # 0006, ADR 0009), never with encoding/json of its own, which matches
-        # keys ignoring case, keeps the last of a repeated key and reads an
-        # escaped lone surrogate as U+FFFD. The deny entry has no $, so it also
-        # covers encoding/json/v2 and encoding/json/jsontext. Only its _test.go
-        # files may decode JSON.
-        inventory-file-reader-decodes-through-jsondoc:
-          list-mode: lax
+        # The inventory-file reader reads one local file and decodes it (ADR
+        # 0006): it makes no network call, starts no process and imports no
+        # adapter, so the source it reads from stays offline by rule. It may
+        # import only what is listed under allow: os, io and io/fs to open and
+        # read the file, context to stop when asked, errors and fmt for its
+        # errors, jsondoc to decode, and the domain packages it builds the
+        # inventory with. The glob ends in /** so it also matches the files
+        # directly in the package directory. Add a standard package only when
+        # reading or parsing the file needs it, never one that reaches the
+        # network; the project packages are named one by one, each ending in $,
+        # for the reason target-snapshot-reader-parses-bytes gives.
+        #
+        # It decodes the file only through jsondoc (ADR 0009), never with
+        # encoding/json of its own, which matches keys ignoring case, keeps the
+        # last of a repeated key and reads an escaped lone surrogate as U+FFFD.
+        # The allow list already refuses encoding/json; the deny entry, which
+        # has no $ and so also covers encoding/json/v2 and
+        # encoding/json/jsontext, only says why. Only the _test.go files may
+        # decode JSON.
+        #
+        # An allowed package can still hold a function that reaches further
+        # than the rule means, which an import rule cannot see: os is allowed
+        # for os.Open, and the reader must not call os.Getenv, os.StartProcess
+        # or fmt.Print*. Review holds that line.
+        inventory-file-reader-reads-one-file:
+          list-mode: strict
           files:
             - "**/internal/adapter/source/inventoryfile/**"
             - "!$test"
+          allow:
+            - context$
+            - errors$
+            - fmt$
+            - io$
+            - io/fs$
+            - os$
+            - github.com/timothymamo/eu-sov-cloud/internal/adapter/internal/jsondoc$
+            - github.com/timothymamo/eu-sov-cloud/internal/domain/inventory$
+            - github.com/timothymamo/eu-sov-cloud/internal/domain/taxonomy$
+            - github.com/timothymamo/eu-sov-cloud/internal/domain/text$
           deny:
             - pkg: encoding/json
               desc: decode the inventory file through internal/adapter/internal/jsondoc (ADR 0009)
