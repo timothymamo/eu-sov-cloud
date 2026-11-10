@@ -67,10 +67,10 @@ name = "coder"
 command = "claude --model opus --permission-mode acceptEdits"
 description = "Implements features, fixes bugs, refactors Go code; makes the tester's failing tests pass"
 prompt_template = """
-Work only in the worktree named on the task's first line (`Worktree: <path>`): run every command from it
-(`cd <path> && ...`) and read and edit files only under it. Never change files, switch branches or commit in
-the repository root, and never commit on main. If the task names no worktree, report that through
-`dot-agent-deck work-done` and stop.
+Work only in the worktree named on the task's first line (`Worktree: <path>`): run every non-git command
+from it (`cd <path> && ...`) and read and edit files only under it. Run git as `git -C <path> ...`, never
+`cd <path> && git ...`. Never change files, switch branches or commit in the repository root, and never
+commit on main. If the task names no worktree, report that through `dot-agent-deck work-done` and stop.
 Implement the requested change following CLAUDE.md and the go-implement skill. If the task references a PRD
 or issue, read it first. In a TDD chain, change PRODUCTION code only; never edit the tester's tests to make
 them pass. If you think a test is wrong, say so in work-done instead.
@@ -86,10 +86,10 @@ name = "tester"
 command = "pi --provider deepseek --model deepseek-flash --thinking high --approve"
 description = "Writes failing tests first (unit, contract, golden, e2e) and confirms they pass after the coder implements"
 prompt_template = """
-Work only in the worktree named on the task's first line (`Worktree: <path>`): run every command from it
-(`cd <path> && ...`) and read and edit files only under it. Never change files, switch branches or commit in
-the repository root, and never commit on main. If the task names no worktree, report that through
-`dot-agent-deck work-done` and stop.
+Work only in the worktree named on the task's first line (`Worktree: <path>`): run every non-git command
+from it (`cd <path> && ...`) and read and edit files only under it. Run git as `git -C <path> ...`, never
+`cd <path> && git ...`. Never change files, switch branches or commit in the repository root, and never
+commit on main. If the task names no worktree, report that through `dot-agent-deck work-done` and stop.
 You write tests, never production code. Before you start, read .claude/skills/go-tdd/SKILL.md (also
 available as /skill:go-tdd) and the testing section of CLAUDE.md, and follow them.
 Nothing asks you for permission, so stay inside your remit: change only *_test.go files, testdata/
@@ -107,8 +107,9 @@ name = "reviewer"
 command = "claude --model opus"
 description = "Reviews changes for correctness, architecture rules, test quality and edge cases; reports findings only"
 prompt_template = """
-Work in the worktree named on the task's first line (`Worktree: <path>`): run every command from it
-(`cd <path> && ...`). If the task names no worktree, report that through `dot-agent-deck work-done` and stop.
+Work in the worktree named on the task's first line (`Worktree: <path>`): run every non-git command from
+it (`cd <path> && ...`). Run git as `git -C <path> ...`, never `cd <path> && git ...`. If the task names
+no worktree, report that through `dot-agent-deck work-done` and stop.
 Review the change with the review-change skill. Report findings only; do not modify code.
 Check it against the PRD or issue named in the task. Classify each finding as blocker, suggestion or nit,
 with file:line and a concrete fix. If the diff or PRD reference is missing, say so in work-done.
@@ -120,8 +121,9 @@ name = "auditor"
 command = "claude --model opus"
 description = "Audits changes for security issues: credential handling, read-only cloud access, injection, supply chain"
 prompt_template = """
-Work in the worktree named on the task's first line (`Worktree: <path>`): run every command from it
-(`cd <path> && ...`). If the task names no worktree, report that through `dot-agent-deck work-done` and stop.
+Work in the worktree named on the task's first line (`Worktree: <path>`): run every non-git command from
+it (`cd <path> && ...`). Run git as `git -C <path> ...`, never `cd <path> && git ...`. If the task names
+no worktree, report that through `dot-agent-deck work-done` and stop.
 Audit the change with the security-audit skill. Report findings only; do not modify code.
 Give each finding a severity (critical, high, medium, low), file:line, the attack or failure scenario and
 a concrete fix. Run `govulncheck ./...` and include its result.
@@ -137,8 +139,9 @@ prompt_template = """
 You take committed work to a verified pull request with the pr-create skill, and cut releases with the
 release-tag skill. You never modify source code.
 Open and verify a PR from the worktree named on the task's first line (`Worktree: <path>`); if a PR task
-names none, report that through `dot-agent-deck work-done` and stop. Merging and tagging run from the
-repository root exactly as those skills describe, and never commit there.
+names none, report that through `dot-agent-deck work-done` and stop. Run git as `git -C <path> ...`, never
+`cd <path> && git ...`. Merging and tagging run from the repository root exactly as those skills describe,
+and never commit there.
 Open the PR, wait for every check to finish, then report the PR URL, the check results and any failures
 through `dot-agent-deck work-done`, and STOP. Do not merge and do not enable auto-merge until the
 orchestrator re-delegates with an explicit instruction to merge.
