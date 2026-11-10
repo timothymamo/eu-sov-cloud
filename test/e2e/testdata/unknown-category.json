@@ -1,0 +1,12 @@
+{
+  "schemaVersion": 1,
+  "source": "aws",
+  "resources": [
+    {
+      "id": "i-0123456789abcdef0",
+      "rawType": "AWS::EC2::Instance",
+      "category": "compute.mv",
+      "region": "eu-west-1"
+    }
+  ]
+}

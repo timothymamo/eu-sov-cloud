@@ -8,8 +8,9 @@ Guidance for every agent working in this repository. Claude Code and pi both loa
 reports what can be moved to an EU cloud provider (**OVHcloud, Scaleway, UpCloud**): which resources
 have a direct equivalent, which a partial one, which have none, and what blocks the move.
 
-**Status:** scaffolding only. The package layout, tooling and agent workflow exist; the analysis code does
-not yet. Work is planned as PRDs in `prds/`.
+**Status:** walking skeleton. `eusov assess` works offline: it reads an inventory file and assesses it
+against an embedded Scaleway catalog snapshot, through every layer (PRD #2, `prds/done/`). Live source
+adapters and the other targets do not exist yet. Work is planned as PRDs in `prds/`.
 
 ## Ubiquitous language
 
@@ -36,7 +37,7 @@ Hexagonal (ports and adapters). Dependencies point inwards only. See `docs/archi
 | Domain | `internal/domain/{taxonomy,inventory,catalog,mapping,assessment,text}` | Standard library and other domain packages only |
 | Application | `internal/app/analysis` | Domain. Declares the ports (interfaces) it consumes |
 | Adapters | `internal/adapter/source/{inventoryfile,aws,azure,gcp}`, `internal/adapter/target/{ovhcloud,scaleway,upcloud}`, `internal/adapter/report/{markdown,jsonreport}` | Domain, the ports they implement, SDKs |
-| Driving adapter | `internal/cli` | Application, domain |
+| Driving adapter | `internal/cli` | Application, domain, `internal/version` |
 | Composition root | `cmd/eusov` | Everything; the only place adapters are constructed |
 
 - The dependency rule is **enforced by `golangci-lint` (depguard)**. Do not add `//nolint:depguard`; fix the design.

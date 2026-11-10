@@ -3,22 +3,50 @@
 // UpCloud).
 //
 // main is the composition root: it is the only place that wires concrete
-// adapters into the application use cases.
+// adapters into the application use cases. The command line itself is handled
+// by internal/cli.
 package main
 
 import (
-	"fmt"
+	"context"
 	"os"
+	"os/signal"
+	"syscall"
 
-	"github.com/timothymamo/eu-sov-cloud/internal/version"
+	"github.com/timothymamo/eu-sov-cloud/internal/adapter/report/markdown"
+	"github.com/timothymamo/eu-sov-cloud/internal/adapter/source/inventoryfile"
+	"github.com/timothymamo/eu-sov-cloud/internal/adapter/target/scaleway"
+	"github.com/timothymamo/eu-sov-cloud/internal/app/analysis"
+	"github.com/timothymamo/eu-sov-cloud/internal/cli"
 )
 
 func main() {
-	if len(os.Args) > 1 && (os.Args[1] == "version" || os.Args[1] == "--version") {
-		fmt.Println(version.String())
-		return
-	}
+	// SIGINT, SIGTERM and SIGHUP (the terminal closed) cancel ctx, which ends a
+	// run with exit code 1; a signal before the final write writes no report.
+	// A signal during the final write or rename may still let it complete. Once
+	// ctx is cancelled, stop restores the default behaviour, so a second signal
+	// ends the process at once. SIGQUIT keeps the Go runtime's default: a
+	// goroutine dump and exit code 2.
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM, syscall.SIGHUP)
+	context.AfterFunc(ctx, stop)
 
-	fmt.Fprintln(os.Stderr, "eusov: analysis commands are not implemented yet; try `eusov version`")
-	os.Exit(2)
+	// Exit as soon as Run returns, without waiting for adapter goroutines: after
+	// a cancellation the inventory-file adapter may leave one blocked in open()
+	// on a FIFO with no writer (ADR 0006).
+	os.Exit(cli.Run(ctx, os.Args[1:], os.Stdout, os.Stderr, deps()))
+}
+
+// deps wires the adapters of the assess path: the inventory file, the embedded
+// Scaleway catalog and the Markdown reporter. None of them uses the network or
+// credentials.
+func deps() cli.Deps {
+	return cli.Deps{
+		NewInventorySource: func(path string) analysis.InventorySource {
+			return inventoryfile.New(path)
+		},
+		Targets: map[string]func() analysis.CatalogSource{
+			"scaleway": func() analysis.CatalogSource { return scaleway.New() },
+		},
+		NewReporter: func() analysis.Reporter { return markdown.New() },
+	}
 }

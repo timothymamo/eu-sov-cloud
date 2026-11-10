@@ -1,0 +1,31 @@
+# Migration assessment: `Scaleway`
+
+- Inventory file: `inventory-hostile.json`
+- Source: `aws`
+- Catalog: `Scaleway` snapshot from `https://www.scaleway.com/en/docs/`, retrieved 2026-11-10
+
+## Summary
+
+| Fit | Resources |
+|---|---|
+| direct | 3 |
+| partial | 1 |
+| none | 0 |
+| total | 4 |
+
+## Resources
+
+| ID | Raw type | Category | Fit | Best offering | Reasons |
+|---|---|---|---|---|---|
+| `#1` | `$\Huge X$` | `storage.object` | direct | `Object Storage` | `Object Storage` offers every capability the resource uses |
+| `[ ] x` | `@octocat` | `compute.vm` | direct | `Elastic Metal` (tie: `Instances`) | `Elastic Metal` offers every capability the resource uses |
+| `a\|b` | `<b>` | `compute.vm` | partial | `Elastic Metal` (tie: `Instances`) | `Elastic Metal` does not offer `high-availability` |
+| ``tick`x`` | `:x:` | `storage.object` | direct | `Object Storage` | `Object Storage` offers every capability the resource uses |
+
+## Required changes
+
+- `a|b`: `high-availability` (not offered by `Elastic Metal`)
+
+## Blockers
+
+None.

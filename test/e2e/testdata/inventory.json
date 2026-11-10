@@ -1,0 +1,46 @@
+{
+  "schemaVersion": 1,
+  "source": "aws",
+  "resources": [
+    {
+      "id": "partial-example",
+      "rawType": "AWS::EC2::Instance",
+      "category": "compute.vm",
+      "region": "eu-west-1",
+      "capabilities": ["high-availability", "snapshots"]
+    },
+    {
+      "id": "misc-example",
+      "rawType": "AWS::CloudFormation::CustomResource",
+      "category": "unclassified",
+      "region": "eu-west-1"
+    },
+    {
+      "id": "i-0123456789abcdef0",
+      "rawType": "AWS::EC2::Instance",
+      "category": "compute.vm",
+      "region": "eu-west-1",
+      "capabilities": ["ipv6"]
+    },
+    {
+      "id": "fn-example",
+      "rawType": "AWS::Lambda::Function",
+      "category": "serverless.function",
+      "region": "eu-west-1"
+    },
+    {
+      "id": "db-example",
+      "rawType": "AWS::RDS::DBInstance",
+      "category": "database.postgresql",
+      "region": "eu-west-1",
+      "capabilities": ["point-in-time-restore", "read-replicas"]
+    },
+    {
+      "id": "bucket-example",
+      "rawType": "AWS::S3::Bucket",
+      "category": "storage.object",
+      "region": "eu-west-1",
+      "capabilities": ["object-versioning"]
+    }
+  ]
+}
