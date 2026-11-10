@@ -204,19 +204,28 @@ both use is issue #13.
 - Until issue #13 lands, two token walkers implement the same rules, one per format. A fix to one is
   checked against the other. The snapshot reader already puts the column of a malformed multi-byte
   character on its first byte; the inventory-file reader does not yet.
-- `.golangci.yml` holds three rules for this decision:
+- `.golangci.yml` holds four rules for this decision:
   - `target-snapshot-reader-parses-bytes` limits the snapshot package to a list of parsing packages
     from the standard library and the three domain packages it uses (`catalog`, `taxonomy`, `text`),
     so a target that reads its snapshot through it stays offline. An import rule cannot see a call, so
     review keeps `fmt.Print*` and `time.LoadLocation` out of it.
   - `target-adapters-read-snapshots-through-the-reader` denies `encoding/json`, and with it
-    `encoding/json/v2` and `encoding/json/jsontext`, to the production code of every package under
-    `internal/adapter/target` except the reader, a target added later included. A target cannot decode
-    its snapshot on its own and skip the rules above.
+    `encoding/json/v2` and `encoding/json/jsontext`, to every file under `internal/adapter/target` that
+    is not a `_test.go` file, except the reader's own. That covers every target adapter, a target added
+    later included, and the contract suite `targettest`. A target cannot decode its snapshot on its own
+    and skip the rules above, and a JSON decode in `targettest` would be the second reader this ADR
+    rules out. Only `_test.go` files may decode JSON.
   - `adapters-are-built-in-cmd` stops one adapter importing another. It allows the shared adapter
     helpers under `internal/adapter/internal/` and, by an entry of its own, this reader
     (`internal/adapter/target/snapshot$`): a target adapter that imports it imports a shared
     adapter-layer reader, not another adapter. The reader stays where it is rather than under
-    `internal/adapter/internal/`, beside the targets whose `catalog.json` its tests check.
+    `internal/adapter/internal/`, beside the targets whose `catalog.json` its tests check. An allow
+    entry holds for every file the rule covers, so on its own it would let any package import the
+    reader.
+  - `snapshot-reader-only-in-targets` keeps the reader to the packages under `internal/adapter/target`:
+    the target adapters, `targettest` and the reader itself. It denies the reader to every other file
+    that is not a `_test.go` file, `cmd/eusov` included. A source adapter, a reporter, `internal/config`
+    and the CLI have no snapshot to read, and the composition root gets each catalog through the target
+    adapter it constructs.
 - The embedded snapshot is parsed on every `Catalog` and `Regions` call. That is cheap at a few
   kilobytes, and it keeps the adapter free of package-level state.

@@ -173,7 +173,10 @@ linters:
         # outside internal/adapter from importing them. The shared target
         # snapshot reader (ADR 0007) is such a helper too: it parses bytes and
         # builds no adapter, so target adapters may import it. Its entry ends
-        # in $, so it covers that package only.
+        # in $, so it covers that package only. An allow entry holds for every
+        # file the rule covers, so on its own it would let any package import
+        # the reader; snapshot-reader-only-in-targets keeps it to the packages
+        # under internal/adapter/target.
         adapters-are-built-in-cmd:
           list-mode: lax
           files:
@@ -186,6 +189,22 @@ linters:
           deny:
             - pkg: github.com/timothymamo/eu-sov-cloud/internal/adapter/
               desc: adapters are constructed only in cmd/eusov
+        # Only the packages under internal/adapter/target import the shared
+        # snapshot reader (ADR 0007): the target adapters, their contract suite
+        # and the reader itself. A source adapter, a reporter, internal/config
+        # or the CLI has no snapshot to read. cmd/eusov is covered too: it
+        # constructs target adapters and gets each catalog through them, so it
+        # never parses a snapshot itself. The glob ends in /** so it also
+        # excludes the files directly in internal/adapter/target.
+        snapshot-reader-only-in-targets:
+          list-mode: lax
+          files:
+            - "$all"
+            - "!$test"
+            - "!**/internal/adapter/target/**"
+          deny:
+            - pkg: github.com/timothymamo/eu-sov-cloud/internal/adapter/target/snapshot
+              desc: only target adapters read a catalog snapshot (ADR 0007)
         # The shared target snapshot reader parses the bytes a target adapter
         # embeds (ADR 0007): it opens no file, makes no network call and
         # imports no adapter, so every target that reads its snapshot through
@@ -229,8 +248,11 @@ linters:
         # keys ignoring case, keeps the last of a repeated key, reads null or a
         # missing field as empty and has no size cap. The deny entry has no $,
         # so it also covers encoding/json/v2 and encoding/json/jsontext. The
-        # globs cover every package under internal/adapter/target, a target
-        # added later included, except the reader itself; tests may decode JSON.
+        # globs cover every file under internal/adapter/target that is not a
+        # _test.go file, except the reader's own: every target adapter, a
+        # target added later included, and the contract suite targettest. A
+        # JSON decode in targettest would be the second snapshot reader ADR
+        # 0007 rules out. Only _test.go files may decode JSON.
         target-adapters-read-snapshots-through-the-reader:
           list-mode: lax
           files:
