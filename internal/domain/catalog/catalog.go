@@ -8,6 +8,8 @@ import (
 	"slices"
 	"strings"
 	"time"
+	"unicode"
+	"unicode/utf8"
 
 	"github.com/timothymamo/eu-sov-cloud/internal/domain/taxonomy"
 	"github.com/timothymamo/eu-sov-cloud/internal/domain/text"
@@ -18,7 +20,8 @@ import (
 type Snapshot struct {
 	// SourceURL is the page or API the data was taken from: an absolute https URL
 	// with an ASCII DNS host name, no user info, no square brackets and RFC 3986
-	// characters only, with every '%' starting a two-hex-digit escape (see New).
+	// characters only, with every '%' starting a two-hex-digit escape, no HTML
+	// character reference and escapes that decode to valid text (see New).
 	SourceURL string
 	// RetrievedOn is when the data was retrieved. In a Catalog it is in UTC, and
 	// reporters format it as a UTC calendar date.
@@ -94,8 +97,13 @@ var (
 // square brackets '[' and ']', which are Markdown link syntax, and '%', which
 // must start a two-hex-digit escape. Its host must be an ASCII DNS name: only
 // letters, digits, dots and hyphens, so neither percent-encoded nor an IP
-// address. A port, a query and a fragment are allowed. The URL is stored as
-// given, never decoded; escaping it for an output format is the reporter's job.
+// address. A port, a query and a fragment are allowed. As defence in depth for
+// a reader who sees the URL rendered, it must hold no ampersand that starts the
+// shape of an HTML character reference (&amp;, &#38;, &#x26;; a bare '&'
+// between query parameters is allowed), and its percent escapes, decoded
+// together as bytes, must decode to valid free text (so not %0A, %00,
+// %E2%80%AE or %FF). The URL is stored as given, never decoded; escaping it for
+// an output format is the reporter's job.
 // snapshot.RetrievedOn must be set; the catalog keeps it in UTC.
 //
 // Every offering needs a unique name that is not blank, at least one category and
@@ -226,10 +234,16 @@ var errBadSourceURL = errors.New(
 
 // validateSourceURL checks that raw is an absolute https URL with no user info,
 // valid free text made of RFC 3986 characters other than square brackets, with
-// complete percent escapes and an ASCII DNS host name.
+// complete percent escapes and an ASCII DNS host name. Then, as defence in depth
+// against a renderer that would show a reader another URL than the catalog
+// holds, it refuses an ampersand that starts an HTML character reference shape
+// (characterReference) and percent escapes that decode to text text.Validate
+// refuses (checkDecodedEscapes).
 //
 // User info is checked first and rejected with errBadSourceURL alone: any detail
 // about a character or an offset after that point could be about a password.
+// The later errors name what they found and its byte offset in raw, never the
+// URL or a part of it.
 func validateSourceURL(raw string) error {
 	if raw == "" {
 		return errors.New("missing")
@@ -259,7 +273,149 @@ func validateSourceURL(raw string) error {
 		return errBadSourceURL
 	}
 
-	return nil
+	if i := characterReference(raw); i >= 0 {
+		return fmt.Errorf("%w: ampersand starting an HTML character reference at byte %d", errBadSourceURL, i)
+	}
+
+	return checkDecodedEscapes(raw)
+}
+
+// characterReference returns the byte offset of the first '&' in raw that starts
+// the shape of an HTML character reference, or -1 if there is none. The shapes
+// are a named reference, '&', an ASCII letter, ASCII letters or digits and ';'
+// (&amp;, &lt1;), and a numeric one, "&#" with decimal digits or "&#x" or "&#X"
+// with hexadecimal digits, then ';' (&#38;, &#x26;). An HTML or Markdown
+// renderer would show the character such a reference names, not the URL the
+// catalog holds. A '&' that starts no such shape, as between query parameters
+// (?a=1&b=2), is allowed.
+func characterReference(raw string) int {
+	for i := range len(raw) {
+		if raw[i] == '&' && isCharacterReference(raw[i+1:]) {
+			return i
+		}
+	}
+
+	return -1
+}
+
+// isCharacterReference reports whether s, the text after a '&', starts with the
+// rest of an HTML character reference shape (see characterReference).
+func isCharacterReference(s string) bool {
+	var (
+		body  string
+		valid func(byte) bool
+	)
+
+	switch {
+	case strings.HasPrefix(s, "#x"), strings.HasPrefix(s, "#X"):
+		body, valid = s[2:], isHex
+	case strings.HasPrefix(s, "#"):
+		body, valid = s[1:], isDigit
+	case s != "" && isLetter(s[0]):
+		// The letter is part of the name: what follows it may be empty.
+		return isReferenceEnd(s[1:], isAlphanumeric, 0)
+	default:
+		return false
+	}
+
+	return isReferenceEnd(body, valid, 1)
+}
+
+// isReferenceEnd reports whether s starts with at least least bytes for which
+// valid holds, followed by ';'.
+func isReferenceEnd(s string, valid func(byte) bool, least int) bool {
+	n := 0
+	for n < len(s) && valid(s[n]) {
+		n++
+	}
+
+	return n >= least && n < len(s) && s[n] == ';'
+}
+
+// checkDecodedEscapes decodes every percent escape of raw, all at once and as
+// bytes, so a character whose UTF-8 encoding is spread over several escapes
+// decodes as one, and refuses raw if the decoded text fails text.Validate: an
+// escape that decodes to a byte that is not UTF-8 (%FF), to a character
+// text.Validate refuses (%0A, %00, the bidi override %E2%80%AE), or to white
+// space at the end of the URL. raw holds only complete escapes (badEscape) and,
+// outside them, only ASCII characters text.Validate accepts, so whatever fails
+// comes from an escape, and the error names the byte of raw that escape starts
+// at.
+func checkDecodedEscapes(raw string) error {
+	decoded := make([]byte, 0, len(raw))
+	// from[k] is the byte offset in raw that decoded byte k comes from: the '%'
+	// of its escape, or the byte itself.
+	from := make([]int, 0, len(raw))
+
+	for i := 0; i < len(raw); i++ {
+		from = append(from, i)
+
+		if raw[i] != '%' {
+			decoded = append(decoded, raw[i])
+
+			continue
+		}
+
+		decoded = append(decoded, unhex(raw[i+1])<<4|unhex(raw[i+2]))
+		i += 2
+	}
+
+	if text.Validate(string(decoded)) == nil {
+		return nil
+	}
+
+	for k := 0; k < len(decoded); {
+		r, size := utf8.DecodeRune(decoded[k:])
+		if r == utf8.RuneError && size == 1 {
+			return fmt.Errorf("%w: percent escape at byte %d decodes to a byte that is not UTF-8",
+				errBadSourceURL, from[k])
+		}
+
+		// Between two letters, text.Validate checks the character for what it
+		// is, not for white space at the edge of a value.
+		if text.Validate("a"+string(r)+"a") != nil {
+			return fmt.Errorf("%w: percent escape at byte %d decodes to disallowed character %U",
+				errBadSourceURL, from[k], r)
+		}
+
+		k += size
+	}
+
+	// Every character is valid text, so the decoded URL has white space at an
+	// edge, and it starts with its scheme: the white space is at the end.
+	if end := len(strings.TrimRightFunc(string(decoded), unicode.IsSpace)); end < len(decoded) {
+		return fmt.Errorf("%w: percent escape at byte %d decodes to white space at the end of the URL",
+			errBadSourceURL, from[end])
+	}
+
+	return fmt.Errorf("%w: percent escapes decode to text that is not valid", errBadSourceURL)
+}
+
+// unhex returns the value of the hexadecimal digit b.
+func unhex(b byte) byte {
+	switch {
+	case '0' <= b && b <= '9':
+		return b - '0'
+	case 'a' <= b && b <= 'f':
+		return b - 'a' + 10
+	default:
+		return b - 'A' + 10
+	}
+}
+
+// isLetter reports whether b is an ASCII letter.
+func isLetter(b byte) bool {
+	return 'a' <= b && b <= 'z' || 'A' <= b && b <= 'Z'
+}
+
+// isDigit reports whether b is an ASCII decimal digit.
+func isDigit(b byte) bool {
+	return '0' <= b && b <= '9'
+}
+
+// isAlphanumeric reports whether b is an ASCII letter or decimal digit.
+func isAlphanumeric(b byte) bool {
+	return isLetter(b) || isDigit(b)
 }
 
 // hasUserInfo reports whether raw has user info: an '@' in the authority, the
