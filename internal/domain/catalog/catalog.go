@@ -418,21 +418,43 @@ func isAlphanumeric(b byte) bool {
 	return isLetter(b) || isDigit(b)
 }
 
-// hasUserInfo reports whether raw has user info: an '@' in the authority, the
-// part after the first "//" and before the next '/', '?' or '#', as url.Parse
-// splits it. It reads the raw string because url.Parse fails, instead of
-// reporting user info, when the user info holds a character it does not allow.
+// hasUserInfo reports whether raw has user info as a browser's URL parser (the
+// WHATWG URL Standard) finds it in an https URL: an '@' in the authority, which
+// starts after the scheme and any run of '/' or '\', of any length, none
+// included, and ends at the next '/', '\', '?' or '#'. So https:/user:pass@host
+// and https:user:pass@host have user info, as https://user:pass@host has, and
+// an '@' in the path or the query is not user info. It reads the raw string
+// because url.Parse fails, instead of reporting user info, when the user info
+// holds a character it does not allow, and finds none unless exactly two
+// slashes come before it.
 func hasUserInfo(raw string) bool {
-	_, rest, ok := strings.Cut(raw, "//")
-	if !ok {
+	rest := raw
+	if scheme, after, ok := strings.Cut(raw, ":"); ok && isScheme(scheme) {
+		rest = after
+	}
+
+	authority := strings.TrimLeft(rest, `/\`)
+	if end := strings.IndexAny(authority, `/\?#`); end >= 0 {
+		authority = authority[:end]
+	}
+
+	return strings.Contains(authority, "@")
+}
+
+// isScheme reports whether s is a URL scheme: an ASCII letter, then ASCII
+// letters, digits, '+', '-' or '.' (RFC 3986, section 3.1).
+func isScheme(s string) bool {
+	if s == "" || !isLetter(s[0]) {
 		return false
 	}
 
-	authority, _, _ := strings.Cut(rest, "/")
-	authority, _, _ = strings.Cut(authority, "?")
-	authority, _, _ = strings.Cut(authority, "#")
+	for i := 1; i < len(s); i++ {
+		if !isAlphanumeric(s[i]) && s[i] != '+' && s[i] != '-' && s[i] != '.' {
+			return false
+		}
+	}
 
-	return strings.Contains(authority, "@")
+	return true
 }
 
 // isURLChar reports whether r may appear as given in a source URL: an ASCII
