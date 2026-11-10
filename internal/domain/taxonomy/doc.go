@@ -1,10 +1,15 @@
 // Package taxonomy defines the provider-neutral service categories (for example
-// compute.vm, kubernetes.managed, storage.object, database.postgresql) that are
-// the shared language between source hyperscalers and target EU providers.
+// compute.vm, kubernetes.managed, storage.object, database.postgresql) and the
+// capability vocabulary (for example ipv6, point-in-time-restore) that are the
+// shared language between source hyperscalers and target EU providers.
 //
 // Source adapters classify discovered resources into these categories and
 // target adapters declare which categories their offerings serve, so matching
 // never needs a hand-written table for every provider pair.
 //
-// Domain layer: standard library only, no I/O.
+// Parsing is strict: a value that is not exactly a known category or capability
+// is an error, never silently treated as unclassified. The error echoes the
+// rejected value quoted and truncated (package text), so its length is bounded.
+//
+// Domain layer: standard library and other domain packages only, no I/O.
 package taxonomy

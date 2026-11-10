@@ -71,6 +71,15 @@ All criteria are pinned by tests that run offline under `make test` or `make tes
   raw type, category, fit, best offering, reasons) and a blockers section.
 - [ ] Given the same inventory twice, the two reports are byte-identical. Resources are ordered by ID,
   never by map or file order.
+- [ ] Every value taken from the inventory or catalog (IDs, raw types, regions, offering names, the
+  target name and the snapshot source URL), and the inventory file name, is escaped for its Markdown
+  context, so `|`, newlines, backticks, HTML and link syntax in an inventory cannot forge table rows,
+  headings, links or images. The source URL is emitted percent-encoding `( ) [ ] < > |`, space and
+  backtick (or as an autolink after encoding `<` `>`). Pinned by a golden test with a hostile fixture
+  that includes a hostile file name and source URL. The inventory file name must pass `text.Validate`;
+  otherwise the command exits 1 with an error that shows the name through `text.Quote`. The reporter
+  emits the stored source URL string, never a decoded form; the hostile fixture's source URL includes
+  `%0A` and `%E2%80%AE`.
 
 **CLI**
 
@@ -104,11 +113,13 @@ Each milestone ships as one PR. Milestones 4, 5 and 6 depend only on 3 and can r
    `sourcetest` and `targettest` with their first checks. ADR 0005 records the port shapes.
 4. [ ] **Inventory-file source adapter.** Reads the versioned JSON inventory format, validates it, passes
    `sourcetest`. Sanitised fixtures under `testdata/`. ADR 0006 records the file format, because it becomes
-   the interchange format between future `discover` and `assess` commands.
+   the interchange format between future `discover` and `assess` commands. Caps the inventory file size
+   before decoding.
 5. [ ] **Scaleway catalog adapter.** Embedded, dated catalog snapshot (`//go:embed`) covering at least
    `compute.vm`, `kubernetes.managed`, `storage.object` and `database.postgresql`, with its source URL and
    retrieval date in the file header. Passes `targettest`, plus a golden test of the parsed catalog.
 6. [ ] **Markdown reporter.** Renders an assessment as described under *Report*. Golden-file tests.
+   Includes a golden test with a hostile inventory fixture (Markdown metacharacters in IDs and raw types).
 7. [ ] **CLI and wiring.** `eusov assess` in `internal/cli`, adapters wired in `cmd/eusov`, exit codes,
    e2e test in `test/e2e` against a fixture inventory that exercises direct, partial, none and
    unclassified. README gains a usage section. Moves this PRD to `prds/done/` and closes #2.
@@ -153,6 +164,11 @@ fixtures in earlier milestones share a picture of the data:
   if subcommands outgrow it.
 - **Decided: exit codes.** 0 when the assessment ran (blockers are a result, not a failure), 1 for input
   or runtime errors, 2 for usage errors, matching the existing `cmd/eusov` behaviour.
+- **Accepted risk: look-alike text.** The domain rejects control, invisible and format characters, edge
+  white space and non-ASCII spaces in IDs, and compares IDs and offering names ignoring runs of white
+  space. Homoglyphs (e.g. Cyrillic а for Latin a) and NFC/NFD differences are not detected: the standard
+  library has no normaliser, and real cloud IDs are ASCII. Revisit if hand-edited inventories become
+  common.
 - **Open: readiness score.** Deferred until sizing and workload grouping exist, because a score from fit
   counts alone would mislead. Next candidate PRD.
 - **Open: region semantics.** This PRD only reports the EU regions where an offering exists. Whether a
