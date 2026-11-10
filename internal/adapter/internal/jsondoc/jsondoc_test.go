@@ -16,6 +16,11 @@ import (
 // read: every error about the document must wrap it.
 var errInvalid = errors.New("invalid document")
 
+// errElementRefused stands in for an error a format's own element callback
+// returns, such as one that refuses an array past a cap: it is about the
+// format's policy, not about the document.
+var errElementRefused = errors.New("element refused")
+
 // maxDocumentBytes is the cap the tests open documents with: room for every
 // fixture here, so only the size-cap cases reach the cap.
 const maxDocumentBytes = 1 << 20
@@ -504,6 +509,9 @@ func TestMisuse(t *testing.T) {
 		// wantAbsent lists substrings the message must not contain: a misuse is
 		// never the document's fault.
 		wantAbsent []string
+		// wantNotWrapped lists errors the message must not wrap either, such as
+		// one a callback returned of its own.
+		wantNotWrapped []error
 	}{
 		{
 			name: "object value callback that reads nothing",
@@ -726,6 +734,36 @@ func TestMisuse(t *testing.T) {
 			wantAbsent: []string{"unknown key"},
 		},
 		{
+			// Array passes on an element callback's own error and records the
+			// walk as failed. The parent callback swallows that error from Array
+			// and returns nil, so the walk is asked to go on after a failed read:
+			// that is the format's mistake, and the message must neither pass the
+			// element's error on nor blame the document for it.
+			name: "object value callback that swallows the error Array passed on",
+			misuse: func(t *testing.T) error {
+				t.Helper()
+
+				w := open(t, `{"s": ["x", "y"]}`).Walker()
+
+				return w.Object([]jsondoc.Key{{Name: "s"}}, func(string) error {
+					_ = w.Array("an array", func(i int) error {
+						if _, err := w.String(); err != nil {
+							return err
+						}
+
+						if i == 0 {
+							return errElementRefused
+						}
+
+						return nil
+					})
+
+					return nil
+				})
+			},
+			wantNotWrapped: []error{errElementRefused},
+		},
+		{
 			// Reading again after a read has failed cannot work: the failure says
 			// the walk has given up, so the second read is the callback's mistake.
 			name: "callback that swallows a wrong type error and reads again",
@@ -753,6 +791,12 @@ func TestMisuse(t *testing.T) {
 			err := tt.misuse(t)
 
 			checkMisuseError(t, err)
+
+			for _, unwanted := range tt.wantNotWrapped {
+				if errors.Is(err, unwanted) {
+					t.Errorf("error = %v, want it not to wrap the callback's own error %v", err, unwanted)
+				}
+			}
 
 			msg := err.Error()
 			for _, unwanted := range tt.wantAbsent {
