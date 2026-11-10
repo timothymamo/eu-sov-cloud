@@ -1,0 +1,11 @@
+{
+  "permissions": {
+    "deny": [
+      "Bash(*--no-verify*)",
+      "Bash(git *push*--force*)",
+      "Bash(git *push* -f*)",
+      "Bash(git *branch -D*)",
+      "Bash(git *branch --delete*)"
+    ]
+  }
+}

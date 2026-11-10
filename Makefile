@@ -9,6 +9,13 @@ LDFLAGS := -s -w \
 	-X $(PKG)/internal/version.date=$(DATE)
 
 LIMA_INSTANCE ?= eu-sov-cloud
+# The directory the VM mounts: this repository's parent, which must hold nothing but this repository and
+# the worktrees dot-agent-deck's dispatcher creates beside it
+# (docs/adr/0008-mount-a-workspace-directory-for-dispatcher-mode.md). Found from the main checkout, so it
+# is the same when make runs in a worktree.
+REPO_ROOT := $(patsubst %/.git,%,$(shell git rev-parse --path-format=absolute --git-common-dir 2>/dev/null || echo $(CURDIR)/.git))
+WORKSPACE := $(abspath $(REPO_ROOT)/..)
+REPO_NAME := $(notdir $(REPO_ROOT))
 # Credentials vm-env copies from your shell (e.g. direnv) into the VM, by name. Never add
 # ANTHROPIC_API_KEY: Claude Code prefers it over the subscription token and bills per call.
 VM_ENV ?= CLAUDE_CODE_OAUTH_TOKEN,DEEPSEEK_API_KEY,GITHUB_TOKEN
@@ -76,11 +83,17 @@ git-hooks: ## Enable .githooks, which refuse commits and pushes to main
 ##@ Isolated environment (Lima)
 
 .PHONY: vm-up
-vm-up: git-hooks ## Create or start the Lima VM with only this repository mounted
+vm-up: git-hooks ## Create or start the Lima VM with only this repository's workspace directory mounted
+	@stray="$$(ls -A "$(WORKSPACE)" | grep -vx -e '$(REPO_NAME)' -e '$(REPO_NAME)-dispatch-.*' -e '\.DS_Store' || true)"; \
+	if [ -n "$$stray" ]; then \
+		echo "vm-up: the VM mounts $(WORKSPACE), which must hold only $(REPO_NAME) and its dispatch worktrees; move these out first:" >&2; \
+		echo "$$stray" | sed 's/^/  /' >&2; \
+		exit 1; \
+	fi
 	@if limactl list --quiet | grep -qx "$(LIMA_INSTANCE)"; then \
 		limactl start "$(LIMA_INSTANCE)"; \
 	else \
-		limactl start --name="$(LIMA_INSTANCE)" --mount-only "$(CURDIR):w" --tty=false dev/lima.yaml; \
+		limactl start --name="$(LIMA_INSTANCE)" --mount-only "$(WORKSPACE):w" --tty=false dev/lima.yaml; \
 	fi
 
 .PHONY: vm-shell

@@ -132,10 +132,13 @@ The tester runs [pi](https://pi.dev) on DeepSeek V4.1 Flash; every other role ru
 the code they check come from different model families, so one model's blind spots are less likely to
 end up in both ([ADR 0003](docs/adr/0003-pi-with-deepseek-for-the-tester-role.md)).
 
-The agents run inside a [Lima](https://lima-vm.io) VM that can see this repository and nothing else on
-your Mac:
+The agents run inside a [Lima](https://lima-vm.io) VM that can see this repository's workspace (the
+directory you clone it into, which holds only the repository and the worktrees dot-agent-deck's
+dispatcher creates beside it) and nothing else on your Mac:
 
 ```bash
+mkdir eu-sov-cloud-ws && cd eu-sov-cloud-ws   # the workspace the VM mounts
+git clone https://github.com/timothymamo/eu-sov-cloud.git && cd eu-sov-cloud
 brew install lima
 make vm-up        # first run provisions Go, Node.js, linters, gh, Claude Code, pi and dot-agent-deck
 make vm-env       # copy your Claude, DeepSeek and GitHub credentials into the VM
@@ -143,8 +146,8 @@ make vm-shell     # once: `claude` first-run setup, git name and email, `dot-age
 make deck         # open the deck; detach and the agents keep running in the VM
 ```
 
-The credentials come from your shell's environment, for example a direnv `.envrc` above this
-repository. Claude Code runs on your Claude subscription, through a token from `claude setup-token`.
+The credentials come from your shell's environment, for example a direnv `.envrc` above the
+workspace. Claude Code runs on your Claude subscription, through a token from `claude setup-token`.
 
 Details, including credentials and why Lima rather than devbox:
 [docs/dev-environment.md](docs/dev-environment.md).

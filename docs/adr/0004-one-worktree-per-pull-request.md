@@ -1,6 +1,7 @@
 # 0004. Build every pull request in its own git worktree under .worktrees/
 
-- Status: Accepted
+- Status: Accepted; dispatcher mode, rejected below, is adopted alongside it in
+  [0008](0008-mount-a-workspace-directory-for-dispatcher-mode.md)
 - Date: 2026-11-09
 
 ## Context
