@@ -599,6 +599,70 @@ func TestSnapshotSourceURLErrorDoesNotEchoUserInfo(t *testing.T) {
 	}
 }
 
+// An '@' that is outside the authority is not user info, but the reader cannot
+// know that before url.Parse has spoken: the check that runs before the parse
+// gives the bare message for any URL holding an '@', and the checks that run
+// after it keep their detail. ADR 0009 records the trade-off; this pins both
+// sides of it, so a reordering of the checks cannot silently flip either.
+func TestSnapshotSourceURLErrorDetailAroundUserInfoGuard(t *testing.T) {
+	t.Parallel()
+
+	baseline := sourceURLError(t, "https://user:pass@example.com/").Error()
+
+	tests := []struct {
+		name string
+		url  string
+		// bare is true when the message must be exactly the one for a URL
+		// with user info: the failing check runs before url.Parse.
+		bare bool
+		// detail is what the message must keep when bare is false: the check
+		// runs after url.Parse confirmed there is no user info.
+		detail []string
+	}{
+		{
+			name: "at sign in the path and an incomplete escape",
+			url:  "https://example.com/a@b/%ZZ",
+			bare: true,
+		},
+		{
+			name:   "at sign in the path and an escape that is not UTF-8",
+			url:    "https://example.com/a@b/%FF",
+			detail: []string{"byte 24"},
+		},
+		{
+			name:   "at sign in the query and an escape that decodes to a line feed",
+			url:    "https://example.com/?q=a@b%0A",
+			detail: []string{"U+000A"},
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			msg := sourceURLError(t, tc.url).Error()
+
+			if tc.bare {
+				if msg != baseline {
+					t.Errorf("New() error = %q, want the same message as for a rejected URL with other user info (%q)", msg, baseline)
+				}
+			} else if msg == baseline {
+				t.Errorf("New() error = %q, want it to keep the detail of the check, not the bare message for user info", msg)
+			}
+
+			for _, part := range tc.detail {
+				if !strings.Contains(msg, part) {
+					t.Errorf("New() error = %q, want it to contain %q", msg, part)
+				}
+			}
+
+			if strings.Contains(msg, tc.url) {
+				t.Errorf("New() error = %q, want it not to echo the source URL", msg)
+			}
+		})
+	}
+}
+
 // sourceURLError returns the error New rejects rawURL with, failing the test when
 // the URL is accepted or the error does not say the catalog is invalid.
 func sourceURLError(t *testing.T, rawURL string) error {
