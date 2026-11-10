@@ -1,7 +1,6 @@
 package mapping
 
 import (
-	"fmt"
 	"slices"
 	"strings"
 
@@ -73,22 +72,73 @@ type Reason struct {
 	Capability taxonomy.Capability
 }
 
-// String returns the reason as the sentence a report shows. Category and
-// capability names are wrapped in backticks; Target and Offering are inserted as
-// they are, so escaping them for an output format is the reporter's job.
-func (r Reason) String() string {
+// PartKind says what a Part of a reason is: fixed sentence text, or one of the
+// names the reason mentions.
+type PartKind string
+
+const (
+	// PartLiteral is fixed sentence text written by this package.
+	PartLiteral PartKind = "literal"
+	// PartTarget is a catalog's target display name.
+	PartTarget PartKind = "target"
+	// PartOffering is an offering's name.
+	PartOffering PartKind = "offering"
+	// PartCategory is a taxonomy category.
+	PartCategory PartKind = "category"
+	// PartCapability is a taxonomy capability.
+	PartCapability PartKind = "capability"
+)
+
+// Part is one piece of a reason's sentence. Text is exactly as the domain holds
+// it, never escaped for any output format.
+type Part struct {
+	// Kind says what Text is.
+	Kind PartKind
+	// Text is the piece of the sentence.
+	Text string
+}
+
+// Parts returns the reason's sentence split at the names it mentions, so a
+// renderer can escape or style every name for its own format without parsing the
+// sentence. A reason with an unknown Code is one literal part holding the code.
+func (r Reason) Parts() []Part {
 	switch r.Code {
 	case NotClassified:
-		return "not classified"
+		return []Part{{Kind: PartLiteral, Text: "not classified"}}
 	case NoOffering:
-		return fmt.Sprintf("no offering in the %s catalog for `%s`", r.Target, r.Category)
+		return []Part{
+			{Kind: PartLiteral, Text: "no offering in the "},
+			{Kind: PartTarget, Text: r.Target},
+			{Kind: PartLiteral, Text: " catalog for "},
+			{Kind: PartCategory, Text: string(r.Category)},
+		}
 	case AllCapabilities:
-		return r.Offering + " offers every capability the resource uses"
+		return []Part{
+			{Kind: PartOffering, Text: r.Offering},
+			{Kind: PartLiteral, Text: " offers every capability the resource uses"},
+		}
 	case MissingCapability:
-		return fmt.Sprintf("%s does not offer `%s`", r.Offering, r.Capability)
+		return []Part{
+			{Kind: PartOffering, Text: r.Offering},
+			{Kind: PartLiteral, Text: " does not offer "},
+			{Kind: PartCapability, Text: string(r.Capability)},
+		}
 	default:
-		return string(r.Code)
+		return []Part{{Kind: PartLiteral, Text: string(r.Code)}}
 	}
+}
+
+// String returns the reason's sentence: the texts of Parts, concatenated. It is
+// plain text for logs, errors and JSON; it is not safe for Markdown or HTML.
+// Renderers use Parts and escape each part for their format.
+func (r Reason) String() string {
+	var b strings.Builder
+
+	for _, p := range r.Parts() {
+		b.WriteString(p.Text)
+	}
+
+	return b.String()
 }
 
 // Candidate is one offering that serves a resource's category, with how well it
@@ -110,8 +160,8 @@ type Result struct {
 	// Fit is the fit of the best candidate, or None when there is no candidate.
 	Fit Fit
 	// Candidates lists every offering that serves the resource's category, best
-	// first: Direct before Partial, then by offering name. It is nil when there
-	// is none.
+	// first: Direct before Partial, Partial candidates missing fewer capabilities
+	// first, remaining ties by offering name. It is nil when there is none.
 	Candidates []Candidate
 	// Reasons explains Fit. For a direct or partial fit it is about the best
 	// candidate only.
@@ -135,13 +185,17 @@ func (r Result) Best() (Candidate, bool) {
 // with the reason NoOffering. Otherwise every offering serving the category is a
 // candidate: Direct when it offers every capability the resource uses, Partial
 // with the capabilities it lacks otherwise. Candidates are ordered Direct before
-// Partial, then by offering name in byte order, never by how many capabilities
-// they lack. The result's fit and reasons are those of the best candidate: one
-// AllCapabilities reason for Direct, one MissingCapability reason per lacking
-// capability for Partial.
+// Partial, Partial candidates by how many capabilities they lack (fewest first),
+// and remaining ties by offering name in byte order. The result's fit and
+// reasons are those of the best candidate: one AllCapabilities reason for
+// Direct, one MissingCapability reason per lacking capability for Partial.
 //
 // Regions are not compared: where a resource runs today says nothing about which
 // target region it must move to. Map only reads r and c.
+//
+// Map expects r to come from an inventory.Inventory and c from catalog.New,
+// which validate and normalise them; a Resource or Catalog built any other way
+// is not validated here.
 func Map(r inventory.Resource, c catalog.Catalog) Result {
 	r.Capabilities = slices.Clone(r.Capabilities)
 	result := Result{Resource: r, Fit: None}
@@ -166,6 +220,10 @@ func Map(r inventory.Resource, c catalog.Catalog) Result {
 
 	slices.SortStableFunc(candidates, func(a, b Candidate) int {
 		if d := a.Fit.rank() - b.Fit.rank(); d != 0 {
+			return d
+		}
+
+		if d := len(a.Missing) - len(b.Missing); d != 0 {
 			return d
 		}
 
