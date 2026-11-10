@@ -10,6 +10,7 @@ import (
 	"github.com/timothymamo/eu-sov-cloud/internal/adapter/target/targettest"
 	"github.com/timothymamo/eu-sov-cloud/internal/domain/catalog"
 	"github.com/timothymamo/eu-sov-cloud/internal/domain/taxonomy"
+	"github.com/timothymamo/eu-sov-cloud/internal/domain/text"
 	"github.com/timothymamo/eu-sov-cloud/internal/testutil"
 )
 
@@ -56,12 +57,41 @@ func computeOffering(name string, regions ...string) catalog.Offering {
 	}
 }
 
+// variantCatalog is the Scaleway fixture catalog with offering i changed by
+// mutate. It keeps the target, the snapshot and every offering name and count, so
+// the only difference Check can report is the changed offering.
+func variantCatalog(t *testing.T, i int, mutate func(*catalog.Offering)) catalog.Catalog {
+	t.Helper()
+
+	offerings := testutil.ScalewayOfferings()
+	mutate(&offerings[i])
+
+	return newCatalog(t, scalewayTarget, offerings)
+}
+
+// catalogWithSourceURL is the Scaleway fixture catalog taken from another URL, so
+// two catalogs can differ in their snapshot alone.
+func catalogWithSourceURL(t *testing.T, sourceURL string) catalog.Catalog {
+	t.Helper()
+
+	snapshot := testutil.ScalewaySnapshot()
+	snapshot.SourceURL = sourceURL
+
+	cat, err := catalog.New(scalewayTarget, snapshot, testutil.ScalewayOfferings())
+	if err != nil {
+		t.Fatalf("catalog.New() returned unexpected error: %v", err)
+	}
+
+	return cat
+}
+
 // fakeTarget is an in-memory CatalogSource whose answers a test scripts. It
-// returns catalogs in call order, repeating the last one, and records how often
-// it was called. Unless it ignores the context, it returns ctx.Err() once the
-// context is done, like a well-behaved adapter.
+// returns err if set and catalogs in call order, repeating the last one, and
+// records how often it was called. Unless it ignores the context, it returns
+// ctx.Err() once the context is done, like a well-behaved adapter.
 type fakeTarget struct {
 	catalogs      []catalog.Catalog
+	err           error
 	ignoreContext bool
 	calls         int
 }
@@ -73,6 +103,10 @@ func (f *fakeTarget) Catalog(ctx context.Context) (catalog.Catalog, error) {
 		if err := ctx.Err(); err != nil {
 			return catalog.Catalog{}, err
 		}
+	}
+
+	if f.err != nil {
+		return catalog.Catalog{}, f.err
 	}
 
 	if len(f.catalogs) == 0 {
@@ -94,6 +128,14 @@ func mentions(err error, keywords ...string) bool {
 	})
 }
 
+// errHostile is an adapter error a terminal must never receive raw: it
+// holds a newline and an ANSI escape sequence that clears the screen.
+var errHostile = errors.New("boom\n\x1b[2J")
+
+// hostileSourceURL is a source URL that must never be echoed: it may carry a
+// credential in its query.
+const hostileSourceURL = "https://example.com/catalog?token=SENTINEL-1234"
+
 // TestCheck pins the first checks of the target contract suite: the catalog
 // describes the expected target, is a real snapshot, stays inside the target's EU
 // regions, serves every expected category, is stable and honours cancellation.
@@ -111,6 +153,14 @@ func TestCheck(t *testing.T) {
 		wantErr      bool
 		wantMentions [][]string
 		wantCancel   bool
+		// wantQuoted, when set, is an adapter error the violation must show
+		// quoted: the message may contain neither its raw newline nor its escape.
+		wantQuoted error
+		// wantAbsent lists text the violation must not echo at all.
+		wantAbsent []string
+		// wantOnlyQuoted lists values the violation must show only through
+		// text.Quote, never as they are.
+		wantOnlyQuoted []string
 	}{
 		{
 			name: "conforming target",
@@ -177,6 +227,74 @@ func TestCheck(t *testing.T) {
 			wantMentions: [][]string{{"cancel", "context"}},
 			wantCancel:   true,
 		},
+		// A catalog that is stable in its shape but not in its content is not
+		// stable: every field of an offering is part of the answer, so a suite that
+		// compared a subset would pass a source that rewrites itself.
+		{
+			name: "changes one offering's categories between calls",
+			tgt: &fakeTarget{catalogs: []catalog.Catalog{scaleway, variantCatalog(t, 5, func(o *catalog.Offering) {
+				o.Categories = []taxonomy.Category{taxonomy.StorageObject, taxonomy.ComputeVM}
+			})}},
+			wantErr:      true,
+			wantMentions: [][]string{{"repeat"}},
+		},
+		{
+			name: "changes one offering's capabilities between calls",
+			tgt: &fakeTarget{catalogs: []catalog.Catalog{scaleway, variantCatalog(t, 5, func(o *catalog.Offering) {
+				o.Capabilities = []taxonomy.Capability{taxonomy.IPv6}
+			})}},
+			wantErr:      true,
+			wantMentions: [][]string{{"repeat"}},
+		},
+		{
+			name: "changes one offering's regions between calls",
+			tgt: &fakeTarget{catalogs: []catalog.Catalog{scaleway, variantCatalog(t, 1, func(o *catalog.Offering) {
+				o.Regions = []string{"fr-par", "nl-ams"}
+			})}},
+			wantErr:      true,
+			wantMentions: [][]string{{"repeat"}},
+		},
+		// The snapshot's source URL may carry a credential, so a violation over it
+		// must say what differs without echoing either URL.
+		{
+			name:         "changes only the snapshot source URL between calls",
+			tgt:          &fakeTarget{catalogs: []catalog.Catalog{scaleway, catalogWithSourceURL(t, hostileSourceURL)}},
+			wantErr:      true,
+			wantMentions: [][]string{{"repeat"}},
+			wantAbsent:   []string{"SENTINEL", hostileSourceURL, testutil.ScalewaySnapshot().SourceURL},
+		},
+		// Offering names are untrusted text from the target's site: a violation
+		// shows them quoted, never as they are.
+		{
+			name: "renames one offering between calls",
+			tgt: &fakeTarget{catalogs: []catalog.Catalog{scaleway, variantCatalog(t, 5, func(o *catalog.Offering) {
+				o.Name = "Kubernetes Engine"
+			})}},
+			wantErr:      true,
+			wantMentions: [][]string{{"repeat"}},
+			wantOnlyQuoted: []string{
+				"Kubernetes Engine",
+				"Kapsule",
+			},
+		},
+		// An adapter that fails has still broken the contract, and the violation
+		// must say so under the check it breaks.
+		{
+			name:         "returns an error",
+			tgt:          &fakeTarget{err: errors.New("catalog fetch failed")},
+			wantErr:      true,
+			wantMentions: [][]string{{"catalog"}},
+		},
+		// An adapter error is untrusted text: it reaches a terminal through the
+		// violation, so a newline or an escape sequence in it must be escaped, and
+		// the error itself must stay in the chain for errors.Is.
+		{
+			name:         "returns an error that would corrupt a terminal",
+			tgt:          &fakeTarget{err: errHostile},
+			wantErr:      true,
+			wantMentions: [][]string{{"catalog"}},
+			wantQuoted:   errHostile,
+		},
 	}
 
 	for _, tt := range tests {
@@ -209,6 +327,109 @@ func TestCheck(t *testing.T) {
 
 			if got := errors.Is(err, context.Canceled); got != tt.wantCancel {
 				t.Errorf("Check() error wraps context.Canceled = %t, want %t (error: %v)", got, tt.wantCancel, err)
+			}
+
+			msg := err.Error()
+
+			for _, absent := range tt.wantAbsent {
+				if strings.Contains(msg, absent) {
+					t.Errorf("Check() error = %q, want it not to contain %q", msg, absent)
+				}
+			}
+
+			for _, value := range tt.wantOnlyQuoted {
+				quoted := text.Quote(value)
+
+				if !strings.Contains(msg, quoted) {
+					t.Errorf("Check() error = %q, want it to contain the quoted value %s", msg, quoted)
+				}
+
+				if rest := strings.ReplaceAll(msg, quoted, ""); strings.Contains(rest, value) {
+					t.Errorf("Check() error = %q, want %q only in its quoted form %s", msg, value, quoted)
+				}
+			}
+
+			if tt.wantQuoted != nil {
+				if strings.Contains(msg, "\x1b") {
+					t.Errorf("Check() error = %q, want the adapter error's escape sequence escaped", msg)
+				}
+
+				// violations are joined with a newline, so an adapter error echoed
+				// raw would show its own newline directly after its text.
+				if strings.Contains(msg, "boom\n") {
+					t.Errorf("Check() error = %q, want the adapter error's newline escaped", msg)
+				}
+
+				if quoted := text.Quote(tt.wantQuoted.Error()); !strings.Contains(msg, quoted) {
+					t.Errorf("Check() error = %q, want it to contain the quoted adapter error %s", msg, quoted)
+				}
+
+				if !errors.Is(err, tt.wantQuoted) {
+					t.Errorf("Check() error = %v, want it to wrap the adapter error %v", err, tt.wantQuoted)
+				}
+			}
+		})
+	}
+}
+
+// TestCheckExpectations pins that a suite with nothing to compare against says
+// so instead of passing vacuously: the expectations are part of the contract, and
+// an adapter author who forgot one learns which.
+func TestCheckExpectations(t *testing.T) {
+	t.Parallel()
+
+	scaleway := testutil.ScalewayCatalog(t)
+	full := scalewayExpectations()
+
+	tests := []struct {
+		name string
+		want targettest.Expectations
+		// wantField is the empty field the violation must name; empty when the
+		// expectations are complete.
+		wantField string
+	}{
+		{name: "every field set", want: full},
+		{
+			name:      "missing target",
+			want:      targettest.Expectations{Regions: full.Regions, Categories: full.Categories},
+			wantField: "target",
+		},
+		{
+			name:      "missing regions",
+			want:      targettest.Expectations{Target: full.Target, Categories: full.Categories},
+			wantField: "regions",
+		},
+		{
+			name:      "missing categories",
+			want:      targettest.Expectations{Target: full.Target, Regions: full.Regions},
+			wantField: "categories",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			err := targettest.Check(t.Context(), &fakeTarget{catalogs: []catalog.Catalog{scaleway}}, tt.want)
+
+			if tt.wantField == "" {
+				if err != nil {
+					t.Fatalf("Check() returned unexpected error: %v", err)
+				}
+
+				return
+			}
+
+			if err == nil {
+				t.Fatal("Check() returned nil, want an error naming the missing expectation")
+			}
+
+			msg := strings.ToLower(err.Error())
+
+			for _, keyword := range []string{"expectations", tt.wantField} {
+				if !strings.Contains(msg, keyword) {
+					t.Errorf("Check() error = %q, want it to mention %q", err, keyword)
+				}
 			}
 		})
 	}

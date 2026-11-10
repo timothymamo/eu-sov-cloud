@@ -417,21 +417,55 @@ func TestRunPortErrors(t *testing.T) {
 }
 
 // TestRunReportMeta pins the inventory-name rule: the reporter is never called
-// with metadata the report cannot carry safely.
+// with metadata the report cannot carry safely. The name must be a base name, so
+// a path to the inventory file is rejected too, and only names rejected as free
+// text also wrap text.ErrInvalid.
 func TestRunReportMeta(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
-		name    string
-		meta    analysis.ReportMeta
+		name string
+		meta analysis.ReportMeta
+		// wantErr is true when the metadata must be rejected.
 		wantErr bool
+		// wantTextInvalid is true when the rejection is a free-text one, so the
+		// error wraps text.ErrInvalid. A name that is valid free text but not a base
+		// name is rejected without it.
+		wantTextInvalid bool
 	}{
 		{name: "ordinary name", meta: analysis.ReportMeta{InventoryName: inventoryName}},
 		{name: "no name for a non-file source", meta: analysis.ReportMeta{InventoryName: ""}},
-		{name: "right-to-left override", meta: analysis.ReportMeta{InventoryName: "inv\u202enosj.json"}, wantErr: true},
-		{name: "newline", meta: analysis.ReportMeta{InventoryName: "a\nb.json"}, wantErr: true},
-		{name: "leading space", meta: analysis.ReportMeta{InventoryName: " x.json"}, wantErr: true},
-		{name: "trailing space", meta: analysis.ReportMeta{InventoryName: "x.json "}, wantErr: true},
+		{
+			name:            "right-to-left override",
+			meta:            analysis.ReportMeta{InventoryName: "inv\u202enosj.json"},
+			wantErr:         true,
+			wantTextInvalid: true,
+		},
+		{
+			name:            "newline",
+			meta:            analysis.ReportMeta{InventoryName: "a\nb.json"},
+			wantErr:         true,
+			wantTextInvalid: true,
+		},
+		{
+			name:            "leading space",
+			meta:            analysis.ReportMeta{InventoryName: " x.json"},
+			wantErr:         true,
+			wantTextInvalid: true,
+		},
+		{
+			name:            "trailing space",
+			meta:            analysis.ReportMeta{InventoryName: "x.json "},
+			wantErr:         true,
+			wantTextInvalid: true,
+		},
+		// A path is the file the inventory was read from, not its name: a report
+		// that showed it would leak the analyst's directory layout. Each is valid
+		// free text, so the rejection must not depend on text.Validate.
+		{name: "path with a directory", meta: analysis.ReportMeta{InventoryName: "dir/inventory.json"}, wantErr: true},
+		{name: "windows path", meta: analysis.ReportMeta{InventoryName: `C:\data\inventory.json`}, wantErr: true},
+		{name: "current directory", meta: analysis.ReportMeta{InventoryName: "."}, wantErr: true},
+		{name: "parent directory", meta: analysis.ReportMeta{InventoryName: ".."}, wantErr: true},
 	}
 
 	for _, tt := range tests {
@@ -472,8 +506,8 @@ func TestRunReportMeta(t *testing.T) {
 				t.Errorf("Run() error = %v, want it to wrap analysis.ErrInvalidReportMeta", err)
 			}
 
-			if !errors.Is(err, text.ErrInvalid) {
-				t.Errorf("Run() error = %v, want it to wrap text.ErrInvalid", err)
+			if got := errors.Is(err, text.ErrInvalid); got != tt.wantTextInvalid {
+				t.Errorf("Run() error wraps text.ErrInvalid = %t, want %t (error: %v)", got, tt.wantTextInvalid, err)
 			}
 
 			if quoted := text.Quote(tt.meta.InventoryName); !strings.Contains(err.Error(), quoted) {
@@ -502,9 +536,13 @@ func TestRunContext(t *testing.T) {
 		ctx, cancel := context.WithCancel(context.Background())
 		cancel()
 
-		invFake := &fakeInventory{inv: awsInventory(t)}
-		catFake := &fakeCatalog{cat: scalewayCatalog(t)}
-		repFake := &fakeReporter{body: reportBody}
+		// The fakes ignore the context, so only Run can notice the cancellation.
+		// It must notice it before the first port is called, not after loading an
+		// inventory it is not going to report.
+		rec := &recorder{}
+		invFake := &fakeInventory{inv: awsInventory(t), ignoreContext: true, rec: rec}
+		catFake := &fakeCatalog{cat: scalewayCatalog(t), ignoreContext: true, rec: rec}
+		repFake := &fakeReporter{body: reportBody, rec: rec}
 
 		useCase, err := analysis.New(invFake, catFake, repFake)
 		if err != nil {
@@ -516,6 +554,14 @@ func TestRunContext(t *testing.T) {
 		err = useCase.Run(ctx, &buf, analysis.ReportMeta{InventoryName: inventoryName})
 		if !errors.Is(err, context.Canceled) {
 			t.Fatalf("Run() error = %v, want it to wrap context.Canceled", err)
+		}
+
+		if calls := rec.calls(); len(calls) != 0 {
+			t.Errorf("ports called %v, want none for a run cancelled before it started", calls)
+		}
+
+		if invFake.calls != 0 {
+			t.Errorf("Inventory() called %d times, want 0 for a run cancelled before it started", invFake.calls)
 		}
 
 		if repFake.calls != 0 {
@@ -554,6 +600,12 @@ func TestRunContext(t *testing.T) {
 
 		if !errors.Is(err, context.Canceled) {
 			t.Errorf("Run() error = %v, want it to wrap context.Canceled", err)
+		}
+
+		// Nothing was rendered, so the run did not fail at the reporter: the error
+		// must not blame rendering.
+		if prefix := "render report: "; strings.HasPrefix(err.Error(), prefix) {
+			t.Errorf("Run() error = %q, want it not to start with %q for a cancellation before the report", err, prefix)
 		}
 
 		if repFake.calls != 0 {

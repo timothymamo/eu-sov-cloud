@@ -10,6 +10,7 @@ import (
 	"github.com/timothymamo/eu-sov-cloud/internal/adapter/source/sourcetest"
 	"github.com/timothymamo/eu-sov-cloud/internal/domain/inventory"
 	"github.com/timothymamo/eu-sov-cloud/internal/domain/taxonomy"
+	"github.com/timothymamo/eu-sov-cloud/internal/domain/text"
 )
 
 // newInventory builds the only kind of inventory a source adapter can return:
@@ -76,12 +77,25 @@ func thirdInventory(t *testing.T) inventory.Inventory {
 	})
 }
 
+// wantVariant is wantInventory with resource i changed by mutate. It keeps the
+// source and the number of resources, so the only violation Check can report is
+// the changed resource itself.
+func wantVariant(t *testing.T, i int, mutate func(*inventory.Resource)) inventory.Inventory {
+	t.Helper()
+
+	resources := wantInventory(t).Resources()
+	mutate(&resources[i])
+
+	return newInventory(t, "aws", resources)
+}
+
 // fakeSource is an in-memory InventorySource whose answers a test scripts. It
-// returns inventories in call order, repeating the last one, and records how
-// often it was called. Unless it ignores the context, it returns ctx.Err() once
-// the context is done, like a well-behaved adapter.
+// returns err if set and inventories in call order, repeating the last one, and
+// records how often it was called. Unless it ignores the context, it returns
+// ctx.Err() once the context is done, like a well-behaved adapter.
 type fakeSource struct {
 	inventories   []inventory.Inventory
+	err           error
 	ignoreContext bool
 	calls         int
 }
@@ -93,6 +107,10 @@ func (f *fakeSource) Inventory(ctx context.Context) (inventory.Inventory, error)
 		if err := ctx.Err(); err != nil {
 			return inventory.Inventory{}, err
 		}
+	}
+
+	if f.err != nil {
+		return inventory.Inventory{}, f.err
 	}
 
 	if len(f.inventories) == 0 {
@@ -114,6 +132,10 @@ func mentions(err error, keywords ...string) bool {
 	})
 }
 
+// errHostile is an adapter error a terminal must never receive raw: it
+// holds a newline and an ANSI escape sequence that clears the screen.
+var errHostile = errors.New("boom\n\x1b[2J")
+
 // TestCheck pins the first checks of the source contract suite: a source returns
 // the recorded inventory, the same one every time, and honours cancellation.
 func TestCheck(t *testing.T) {
@@ -131,6 +153,9 @@ func TestCheck(t *testing.T) {
 		wantErr      bool
 		wantMentions [][]string
 		wantCancel   bool
+		// wantQuoted, when set, is an adapter error the violation must show
+		// quoted: the message may contain neither its raw newline nor its escape.
+		wantQuoted error
 	}{
 		{
 			name: "conforming source",
@@ -160,6 +185,85 @@ func TestCheck(t *testing.T) {
 			wantErr:      true,
 			wantMentions: [][]string{{"cancel", "context"}},
 			wantCancel:   true,
+		},
+		// Every field of a resource carries a discovery fact. A source that gets
+		// one of them wrong for one resource has still broken the contract, and a
+		// suite that compared a subset would pass it.
+		{
+			name: "changes a resource id",
+			src: &fakeSource{inventories: []inventory.Inventory{wantVariant(t, 0, func(r *inventory.Resource) {
+				r.ID = "bucket-renamed"
+			})}},
+			wantErr:      true,
+			wantMentions: [][]string{{"want"}},
+		},
+		{
+			name: "changes a raw type",
+			src: &fakeSource{inventories: []inventory.Inventory{wantVariant(t, 0, func(r *inventory.Resource) {
+				r.RawType = "AWS::S3::AccessPoint"
+			})}},
+			wantErr:      true,
+			wantMentions: [][]string{{"want"}},
+		},
+		{
+			name: "changes a category",
+			src: &fakeSource{inventories: []inventory.Inventory{wantVariant(t, 0, func(r *inventory.Resource) {
+				r.Category = taxonomy.ComputeVM
+			})}},
+			wantErr:      true,
+			wantMentions: [][]string{{"want"}},
+		},
+		{
+			name: "changes a region",
+			src: &fakeSource{inventories: []inventory.Inventory{wantVariant(t, 0, func(r *inventory.Resource) {
+				r.Region = "eu-central-1"
+			})}},
+			wantErr:      true,
+			wantMentions: [][]string{{"want"}},
+		},
+		{
+			name: "changes a capability",
+			src: &fakeSource{inventories: []inventory.Inventory{wantVariant(t, 0, func(r *inventory.Resource) {
+				r.Capabilities = []taxonomy.Capability{taxonomy.ObjectVersioning, taxonomy.Snapshots}
+			})}},
+			wantErr:      true,
+			wantMentions: [][]string{{"want"}},
+		},
+		{
+			name:         "drops a resource",
+			src:          &fakeSource{inventories: []inventory.Inventory{newInventory(t, "aws", want.Resources()[:1])}},
+			wantErr:      true,
+			wantMentions: [][]string{{"want"}},
+		},
+		{
+			name: "adds an unexpected resource",
+			src: &fakeSource{inventories: []inventory.Inventory{newInventory(t, "aws", append(want.Resources(),
+				inventory.Resource{
+					ID:       "extra-example",
+					RawType:  "AWS::SNS::Topic",
+					Category: taxonomy.Unclassified,
+					Region:   "eu-west-1",
+				}))}},
+			wantErr:      true,
+			wantMentions: [][]string{{"want"}},
+		},
+		// An adapter that fails has still broken the contract, and the violation
+		// must say so under the check it breaks.
+		{
+			name:         "returns an error",
+			src:          &fakeSource{err: errors.New("inventory read failed")},
+			wantErr:      true,
+			wantMentions: [][]string{{"want"}},
+		},
+		// An adapter error is untrusted text: it reaches a terminal through the
+		// violation, so a newline or an escape sequence in it must be escaped, and
+		// the error itself must stay in the chain for errors.Is.
+		{
+			name:         "returns an error that would corrupt a terminal",
+			src:          &fakeSource{err: errHostile},
+			wantErr:      true,
+			wantMentions: [][]string{{"want"}},
+			wantQuoted:   errHostile,
 		},
 	}
 
@@ -195,6 +299,28 @@ func TestCheck(t *testing.T) {
 
 			if got := errors.Is(err, context.Canceled); got != tt.wantCancel {
 				t.Errorf("Check() error wraps context.Canceled = %t, want %t (error: %v)", got, tt.wantCancel, err)
+			}
+
+			if tt.wantQuoted != nil {
+				msg := err.Error()
+
+				if strings.Contains(msg, "\x1b") {
+					t.Errorf("Check() error = %q, want the adapter error's escape sequence escaped", msg)
+				}
+
+				// violations are joined with a newline, so an adapter error echoed
+				// raw would show its own newline directly after its text.
+				if strings.Contains(msg, "boom\n") {
+					t.Errorf("Check() error = %q, want the adapter error's newline escaped", msg)
+				}
+
+				if quoted := text.Quote(tt.wantQuoted.Error()); !strings.Contains(msg, quoted) {
+					t.Errorf("Check() error = %q, want it to contain the quoted adapter error %s", msg, quoted)
+				}
+
+				if !errors.Is(err, tt.wantQuoted) {
+					t.Errorf("Check() error = %v, want it to wrap the adapter error %v", err, tt.wantQuoted)
+				}
 			}
 		})
 	}
