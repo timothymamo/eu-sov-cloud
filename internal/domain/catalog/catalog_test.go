@@ -544,6 +544,36 @@ func TestSnapshotSourceURLErrorDoesNotEchoUserInfo(t *testing.T) {
 			url:     "https:user:p^ss@example.com/",
 			secrets: []string{"p^ss", "U+005E"},
 		},
+		// A browser strips leading spaces and C0 controls before it parses a URL,
+		// so what follows them is user info the reader must find before it names a
+		// character of the password.
+		{
+			name:    "leading space and a zero width space in the password",
+			url:     " https://user:p\u200bss@example.com/",
+			secrets: []string{"U+200B"},
+		},
+		{
+			name:    "leading space and a c0 control in the password",
+			url:     " https://user:p\x01ss@example.com/",
+			secrets: []string{"U+0001"},
+		},
+		{
+			name:    "leading space and a soft hyphen in the password",
+			url:     " https://user:p\u00adss@example.com/",
+			secrets: []string{"U+00AD"},
+		},
+		// Some parsers do not treat a backslash as a separator, so this is user
+		// info with a backslash password rather than a path.
+		{
+			name:    "backslash in the password",
+			url:     "https://user:p\\ss@example.com/",
+			secrets: []string{"U+005C"},
+		},
+		{
+			name:    "zero width space then a backslash in the password",
+			url:     "https://user:p\u200b\\ss@example.com/",
+			secrets: []string{"U+200B"},
+		},
 	}
 
 	for _, tc := range tests {
