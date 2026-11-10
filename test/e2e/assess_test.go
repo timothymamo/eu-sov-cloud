@@ -29,6 +29,8 @@ const (
 	// maxErrorLine is the longest error line the binary may write: the cap on
 	// the message, the prefix, a short truncation marker and the newline.
 	maxErrorLine = 1024 + len(errPrefix) + 64 + 1
+	// summaryHeading is the heading that starts the table of fits.
+	summaryHeading = "## Summary"
 	// resourcesHeading is the heading that starts the table of verdicts.
 	resourcesHeading = "## Resources"
 )
@@ -130,10 +132,20 @@ type result struct {
 func run(t *testing.T, env []string, args ...string) result {
 	t.Helper()
 
+	// exec.Cmd reads a nil Env as "inherit the parent environment", so a nil
+	// here would run the binary with the test's own environment, the agents'
+	// credentials included, and every test in this package would still pass.
+	// Refuse it instead of quietly widening what the binary sees.
+	if env == nil {
+		t.Fatal("run needs an explicit environment; nil would inherit the test's")
+	}
+
 	var stdout, stderr bytes.Buffer
 
 	cmd := exec.Command(binaryPath, args...)
-	cmd.Env = env
+	// A copy, so that no caller can change the environment of a run it already
+	// handed over.
+	cmd.Env = append([]string{}, env...)
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
 
@@ -329,10 +341,11 @@ func TestAssessFitCoverage(t *testing.T) {
 }
 
 // TestAssessReportShape pins that the shared fixture yields the same report
-// skeleton for every target: the same headings in the same order, the same
-// table header rows, and the same resource IDs in the same order. Only the
-// target, its snapshot, the offerings, the fits and the reasons may differ, so
-// a user who switches --target reads the same report in the same shape.
+// skeleton for every target: the same preamble labels, the same headings in the
+// same order, the same table header rows, the same Summary row labels and the
+// same resource IDs in the same order. Only the target, its snapshot, the
+// offerings, the fits, the counts and the reasons may differ, so a user who
+// switches --target reads the same report in the same shape.
 func TestAssessReportShape(t *testing.T) {
 	t.Parallel()
 
@@ -450,7 +463,10 @@ func hostileValues() []string {
 // TestAssessErrors pins the input errors: exit code 1, one error line that names
 // the file, and never a panic or a stack trace. The errors are read, not
 // assessed, so they are the same for every target; each case runs against all
-// of them and the message never names one that is not in use.
+// of them. Input errors are raised before a catalog is loaded, so they name no
+// target; the one error that names a target, a catalog load failure, is pinned
+// per adapter in internal/adapter/target/ovhcloud/ovhcloud_test.go and
+// internal/adapter/target/scaleway/scaleway_test.go.
 func TestAssessErrors(t *testing.T) {
 	t.Parallel()
 
@@ -521,7 +537,12 @@ func TestAssessErrors(t *testing.T) {
 					}
 				}
 
-				// The message names the target in use, never another one.
+				// Input errors are raised before a catalog is loaded, so they name
+				// no target at all and this loop cannot fail today: it is a cheap
+				// guard, not a pin on a message that mentions a target. The one
+				// error that names a target, a catalog load failure, is pinned per
+				// adapter in internal/adapter/target/ovhcloud/ovhcloud_test.go and
+				// internal/adapter/target/scaleway/scaleway_test.go.
 				for _, other := range targets() {
 					if other.key == target.key {
 						continue
@@ -544,7 +565,8 @@ func TestAssessErrors(t *testing.T) {
 
 // TestAssessUsage pins the usage errors of the binary: exit code 2, usage text on
 // stderr, nothing on stdout, and every supported target named, sorted, for an
-// unknown one.
+// unknown one. The usage text lists `ovhcloud, scaleway` as valid values by
+// design; that is a list of choices, not one target naming another.
 func TestAssessUsage(t *testing.T) {
 	t.Parallel()
 
@@ -668,10 +690,13 @@ func TestAssessIsDeterministic(t *testing.T) {
 }
 
 // TestAssessPathHasNoNetworkOrCloudSDK pins the CLI criterion of the PRD: no
-// package on the assess path imports net/http, os/exec or a cloud SDK, so the
-// command cannot call a provider or start a process even by accident. It also
-// requires every target adapter to be on that path, so the check covers them all
-// instead of passing by absence.
+// package on the assess path imports a network, process or cloud SDK package, so
+// nothing the command reaches can resolve a name, open a connection, start a
+// process or talk to a provider. This is an import check: it says nothing about
+// code that needs no import at all, such as os.StartProcess or a raw syscall
+// call, which depguard refuses in the target adapters instead. It also requires
+// every target adapter to be on that path, so the check covers them all instead
+// of passing by absence.
 func TestAssessPathHasNoNetworkOrCloudSDK(t *testing.T) {
 	t.Parallel()
 
@@ -772,28 +797,11 @@ type resourceRow struct {
 func resourceRows(t *testing.T, report string) []resourceRow {
 	t.Helper()
 
-	lines := strings.Split(report, "\n")
-
-	start := slices.Index(lines, resourcesHeading)
-	if start < 0 {
-		t.Fatalf("the report has no %q heading:\n%s", resourcesHeading, report)
-	}
-
-	// The table follows the heading: a header row, the separator row below it,
-	// then one row per resource up to the blank line that ends the table.
-	i := start + 1
-	for i < len(lines) && !isTableRow(lines[i]) {
-		i++
-	}
-
-	i += 2
-
 	var rows []resourceRow
 
-	for ; i < len(lines) && isTableRow(lines[i]); i++ {
-		cells := tableCells(lines[i])
+	for _, cells := range tableDataRows(t, report, resourcesHeading) {
 		if len(cells) != 6 {
-			t.Fatalf("the Resources row %q has %d cells, want 6", lines[i], len(cells))
+			t.Fatalf("the Resources row %q has %d cells, want 6", strings.Join(cells, " | "), len(cells))
 		}
 
 		rows = append(rows, resourceRow{
@@ -804,8 +812,56 @@ func resourceRows(t *testing.T, report string) []resourceRow {
 		})
 	}
 
+	return rows
+}
+
+// summaryLabels returns the first cell of every data row of report's Summary
+// table, in report order: the fits the report counts and their total.
+func summaryLabels(t *testing.T, report string) []string {
+	t.Helper()
+
+	var labels []string
+
+	for _, cells := range tableDataRows(t, report, summaryHeading) {
+		labels = append(labels, cells[0])
+	}
+
+	return labels
+}
+
+// tableDataRows returns the data rows of the table below heading, as cells, in
+// report order: the rows after the header row and its separator, up to the
+// blank line that ends the table. It fails the test when the report has no such
+// heading, no table below it, or no data row.
+func tableDataRows(t *testing.T, report, heading string) [][]string {
+	t.Helper()
+
+	lines := strings.Split(report, "\n")
+
+	start := slices.Index(lines, heading)
+	if start < 0 {
+		t.Fatalf("the report has no %q heading:\n%s", heading, report)
+	}
+
+	// The table follows the heading: a header row, the separator row below it,
+	// then one row per record.
+	i := start + 1
+	for i < len(lines) && !isTableRow(lines[i]) {
+		i++
+	}
+
+	if i+1 >= len(lines) || !isSeparatorRow(lines[i+1]) {
+		t.Fatalf("the report has no table below %q:\n%s", heading, report)
+	}
+
+	var rows [][]string
+
+	for i += 2; i < len(lines) && isTableRow(lines[i]); i++ {
+		rows = append(rows, tableCells(lines[i]))
+	}
+
 	if len(rows) == 0 {
-		t.Fatalf("the Resources table has no rows:\n%s", report)
+		t.Fatalf("the table below %q has no rows:\n%s", heading, report)
 	}
 
 	return rows
@@ -871,13 +927,17 @@ func codeSpanText(cell string) string {
 }
 
 // reportShape is what the reports of one inventory for two targets must share:
-// the headings in order, the header row of every table, and the resource IDs of
-// the Resources table in order. Everything else in a report depends on the
-// target, its snapshot and the fits.
+// the labels of the preamble that names the inventory, the source and the
+// catalog, the headings in order, the header row of every table, the labels of
+// the Summary rows in order, and the resource IDs of the Resources table in
+// order. Everything else in a report depends on the target, its snapshot and the
+// fits.
 type reportShape struct {
-	headings     []string
-	tableHeaders []string
-	resourceIDs  []string
+	preambleLabels []string
+	headings       []string
+	tableHeaders   []string
+	summaryLabels  []string
+	resourceIDs    []string
 }
 
 // shapeOf returns the skeleton of a report for target. The title names the
@@ -890,6 +950,20 @@ func shapeOf(t *testing.T, target targetCase, report string) reportShape {
 
 	var shape reportShape
 
+	// The preamble is every line above the first "## " heading: a report labels
+	// its inventory, its source and its catalog there.
+	for _, line := range lines {
+		if strings.HasPrefix(line, "## ") {
+			break
+		}
+
+		// A preamble line reads `- Label: value`; only the label is shared.
+		if strings.HasPrefix(line, "- ") {
+			label, _, _ := strings.Cut(line, ":")
+			shape.preambleLabels = append(shape.preambleLabels, label)
+		}
+	}
+
 	for i, line := range lines {
 		if strings.HasPrefix(line, "#") {
 			shape.headings = append(shape.headings, strings.ReplaceAll(line, "`"+target.name+"`", "`TARGET`"))
@@ -901,6 +975,8 @@ func shapeOf(t *testing.T, target targetCase, report string) reportShape {
 			shape.tableHeaders = append(shape.tableHeaders, line)
 		}
 	}
+
+	shape.summaryLabels = summaryLabels(t, report)
 
 	for _, row := range resourceRows(t, report) {
 		shape.resourceIDs = append(shape.resourceIDs, row.id)
