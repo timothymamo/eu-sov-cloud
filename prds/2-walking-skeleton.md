@@ -1,6 +1,6 @@
 # PRD #2: Walking skeleton: assess an inventory file against the Scaleway catalog
 
-**Status:** Draft
+**Status:** In progress
 **Issue:** #2
 
 ## Problem
@@ -101,7 +101,7 @@ All criteria are pinned by tests that run offline under `make test` or `make tes
 
 Each milestone ships as one PR. Milestones 4, 5 and 6 depend only on 3 and can run in parallel.
 
-1. [ ] **Domain models.** `taxonomy` (in-scope categories, `unclassified`, capability vocabulary, parsing
+1. [x] **Domain models.** `taxonomy` (in-scope categories, `unclassified`, capability vocabulary, parsing
    that rejects unknown values), `inventory` (resource: ID, raw provider type, category, region,
    capabilities used), `catalog` (target, offerings with categories, capabilities and EU regions, snapshot
    source and date). Unit tests only.
