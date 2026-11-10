@@ -128,9 +128,10 @@ func assess(ctx context.Context, opts assessOptions, stdout io.Writer, deps Deps
 }
 
 // checkOutput refuses an --output dest the report must not replace: anything
-// but a regular file or a symbolic link (a directory, a named pipe, a socket, a
-// device), and the inventory file itself, by the same path, a hard link or a
-// symbolic link to it. A dest that does not exist yet is accepted.
+// but a regular file, a symbolic link to one or a dangling link (a directory, a
+// named pipe, a socket, a device, or a link to one of them), and the inventory
+// file itself, by the same path, a hard link or a symbolic link to it. A dest
+// that does not exist yet is accepted.
 func checkOutput(inventory, dest string) error {
 	info, err := os.Lstat(dest)
 
@@ -143,12 +144,23 @@ func checkOutput(inventory, dest string) error {
 		return fmt.Errorf("output %s is %s, not a regular file", text.Quote(dest), fileKind(info.Mode()))
 	}
 
+	// os.Stat follows symbolic links, so destInfo describes what a link at dest
+	// points to. The rename would replace the link, not its target, but a link
+	// to something that is not a report file is refused as it stands: run as
+	// root, --output /dev/stdout would otherwise replace the system's
+	// /dev/stdout link with a regular file. A link that cannot be resolved
+	// (dangling, a loop, a target out of reach) is replaced.
+	destInfo, destErr := os.Stat(dest)
+	if destErr == nil && !destInfo.Mode().IsRegular() {
+		return fmt.Errorf("output %s links to %s, not a regular file; leave out --output to write to standard output",
+			text.Quote(dest), fileKind(destInfo.Mode()))
+	}
+
 	// os.Stat follows symbolic links on both sides, so a link to the inventory,
 	// or an inventory that is a link to dest, is the same file. A path that
 	// cannot be resolved is no clash: the inventory source reports a missing
 	// inventory, and a dangling link at dest is replaced.
 	invInfo, invErr := os.Stat(inventory)
-	destInfo, destErr := os.Stat(dest)
 
 	if invErr == nil && destErr == nil && os.SameFile(invInfo, destInfo) {
 		return fmt.Errorf("output %s is the inventory file %s; write the report to another file",

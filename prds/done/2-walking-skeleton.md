@@ -215,7 +215,8 @@ fixtures in earlier milestones share a picture of the data:
 - **Decided: what `--output` may name.** The report is rendered into memory in full; only then is a
   temporary file created next to the destination, written, synced and renamed onto it, so a failed or
   cancelled run leaves no partial report and no temporary file. A path that does not exist is created,
-  an existing regular file is replaced atomically, and a symbolic link is replaced, not followed.
-  Anything else (a directory, a named pipe, a socket, a device) and the inventory file itself (the same
-  path, a hard link or a symbolic link to it) are refused with exit code 1 before the inventory is read,
-  and left as they were. SIGINT, SIGTERM and SIGHUP cancel a run, which then writes nothing.
+  an existing regular file is replaced atomically, and a symbolic link to a regular file, or a dangling
+  link, is replaced, not followed. Anything else (a directory, a named pipe, a socket, a device, or a
+  symbolic link to one of them) and the inventory file itself (the same path, a hard link or a symbolic
+  link to it) are refused with exit code 1 before the inventory is read, and left as they were, so that,
+  run as root, `--output /dev/stdout` cannot replace the system's `/dev/stdout` link with a regular file. SIGINT, SIGTERM and SIGHUP cancel a run, which then writes nothing.

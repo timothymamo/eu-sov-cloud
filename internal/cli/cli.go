@@ -120,9 +120,11 @@ Flags of assess:
                       docs/adr/0006. A path: standard input is not supported.
   --target <target>   The target to compare with: %s.
   --output <file>     Write the report to this file, with mode 0600, instead of
-                      standard output. An existing file is replaced only once
-                      the whole report is written; a failed run leaves it as it
-                      was. A directory, a pipe or the inventory file itself is
+                      standard output. An existing regular file, a symbolic
+                      link to one or a dangling link is replaced only once the
+                      whole report is written; a failed run leaves it as it
+                      was. Anything else (a directory, a pipe, a device, a
+                      socket, a link to one) and the inventory file itself are
                       refused.
 
 Exit codes:

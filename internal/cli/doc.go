@@ -60,9 +60,12 @@
 //
 //   - a path that does not exist yet: the report is created there;
 //   - an existing regular file: it is replaced atomically, in one rename;
-//   - a symbolic link: the link itself is replaced, never followed;
-//   - anything else (a directory, a named pipe, a socket, a device): refused
-//     with exit code 1;
+//   - a symbolic link to a regular file, or a dangling link: the link itself
+//     is replaced, never followed, so its target keeps its content;
+//   - anything else (a directory, a named pipe, a socket, a device, or a
+//     symbolic link to one of them): refused with exit code 1, so --output
+//     /dev/stdout, a link to the terminal or a pipe, is never replaced by a
+//     regular file; leave out --output to write to standard output;
 //   - the inventory file itself, by the same path, a hard link or a symbolic
 //     link to it: refused with exit code 1, so a report never replaces the
 //     inventory it assesses.

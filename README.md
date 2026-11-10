@@ -53,9 +53,11 @@ Markdown report: per resource its taxonomy category, best offering, fit (direct,
 reasons, then the required changes and the blockers. Without `--output` the report goes to standard
 output. With it, the report is written to the file with mode 0600, and an existing regular file is
 replaced atomically, only once the whole report is rendered; a failed or cancelled run leaves it as it
-was. A symbolic link at that path is replaced, not followed. `--output` naming anything else (a
-directory, a named pipe, a socket, a device) or the inventory file itself (the same path, a hard link or
-a symbolic link to it) is refused with exit code 1 before the inventory is read.
+was. A symbolic link to a regular file, or a dangling link, at that path is replaced, not followed.
+`--output` naming anything else (a directory, a named pipe, a socket, a device, or a symbolic link to
+one of them, such as `/dev/stdout`) or the inventory file itself (the same path, a hard link or a
+symbolic link to it) is refused with exit code 1 before the inventory is read; leave out `--output` to
+write to standard output.
 
 The inventory file is versioned JSON, described in
 [ADR 0006](docs/adr/0006-json-inventory-file-format-v1.md). `--inventory` takes a path; standard input
