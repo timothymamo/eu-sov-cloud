@@ -891,27 +891,265 @@ func TestRunAssessOutputClashWithInventory(t *testing.T) {
 
 		checkOutputClash(t, path, dest, dir, "inventory.json", "report.md")
 	})
+
+	t.Run("the inventory is a symbolic link to the destination", func(t *testing.T) {
+		t.Parallel()
+
+		dir := t.TempDir()
+		dest := filepath.Join(dir, "real.json")
+		path := filepath.Join(dir, "inventory.json")
+
+		writeInventory(t, dest)
+
+		if err := os.Symlink("real.json", path); err != nil {
+			t.Skipf("symbolic links are not supported here: %v", err)
+		}
+
+		checkOutputClash(t, path, dest, dir, "inventory.json", "real.json")
+	})
+
+	t.Run("the destination is a symbolic link to the inventory", func(t *testing.T) {
+		t.Parallel()
+
+		dir := t.TempDir()
+		path := filepath.Join(dir, "inventory.json")
+		dest := filepath.Join(dir, "report.md")
+
+		writeInventory(t, path)
+
+		if err := os.Symlink("inventory.json", dest); err != nil {
+			t.Skipf("symbolic links are not supported here: %v", err)
+		}
+
+		checkOutputClash(t, path, dest, dir, "inventory.json", "report.md")
+
+		// The clash names the destination, so the report is never written
+		// through the link: the link itself must still be there.
+		checkSymlink(t, dest, "inventory.json")
+	})
 }
 
 // TestRunAssessOutputNotARegularFile pins that --output naming something that is
-// not a report file fails the run and leaves it as it was: a directory is never
-// replaced, and no temporary file is left behind.
+// not a report file fails the run and leaves it as it was: a directory, or a
+// symbolic link to one, is never replaced, no temporary file is left behind,
+// and the run is refused before the inventory is read.
 func TestRunAssessOutputNotARegularFile(t *testing.T) {
 	t.Parallel()
 
+	cases := []struct {
+		name string
+		// link makes the destination a symbolic link to the directory instead of
+		// being that directory.
+		link bool
+		// wantEntries lists the output directory after the run, sorted.
+		wantEntries []string
+	}{
+		{name: "a directory", wantEntries: []string{"real"}},
+		{
+			name:        "a symbolic link to a directory",
+			link:        true,
+			wantEntries: []string{"real", "reports"},
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			dir := t.TempDir()
+			real := filepath.Join(dir, "real")
+
+			if err := os.Mkdir(real, 0o700); err != nil {
+				t.Fatalf("creating the destination directory: %v", err)
+			}
+
+			dest := real
+			if tc.link {
+				dest = filepath.Join(dir, "reports")
+
+				if err := os.Symlink("real", dest); err != nil {
+					t.Skipf("symbolic links are not supported here: %v", err)
+				}
+			}
+
+			marker := filepath.Join(real, "keep.md")
+			if err := os.WriteFile(marker, []byte("keep\n"), 0o600); err != nil {
+				t.Fatalf("writing a file into the destination directory: %v", err)
+			}
+
+			h := newHarness(t)
+
+			code, stdout, stderr := h.run(t.Context(), "assess", "--inventory", inventoryPath,
+				"--target", targetKey, "--output", dest)
+
+			if code != 1 {
+				t.Errorf("Run() = %d, want 1", code)
+			}
+
+			if stdout != "" {
+				t.Errorf("stdout = %q, want empty", stdout)
+			}
+
+			checkErrorLine(t, stderr)
+
+			info, err := os.Stat(real)
+			if err != nil {
+				t.Fatalf("the destination directory is gone: %v", err)
+			}
+
+			if !info.IsDir() {
+				t.Errorf("the destination directory is no longer a directory: mode %s", info.Mode())
+			}
+
+			if got, err := os.ReadFile(marker); err != nil || string(got) != "keep\n" {
+				t.Errorf("the file inside the destination directory = %q (error %v), want it unchanged",
+					got, err)
+			}
+
+			// A refused destination is refused as it stands, so a link to the
+			// directory is still that link: the report must never take its place.
+			if tc.link {
+				checkSymlink(t, dest, "real")
+			}
+
+			if got := tempReportFiles(t, dir); len(got) != 0 {
+				t.Errorf("the output directory holds the temporary files %q, want none", got)
+			}
+
+			checkEntries(t, dir, tc.wantEntries...)
+
+			// The destination is refused before anything is read.
+			if h.inventory.calls != 0 || h.reporter.calls != 0 {
+				t.Errorf("a refused output read the inventory %d times and reported %d, want 0 and 0",
+					h.inventory.calls, h.reporter.calls)
+			}
+		})
+	}
+}
+
+// TestRunAssessOutputSymlinkIsReplacedNotFollowed pins that --output naming a
+// symbolic link to a regular file, or a dangling link, is accepted: the rename
+// replaces the link itself with the report, so the link's target keeps its old
+// content and the report never reaches it.
+func TestRunAssessOutputSymlinkIsReplacedNotFollowed(t *testing.T) {
+	t.Parallel()
+
+	t.Run("a link to a regular file", func(t *testing.T) {
+		t.Parallel()
+
+		dir := t.TempDir()
+		target := filepath.Join(dir, "target.md")
+		dest := filepath.Join(dir, "report.md")
+		old := []byte("old report\n")
+
+		if err := os.WriteFile(target, old, 0o600); err != nil {
+			t.Fatalf("writing the link's target: %v", err)
+		}
+
+		if err := os.Symlink("target.md", dest); err != nil {
+			t.Skipf("symbolic links are not supported here: %v", err)
+		}
+
+		h := newHarness(t)
+
+		code, stdout, stderr := h.run(t.Context(), "assess", "--inventory", inventoryPath,
+			"--target", targetKey, "--output", dest)
+
+		if code != 0 {
+			t.Errorf("Run() = %d, want 0; stderr = %q", code, stderr)
+		}
+
+		if stdout != "" {
+			t.Errorf("stdout = %q, want empty", stdout)
+		}
+
+		if stderr != "" {
+			t.Errorf("stderr = %q, want empty", stderr)
+		}
+
+		// The link was replaced, not followed: the destination is the report.
+		info, err := os.Lstat(dest)
+		if err != nil {
+			t.Fatalf("the destination is gone: %v", err)
+		}
+
+		if !info.Mode().IsRegular() {
+			t.Errorf("the destination has mode %s, want a regular file", info.Mode())
+		}
+
+		if got, err := os.ReadFile(dest); err != nil || string(got) != reportBody {
+			t.Errorf("the report file = %q (error %v), want %q", got, err, reportBody)
+		}
+
+		if got, err := os.ReadFile(target); err != nil || !bytes.Equal(got, old) {
+			t.Errorf("the link's target = %q (error %v), want it unchanged as %q", got, err, old)
+		}
+
+		checkEntries(t, dir, "report.md", "target.md")
+	})
+
+	t.Run("a dangling link", func(t *testing.T) {
+		t.Parallel()
+
+		dir := t.TempDir()
+		dest := filepath.Join(dir, "report.md")
+
+		if err := os.Symlink("missing.md", dest); err != nil {
+			t.Skipf("symbolic links are not supported here: %v", err)
+		}
+
+		h := newHarness(t)
+
+		code, stdout, stderr := h.run(t.Context(), "assess", "--inventory", inventoryPath,
+			"--target", targetKey, "--output", dest)
+
+		if code != 0 {
+			t.Errorf("Run() = %d, want 0; stderr = %q", code, stderr)
+		}
+
+		if stdout != "" {
+			t.Errorf("stdout = %q, want empty", stdout)
+		}
+
+		if stderr != "" {
+			t.Errorf("stderr = %q, want empty", stderr)
+		}
+
+		info, err := os.Lstat(dest)
+		if err != nil {
+			t.Fatalf("the destination is gone: %v", err)
+		}
+
+		if !info.Mode().IsRegular() {
+			t.Errorf("the destination has mode %s, want a regular file", info.Mode())
+		}
+
+		if got, err := os.ReadFile(dest); err != nil || string(got) != reportBody {
+			t.Errorf("the report file = %q (error %v), want %q", got, err, reportBody)
+		}
+
+		checkEntries(t, dir, "report.md")
+	})
+}
+
+// TestRunAssessOutputRenameFailureLeavesNoTemporaryFile pins that a rename that
+// fails after the report was written leaves no temporary file behind: the
+// destination becomes a directory while the report is rendered, so the final
+// rename fails and only the destination is left in the output directory.
+func TestRunAssessOutputRenameFailureLeavesNoTemporaryFile(t *testing.T) {
+	t.Parallel()
+
 	dir := t.TempDir()
-	dest := filepath.Join(dir, "reports")
-
-	if err := os.Mkdir(dest, 0o700); err != nil {
-		t.Fatalf("creating the destination directory: %v", err)
-	}
-
-	marker := filepath.Join(dest, "keep.md")
-	if err := os.WriteFile(marker, []byte("keep\n"), 0o600); err != nil {
-		t.Fatalf("writing a file into the destination directory: %v", err)
-	}
+	dest := filepath.Join(dir, "report.md")
 
 	h := newHarness(t)
+	// checkOutput has passed, since the destination did not exist; a directory
+	// takes its place before the report is written, so the rename fails.
+	h.reporter.onReport = func() {
+		if err := os.Mkdir(dest, 0o700); err != nil {
+			t.Errorf("creating the destination directory: %v", err)
+		}
+	}
 
 	code, stdout, stderr := h.run(t.Context(), "assess", "--inventory", inventoryPath,
 		"--target", targetKey, "--output", dest)
@@ -926,24 +1164,56 @@ func TestRunAssessOutputNotARegularFile(t *testing.T) {
 
 	checkErrorLine(t, stderr)
 
-	info, err := os.Stat(dest)
-	if err != nil {
-		t.Fatalf("the destination directory is gone: %v", err)
-	}
-
-	if !info.IsDir() {
-		t.Errorf("the destination is no longer a directory: mode %s", info.Mode())
-	}
-
-	if got, err := os.ReadFile(marker); err != nil || string(got) != "keep\n" {
-		t.Errorf("the file inside the destination directory = %q (error %v), want it unchanged", got, err)
-	}
-
 	if got := tempReportFiles(t, dir); len(got) != 0 {
 		t.Errorf("the output directory holds the temporary files %q, want none", got)
 	}
 
-	checkOnlyFile(t, dir, "reports")
+	checkOnlyFile(t, dir, "report.md")
+}
+
+// checkSymlink fails the test unless path is a symbolic link to want.
+func checkSymlink(t *testing.T, path, want string) {
+	t.Helper()
+
+	info, err := os.Lstat(path)
+	if err != nil {
+		t.Fatalf("stat %s: %v", path, err)
+	}
+
+	if info.Mode()&os.ModeSymlink == 0 {
+		t.Errorf("%s has mode %s, want it still a symbolic link", path, info.Mode())
+
+		return
+	}
+
+	got, err := os.Readlink(path)
+	if err != nil {
+		t.Fatalf("reading the link %s: %v", path, err)
+	}
+
+	if got != want {
+		t.Errorf("%s points at %q, want %q", path, got, want)
+	}
+}
+
+// checkEntries fails the test unless dir holds exactly the entries want, in the
+// sorted name order os.ReadDir gives.
+func checkEntries(t *testing.T, dir string, want ...string) {
+	t.Helper()
+
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		t.Fatalf("reading the output directory: %v", err)
+	}
+
+	names := make([]string, 0, len(entries))
+	for _, e := range entries {
+		names = append(names, e.Name())
+	}
+
+	if !slices.Equal(names, want) {
+		t.Errorf("the output directory holds %q, want %q", names, want)
+	}
 }
 
 // checkOutputClash pins the run of assess with --inventory path and --output
@@ -987,18 +1257,12 @@ func checkOutputClash(t *testing.T, path, dest, dir string, wantEntries ...strin
 		t.Errorf("the output directory holds the temporary files %q, want none", want)
 	}
 
-	entries, err := os.ReadDir(dir)
-	if err != nil {
-		t.Fatalf("reading the output directory: %v", err)
-	}
+	checkEntries(t, dir, wantEntries...)
 
-	names := make([]string, 0, len(entries))
-	for _, e := range entries {
-		names = append(names, e.Name())
-	}
-
-	if !slices.Equal(names, wantEntries) {
-		t.Errorf("the output directory holds %q, want %q", names, wantEntries)
+	// The clash is refused before anything is read.
+	if h.inventory.calls != 0 || h.reporter.calls != 0 {
+		t.Errorf("a refused output read the inventory %d times and reported %d, want 0 and 0",
+			h.inventory.calls, h.reporter.calls)
 	}
 }
 
