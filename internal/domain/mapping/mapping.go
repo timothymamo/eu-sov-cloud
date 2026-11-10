@@ -78,7 +78,7 @@ type PartKind string
 
 const (
 	// PartLiteral is sentence text, or an unknown reason code verbatim; renderers
-	// escape it like every other part.
+	// escape it as text; every other part is a value.
 	PartLiteral PartKind = "literal"
 	// PartTarget is a catalog's target display name.
 	PartTarget PartKind = "target"
