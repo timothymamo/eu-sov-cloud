@@ -155,17 +155,30 @@ linters:
               desc: the CLI starts no processes
             - pkg: os/user$
               desc: the CLI looks up no OS users
+            # The CLI's tests create a FIFO with syscall.Mkfifo; they are left
+            # out of this rule by !$test.
+            - pkg: syscall$
+              desc: the CLI makes no raw system calls; os, io/fs and os/signal cover what it needs
+            - pkg: plugin$
+              desc: the CLI loads no code at run time; adapters are wired in cmd/eusov
         # Adapters are constructed only in the composition root. No other
         # production package, adapters included, imports an adapter: one
         # adapter never builds or calls another, and internal/config or the
         # CLI get adapters only through what cmd/eusov passes in. An adapter's
         # tests may import its contract suite (contract-suites-only-in-tests).
+        # Helpers shared by adapters live in internal/adapter/internal/ (the
+        # JSON decoder of issue #13): they build no adapter, so adapters may
+        # import them. The allow entry is longer than the deny entry, so it
+        # wins for those packages only; Go's internal rule keeps everything
+        # outside internal/adapter from importing them.
         adapters-are-built-in-cmd:
           list-mode: lax
           files:
             - "$all"
             - "!$test"
             - "!**/cmd/eusov/**"
+          allow:
+            - github.com/timothymamo/eu-sov-cloud/internal/adapter/internal/
           deny:
             - pkg: github.com/timothymamo/eu-sov-cloud/internal/adapter/
               desc: adapters are constructed only in cmd/eusov
