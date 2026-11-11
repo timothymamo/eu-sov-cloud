@@ -43,7 +43,8 @@ Arrows are imports. They point inwards only:
   Only `cmd/eusov` imports it.
 - **`cmd/eusov`** is the only place that constructs adapters and injects them.
 
-The rule is enforced by `depguard` in `.golangci.yml`, so `make lint` fails on a violating import.
+The rule is enforced by `depguard` in `.golangci.yml`, so `make lint`, which lints the host natively and
+then every GOOS/GOARCH `.goreleaser.yaml` builds with cgo off, fails on a violating import.
 A comment cannot switch it off: every file is linted, also one that looks generated, and `test/lint`
 fails on any nolint directive that would hide a depguard issue (one naming `depguard`, `all` or no
 linter). Nor can a file name: `test/architecture` checks every directory a strict depguard rule names
