@@ -25,7 +25,7 @@ type DepguardRule struct {
 
 // DepguardRules returns every depguard rule of a .golangci.yml document, in
 // file order: its list-mode, its files and allow lists and the pkg of each deny
-// entry. The desc of a deny entry is free prose and is not read.
+// entry. The desc of a deny entry is free prose; its value is not kept.
 //
 // A deny list may be shared through a YAML anchor on one rule's deny: key
 // (deny: &name) and an alias on a later one (deny: *name); the alias reads as
@@ -34,8 +34,9 @@ type DepguardRule struct {
 // It fails closed: an error when the document has no depguard rules, when a
 // rule body holds a key other than list-mode, files, allow and deny, when a
 // list-mode is written other than original, strict or lax, when a deny entry
-// has no pkg or a key other than pkg and desc, when an alias names no anchor
-// above it, and wherever the line reader refuses the document.
+// has no pkg or a key other than pkg and desc, when a pkg or desc is not one
+// scalar on its line (lines below it, an anchor, an alias or a tag), when an
+// alias names no anchor above it, and wherever the line reader refuses the document.
 func DepguardRules(golangci []byte) ([]DepguardRule, error) {
 	lines, err := splitLines(golangci)
 	if err != nil {
@@ -189,7 +190,7 @@ func anchorName(e entry, text string) (string, error) {
 }
 
 // denyPkg returns the pkg of one deny entry, a mapping of pkg and desc. The
-// desc is prose and is not read.
+// desc is prose: its value is dropped, but it must be one scalar on its line.
 func denyPkg(it item) (string, error) {
 	entries, err := mapping(it.lines)
 	if err != nil {
@@ -206,6 +207,12 @@ func denyPkg(it item) (string, error) {
 				return "", fmt.Errorf("a deny entry: %w", err)
 			}
 		case "desc":
+			// The value is prose and is not kept, but it is read as a
+			// one-line scalar so a block, anchor, alias or tag on it is
+			// refused rather than skipped.
+			if _, err := single(e); err != nil {
+				return "", fmt.Errorf("a deny entry: %w", err)
+			}
 		default:
 			return "", fmt.Errorf("line %d: a deny entry has key %s, want pkg and desc", e.num, e.key)
 		}
