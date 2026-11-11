@@ -263,23 +263,31 @@ each pinned under `param:` and authenticated before it is installed:
 | Tool | For | Where | Verified by |
 |---|---|---|---|
 | nerdctl-full: `nerdctl`, containerd, BuildKit, RootlessKit | pulling, running and building images | `/usr/local/nerdctl` | `SHA256SUMS` signed by a release manager pinned by GPG fingerprint |
-| `cosign` (v3 or later) | the image's signature | `/usr/local/bin` | SHA-256 pinned per architecture, then its own keyless signature (Sigstore bundle, sigstore/cosign's release identity) |
-| `gh` from its release | `gh attestation verify`, which Ubuntu's older `gh` lacks | `/usr/local/bin` | SHA-256 pinned per architecture |
+| `cosign` (v3 or later) | the image's signature | `/usr/local/bin` | SHA-256 pinned per architecture; each pin checked in CI against sigstore/cosign's keyless signature with an independently installed cosign (`vm-tools` workflow). In the VM, a self-check against its own bundle guards integrity only |
+| `gh` from its release | `gh attestation verify`, which Ubuntu's older `gh` lacks | `/usr/local/bin` | SHA-256 pinned per architecture; each pin checked in CI against gh's build attestation (`gh attestation verify`, `vm-tools` workflow) |
 | `crane` | resolving a tag to its digest without pulling the image | `/usr/local/bin` | `go install`, against the Go checksum database |
 
 A download that does not match its pin, or a cosign whose signature does not verify, stops provisioning
-with a message naming the file and the `param:` involved; nothing is installed.
+with a message naming the file and the `param:` involved; nothing is installed and the download is
+deleted. In the VM the pin is what authenticates gh and cosign. The pins are made authentic before they
+are merged: `.github/workflows/vm-tools.yml` downloads each pinned asset, verifies it with a cosign and a
+gh that do not come from the release under test, and fails when a pin is not the verified asset's digest.
+It runs on every change to `dev/lima.yaml` and weekly, which catches an asset replaced under a pinned tag
+([ADR 0017](adr/0017-run-a-rootless-container-runtime-in-the-lima-vm.md), "Amendment: authenticity is
+checked in CI").
 
 ### Updating gh and cosign
 
 Renovate bumps `ghVersion` and `cosignVersion` together with their pinned digests (`ghSha256Amd64`,
 `ghSha256Arm64`, `cosignSha256Amd64`, `cosignSha256Arm64`), in one PR per tool: each digest has a
 `# renovate: datasource=github-release-attachments ... digestVersion=<tag>` comment, and Renovate takes
-the new digest from the new release's checksum file. Check, in the PR, that every `digestVersion`
-equals the new version. If Renovate could not map a digest, it leaves the old one, and the next
+the new digest from the new release's checksum file, so the PR alone proves nothing about authenticity.
+Merge it only when the **VM tools** check is green, and check that every `digestVersion` equals the new
+version. A PR labelled `security-review` means an existing tag's asset changed: do not merge it without
+finding out why. If Renovate could not map a digest, it leaves the old one, and the next
 provisioning fails with `does not match ... in dev/lima.yaml`: the bump cannot install an unpinned
 binary. To update a digest by hand, download the asset and check it before pinning it, on a machine
-with a trusted cosign and gh (the Mac, or this VM):
+with a trusted cosign and gh (the Mac, or this VM), then let the VM tools check confirm it in the PR:
 
 ```bash
 v=v3.1.4; a=arm64   # the new version, and amd64 or arm64
@@ -292,7 +300,8 @@ sha256sum "cosign-linux-${a}"                      # the value for cosignSha256<
 
 v=v2.103.3
 curl -fsSLO "https://github.com/cli/cli/releases/download/${v}/gh_${v#v}_linux_${a}.tar.gz"
-gh attestation verify "gh_${v#v}_linux_${a}.tar.gz" -R cli/cli   # needs a GitHub token
+gh attestation verify "gh_${v#v}_linux_${a}.tar.gz" -R cli/cli \
+  --signer-workflow cli/cli/.github/workflows/deployment.yml   # needs a GitHub token
 sha256sum "gh_${v#v}_linux_${a}.tar.gz"            # the value for ghSha256<Arch>
 ```
 
@@ -303,8 +312,13 @@ recreate it to get, and verify, the pinned ones. After recreating, confirm them:
 /usr/local/bin/cosign version | grep GitVersion   # the cosignVersion in dev/lima.yaml
 /usr/local/bin/gh --version                       # the ghVersion in dev/lima.yaml
 sha256sum /usr/local/bin/cosign                   # cosignSha256<Arch> for this VM's architecture
-grep -E 'Verified OK|does not match|not signed' /var/log/cloud-init-output.log
+# The provisioning output: one of these holds it. Check which one does on your VM.
+sudo grep -E 'Verified OK|does not match|not signed' /var/log/cloud-init-output.log
+sudo journalctl -b | grep -E 'Verified OK|does not match|not signed'
 ```
+
+`Verified OK` is the cosign self-check, printed on the boot that installed cosign; there must be no
+`does not match` or `not signed`.
 
 containerd and BuildKit run **rootless**, as the systemd user services `containerd.service` and
 `buildkit.service`, started at boot like the deck's daemon. Check them, then run the README's

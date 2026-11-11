@@ -46,8 +46,9 @@ param:
   # gh from its release, not Ubuntu's package: `gh attestation verify` needs gh 2.49 or later.
   # renovate: datasource=github-releases depName=cli/cli
   ghVersion: "v2.103.3"
-  # SHA-256 of gh_<version>_linux_<arch>.tar.gz, per architecture: what authenticates gh (ADR 0017).
-  # Renovate moves each digestVersion and digest together with ghVersion, in one PR; a digest left
+  # SHA-256 of gh_<version>_linux_<arch>.tar.gz, per architecture: what authenticates gh in provisioning
+  # (ADR 0017). The vm-tools workflow checks every change of it against gh's build attestation before
+  # merge. Renovate moves each digestVersion and digest together with ghVersion, in one PR; a digest left
   # behind fails provisioning.
   # renovate: datasource=github-release-attachments depName=cli/cli digestVersion=v2.103.3
   ghSha256Amd64: "4c806978ffce1cec70853302a56d70ac6da4f19bae7adca4e1a8ab00633dd91d"
@@ -56,8 +57,10 @@ param:
   # cosign v3 or later reads the release's signature bundles (README, "Verify the image").
   # renovate: datasource=github-releases depName=sigstore/cosign
   cosignVersion: "v3.1.4"
-  # SHA-256 of cosign-linux-<arch>, per architecture: the first cosign has no trusted cosign to verify
-  # it, so it is pinned here, then checks its own keyless signature. Updated like the gh digests.
+  # SHA-256 of cosign-linux-<arch>, per architecture: what authenticates cosign in provisioning, where no
+  # trusted cosign exists yet to verify it (ADR 0017). The vm-tools workflow checks every change of it
+  # against sigstore/cosign's keyless signature with an independently installed cosign before merge.
+  # Updated like the gh digests.
   # renovate: datasource=github-release-attachments depName=sigstore/cosign digestVersion=v3.1.4
   cosignSha256Amd64: "424e2c97d0b45fd7a6b608a87f090f35633f4c23ece5f092d48bba11aaf4bbfa"
   # renovate: datasource=github-release-attachments depName=sigstore/cosign digestVersion=v3.1.4
@@ -90,7 +93,8 @@ provision:
       arch="$(dpkg --print-architecture)" # amd64 | arm64, matching Go's naming
 
       # Stops provisioning unless <file> has the SHA-256 pinned in dev/lima.yaml as param <name><Arch>
-      # (ghSha256Amd64, ...). A version bump whose digests were not updated with it stops here too.
+      # (ghSha256Amd64, ...). A version bump whose digests were not updated with it stops here too. Called
+      # in the subshells below, whose EXIT trap removes the rejected download.
       check_pinned_sha256() { # <file> <param name without the architecture>
         local param="PARAM_${2}${arch^}" actual
         local expected="${!param:-}"
@@ -130,39 +134,50 @@ provision:
           | sh -s -- -b /usr/local/bin "${PARAM_golangciLintVersion}"
       fi
 
-      # cosign release binary, pinned by its SHA-256 above and then checked against its own keyless
-      # signature: the release's Sigstore bundle must be signed by the identity sigstore/cosign's release
-      # process signs with (cosign's installation docs), and logged in Rekor. Before gh, so it is trusted
-      # first. Network to Sigstore's TUF repository and Rekor is needed only while this runs.
+      # cosign release binary. Its SHA-256 pin above is the trust anchor here: no trusted cosign exists
+      # yet, and the vm-tools workflow verified the pinned digest's signature with an independently
+      # installed cosign before the pin was merged. The self-check after it guards integrity and the
+      # bundle's consistency only, not authenticity: the binary under test verifies itself, against the
+      # trust root embedded in it (ADR 0017). It checks the bundle's certificate, signature and Rekor
+      # inclusion proof offline; only Sigstore's TUF repository (tuf-repo-cdn.sigstore.dev) is fetched,
+      # into a cache under ${tmp}, as is anything cosign writes to HOME. Before gh. Each subshell's EXIT
+      # trap removes ${tmp} whether it installs or stops provisioning.
       if ! /usr/local/bin/cosign version 2>&1 | grep -qE "^GitVersion:[[:space:]]+${PARAM_cosignVersion}\$"; then
-        asset="cosign-linux-${arch}"
-        base="https://github.com/sigstore/cosign/releases/download/${PARAM_cosignVersion}"
-        tmp="$(mktemp -d)"
-        curl -fsSL -o "${tmp}/${asset}" "${base}/${asset}"
-        curl -fsSL -o "${tmp}/${asset}.sigstore.json" "${base}/${asset}.sigstore.json"
-        check_pinned_sha256 "${tmp}/${asset}" cosignSha256
-        chmod 0755 "${tmp}/${asset}"
-        if ! "${tmp}/${asset}" verify-blob --bundle "${tmp}/${asset}.sigstore.json" \
-          --certificate-identity keyless@projectsigstore.iam.gserviceaccount.com \
-          --certificate-oidc-issuer https://accounts.google.com "${tmp}/${asset}"; then
-          echo >&2 "cosign ${PARAM_cosignVersion}: ${asset} is not signed by sigstore/cosign's release identity. Not installed."
-          exit 1
-        fi
-        install -m 0755 "${tmp}/${asset}" /usr/local/bin/cosign
-        rm -rf "${tmp}"
+        (
+          asset="cosign-linux-${arch}"
+          base="https://github.com/sigstore/cosign/releases/download/${PARAM_cosignVersion}"
+          tmp="$(mktemp -d)"
+          trap 'rm -rf "${tmp}"' EXIT
+          curl -fsSL -o "${tmp}/${asset}" "${base}/${asset}"
+          curl -fsSL -o "${tmp}/${asset}.sigstore.json" "${base}/${asset}.sigstore.json"
+          check_pinned_sha256 "${tmp}/${asset}" cosignSha256
+          chmod 0755 "${tmp}/${asset}"
+          mkdir -m 0700 "${tmp}/home" "${tmp}/sigstore"
+          if ! HOME="${tmp}/home" TUF_ROOT="${tmp}/sigstore" "${tmp}/${asset}" verify-blob \
+            --bundle "${tmp}/${asset}.sigstore.json" \
+            --certificate-identity keyless@projectsigstore.iam.gserviceaccount.com \
+            --certificate-oidc-issuer https://accounts.google.com "${tmp}/${asset}"; then
+            echo >&2 "cosign ${PARAM_cosignVersion}: ${asset} is not signed by sigstore/cosign's release identity. Not installed."
+            exit 1
+          fi
+          install -m 0755 "${tmp}/${asset}" /usr/local/bin/cosign
+        )
       fi
 
-      # gh release binary, pinned by its SHA-256 above. Its attestation cannot be checked here: `gh
-      # attestation verify` needs a trusted gh and a GitHub token (ADR 0017).
+      # gh release binary, pinned by its SHA-256 above. Its attestation is not checked here, as `gh
+      # attestation verify` needs a trusted gh and a GitHub token; the vm-tools workflow checks it for
+      # every pinned digest before merge (ADR 0017).
       if ! /usr/local/bin/gh --version 2>/dev/null | grep -q "^gh version ${PARAM_ghVersion#v} "; then
-        name="gh_${PARAM_ghVersion#v}_linux_${arch}"
-        base="https://github.com/cli/cli/releases/download/${PARAM_ghVersion}"
-        tmp="$(mktemp -d)"
-        curl -fsSL -o "${tmp}/${name}.tar.gz" "${base}/${name}.tar.gz"
-        check_pinned_sha256 "${tmp}/${name}.tar.gz" ghSha256
-        tar -C "${tmp}" --no-same-owner -xzf "${tmp}/${name}.tar.gz"
-        install -m 0755 "${tmp}/${name}/bin/gh" /usr/local/bin/gh
-        rm -rf "${tmp}"
+        (
+          name="gh_${PARAM_ghVersion#v}_linux_${arch}"
+          base="https://github.com/cli/cli/releases/download/${PARAM_ghVersion}"
+          tmp="$(mktemp -d)"
+          trap 'rm -rf "${tmp}"' EXIT
+          curl -fsSL -o "${tmp}/${name}.tar.gz" "${base}/${name}.tar.gz"
+          check_pinned_sha256 "${tmp}/${name}.tar.gz" ghSha256
+          tar -C "${tmp}" --no-same-owner -xzf "${tmp}/${name}.tar.gz"
+          install -m 0755 "${tmp}/${name}/bin/gh" /usr/local/bin/gh
+        )
       fi
 
       # crane, root-owned in /usr/local/bin like cosign and gh, so the VM user cannot replace it. Verified

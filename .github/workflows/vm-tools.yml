@@ -1,0 +1,111 @@
+name: VM tools
+
+# dev/lima.yaml pins cosign and gh by a SHA-256 per architecture, and provisioning trusts those pins:
+# no trusted cosign or GitHub token exists there yet. This job is what makes a pin authentic. For every
+# change to dev/lima.yaml it downloads each pinned asset and checks it against its publisher's signature
+# with tools that do not come from the release under test, then checks the pin equals the asset's digest
+# (ADR 0017, "Verifying gh and cosign"). The weekly run catches a release asset replaced under a tag
+# already pinned, which Renovate never reports: it fails here as a pin that no longer matches.
+on:
+  push:
+    branches: [main]
+    paths:
+      - dev/lima.yaml
+      - .github/workflows/vm-tools.yml
+  pull_request:
+    paths:
+      - dev/lima.yaml
+      - .github/workflows/vm-tools.yml
+  schedule:
+    - cron: "0 6 * * 1" # Mondays, with the Security workflow
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify-pins:
+    name: Verify the gh and cosign pins
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      # gh attestation verify reads cli/cli's attestations through the GitHub API with GITHUB_TOKEN.
+      attestations: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      # The action's own cosign, pinned by digest in sigstore/cosign-installer, is independent of the
+      # cosign release dev/lima.yaml pins: a replaced release fails its signature check below.
+      - uses: sigstore/cosign-installer@756fe2d284c7292c4e9b62c8a28f1e5629c59532 # v4.1.3
+      - name: Verify every pinned asset
+        env:
+          # The runner's preinstalled gh, not the release under test.
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          # Sets REPLY to the quoted value of param <name> in dev/lima.yaml, which must appear exactly
+          # once. Not called in $(...), so the error reaches the log and exit stops the step.
+          param() {
+            local values
+            values="$(sed -nE "s/^  ${1}: \"([^\"]*)\"\$/\\1/p" dev/lima.yaml)"
+            if [ -z "${values}" ] || [ "$(printf '%s\n' "${values}" | wc -l)" -ne 1 ]; then
+              echo "::error file=dev/lima.yaml::param ${1} is not set exactly once"
+              exit 1
+            fi
+            REPLY="${values}"
+          }
+          failed=0
+          # <file> <param>: the file's SHA-256 must be the pinned one.
+          check_pin() {
+            local want got
+            param "$2"
+            want="${REPLY}"
+            got="$(sha256sum "$1" | cut -d' ' -f1)"
+            if [ "${got}" = "${want}" ]; then
+              echo "$(basename "$1"): ${2} matches"
+            else
+              echo "::error file=dev/lima.yaml::${2} is ${want}, but the verified $(basename "$1") has SHA-256 ${got}"
+              failed=1
+            fi
+          }
+          param cosignVersion
+          cosign_version="${REPLY}"
+          param ghVersion
+          gh_version="${REPLY}"
+          cosign version
+          gh --version
+          for arch in amd64 arm64; do
+            Arch="${arch^}"
+            dir="${RUNNER_TEMP}/${arch}"
+            mkdir -p "${dir}"
+
+            asset="cosign-linux-${arch}"
+            base="https://github.com/sigstore/cosign/releases/download/${cosign_version}"
+            curl -fsSL --retry 3 -o "${dir}/${asset}" "${base}/${asset}"
+            curl -fsSL --retry 3 -o "${dir}/${asset}.sigstore.json" "${base}/${asset}.sigstore.json"
+            if cosign verify-blob --bundle "${dir}/${asset}.sigstore.json" \
+              --certificate-identity keyless@projectsigstore.iam.gserviceaccount.com \
+              --certificate-oidc-issuer https://accounts.google.com "${dir}/${asset}"; then
+              check_pin "${dir}/${asset}" "cosignSha256${Arch}"
+            else
+              echo "::error file=dev/lima.yaml::cosign ${cosign_version}: ${asset} is not signed by sigstore/cosign's release identity (cosignSha256${Arch})"
+              failed=1
+            fi
+
+            name="gh_${gh_version#v}_linux_${arch}.tar.gz"
+            curl -fsSL --retry 3 -o "${dir}/${name}" \
+              "https://github.com/cli/cli/releases/download/${gh_version}/${name}"
+            if gh attestation verify "${dir}/${name}" -R cli/cli \
+              --signer-workflow cli/cli/.github/workflows/deployment.yml; then
+              check_pin "${dir}/${name}" "ghSha256${Arch}"
+            else
+              echo "::error file=dev/lima.yaml::gh ${gh_version}: ${name} has no valid build attestation from cli/cli's release workflow (ghSha256${Arch})"
+              failed=1
+            fi
+          done
+          exit "${failed}"

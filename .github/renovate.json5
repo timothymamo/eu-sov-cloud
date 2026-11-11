@@ -56,11 +56,33 @@
       description: 'gh: dev/lima.yaml version and per-architecture digests together',
       matchDepNames: ['cli/cli'],
       groupName: 'gh',
+      prBodyNotes: [
+        '**Before merging:** the "VM tools" check must be green: it verifies each pinned digest against gh\'s build attestation (ADR 0017). Every `digestVersion` in `dev/lima.yaml` must equal the new `ghVersion`.',
+      ],
     },
     {
       description: 'cosign: release.yml, and dev/lima.yaml version and per-architecture digests, together',
       matchDepNames: ['sigstore/cosign'],
       groupName: 'cosign',
+      prBodyNotes: [
+        '**Before merging:** the "VM tools" check must be green: it verifies each pinned digest against sigstore/cosign\'s signature with an independently installed cosign (ADR 0017). Every `digestVersion` in `dev/lima.yaml` must equal the new `cosignVersion`.',
+      ],
+    },
+    {
+      // A digest update keeps the tag: the release asset behind an existing gh or cosign tag was replaced.
+      // That is how a compromised release looks, so it gets a PR of its own that is never automerged.
+      // Defence in depth only: the github-release-attachments datasource (Renovate 44) keeps the pinned
+      // digest when the tag is unchanged, so it proposes no such PR today. What catches a replaced asset
+      // is the weekly run of .github/workflows/vm-tools.yml, which then fails on the pin.
+      description: 'gh and cosign: a release asset changed under an existing tag',
+      matchDepNames: ['cli/cli', 'sigstore/cosign'],
+      matchUpdateTypes: ['digest'],
+      groupName: 'replaced gh or cosign release asset',
+      addLabels: ['security-review'],
+      automerge: false,
+      prBodyNotes: [
+        '**Security review required. Do not merge without investigation.** The asset of an existing release tag changed: the new digest is not a new version. Find out from the upstream project why the asset was replaced, and merge only once that is explained and the "VM tools" check is green.',
+      ],
     },
   ],
   customManagers: [
