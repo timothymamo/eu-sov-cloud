@@ -17,7 +17,10 @@
 // stored as given, never trimmed or decoded; the retrieval date is kept in UTC.
 // Its offerings are kept in name order, each with its categories, capabilities
 // and regions sorted and de-duplicated, so everything derived from it is
-// deterministic. A zero Catalog has not been validated; later layers only
+// deterministic. Each offering's capabilities are expanded with the ones they
+// imply (taxonomy Capability.Implies), so an offering listing
+// zone-high-availability also has node-high-availability; inventory resources
+// are never expanded. A zero Catalog has not been validated; later layers only
 // receive catalogs built by New.
 //
 // The target is the display name reports show (for example Scaleway), not a CLI

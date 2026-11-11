@@ -612,10 +612,24 @@ func normalise(o Offering) (Offering, error) {
 
 	o = clone(o)
 	o.Categories = sortedUnique(o.Categories)
-	o.Capabilities = sortedUnique(o.Capabilities)
+	o.Capabilities = sortedUnique(withImplied(o.Capabilities))
 	o.Regions = sortedUnique(o.Regions)
 
 	return o, nil
+}
+
+// withImplied returns caps followed by every capability they imply,
+// transitively. The result may hold duplicates; sortedUnique removes them.
+func withImplied(caps []taxonomy.Capability) []taxonomy.Capability {
+	for i := 0; i < len(caps); i++ {
+		for _, implied := range caps[i].Implies() {
+			if !slices.Contains(caps, implied) {
+				caps = append(caps, implied)
+			}
+		}
+	}
+
+	return caps
 }
 
 // sortedUnique sorts s in place and removes duplicates, returning nil when
