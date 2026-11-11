@@ -5,9 +5,11 @@ import (
 	"errors"
 	"io/fs"
 	"os"
+	"path"
 	"path/filepath"
 	"regexp"
 	"slices"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -172,6 +174,21 @@ func TestFinalStageIsMinimalAndNonRoot(t *testing.T) {
 			dockerfileName, base.line, base.image)
 	}
 
+	if isDebugBaseImage(base.image) {
+		t.Errorf("%s:%d: the final stage starts FROM %q, the debug variant of a distroless image: :debug and :debug-nonroot ship a busybox shell and a package manager's leftovers, contradicting the image's promise of no shell; want the same image under its non-debug tag, such as :nonroot",
+			dockerfileName, base.line, base.image)
+	}
+
+	// The builder cross-compiles for $BUILDPLATFORM, so CI needs no QEMU
+	// emulation. A RUN in the final stage would need it, and a shell distroless
+	// does not have.
+	for _, in := range final {
+		if in.keyword() == "RUN" {
+			t.Errorf("%s:%d: the final stage has a RUN instruction, %q: want none, because the builder cross-compiles on $BUILDPLATFORM, so CI needs no QEMU emulation, and a RUN in the final stage would need it as well as a shell, which distroless does not have; do the work in the builder and COPY its result",
+				dockerfileName, in.line, in.text)
+		}
+	}
+
 	user, ok := lastInstruction(final, "USER")
 	switch {
 	case !ok:
@@ -219,6 +236,97 @@ func TestFinalStageIsMinimalAndNonRoot(t *testing.T) {
 			t.Errorf("%s: LABEL %s is empty: want a value, set from a build arg where it changes per release",
 				dockerfileName, key)
 		}
+	}
+}
+
+// TestDebugBaseImageClassification exercises the check that keeps the final
+// stage off the debug variant of a distroless image. Distroless publishes
+// :debug and :debug-nonroot builds of every image, which hold a busybox shell
+// (and a package manager) for troubleshooting: they look like the right image
+// and contradict the reason the final stage is distroless at all. The table is
+// black-box: it goes through example image references only.
+func TestDebugBaseImageClassification(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name  string
+		image string
+		want  bool
+	}{
+		{
+			name:  "distroless nonroot tag",
+			image: "gcr.io/distroless/static-debian12:nonroot@sha256:afa5c872c891853ca7fcf1f12c3edb23f7eeef36189728842dd51042ff57f7ab",
+		},
+		{
+			name:  "distroless untagged with digest",
+			image: "gcr.io/distroless/static-debian12@sha256:afa5c872c891853ca7fcf1f12c3edb23f7eeef36189728842dd51042ff57f7ab",
+		},
+		{
+			name:  "distroless latest tag",
+			image: "gcr.io/distroless/static-debian12:latest",
+		},
+		{
+			name:  "scratch",
+			image: "scratch",
+		},
+		{
+			name:  "registry with a port and no tag",
+			image: "localhost:5000/distroless/static-debian12",
+		},
+		{
+			name:  "distroless debug tag",
+			image: "gcr.io/distroless/static-debian12:debug@sha256:afa5c872c891853ca7fcf1f12c3edb23f7eeef36189728842dd51042ff57f7ab",
+			want:  true,
+		},
+		{
+			name:  "distroless debug-nonroot tag",
+			image: "gcr.io/distroless/static-debian12:debug-nonroot@sha256:afa5c872c891853ca7fcf1f12c3edb23f7eeef36189728842dd51042ff57f7ab",
+			want:  true,
+		},
+		{
+			name:  "registry with a port and a debug tag",
+			image: "localhost:5000/distroless/static-debian12:debug",
+			want:  true,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			if got := isDebugBaseImage(tc.image); got != tc.want {
+				t.Errorf("isDebugBaseImage(%q) = %t, want %t", tc.image, got, tc.want)
+			}
+		})
+	}
+}
+
+// TestDockerignoreKeepsEmbeddedFiles pins that .dockerignore keeps every file a
+// //go:embed directive embeds in the build context. The image builds from cmd/
+// and internal/ only, and go build fails outright when an embed pattern matches
+// no file, so an over-loose ignore pattern breaks the image build rather than
+// shrinking it. Today the embedded files are the target catalog snapshots,
+// internal/adapter/target/{ovhcloud,scaleway}/catalog.json, which are not test
+// data and must stay in.
+func TestDockerignoreKeepsEmbeddedFiles(t *testing.T) {
+	t.Parallel()
+
+	patterns := dockerignorePatterns(t, readRepoFile(t, dockerignoreName))
+	embedded := embeddedFiles(t)
+
+	if len(embedded) == 0 {
+		t.Fatalf("no //go:embed directive in a non-test .go file under cmd/ or internal/ names a file, so this test would pass whatever %s holds: the target catalog snapshots are embedded and must be found",
+			dockerignoreName)
+	}
+
+	for _, file := range embedded {
+		excluded, rule := dockerignoreExcludes(patterns, file.path)
+		if !excluded {
+			continue
+		}
+
+		t.Errorf("%s:%d: the pattern %q excludes the file %q, which %s:%d embeds with //go:embed: the build context leaves it out, so `go build` fails in the image with \"pattern ...: no matching files found\"; the embedded catalog snapshots are not test data and must stay in",
+			dockerignoreName, rule.line, rule.raw, file.path, file.source, file.line)
 	}
 }
 
@@ -484,6 +592,28 @@ func imageTag(image string) string {
 	return tag
 }
 
+// baseImageTag returns the tag of any image reference: the part between the
+// last colon and the @ digest, and "" for an untagged reference. A colon in a
+// registry port, as in localhost:5000/distroless/static, is not a tag.
+func baseImageTag(image string) string {
+	reference, _, _ := strings.Cut(image, "@")
+
+	colon := strings.LastIndex(reference, ":")
+	if colon <= strings.LastIndex(reference, "/") {
+		return ""
+	}
+
+	return reference[colon+1:]
+}
+
+// isDebugBaseImage reports whether an image reference asks for the debug
+// variant of a distroless image. Distroless publishes :debug and
+// :debug-nonroot builds that hold a busybox shell and a package manager for
+// troubleshooting, which is exactly what the minimal final stage rules out.
+func isDebugBaseImage(image string) bool {
+	return strings.Contains(strings.ToLower(baseImageTag(image)), "debug")
+}
+
 // usesBuildArg reports whether the build reads env (GOOS, GOARCH) from the
 // buildx platform argument, as GOOS=$TARGETOS or GOOS=${TARGETOS}.
 func usesBuildArg(dockerfile, env, buildArg string) bool {
@@ -626,4 +756,283 @@ func dockerignoreEntries(t *testing.T, dockerignore string) []string {
 	}
 
 	return entries
+}
+
+// dockerignorePattern is one .dockerignore line: the pattern with its `!` and
+// surrounding slashes removed, whether it re-includes what an earlier line
+// excluded, and the line number and text for failure messages.
+type dockerignorePattern struct {
+	line    int
+	raw     string
+	pattern string
+	negate  bool
+}
+
+// embeddedFile is one file a //go:embed directive embeds, named by its slash
+// path relative to the repository root, with the directive's place for failure
+// messages.
+type embeddedFile struct {
+	path   string
+	source string
+	line   int
+}
+
+// embedDirective matches a //go:embed line and captures its patterns.
+var embedDirective = regexp.MustCompile(`^//go:embed\s+(.+)$`)
+
+// dockerignorePatterns parses .dockerignore into its patterns: comments and
+// blank lines are dropped, a leading `!` marks a re-include, and the slashes
+// that only anchor a pattern to the context root are removed. A line that
+// cannot be evaluated fails the test instead of being skipped.
+func dockerignorePatterns(t *testing.T, dockerignore string) []dockerignorePattern {
+	t.Helper()
+
+	var patterns []dockerignorePattern
+
+	for i, raw := range strings.Split(dockerignore, "\n") {
+		line := strings.TrimSpace(strings.TrimSuffix(raw, "\r"))
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+
+		pattern := strings.Trim(strings.TrimPrefix(line, "!"), "/")
+		if pattern == "" {
+			t.Errorf("%s:%d: the entry %q names no path, so this test cannot tell what the build context holds",
+				dockerignoreName, i+1, line)
+
+			continue
+		}
+
+		for _, segment := range strings.Split(pattern, "/") {
+			if _, err := path.Match(segment, "x"); err != nil {
+				t.Errorf("%s:%d: the pattern %q is not a valid glob: %v",
+					dockerignoreName, i+1, line, err)
+			}
+		}
+
+		patterns = append(patterns, dockerignorePattern{
+			line:    i + 1,
+			raw:     line,
+			pattern: pattern,
+			negate:  strings.HasPrefix(line, "!"),
+		})
+	}
+
+	if len(patterns) == 0 {
+		t.Fatalf("%s: no pattern, so the build context holds every file in the repository", dockerignoreName)
+	}
+
+	return patterns
+}
+
+// dockerignoreExcludes reports whether the patterns leave the slash path,
+// relative to the repository root, out of the build context, and returns the
+// pattern that decided it: the last pattern that matches wins, and a `!`
+// pattern puts the path back in.
+func dockerignoreExcludes(patterns []dockerignorePattern, filePath string) (bool, dockerignorePattern) {
+	excluded := false
+	var last dockerignorePattern
+
+	for _, pattern := range patterns {
+		if pattern.matches(filePath) {
+			excluded, last = !pattern.negate, pattern
+		}
+	}
+
+	return excluded, last
+}
+
+// matches reports whether the pattern matches the slash path relative to the
+// repository root. Docker evaluates a pattern against the path and against each
+// of its parent directories, so the directory pattern `cmd` covers what is under
+// cmd, and a `**` segment matches zero or more directories.
+func (p dockerignorePattern) matches(filePath string) bool {
+	if matchDockerignorePath(p.pattern, filePath) {
+		return true
+	}
+
+	for dir := path.Dir(filePath); dir != "." && dir != "/"; dir = path.Dir(dir) {
+		if matchDockerignorePath(p.pattern, dir) {
+			return true
+		}
+	}
+
+	return false
+}
+
+// matchDockerignorePath reports whether one pattern matches the slash path
+// segment by segment, with `**` standing for zero or more segments and every
+// other segment matched by path.Match.
+func matchDockerignorePath(pattern, filePath string) bool {
+	return matchDockerignoreSegments(strings.Split(pattern, "/"), strings.Split(filePath, "/"))
+}
+
+// matchDockerignoreSegments reports whether the pattern segments match the path
+// segments: `**` consumes any number of them, and each other segment is one
+// path.Match, which does not cross a slash.
+func matchDockerignoreSegments(pattern, segments []string) bool {
+	if len(pattern) == 0 {
+		return len(segments) == 0
+	}
+
+	if pattern[0] == "**" {
+		for skip := 0; skip <= len(segments); skip++ {
+			if matchDockerignoreSegments(pattern[1:], segments[skip:]) {
+				return true
+			}
+		}
+
+		return false
+	}
+
+	if len(segments) == 0 {
+		return false
+	}
+
+	matched, err := path.Match(pattern[0], segments[0])
+	if err != nil || !matched {
+		return false
+	}
+
+	return matchDockerignoreSegments(pattern[1:], segments[1:])
+}
+
+// embeddedFiles walks the non-test .go files under cmd/ and internal/, the two
+// directories the Dockerfile copies into the builder, and returns every file
+// their embed directives name. A quoted pattern and a glob are resolved as the
+// go command resolves them, and a directory pattern is walked recursively,
+// leaving out the names starting with . or _ that it leaves out.
+func embeddedFiles(t *testing.T) []embeddedFile {
+	t.Helper()
+
+	repository, err := os.OpenRoot(repoRoot(t))
+	if err != nil {
+		t.Fatalf("open the repository root: %v", err)
+	}
+	t.Cleanup(func() {
+		if err := repository.Close(); err != nil {
+			t.Errorf("close the repository root: %v", err)
+		}
+	})
+
+	tree := repository.FS()
+	var files []embeddedFile
+
+	for _, top := range []string{"cmd", "internal"} {
+		err := fs.WalkDir(tree, top, func(filePath string, entry fs.DirEntry, err error) error {
+			switch {
+			case err != nil:
+				return err
+			case entry.IsDir(), !strings.HasSuffix(filePath, ".go"), strings.HasSuffix(filePath, "_test.go"):
+				return nil
+			}
+
+			data, err := fs.ReadFile(tree, filePath)
+			if err != nil {
+				return err
+			}
+
+			for i, line := range strings.Split(string(data), "\n") {
+				match := embedDirective.FindStringSubmatch(strings.TrimSpace(line))
+				if match == nil {
+					continue
+				}
+
+				for _, pattern := range strings.Fields(match[1]) {
+					files = append(files, embedTargets(t, tree, filePath, i+1, pattern)...)
+				}
+			}
+
+			return nil
+		})
+		if err != nil {
+			t.Fatalf("walk %s: %v", top, err)
+		}
+	}
+
+	slices.SortFunc(files, func(a, b embeddedFile) int { return strings.Compare(a.path, b.path) })
+
+	return files
+}
+
+// embedTargets resolves one embed pattern, declared on the given line of the
+// .go file source, to the files it embeds, relative to its package directory.
+// A pattern matching nothing fails the test: go build fails the same way, so the
+// repository is broken rather than this test.
+func embedTargets(t *testing.T, tree fs.FS, source string, line int, pattern string) []embeddedFile {
+	t.Helper()
+
+	name := embedPatternValue(pattern)
+	target := path.Join(path.Dir(source), name)
+
+	matches := []string{target}
+	if strings.ContainsAny(name, `*?[`) {
+		found, err := fs.Glob(tree, target)
+		if err != nil {
+			t.Fatalf("%s:%d: the embed glob %q cannot be expanded: %v", source, line, pattern, err)
+		}
+
+		if len(found) == 0 {
+			t.Fatalf("%s:%d: the embed glob %q matches no file, so go build fails on the package",
+				source, line, pattern)
+		}
+
+		matches = found
+	}
+
+	var files []embeddedFile
+
+	for _, match := range matches {
+		info, err := fs.Stat(tree, match)
+		if err != nil {
+			t.Fatalf("%s:%d: the embed pattern %q names %s, which cannot be read: %v; go build fails on the package",
+				source, line, pattern, match, err)
+		}
+
+		if !info.IsDir() {
+			files = append(files, embeddedFile{path: match, source: source, line: line})
+
+			continue
+		}
+
+		err = fs.WalkDir(tree, match, func(embeddedPath string, entry fs.DirEntry, err error) error {
+			switch {
+			case err != nil:
+				return err
+			case embeddedPath == match:
+				return nil
+			case excludedByEmbed(entry.Name()) && entry.IsDir():
+				return fs.SkipDir
+			case excludedByEmbed(entry.Name()), entry.IsDir():
+				return nil
+			}
+
+			files = append(files, embeddedFile{path: embeddedPath, source: source, line: line})
+
+			return nil
+		})
+		if err != nil {
+			t.Fatalf("%s:%d: walk the embed directory %s: %v", source, line, match, err)
+		}
+	}
+
+	return files
+}
+
+// excludedByEmbed reports whether go:embed leaves the name out of a directory
+// pattern: it skips files whose name starts with . or _.
+func excludedByEmbed(name string) bool {
+	return strings.HasPrefix(name, ".") || strings.HasPrefix(name, "_")
+}
+
+// embedPatternValue removes the quotes an embed pattern may carry, as in
+// "catalog 2.json".
+func embedPatternValue(pattern string) string {
+	if len(pattern) >= 2 && (pattern[0] == '"' || pattern[0] == '`') {
+		if value, err := strconv.Unquote(pattern); err == nil {
+			return value
+		}
+	}
+
+	return pattern
 }
