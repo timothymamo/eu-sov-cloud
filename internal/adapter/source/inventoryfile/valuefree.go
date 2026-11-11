@@ -87,7 +87,8 @@ var domainSentinels = []error{
 //
 // The domain checks the source, then each resource in order, so the faulty
 // resource is the last of the shortest prefix inventory.New refuses, found by
-// binary search; its field is found by checking it alone. Only a refused
+// binary search; its field is found from the domain's error and by checking
+// its fields in the domain's order. Only a refused
 // document pays for this, with O(log n) more calls to inventory.New.
 func newValueFree(doc document) (inventory.Inventory, error) {
 	inv, err := inventory.New(doc.source, doc.resources)
@@ -113,37 +114,46 @@ func newValueFree(doc document) (inventory.Inventory, error) {
 
 	i := hi - 1
 
-	return inventory.Inventory{}, valueFree(resourceField(doc.source, i, doc.resources[i]), err)
+	return inventory.Inventory{}, valueFree(resourceField(doc.source, i, doc.resources[i], err), err)
 }
 
 // resourceField names the field of r, the resource at index i, that the domain
-// refuses: the field of the first check r fails alone, or its id when r alone
-// is valid and so repeats an earlier ID.
-func resourceField(source string, i int, r inventory.Resource) string {
+// refuses with err, in the domain's own order: the ID first (empty, repeated or
+// invalid), then raw type, region, category and capabilities, as normalise
+// checks them. The domain stops at the first resource it refuses, so err is
+// r's error. The ID is checked alone, beside a known category, so a fault in
+// another field never hides one in the ID.
+func resourceField(source string, i int, r inventory.Resource, err error) string {
 	at := fmt.Sprintf("%s[%d]", keyResources, i)
 
-	_, err := inventory.New(source, []inventory.Resource{r})
-
-	switch {
-	case err == nil, errors.Is(err, inventory.ErrEmptyID):
-		return at + "." + keyID
-	case errors.Is(err, taxonomy.ErrUnknownCategory):
-		return at + "." + keyCategory
-	case errors.Is(err, taxonomy.ErrUnknownCapability):
-		for j, c := range r.Capabilities {
-			if _, capErr := taxonomy.ParseCapability(string(c)); capErr != nil {
-				return fmt.Sprintf("%s.%s[%d]", at, keyCapabilities, j)
-			}
-		}
-
-		return at + "." + keyCapabilities
-	case text.Validate(r.RawType) != nil:
-		return at + "." + keyRawType
-	case text.Validate(r.Region) != nil:
-		return at + "." + keyRegion
-	default:
+	if errors.Is(err, inventory.ErrEmptyID) || errors.Is(err, inventory.ErrDuplicateID) {
 		return at + "." + keyID
 	}
+
+	idAlone := []inventory.Resource{{ID: r.ID, Category: taxonomy.ComputeVM}}
+	if _, idErr := inventory.New(source, idAlone); idErr != nil {
+		return at + "." + keyID
+	}
+
+	if text.Validate(r.RawType) != nil {
+		return at + "." + keyRawType
+	}
+
+	if text.Validate(r.Region) != nil {
+		return at + "." + keyRegion
+	}
+
+	if _, catErr := taxonomy.ParseCategory(string(r.Category)); catErr != nil {
+		return at + "." + keyCategory
+	}
+
+	for j, c := range r.Capabilities {
+		if _, capErr := taxonomy.ParseCapability(string(c)); capErr != nil {
+			return fmt.Sprintf("%s.%s[%d]", at, keyCapabilities, j)
+		}
+	}
+
+	return at + "." + keyID
 }
 
 // valueFree wraps err, a refusal of the domain, in a valueFreeError that names
