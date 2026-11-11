@@ -42,6 +42,8 @@ Hexagonal (ports and adapters). Dependencies point inwards only. See `docs/archi
 | Composition root | `cmd/eusov` | Everything; the only place adapters are constructed |
 
 - The dependency rule is **enforced by `golangci-lint` (depguard)**. Do not add `//nolint:depguard`; fix the design.
+  `test/lint` fails on any nolint directive that would hide a depguard issue, and nolintlint wants a named
+  linter and a reason on every directive (`//nolint:gosec // why`).
 - Cloud SDKs live only in their provider's adapter package. SDK types never cross the adapter boundary.
 - Providers meet only through the taxonomy. Never write a direct source-service-to-target-service table.
 - Every package has a `doc.go` stating its responsibility. Read it before changing the package; update it when the responsibility changes.
@@ -54,7 +56,7 @@ make check             # lint + test + govulncheck: must pass before every commi
 make test              # unit + contract tests, race detector, no network
 make test-integration  # real cloud APIs, read-only credentials (never in default CI)
 make test-e2e          # build the binary and run it against testdata fixtures
-make lint              # golangci-lint, including architecture rules
+make lint              # golangci-lint and test/lint, including architecture rules
 make fmt               # gofumpt + goimports
 make build             # ./bin/eusov
 ```
