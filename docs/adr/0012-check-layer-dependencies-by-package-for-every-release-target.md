@@ -39,7 +39,7 @@ Forces:
 A second, package-level enforcement of the dependency rule lives in the test package
 `test/architecture`, beside depguard; its code is in `test/architecture/internal/check`, which no
 other package can import. (Issue #82 moved the release-target reader to `test/internal/releasetarget`
-and the YAML line reader to `test/internal/yamlread`, so `test/lint` can read the same list with the
+and the YAML line reader to `test/internal/yamlread`, so `test/lint` reads the same list with the
 same reader; `test` alone can import them.) For every platform the release builds, with cgo off and on, and with no
 build tag, `e2e`, `integration` and both, it runs `go list -deps` twice:
 

@@ -2,8 +2,9 @@
 // .goreleaser.yaml (issue #40, ADR 0012), so that the test packages that hold
 // something to every release target read one list, not copies of it:
 // test/architecture checks the dependency rule package by package and pins make
-// lint and CI's lint matrix to the list, and test/lint can hold its own checks
-// to it (issue #82).
+// lint and CI's lint matrix to the list, and test/lint's
+// TestLintLoadsEveryGoFile fails on a Go file that no release target loads
+// (issue #82).
 //
 // Read returns the goos x goarch product of the document's one build, sorted,
 // and fails closed: it refuses every key, hook, env entry, flag and YAML

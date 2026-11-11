@@ -61,10 +61,14 @@
 // target of .goreleaser.yaml, what builds with the tags e2e and integration,
 // and ./... skips testdata, _ and . directories, so a file behind another build
 // tag, or an imported package in a skipped directory, would run unchecked, with
-// real credentials in an integration test. The tests run the go command,
-// offline, for linux on amd64 only, so a file only for another release platform
-// fails TestLintLoadsEveryGoFile, though lint checks it, until the test lists
-// that platform too.
+// real credentials in an integration test. The tests run the go command
+// offline. TestLintLoadsEveryGoFile reads the release targets from
+// .goreleaser.yaml with test/internal/releasetarget, the reader
+// test/architecture holds the release to, and counts a file as loaded when the
+// go command loads it for any of them with cgo off, as the release builds
+// them; a file only for one release platform passes, and a platform the
+// release gains is one the test holds files to. TestUnloadedGoFilesProbe pins
+// its helper on a probe module (testdata/platformprobe).
 //
 // TestNoInterfaceDeclaresACloudWrite and TestNoTypeHidesACloudSDKType close
 // what forbidigo's cloud-read-only group cannot see. An interface a cloud

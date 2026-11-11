@@ -246,9 +246,9 @@ hand-written GCP package, add an entry for it, a probe line only it refuses and 
 - **Files lint never loads**: a file behind a build tag other than `integration` and `e2e`, a
   `//go:build ignore` helper, and the `testdata`, `_` and `.` directories `./...` skips. `test/lint`
   fails on such a file, and on an imported package in such a directory. A main package there, run
-  with `go run`, is not checked. `make lint` and CI lint the host and every release target, but
-  `test/lint` lists only linux/amd64, so it also fails on a file only for another release platform
-  until it lists that platform too.
+  with `go run`, is not checked. `make lint` and CI lint the host and every release target, and
+  `test/lint` reads the same targets from `.goreleaser.yaml`, so a file one release target builds
+  passes it.
 - **A write or a credential that uses no SDK type**: a request signed, or given a bearer token, by hand
   with only the standard library. The strict import list leaves no `net` package to send it with,
   but an SDK's own HTTP client could carry it. Lint is a guardrail; the read-only role is the
