@@ -1,0 +1,97 @@
+{
+  "schemaVersion": 1,
+  "kind": "assessment",
+  "inventoryName": "inventory-hostile.json",
+  "source": "aws",
+  "target": {
+    "name": "Scaleway",
+    "snapshot": {
+      "source": "https://www.scaleway.com/en/docs/",
+      "retrieved": "2026-11-11"
+    }
+  },
+  "summary": {
+    "direct": 3,
+    "partial": 1,
+    "none": 0,
+    "total": 4
+  },
+  "resources": [
+    {
+      "id": "#1",
+      "rawType": "$\\Huge X$",
+      "category": "storage.object",
+      "region": "eu-west-1",
+      "fit": "direct",
+      "bestOffering": "Object Storage",
+      "ties": [],
+      "reasons": [
+        {
+          "code": "all-capabilities",
+          "text": "Object Storage offers every capability the resource uses",
+          "offering": "Object Storage"
+        }
+      ],
+      "requiredChanges": []
+    },
+    {
+      "id": "[ ] x",
+      "rawType": "@octocat",
+      "category": "compute.vm",
+      "region": "eu-west-1",
+      "fit": "direct",
+      "bestOffering": "Elastic Metal",
+      "ties": [
+        "Instances"
+      ],
+      "reasons": [
+        {
+          "code": "all-capabilities",
+          "text": "Elastic Metal offers every capability the resource uses",
+          "offering": "Elastic Metal"
+        }
+      ],
+      "requiredChanges": []
+    },
+    {
+      "id": "a|b",
+      "rawType": "\u003cb\u003e",
+      "category": "compute.vm",
+      "region": "eu-west-1",
+      "fit": "partial",
+      "bestOffering": "Elastic Metal",
+      "ties": [
+        "Instances"
+      ],
+      "reasons": [
+        {
+          "code": "missing-capability",
+          "text": "Elastic Metal does not offer node-high-availability",
+          "offering": "Elastic Metal",
+          "capability": "node-high-availability"
+        }
+      ],
+      "requiredChanges": [
+        "node-high-availability"
+      ]
+    },
+    {
+      "id": "tick`x",
+      "rawType": ":x:",
+      "category": "storage.object",
+      "region": "eu-west-1",
+      "fit": "direct",
+      "bestOffering": "Object Storage",
+      "ties": [],
+      "reasons": [
+        {
+          "code": "all-capabilities",
+          "text": "Object Storage offers every capability the resource uses",
+          "offering": "Object Storage"
+        }
+      ],
+      "requiredChanges": []
+    }
+  ],
+  "blockers": []
+}

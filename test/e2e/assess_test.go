@@ -14,6 +14,7 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"unicode/utf8"
 
 	"github.com/google/go-cmp/cmp"
 
@@ -277,6 +278,9 @@ func TestAssessOutput(t *testing.T) {
 const (
 	jsonAssessmentGolden = "assess-ovhcloud-json.golden"
 	jsonComparisonGolden = "assess-all-json.golden"
+	// jsonHostileGolden is the JSON document of the hostile inventory: the values
+	// the Markdown golden shows, JSON-encoded instead of shown as text.
+	jsonHostileGolden = "assess-hostile-json.golden"
 	// jsonFormat is the --format value that selects the JSON document.
 	jsonFormat = "json"
 	// markdownFormat is the --format value that selects the Markdown report, which
@@ -286,35 +290,60 @@ const (
 
 // TestAssessJSONFormat pins --format json end to end: the built binary writes the
 // versioned JSON document for one target and the comparison document for all of
-// them, naming the shared inventory by its base name.
+// them, naming the shared inventory by its base name. The hostile inventory's
+// document pins that the same escaping holds through the CLI: its values reach
+// stdout as JSON string escapes, so the document is valid JSON and valid UTF-8
+// and holds no raw <, > or &.
 func TestAssessJSONFormat(t *testing.T) {
 	t.Parallel()
-
-	inventory := filepath.Join("testdata", "inventory.json")
 
 	tests := []struct {
 		name   string
 		target string
-		golden string
-		kind   string
+		// inventory is the --inventory file, relative to this package, or empty
+		// for the shared fixture.
+		inventory string
+		golden    string
+		kind      string
+		// inventoryName is the base name the document must name.
+		inventoryName string
+		// escapesHTML is true for the fixture that holds the characters JSON
+		// escapes: <, > and &.
+		escapesHTML bool
 	}{
 		{
-			name:   "one target is an assessment",
-			target: ovhcloudKey,
-			golden: jsonAssessmentGolden,
-			kind:   "assessment",
+			name:          "one target is an assessment",
+			target:        ovhcloudKey,
+			golden:        jsonAssessmentGolden,
+			kind:          "assessment",
+			inventoryName: "inventory.json",
 		},
 		{
-			name:   "every target is a comparison",
-			target: allKey,
-			golden: jsonComparisonGolden,
-			kind:   "comparison",
+			name:          "every target is a comparison",
+			target:        allKey,
+			golden:        jsonComparisonGolden,
+			kind:          "comparison",
+			inventoryName: "inventory.json",
+		},
+		{
+			name:          "hostile values are escaped",
+			target:        scalewayKey,
+			inventory:     filepath.Join("testdata", "inventory-hostile.json"),
+			golden:        jsonHostileGolden,
+			kind:          "assessment",
+			inventoryName: "inventory-hostile.json",
+			escapesHTML:   true,
 		},
 	}
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
+
+			inventory := tc.inventory
+			if inventory == "" {
+				inventory = filepath.Join("testdata", "inventory.json")
+			}
 
 			got := assess(t, tc.target, inventory, "--format", jsonFormat)
 
@@ -328,6 +357,10 @@ func TestAssessJSONFormat(t *testing.T) {
 
 			if !json.Valid([]byte(got.stdout)) {
 				t.Fatalf("stdout is not valid JSON:\n%s", got.stdout)
+			}
+
+			if !utf8.ValidString(got.stdout) {
+				t.Fatalf("stdout is not valid UTF-8:\n%q", got.stdout)
 			}
 
 			testutil.Golden(t, goldenPath(tc.golden), []byte(got.stdout))
@@ -350,8 +383,17 @@ func TestAssessJSONFormat(t *testing.T) {
 				t.Errorf("kind = %q, want %q", header.Kind, tc.kind)
 			}
 
-			if want := "inventory.json"; header.InventoryName != want {
-				t.Errorf("inventoryName = %q, want the base name %q", header.InventoryName, want)
+			if header.InventoryName != tc.inventoryName {
+				t.Errorf("inventoryName = %q, want the base name %q", header.InventoryName, tc.inventoryName)
+			}
+
+			if tc.escapesHTML {
+				for _, raw := range []string{"<", ">", "&"} {
+					if strings.Contains(got.stdout, raw) {
+						t.Errorf("stdout holds the raw character %q, so a document could be read as markup:\n%s",
+							raw, got.stdout)
+					}
+				}
 			}
 
 			if !strings.HasSuffix(got.stdout, "\n") || strings.HasSuffix(got.stdout, "\n\n") {
