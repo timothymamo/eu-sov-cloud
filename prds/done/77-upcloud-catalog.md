@@ -1,6 +1,6 @@
 # PRD #77: Assess an inventory file against the UpCloud catalog
 
-**Status:** Draft
+**Status:** Complete
 **Issue:** #77
 
 ## Problem
@@ -48,64 +48,64 @@ All criteria are pinned by tests that run offline under `make test` or `make tes
 
 **Target selection**
 
-- [ ] Given a valid inventory file, when I run `eusov assess --inventory <file> --target upcloud`, then
+- [x] Given a valid inventory file, when I run `eusov assess --inventory <file> --target upcloud`, then
   the command exits 0 and prints a Markdown report naming the target `UpCloud`, the snapshot's source URL
   and its retrieval date.
-- [ ] `--target` accepts `ovhcloud`, `scaleway` and `upcloud`. Given an unknown target, the command exits
+- [x] `--target` accepts `ovhcloud`, `scaleway` and `upcloud`. Given an unknown target, the command exits
   2 and the usage error lists all three, sorted.
-- [ ] `eusov assess --target upcloud` needs no credentials or network. The e2e test runs it with an empty
+- [x] `eusov assess --target upcloud` needs no credentials or network. The e2e test runs it with an empty
   environment and gets the same report.
 
 **Catalog**
 
-- [ ] The UpCloud catalog serves `compute.vm`, `kubernetes.managed`, `storage.object`, `storage.block`,
+- [x] The UpCloud catalog serves `compute.vm`, `kubernetes.managed`, `storage.object`, `storage.block`,
   `database.postgresql` and `database.mysql`, each with at least one offering (`targettest` *category*
   check).
-- [ ] Every offering is available only in the declared EU zones (`targettest` *regions* check). No
+- [x] Every offering is available only in the declared EU zones (`targettest` *regions* check). No
   offering lists `uk-lon1`, `no-svg1`, or a zone in the Americas or Asia-Pacific. A test pins the declared
   region list, so any change to it shows up in review.
-- [ ] Given a resource of category `serverless.function` or `messaging.queue`, its fit is `none` with
+- [x] Given a resource of category `serverless.function` or `messaging.queue`, its fit is `none` with
   the reason "no offering in the UpCloud catalog for `<category>`", and it is listed as a blocker.
-- [ ] No offering lists `zone-high-availability` unless its `SOURCES.md` section quotes documentation
+- [x] No offering lists `zone-high-availability` unless its `SOURCES.md` section quotes documentation
   that states the service keeps serving through the loss of a whole zone or data centre without manual
   failover (ADR 0011's target rule). A test pins the list of offerings that claim it, which is empty if
   none qualifies.
-- [ ] Every capability that holds only on some plans is listed on a tier variant named after that plan,
+- [x] Every capability that holds only on some plans is listed on a tier variant named after that plan,
   and the base offering does not list it (ADR 0011's tier-variant rule). For example, a database plan
   with more than one node is a variant if it is the only plan with high availability or read replicas.
   Tests pin the best offering for a resource that needs each such capability, and for one that needs
   none of them.
-- [ ] A golden file pins the parsed UpCloud catalog, as for the other targets.
-- [ ] Every offering in the snapshot has its own section in `internal/adapter/target/upcloud/SOURCES.md`.
+- [x] A golden file pins the parsed UpCloud catalog, as for the other targets.
+- [x] Every offering in the snapshot has its own section in `internal/adapter/target/upcloud/SOURCES.md`.
   That section names the pages the offering comes from, the fact behind each capability and region, and
   the licence of each source. The existing test that every offering has a section runs for UpCloud.
 
 **Report**
 
-- [ ] Given the same fixture inventory, the report for `--target upcloud` has the same sections, columns
+- [x] Given the same fixture inventory, the report for `--target upcloud` has the same sections, columns
   and resource order as the reports for the other two targets. Only the target name, the snapshot's
   source and date, the offerings, the fits and the reasons differ. Pinned by an e2e golden report of the
   same fixture against all three targets.
-- [ ] No report text or error message names another target when the target is UpCloud, or names UpCloud
+- [x] No report text or error message names another target when the target is UpCloud, or names UpCloud
   when the target is another one.
-- [ ] Given the same inventory twice with `--target upcloud`, the two reports are byte-identical.
+- [x] Given the same inventory twice with `--target upcloud`, the two reports are byte-identical.
 
 **Architecture**
 
-- [ ] `make check` passes, including depguard and `test/architecture` for every release target.
-- [ ] The UpCloud adapter passes `targettest` as it stands. If this PRD changes the suite, the change
+- [x] `make check` passes, including depguard and `test/architecture` for every release target.
+- [x] The UpCloud adapter passes `targettest` as it stands. If this PRD changes the suite, the change
   only adds checks, and all three adapters pass them.
-- [ ] *Review:* adding UpCloud changes no file under `internal/domain`, `internal/app`,
+- [x] *Review:* adding UpCloud changes no file under `internal/domain`, `internal/app`,
   `internal/adapter/report` or the shared snapshot reader. Needing such a change is a finding against
   the earlier design and gets an ADR.
-- [ ] The `go list -deps` check covers the UpCloud adapter on the assess path: no `net/http`, no
+- [x] The `go list -deps` check covers the UpCloud adapter on the assess path: no `net/http`, no
   `os/exec`, no cloud SDK.
 
 ## Milestones
 
 Each milestone ships as one PR. Both depend on this PRD being merged first.
 
-1. [ ] **UpCloud catalog snapshot and adapter.** `internal/adapter/target/upcloud` serves an embedded,
+1. [x] **UpCloud catalog snapshot and adapter.** `internal/adapter/target/upcloud` serves an embedded,
    dated snapshot of the products under *Scope*, in the EU zones under *Scope*, read through the shared
    reader. Its `SOURCES.md` is written to the rules under *Decisions*. A golden test pins the parsed
    catalog. The adapter runs `targettest` with the categories listed under *Scope*, a test pins the
@@ -114,7 +114,7 @@ Each milestone ships as one PR. Both depend on this PRD being merged first.
    does, the same PR updates this PRD's scope and criteria. The reviewer checks every zone against
    UpCloud's locations page and each product's availability page, and every capability against the
    product documentation. The adapter's `doc.go` says how to refresh the snapshot.
-2. [ ] **CLI, e2e and docs.** `--target upcloud` is wired in `cmd/eusov`, and the usage error lists all
+2. [x] **CLI, e2e and docs.** `--target upcloud` is wired in `cmd/eusov`, and the usage error lists all
    three targets. The e2e test runs one fixture inventory against all three targets and compares the
    output with golden reports. For UpCloud the fixture exercises direct, partial, `none` (from a category
    UpCloud does not serve) and unclassified. The `go list -deps` check includes the UpCloud adapter, and
