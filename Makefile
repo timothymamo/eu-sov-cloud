@@ -39,13 +39,14 @@ build: ## Build the eusov binary into ./bin
 	go build -trimpath -ldflags "$(LDFLAGS)" -o bin/$(BINARY) ./cmd/$(BINARY)
 
 .PHONY: image
-image: ## Build the container image eusov:<version> and eusov:dev from git, as make build (needs Docker)
+image: ## Build the local container image eusov:<version>, eusov:dev and eusov:latest from git, as make build (needs Docker; tags are local, nothing is pushed)
 	docker build \
 		--build-arg VERSION="$(VERSION)" \
 		--build-arg COMMIT="$(COMMIT)" \
 		--build-arg DATE="$(DATE)" \
 		--tag "$(IMAGE):$(VERSION)" \
 		--tag "$(IMAGE):dev" \
+		--tag "$(IMAGE):latest" \
 		.
 
 .PHONY: fmt
