@@ -51,6 +51,7 @@ dot-agent-deck publishes Linux arm64 and amd64 builds and is documented to run o
    brew install lima          # Lima 2.0 or newer
    make vm-up                 # create and provision the VM (several minutes the first time)
    make vm-env                # copy the three variables into the VM
+   make vm-claude-settings    # Claude Code user settings for the agents, see Agent permissions
    make vm-shell              # shell inside the VM, at the repository path
    ```
 
@@ -95,7 +96,7 @@ make vm-up && make deck    # the TUI attaches to the daemon service
 
 Tool versions are pinned in `dev/lima.yaml` under `param:`, and Renovate opens a PR when a new version
 is released. A VM keeps the template it was created with, so after merging a version bump recreate it
-(`make vm-delete vm-up vm-env`) and repeat the once-only steps above.
+(`make vm-delete vm-up vm-env vm-claude-settings`) and repeat the once-only steps above.
 
 The same goes for the VM's size: `make vm-up` starts an existing VM with the CPUs, memory and disk it
 was created with. To resize it without recreating it, keeping its tools, login and configuration:
@@ -199,21 +200,47 @@ on the machine's default:
 
 | Role | Agent | Starts in |
 |---|---|---|
-| orchestrator, coder, reviewer, auditor | Claude Code (Opus) | `--permission-mode auto` |
-| releaser | Claude Code (Sonnet) | `--permission-mode auto` |
+| orchestrator | Claude Code (Opus) | `--permission-mode auto` |
+| coder, reviewer, auditor | Claude Code (Opus) | `--permission-mode auto --settings .claude/worker-settings.json` |
+| releaser | Claude Code (Sonnet) | `--permission-mode auto --settings .claude/worker-settings.json` |
 | tester | pi | no permission modes (see below) |
 
 In auto mode Claude Code checks every action before it runs. It approves routine actions, such as
 reading files, editing in the worktree and running `make`, `go`, `git` and `gh`, without a prompt, so a
-worker does not stop mid-task to wait for a human. It still refuses actions it judges risky, or asks
-about them first. A worker reports a refused action rather than working around it. Permission rules
-apply on top of the mode: an allow rule skips the check, and a deny rule refuses the action. The deny
-rules (`--no-verify`, force pushes, `git branch -D`) are checked in, in `.claude/settings.json`, so every
-checkout has them, including the dispatch worktrees the deck creates. The allow rules name absolute
-worktree paths, so they stay in `.claude/settings.local.json`, which is not checked in: a fresh clone
-has none of them, and moving the checkout means updating their paths. The coder used to start in
-`acceptEdits`. That mode approves file edits only, so the coder stopped at almost every shell command that
-was not on the allowlist (#16).
+worker does not stop mid-task to wait for a human. It still refuses actions it judges risky. A worker
+reports a refused action rather than working around it. A single refusal does not wait for anyone, but
+after 3 refusals in a row, or 20 in one session, auto mode pauses and asks a human. The coder used to
+start in `acceptEdits`. That mode approves file edits only, so the coder stopped at almost every shell
+command that was not on the allowlist (#16).
+
+Everything below exists to keep the agents from waiting on you (#68). Three places hold it:
+
+- **`.claude/settings.json`, checked in.** Permission rules apply on top of the mode: an allow rule skips
+  the check, and a deny rule refuses the action. The deny rules (`--no-verify`, force pushes,
+  `git branch -D`) and the allow rules that name no path (the `make` targets, `go test/build/vet`,
+  `golangci-lint run`, `dot-agent-deck work-done`, web search and the provider documentation sites)
+  live here, so every checkout has them, including the dispatch worktrees the deck creates.
+- **`.claude/worker-settings.json`, checked in.** Loaded by the workers only. It denies
+  `AskUserQuestion`, `EnterPlanMode` and `ExitPlanMode`, the tools that stop a session until a human
+  answers. Only the orchestrator talks to the user, so it keeps them.
+- **`~/.claude/settings.json` in the VM, from `dev/claude-user-settings.json`.** `make vm-claude-settings`
+  writes in the workspace path and merges the template into the VM user's settings: the template's keys
+  replace the same keys there, its allow rules are added, and everything else is kept. Run it again after
+  changing the template or recreating the VM. It holds what cannot be checked in as settings:
+  - **Git allow rules for every worktree.** They name absolute paths under the workspace, so they cover
+    the main checkout's `.worktrees/` and the PR worktrees inside dispatch worktrees alike. Claude Code
+    reads `.claude/settings.local.json` only from the directory a session starts in, so allow rules
+    there never reached the dispatched agents.
+  - **`autoMode` context for the classifier:** that it runs in this VM, that tasks come from the
+    orchestrator through the deck, which repository and domains are trusted, and that committing catalog
+    snapshots from the providers' public pages to this public repository is normal work. Claude Code
+    reads `autoMode` only from user settings, never from a repository, so that a repository cannot loosen
+    its own checks. Every list keeps `"$defaults"`, so the built-in rules still apply. In the VM,
+    `claude auto-mode config` shows the effective rules and `claude auto-mode critique` reviews them.
+  - **A `PermissionDenied` hook** that appends each refusal (time, directory, tool, input, reason) to
+    `~/.local/state/claude-code/permission-denied.jsonl` in the VM. Read it after a few PRs: a routine
+    command refused again and again needs an allow rule, and a destination refused again and again needs
+    an `autoMode.environment` entry. Add either to the template, not only to the VM.
 
 Because the VM confines the agents to this repository's workspace, running the Claude Code workers with
 `--dangerously-skip-permissions` inside it is a reasonable trade-off. It is not the default here: auto

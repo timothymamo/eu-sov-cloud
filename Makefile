@@ -149,6 +149,10 @@ vm-env: ## Copy the VM_ENV credentials from your shell into the VM
 		sh -c 'umask 077 && mkdir -p ~/.config/dot-agent-deck && cat > ~/.config/dot-agent-deck/daemon.env && chmod 600 ~/.config/dot-agent-deck/daemon.env' >/dev/null
 	@echo "vm-env: written to ~/.config/dot-agent-deck/daemon.env in the VM; 'make deck-restart' applies it to a running deck"
 
+.PHONY: vm-claude-settings
+vm-claude-settings: ## Merge dev/claude-user-settings.json into Claude Code's user settings in the VM
+	limactl shell --workdir "$(CURDIR)" "$(LIMA_INSTANCE)" dev/claude-settings.sh "$(WORKSPACE)"
+
 .PHONY: deck
 deck: ## Open the dot-agent-deck TUI in the VM (attaches to the daemon service)
 	limactl shell --workdir "$(CURDIR)" "$(LIMA_INSTANCE)" dot-agent-deck
