@@ -1,0 +1,157 @@
+{
+  "schemaVersion": 1,
+  "kind": "assessment",
+  "inventoryName": "",
+  "source": "aws",
+  "target": {
+    "name": "Scaleway",
+    "snapshot": {
+      "source": "https://www.scaleway.com/en/pricing/",
+      "retrieved": "2026-11-01"
+    }
+  },
+  "summary": {
+    "direct": 3,
+    "partial": 1,
+    "none": 2,
+    "total": 6
+  },
+  "resources": [
+    {
+      "id": "bucket-example",
+      "rawType": "AWS::S3::Bucket",
+      "category": "storage.object",
+      "region": "eu-west-1",
+      "fit": "direct",
+      "bestOffering": "Object Storage",
+      "ties": [],
+      "reasons": [
+        {
+          "code": "all-capabilities",
+          "text": "Object Storage offers every capability the resource uses",
+          "offering": "Object Storage"
+        }
+      ],
+      "requiredChanges": []
+    },
+    {
+      "id": "db-example",
+      "rawType": "AWS::RDS::DBInstance",
+      "category": "database.postgresql",
+      "region": "eu-west-1",
+      "fit": "direct",
+      "bestOffering": "Managed Database for PostgreSQL",
+      "ties": [
+        "Managed Database for PostgreSQL and MySQL"
+      ],
+      "reasons": [
+        {
+          "code": "all-capabilities",
+          "text": "Managed Database for PostgreSQL offers every capability the resource uses",
+          "offering": "Managed Database for PostgreSQL"
+        }
+      ],
+      "requiredChanges": []
+    },
+    {
+      "id": "fn-example",
+      "rawType": "AWS::Lambda::Function",
+      "category": "serverless.function",
+      "region": "eu-west-1",
+      "fit": "none",
+      "bestOffering": "",
+      "ties": [],
+      "reasons": [
+        {
+          "code": "no-offering",
+          "text": "no offering in the Scaleway catalog for serverless.function",
+          "target": "Scaleway",
+          "category": "serverless.function"
+        }
+      ],
+      "requiredChanges": []
+    },
+    {
+      "id": "i-0123456789abcdef0",
+      "rawType": "AWS::EC2::Instance",
+      "category": "compute.vm",
+      "region": "eu-west-1",
+      "fit": "direct",
+      "bestOffering": "Elastic Metal",
+      "ties": [
+        "Instances"
+      ],
+      "reasons": [
+        {
+          "code": "all-capabilities",
+          "text": "Elastic Metal offers every capability the resource uses",
+          "offering": "Elastic Metal"
+        }
+      ],
+      "requiredChanges": []
+    },
+    {
+      "id": "misc-example",
+      "rawType": "AWS::CloudFormation::CustomResource",
+      "category": "unclassified",
+      "region": "eu-west-1",
+      "fit": "none",
+      "bestOffering": "",
+      "ties": [],
+      "reasons": [
+        {
+          "code": "not-classified",
+          "text": "not classified"
+        }
+      ],
+      "requiredChanges": []
+    },
+    {
+      "id": "partial-example",
+      "rawType": "AWS::EC2::Instance",
+      "category": "compute.vm",
+      "region": "eu-west-1",
+      "fit": "partial",
+      "bestOffering": "Elastic Metal",
+      "ties": [
+        "Instances"
+      ],
+      "reasons": [
+        {
+          "code": "missing-capability",
+          "text": "Elastic Metal does not offer node-high-availability",
+          "offering": "Elastic Metal",
+          "capability": "node-high-availability"
+        },
+        {
+          "code": "missing-capability",
+          "text": "Elastic Metal does not offer snapshots",
+          "offering": "Elastic Metal",
+          "capability": "snapshots"
+        }
+      ],
+      "requiredChanges": [
+        "node-high-availability",
+        "snapshots"
+      ]
+    }
+  ],
+  "blockers": [
+    {
+      "resourceId": "fn-example",
+      "reason": {
+        "code": "no-offering",
+        "text": "no offering in the Scaleway catalog for serverless.function",
+        "target": "Scaleway",
+        "category": "serverless.function"
+      }
+    },
+    {
+      "resourceId": "misc-example",
+      "reason": {
+        "code": "not-classified",
+        "text": "not classified"
+      }
+    }
+  ]
+}

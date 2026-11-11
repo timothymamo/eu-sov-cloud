@@ -1,6 +1,7 @@
 package assessment
 
 import (
+	"fmt"
 	"slices"
 	"strings"
 
@@ -121,4 +122,51 @@ func sharedBlocker(id string, targets []TargetAssessment, blocked []map[string][
 	}
 
 	return blocker, true
+}
+
+// Validate checks what every report of a comparison relies on: every target's
+// verdicts hold the first target's resource IDs in the same order (the one
+// inventory's order), and every shared blocker names only targets the
+// comparison holds. It returns an error naming the offending target key or
+// resource ID. A comparison of no target is valid here; a reporter decides
+// whether it has anything to lay out.
+func (c Comparison) Validate() error {
+	if len(c.Targets) == 0 {
+		return nil
+	}
+
+	first := c.Targets[0]
+
+	for _, t := range c.Targets[1:] {
+		if len(t.Assessment.Verdicts) != len(first.Assessment.Verdicts) {
+			return fmt.Errorf("target %q has %d verdicts, target %q has %d: the targets must assess the same resources",
+				t.Key, len(t.Assessment.Verdicts), first.Key, len(first.Assessment.Verdicts))
+		}
+
+		for i, v := range t.Assessment.Verdicts {
+			if want := first.Assessment.Verdicts[i].Resource.ID; v.Resource.ID != want {
+				return fmt.Errorf("target %q has resource %q at position %d where target %q has %q: "+
+					"the targets must assess the same resources in the same order",
+					t.Key, v.Resource.ID, i, first.Key, want)
+			}
+		}
+	}
+
+	// Target keys are unique by contract: analysis.NewComparison refuses a
+	// repeated key and Compare documents it.
+	keys := make(map[string]bool, len(c.Targets))
+	for _, t := range c.Targets {
+		keys[t.Key] = true
+	}
+
+	for _, blocker := range c.SharedBlockers {
+		for _, t := range blocker.Targets {
+			if !keys[t.Key] {
+				return fmt.Errorf("the shared blocker of resource %q names target %q, which the comparison does not hold",
+					blocker.ResourceID, t.Key)
+			}
+		}
+	}
+
+	return nil
 }

@@ -1,0 +1,476 @@
+{
+  "schemaVersion": 1,
+  "kind": "comparison",
+  "inventoryName": "inventory.json",
+  "source": "aws",
+  "targets": [
+    {
+      "key": "ovhcloud",
+      "target": {
+        "name": "OVHcloud",
+        "snapshot": {
+          "source": "https://www.ovhcloud.com/en/public-cloud/prices/",
+          "retrieved": "2026-11-08"
+        }
+      },
+      "summary": {
+        "direct": 2,
+        "partial": 1,
+        "none": 2,
+        "total": 5
+      },
+      "resources": [
+        {
+          "id": "bucket-example",
+          "rawType": "AWS::S3::Bucket",
+          "category": "storage.object",
+          "region": "eu-west-1",
+          "fit": "direct",
+          "bestOffering": "Object Storage",
+          "ties": [],
+          "reasons": [
+            {
+              "code": "all-capabilities",
+              "text": "Object Storage offers every capability the resource uses",
+              "offering": "Object Storage"
+            }
+          ],
+          "requiredChanges": []
+        },
+        {
+          "id": "db-example",
+          "rawType": "AWS::RDS::DBInstance",
+          "category": "database.postgresql",
+          "region": "eu-west-1",
+          "fit": "direct",
+          "bestOffering": "Managed PostgreSQL",
+          "ties": [],
+          "reasons": [
+            {
+              "code": "all-capabilities",
+              "text": "Managed PostgreSQL offers every capability the resource uses",
+              "offering": "Managed PostgreSQL"
+            }
+          ],
+          "requiredChanges": []
+        },
+        {
+          "id": "fn-example",
+          "rawType": "AWS::Lambda::Function",
+          "category": "serverless.function",
+          "region": "eu-west-1",
+          "fit": "none",
+          "bestOffering": "",
+          "ties": [],
+          "reasons": [
+            {
+              "code": "no-offering",
+              "text": "no offering in the OVHcloud catalog for serverless.function",
+              "target": "OVHcloud",
+              "category": "serverless.function"
+            }
+          ],
+          "requiredChanges": []
+        },
+        {
+          "id": "misc-example",
+          "rawType": "AWS::CloudFormation::CustomResource",
+          "category": "unclassified",
+          "region": "eu-west-1",
+          "fit": "none",
+          "bestOffering": "",
+          "ties": [],
+          "reasons": [
+            {
+              "code": "not-classified",
+              "text": "not classified"
+            }
+          ],
+          "requiredChanges": []
+        },
+        {
+          "id": "partial-example",
+          "rawType": "AWS::EC2::Instance",
+          "category": "compute.vm",
+          "region": "eu-west-1",
+          "fit": "partial",
+          "bestOffering": "Public Cloud Instances",
+          "ties": [],
+          "reasons": [
+            {
+              "code": "missing-capability",
+              "text": "Public Cloud Instances does not offer node-high-availability",
+              "offering": "Public Cloud Instances",
+              "capability": "node-high-availability"
+            }
+          ],
+          "requiredChanges": [
+            "node-high-availability"
+          ]
+        }
+      ],
+      "blockers": [
+        {
+          "resourceId": "fn-example",
+          "reason": {
+            "code": "no-offering",
+            "text": "no offering in the OVHcloud catalog for serverless.function",
+            "target": "OVHcloud",
+            "category": "serverless.function"
+          }
+        },
+        {
+          "resourceId": "misc-example",
+          "reason": {
+            "code": "not-classified",
+            "text": "not classified"
+          }
+        }
+      ]
+    },
+    {
+      "key": "scaleway",
+      "target": {
+        "name": "Scaleway",
+        "snapshot": {
+          "source": "https://www.scaleway.com/en/pricing/",
+          "retrieved": "2026-11-01"
+        }
+      },
+      "summary": {
+        "direct": 2,
+        "partial": 1,
+        "none": 2,
+        "total": 5
+      },
+      "resources": [
+        {
+          "id": "bucket-example",
+          "rawType": "AWS::S3::Bucket",
+          "category": "storage.object",
+          "region": "eu-west-1",
+          "fit": "direct",
+          "bestOffering": "Object Storage",
+          "ties": [],
+          "reasons": [
+            {
+              "code": "all-capabilities",
+              "text": "Object Storage offers every capability the resource uses",
+              "offering": "Object Storage"
+            }
+          ],
+          "requiredChanges": []
+        },
+        {
+          "id": "db-example",
+          "rawType": "AWS::RDS::DBInstance",
+          "category": "database.postgresql",
+          "region": "eu-west-1",
+          "fit": "direct",
+          "bestOffering": "Managed Database for PostgreSQL",
+          "ties": [
+            "Managed Database for PostgreSQL and MySQL"
+          ],
+          "reasons": [
+            {
+              "code": "all-capabilities",
+              "text": "Managed Database for PostgreSQL offers every capability the resource uses",
+              "offering": "Managed Database for PostgreSQL"
+            }
+          ],
+          "requiredChanges": []
+        },
+        {
+          "id": "fn-example",
+          "rawType": "AWS::Lambda::Function",
+          "category": "serverless.function",
+          "region": "eu-west-1",
+          "fit": "none",
+          "bestOffering": "",
+          "ties": [],
+          "reasons": [
+            {
+              "code": "no-offering",
+              "text": "no offering in the Scaleway catalog for serverless.function",
+              "target": "Scaleway",
+              "category": "serverless.function"
+            }
+          ],
+          "requiredChanges": []
+        },
+        {
+          "id": "misc-example",
+          "rawType": "AWS::CloudFormation::CustomResource",
+          "category": "unclassified",
+          "region": "eu-west-1",
+          "fit": "none",
+          "bestOffering": "",
+          "ties": [],
+          "reasons": [
+            {
+              "code": "not-classified",
+              "text": "not classified"
+            }
+          ],
+          "requiredChanges": []
+        },
+        {
+          "id": "partial-example",
+          "rawType": "AWS::EC2::Instance",
+          "category": "compute.vm",
+          "region": "eu-west-1",
+          "fit": "partial",
+          "bestOffering": "Elastic Metal",
+          "ties": [
+            "Instances"
+          ],
+          "reasons": [
+            {
+              "code": "missing-capability",
+              "text": "Elastic Metal does not offer node-high-availability",
+              "offering": "Elastic Metal",
+              "capability": "node-high-availability"
+            },
+            {
+              "code": "missing-capability",
+              "text": "Elastic Metal does not offer snapshots",
+              "offering": "Elastic Metal",
+              "capability": "snapshots"
+            }
+          ],
+          "requiredChanges": [
+            "node-high-availability",
+            "snapshots"
+          ]
+        }
+      ],
+      "blockers": [
+        {
+          "resourceId": "fn-example",
+          "reason": {
+            "code": "no-offering",
+            "text": "no offering in the Scaleway catalog for serverless.function",
+            "target": "Scaleway",
+            "category": "serverless.function"
+          }
+        },
+        {
+          "resourceId": "misc-example",
+          "reason": {
+            "code": "not-classified",
+            "text": "not classified"
+          }
+        }
+      ]
+    },
+    {
+      "key": "upcloud",
+      "target": {
+        "name": "UpCloud",
+        "snapshot": {
+          "source": "https://upcloud.com/pricing/",
+          "retrieved": "2026-10-25"
+        }
+      },
+      "summary": {
+        "direct": 0,
+        "partial": 2,
+        "none": 3,
+        "total": 5
+      },
+      "resources": [
+        {
+          "id": "bucket-example",
+          "rawType": "AWS::S3::Bucket",
+          "category": "storage.object",
+          "region": "eu-west-1",
+          "fit": "partial",
+          "bestOffering": "Object Storage",
+          "ties": [],
+          "reasons": [
+            {
+              "code": "missing-capability",
+              "text": "Object Storage does not offer object-versioning",
+              "offering": "Object Storage",
+              "capability": "object-versioning"
+            }
+          ],
+          "requiredChanges": [
+            "object-versioning"
+          ]
+        },
+        {
+          "id": "db-example",
+          "rawType": "AWS::RDS::DBInstance",
+          "category": "database.postgresql",
+          "region": "eu-west-1",
+          "fit": "none",
+          "bestOffering": "",
+          "ties": [],
+          "reasons": [
+            {
+              "code": "no-offering",
+              "text": "no offering in the UpCloud catalog for database.postgresql",
+              "target": "UpCloud",
+              "category": "database.postgresql"
+            }
+          ],
+          "requiredChanges": []
+        },
+        {
+          "id": "fn-example",
+          "rawType": "AWS::Lambda::Function",
+          "category": "serverless.function",
+          "region": "eu-west-1",
+          "fit": "none",
+          "bestOffering": "",
+          "ties": [],
+          "reasons": [
+            {
+              "code": "no-offering",
+              "text": "no offering in the UpCloud catalog for serverless.function",
+              "target": "UpCloud",
+              "category": "serverless.function"
+            }
+          ],
+          "requiredChanges": []
+        },
+        {
+          "id": "misc-example",
+          "rawType": "AWS::CloudFormation::CustomResource",
+          "category": "unclassified",
+          "region": "eu-west-1",
+          "fit": "none",
+          "bestOffering": "",
+          "ties": [],
+          "reasons": [
+            {
+              "code": "not-classified",
+              "text": "not classified"
+            }
+          ],
+          "requiredChanges": []
+        },
+        {
+          "id": "partial-example",
+          "rawType": "AWS::EC2::Instance",
+          "category": "compute.vm",
+          "region": "eu-west-1",
+          "fit": "partial",
+          "bestOffering": "Cloud Server",
+          "ties": [],
+          "reasons": [
+            {
+              "code": "missing-capability",
+              "text": "Cloud Server does not offer node-high-availability",
+              "offering": "Cloud Server",
+              "capability": "node-high-availability"
+            }
+          ],
+          "requiredChanges": [
+            "node-high-availability"
+          ]
+        }
+      ],
+      "blockers": [
+        {
+          "resourceId": "db-example",
+          "reason": {
+            "code": "no-offering",
+            "text": "no offering in the UpCloud catalog for database.postgresql",
+            "target": "UpCloud",
+            "category": "database.postgresql"
+          }
+        },
+        {
+          "resourceId": "fn-example",
+          "reason": {
+            "code": "no-offering",
+            "text": "no offering in the UpCloud catalog for serverless.function",
+            "target": "UpCloud",
+            "category": "serverless.function"
+          }
+        },
+        {
+          "resourceId": "misc-example",
+          "reason": {
+            "code": "not-classified",
+            "text": "not classified"
+          }
+        }
+      ]
+    }
+  ],
+  "sharedBlockers": [
+    {
+      "resourceId": "fn-example",
+      "targets": [
+        {
+          "key": "ovhcloud",
+          "reasons": [
+            {
+              "code": "no-offering",
+              "text": "no offering in the OVHcloud catalog for serverless.function",
+              "target": "OVHcloud",
+              "category": "serverless.function"
+            }
+          ]
+        },
+        {
+          "key": "scaleway",
+          "reasons": [
+            {
+              "code": "no-offering",
+              "text": "no offering in the Scaleway catalog for serverless.function",
+              "target": "Scaleway",
+              "category": "serverless.function"
+            }
+          ]
+        },
+        {
+          "key": "upcloud",
+          "reasons": [
+            {
+              "code": "no-offering",
+              "text": "no offering in the UpCloud catalog for serverless.function",
+              "target": "UpCloud",
+              "category": "serverless.function"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "resourceId": "misc-example",
+      "targets": [
+        {
+          "key": "ovhcloud",
+          "reasons": [
+            {
+              "code": "not-classified",
+              "text": "not classified"
+            }
+          ]
+        },
+        {
+          "key": "scaleway",
+          "reasons": [
+            {
+              "code": "not-classified",
+              "text": "not classified"
+            }
+          ]
+        },
+        {
+          "key": "upcloud",
+          "reasons": [
+            {
+              "code": "not-classified",
+              "text": "not classified"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

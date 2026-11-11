@@ -1,0 +1,21 @@
+{
+  "schemaVersion": 1,
+  "kind": "assessment",
+  "inventoryName": "inventory.json",
+  "source": "aws",
+  "target": {
+    "name": "Scaleway",
+    "snapshot": {
+      "source": "https://www.scaleway.com/en/pricing/",
+      "retrieved": "2026-11-01"
+    }
+  },
+  "summary": {
+    "direct": 0,
+    "partial": 0,
+    "none": 0,
+    "total": 0
+  },
+  "resources": [],
+  "blockers": []
+}

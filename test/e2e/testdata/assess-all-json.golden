@@ -1,0 +1,782 @@
+{
+  "schemaVersion": 1,
+  "kind": "comparison",
+  "inventoryName": "inventory.json",
+  "source": "aws",
+  "targets": [
+    {
+      "key": "ovhcloud",
+      "target": {
+        "name": "OVHcloud",
+        "snapshot": {
+          "source": "https://www.ovhcloud.com/en/public-cloud/regions-availability/",
+          "retrieved": "2026-11-11"
+        }
+      },
+      "summary": {
+        "direct": 6,
+        "partial": 2,
+        "none": 3,
+        "total": 11
+      },
+      "resources": [
+        {
+          "id": "bucket-example",
+          "rawType": "AWS::S3::Bucket",
+          "category": "storage.object",
+          "region": "eu-west-1",
+          "fit": "direct",
+          "bestOffering": "Object Storage",
+          "ties": [
+            "Object Storage 3-AZ"
+          ],
+          "reasons": [
+            {
+              "code": "all-capabilities",
+              "text": "Object Storage offers every capability the resource uses",
+              "offering": "Object Storage"
+            }
+          ],
+          "requiredChanges": []
+        },
+        {
+          "id": "cluster-example",
+          "rawType": "AWS::EKS::Cluster",
+          "category": "kubernetes.managed",
+          "region": "eu-west-1",
+          "fit": "direct",
+          "bestOffering": "Managed Kubernetes Service 3-AZ",
+          "ties": [],
+          "reasons": [
+            {
+              "code": "all-capabilities",
+              "text": "Managed Kubernetes Service 3-AZ offers every capability the resource uses",
+              "offering": "Managed Kubernetes Service 3-AZ"
+            }
+          ],
+          "requiredChanges": []
+        },
+        {
+          "id": "db-autoscaling-example",
+          "rawType": "AWS::RDS::DBCluster",
+          "category": "database.postgresql",
+          "region": "eu-west-1",
+          "fit": "partial",
+          "bestOffering": "Managed PostgreSQL",
+          "ties": [
+            "Managed PostgreSQL Multi-node",
+            "Managed PostgreSQL Multi-node 3-AZ",
+            "Managed PostgreSQL Multi-node Advanced",
+            "Managed PostgreSQL Multi-node Advanced 3-AZ"
+          ],
+          "reasons": [
+            {
+              "code": "missing-capability",
+              "text": "Managed PostgreSQL does not offer autoscaling",
+              "offering": "Managed PostgreSQL",
+              "capability": "autoscaling"
+            }
+          ],
+          "requiredChanges": [
+            "autoscaling"
+          ]
+        },
+        {
+          "id": "db-example",
+          "rawType": "AWS::RDS::DBInstance",
+          "category": "database.postgresql",
+          "region": "eu-west-1",
+          "fit": "direct",
+          "bestOffering": "Managed PostgreSQL Multi-node Advanced",
+          "ties": [
+            "Managed PostgreSQL Multi-node Advanced 3-AZ"
+          ],
+          "reasons": [
+            {
+              "code": "all-capabilities",
+              "text": "Managed PostgreSQL Multi-node Advanced offers every capability the resource uses",
+              "offering": "Managed PostgreSQL Multi-node Advanced"
+            }
+          ],
+          "requiredChanges": []
+        },
+        {
+          "id": "db-node-example",
+          "rawType": "AWS::RDS::DBInstance",
+          "category": "database.postgresql",
+          "region": "eu-west-1",
+          "fit": "direct",
+          "bestOffering": "Managed PostgreSQL Multi-node",
+          "ties": [
+            "Managed PostgreSQL Multi-node 3-AZ",
+            "Managed PostgreSQL Multi-node Advanced",
+            "Managed PostgreSQL Multi-node Advanced 3-AZ"
+          ],
+          "reasons": [
+            {
+              "code": "all-capabilities",
+              "text": "Managed PostgreSQL Multi-node offers every capability the resource uses",
+              "offering": "Managed PostgreSQL Multi-node"
+            }
+          ],
+          "requiredChanges": []
+        },
+        {
+          "id": "db-zone-example",
+          "rawType": "AWS::RDS::DBInstance",
+          "category": "database.postgresql",
+          "region": "eu-west-1",
+          "fit": "direct",
+          "bestOffering": "Managed PostgreSQL Multi-node 3-AZ",
+          "ties": [
+            "Managed PostgreSQL Multi-node Advanced 3-AZ"
+          ],
+          "reasons": [
+            {
+              "code": "all-capabilities",
+              "text": "Managed PostgreSQL Multi-node 3-AZ offers every capability the resource uses",
+              "offering": "Managed PostgreSQL Multi-node 3-AZ"
+            }
+          ],
+          "requiredChanges": []
+        },
+        {
+          "id": "fn-example",
+          "rawType": "AWS::Lambda::Function",
+          "category": "serverless.function",
+          "region": "eu-west-1",
+          "fit": "none",
+          "bestOffering": "",
+          "ties": [],
+          "reasons": [
+            {
+              "code": "no-offering",
+              "text": "no offering in the OVHcloud catalog for serverless.function",
+              "target": "OVHcloud",
+              "category": "serverless.function"
+            }
+          ],
+          "requiredChanges": []
+        },
+        {
+          "id": "fn-ipv6-example",
+          "rawType": "AWS::Lambda::Function",
+          "category": "serverless.function",
+          "region": "eu-west-1",
+          "fit": "none",
+          "bestOffering": "",
+          "ties": [],
+          "reasons": [
+            {
+              "code": "no-offering",
+              "text": "no offering in the OVHcloud catalog for serverless.function",
+              "target": "OVHcloud",
+              "category": "serverless.function"
+            }
+          ],
+          "requiredChanges": []
+        },
+        {
+          "id": "i-0123456789abcdef0",
+          "rawType": "AWS::EC2::Instance",
+          "category": "compute.vm",
+          "region": "eu-west-1",
+          "fit": "direct",
+          "bestOffering": "Instances",
+          "ties": [
+            "Metal Instances"
+          ],
+          "reasons": [
+            {
+              "code": "all-capabilities",
+              "text": "Instances offers every capability the resource uses",
+              "offering": "Instances"
+            }
+          ],
+          "requiredChanges": []
+        },
+        {
+          "id": "misc-example",
+          "rawType": "AWS::CloudFormation::CustomResource",
+          "category": "unclassified",
+          "region": "eu-west-1",
+          "fit": "none",
+          "bestOffering": "",
+          "ties": [],
+          "reasons": [
+            {
+              "code": "not-classified",
+              "text": "not classified"
+            }
+          ],
+          "requiredChanges": []
+        },
+        {
+          "id": "partial-example",
+          "rawType": "AWS::EC2::Instance",
+          "category": "compute.vm",
+          "region": "eu-west-1",
+          "fit": "partial",
+          "bestOffering": "Instances",
+          "ties": [
+            "Metal Instances"
+          ],
+          "reasons": [
+            {
+              "code": "missing-capability",
+              "text": "Instances does not offer node-high-availability",
+              "offering": "Instances",
+              "capability": "node-high-availability"
+            }
+          ],
+          "requiredChanges": [
+            "node-high-availability"
+          ]
+        }
+      ],
+      "blockers": [
+        {
+          "resourceId": "fn-example",
+          "reason": {
+            "code": "no-offering",
+            "text": "no offering in the OVHcloud catalog for serverless.function",
+            "target": "OVHcloud",
+            "category": "serverless.function"
+          }
+        },
+        {
+          "resourceId": "fn-ipv6-example",
+          "reason": {
+            "code": "no-offering",
+            "text": "no offering in the OVHcloud catalog for serverless.function",
+            "target": "OVHcloud",
+            "category": "serverless.function"
+          }
+        },
+        {
+          "resourceId": "misc-example",
+          "reason": {
+            "code": "not-classified",
+            "text": "not classified"
+          }
+        }
+      ]
+    },
+    {
+      "key": "scaleway",
+      "target": {
+        "name": "Scaleway",
+        "snapshot": {
+          "source": "https://www.scaleway.com/en/docs/",
+          "retrieved": "2026-11-11"
+        }
+      },
+      "summary": {
+        "direct": 5,
+        "partial": 5,
+        "none": 1,
+        "total": 11
+      },
+      "resources": [
+        {
+          "id": "bucket-example",
+          "rawType": "AWS::S3::Bucket",
+          "category": "storage.object",
+          "region": "eu-west-1",
+          "fit": "direct",
+          "bestOffering": "Object Storage",
+          "ties": [],
+          "reasons": [
+            {
+              "code": "all-capabilities",
+              "text": "Object Storage offers every capability the resource uses",
+              "offering": "Object Storage"
+            }
+          ],
+          "requiredChanges": []
+        },
+        {
+          "id": "cluster-example",
+          "rawType": "AWS::EKS::Cluster",
+          "category": "kubernetes.managed",
+          "region": "eu-west-1",
+          "fit": "direct",
+          "bestOffering": "Kubernetes Kapsule Dedicated",
+          "ties": [],
+          "reasons": [
+            {
+              "code": "all-capabilities",
+              "text": "Kubernetes Kapsule Dedicated offers every capability the resource uses",
+              "offering": "Kubernetes Kapsule Dedicated"
+            }
+          ],
+          "requiredChanges": []
+        },
+        {
+          "id": "db-autoscaling-example",
+          "rawType": "AWS::RDS::DBCluster",
+          "category": "database.postgresql",
+          "region": "eu-west-1",
+          "fit": "partial",
+          "bestOffering": "Managed Database for PostgreSQL and MySQL",
+          "ties": [
+            "Managed Database for PostgreSQL and MySQL High Availability"
+          ],
+          "reasons": [
+            {
+              "code": "missing-capability",
+              "text": "Managed Database for PostgreSQL and MySQL does not offer autoscaling",
+              "offering": "Managed Database for PostgreSQL and MySQL",
+              "capability": "autoscaling"
+            }
+          ],
+          "requiredChanges": [
+            "autoscaling"
+          ]
+        },
+        {
+          "id": "db-example",
+          "rawType": "AWS::RDS::DBInstance",
+          "category": "database.postgresql",
+          "region": "eu-west-1",
+          "fit": "partial",
+          "bestOffering": "Managed Database for PostgreSQL and MySQL",
+          "ties": [
+            "Managed Database for PostgreSQL and MySQL High Availability"
+          ],
+          "reasons": [
+            {
+              "code": "missing-capability",
+              "text": "Managed Database for PostgreSQL and MySQL does not offer point-in-time-restore",
+              "offering": "Managed Database for PostgreSQL and MySQL",
+              "capability": "point-in-time-restore"
+            }
+          ],
+          "requiredChanges": [
+            "point-in-time-restore"
+          ]
+        },
+        {
+          "id": "db-node-example",
+          "rawType": "AWS::RDS::DBInstance",
+          "category": "database.postgresql",
+          "region": "eu-west-1",
+          "fit": "direct",
+          "bestOffering": "Managed Database for PostgreSQL and MySQL High Availability",
+          "ties": [],
+          "reasons": [
+            {
+              "code": "all-capabilities",
+              "text": "Managed Database for PostgreSQL and MySQL High Availability offers every capability the resource uses",
+              "offering": "Managed Database for PostgreSQL and MySQL High Availability"
+            }
+          ],
+          "requiredChanges": []
+        },
+        {
+          "id": "db-zone-example",
+          "rawType": "AWS::RDS::DBInstance",
+          "category": "database.postgresql",
+          "region": "eu-west-1",
+          "fit": "partial",
+          "bestOffering": "Managed Database for PostgreSQL and MySQL",
+          "ties": [
+            "Managed Database for PostgreSQL and MySQL High Availability"
+          ],
+          "reasons": [
+            {
+              "code": "missing-capability",
+              "text": "Managed Database for PostgreSQL and MySQL does not offer zone-high-availability",
+              "offering": "Managed Database for PostgreSQL and MySQL",
+              "capability": "zone-high-availability"
+            }
+          ],
+          "requiredChanges": [
+            "zone-high-availability"
+          ]
+        },
+        {
+          "id": "fn-example",
+          "rawType": "AWS::Lambda::Function",
+          "category": "serverless.function",
+          "region": "eu-west-1",
+          "fit": "direct",
+          "bestOffering": "Serverless Functions",
+          "ties": [],
+          "reasons": [
+            {
+              "code": "all-capabilities",
+              "text": "Serverless Functions offers every capability the resource uses",
+              "offering": "Serverless Functions"
+            }
+          ],
+          "requiredChanges": []
+        },
+        {
+          "id": "fn-ipv6-example",
+          "rawType": "AWS::Lambda::Function",
+          "category": "serverless.function",
+          "region": "eu-west-1",
+          "fit": "partial",
+          "bestOffering": "Serverless Functions",
+          "ties": [],
+          "reasons": [
+            {
+              "code": "missing-capability",
+              "text": "Serverless Functions does not offer ipv6",
+              "offering": "Serverless Functions",
+              "capability": "ipv6"
+            }
+          ],
+          "requiredChanges": [
+            "ipv6"
+          ]
+        },
+        {
+          "id": "i-0123456789abcdef0",
+          "rawType": "AWS::EC2::Instance",
+          "category": "compute.vm",
+          "region": "eu-west-1",
+          "fit": "direct",
+          "bestOffering": "Elastic Metal",
+          "ties": [
+            "Instances"
+          ],
+          "reasons": [
+            {
+              "code": "all-capabilities",
+              "text": "Elastic Metal offers every capability the resource uses",
+              "offering": "Elastic Metal"
+            }
+          ],
+          "requiredChanges": []
+        },
+        {
+          "id": "misc-example",
+          "rawType": "AWS::CloudFormation::CustomResource",
+          "category": "unclassified",
+          "region": "eu-west-1",
+          "fit": "none",
+          "bestOffering": "",
+          "ties": [],
+          "reasons": [
+            {
+              "code": "not-classified",
+              "text": "not classified"
+            }
+          ],
+          "requiredChanges": []
+        },
+        {
+          "id": "partial-example",
+          "rawType": "AWS::EC2::Instance",
+          "category": "compute.vm",
+          "region": "eu-west-1",
+          "fit": "partial",
+          "bestOffering": "Instances",
+          "ties": [],
+          "reasons": [
+            {
+              "code": "missing-capability",
+              "text": "Instances does not offer node-high-availability",
+              "offering": "Instances",
+              "capability": "node-high-availability"
+            }
+          ],
+          "requiredChanges": [
+            "node-high-availability"
+          ]
+        }
+      ],
+      "blockers": [
+        {
+          "resourceId": "misc-example",
+          "reason": {
+            "code": "not-classified",
+            "text": "not classified"
+          }
+        }
+      ]
+    },
+    {
+      "key": "upcloud",
+      "target": {
+        "name": "UpCloud",
+        "snapshot": {
+          "source": "https://upcloud.com/docs/",
+          "retrieved": "2026-11-11"
+        }
+      },
+      "summary": {
+        "direct": 5,
+        "partial": 3,
+        "none": 3,
+        "total": 11
+      },
+      "resources": [
+        {
+          "id": "bucket-example",
+          "rawType": "AWS::S3::Bucket",
+          "category": "storage.object",
+          "region": "eu-west-1",
+          "fit": "direct",
+          "bestOffering": "Managed Object Storage",
+          "ties": [],
+          "reasons": [
+            {
+              "code": "all-capabilities",
+              "text": "Managed Object Storage offers every capability the resource uses",
+              "offering": "Managed Object Storage"
+            }
+          ],
+          "requiredChanges": []
+        },
+        {
+          "id": "cluster-example",
+          "rawType": "AWS::EKS::Cluster",
+          "category": "kubernetes.managed",
+          "region": "eu-west-1",
+          "fit": "direct",
+          "bestOffering": "Managed Kubernetes Production",
+          "ties": [],
+          "reasons": [
+            {
+              "code": "all-capabilities",
+              "text": "Managed Kubernetes Production offers every capability the resource uses",
+              "offering": "Managed Kubernetes Production"
+            }
+          ],
+          "requiredChanges": []
+        },
+        {
+          "id": "db-autoscaling-example",
+          "rawType": "AWS::RDS::DBCluster",
+          "category": "database.postgresql",
+          "region": "eu-west-1",
+          "fit": "partial",
+          "bestOffering": "Managed PostgreSQL",
+          "ties": [
+            "Managed PostgreSQL Multi-node"
+          ],
+          "reasons": [
+            {
+              "code": "missing-capability",
+              "text": "Managed PostgreSQL does not offer autoscaling",
+              "offering": "Managed PostgreSQL",
+              "capability": "autoscaling"
+            }
+          ],
+          "requiredChanges": [
+            "autoscaling"
+          ]
+        },
+        {
+          "id": "db-example",
+          "rawType": "AWS::RDS::DBInstance",
+          "category": "database.postgresql",
+          "region": "eu-west-1",
+          "fit": "direct",
+          "bestOffering": "Managed PostgreSQL Multi-node",
+          "ties": [],
+          "reasons": [
+            {
+              "code": "all-capabilities",
+              "text": "Managed PostgreSQL Multi-node offers every capability the resource uses",
+              "offering": "Managed PostgreSQL Multi-node"
+            }
+          ],
+          "requiredChanges": []
+        },
+        {
+          "id": "db-node-example",
+          "rawType": "AWS::RDS::DBInstance",
+          "category": "database.postgresql",
+          "region": "eu-west-1",
+          "fit": "direct",
+          "bestOffering": "Managed PostgreSQL Multi-node",
+          "ties": [],
+          "reasons": [
+            {
+              "code": "all-capabilities",
+              "text": "Managed PostgreSQL Multi-node offers every capability the resource uses",
+              "offering": "Managed PostgreSQL Multi-node"
+            }
+          ],
+          "requiredChanges": []
+        },
+        {
+          "id": "db-zone-example",
+          "rawType": "AWS::RDS::DBInstance",
+          "category": "database.postgresql",
+          "region": "eu-west-1",
+          "fit": "partial",
+          "bestOffering": "Managed PostgreSQL",
+          "ties": [
+            "Managed PostgreSQL Multi-node"
+          ],
+          "reasons": [
+            {
+              "code": "missing-capability",
+              "text": "Managed PostgreSQL does not offer zone-high-availability",
+              "offering": "Managed PostgreSQL",
+              "capability": "zone-high-availability"
+            }
+          ],
+          "requiredChanges": [
+            "zone-high-availability"
+          ]
+        },
+        {
+          "id": "fn-example",
+          "rawType": "AWS::Lambda::Function",
+          "category": "serverless.function",
+          "region": "eu-west-1",
+          "fit": "none",
+          "bestOffering": "",
+          "ties": [],
+          "reasons": [
+            {
+              "code": "no-offering",
+              "text": "no offering in the UpCloud catalog for serverless.function",
+              "target": "UpCloud",
+              "category": "serverless.function"
+            }
+          ],
+          "requiredChanges": []
+        },
+        {
+          "id": "fn-ipv6-example",
+          "rawType": "AWS::Lambda::Function",
+          "category": "serverless.function",
+          "region": "eu-west-1",
+          "fit": "none",
+          "bestOffering": "",
+          "ties": [],
+          "reasons": [
+            {
+              "code": "no-offering",
+              "text": "no offering in the UpCloud catalog for serverless.function",
+              "target": "UpCloud",
+              "category": "serverless.function"
+            }
+          ],
+          "requiredChanges": []
+        },
+        {
+          "id": "i-0123456789abcdef0",
+          "rawType": "AWS::EC2::Instance",
+          "category": "compute.vm",
+          "region": "eu-west-1",
+          "fit": "direct",
+          "bestOffering": "Cloud Servers",
+          "ties": [],
+          "reasons": [
+            {
+              "code": "all-capabilities",
+              "text": "Cloud Servers offers every capability the resource uses",
+              "offering": "Cloud Servers"
+            }
+          ],
+          "requiredChanges": []
+        },
+        {
+          "id": "misc-example",
+          "rawType": "AWS::CloudFormation::CustomResource",
+          "category": "unclassified",
+          "region": "eu-west-1",
+          "fit": "none",
+          "bestOffering": "",
+          "ties": [],
+          "reasons": [
+            {
+              "code": "not-classified",
+              "text": "not classified"
+            }
+          ],
+          "requiredChanges": []
+        },
+        {
+          "id": "partial-example",
+          "rawType": "AWS::EC2::Instance",
+          "category": "compute.vm",
+          "region": "eu-west-1",
+          "fit": "partial",
+          "bestOffering": "Cloud Servers",
+          "ties": [],
+          "reasons": [
+            {
+              "code": "missing-capability",
+              "text": "Cloud Servers does not offer node-high-availability",
+              "offering": "Cloud Servers",
+              "capability": "node-high-availability"
+            }
+          ],
+          "requiredChanges": [
+            "node-high-availability"
+          ]
+        }
+      ],
+      "blockers": [
+        {
+          "resourceId": "fn-example",
+          "reason": {
+            "code": "no-offering",
+            "text": "no offering in the UpCloud catalog for serverless.function",
+            "target": "UpCloud",
+            "category": "serverless.function"
+          }
+        },
+        {
+          "resourceId": "fn-ipv6-example",
+          "reason": {
+            "code": "no-offering",
+            "text": "no offering in the UpCloud catalog for serverless.function",
+            "target": "UpCloud",
+            "category": "serverless.function"
+          }
+        },
+        {
+          "resourceId": "misc-example",
+          "reason": {
+            "code": "not-classified",
+            "text": "not classified"
+          }
+        }
+      ]
+    }
+  ],
+  "sharedBlockers": [
+    {
+      "resourceId": "misc-example",
+      "targets": [
+        {
+          "key": "ovhcloud",
+          "reasons": [
+            {
+              "code": "not-classified",
+              "text": "not classified"
+            }
+          ]
+        },
+        {
+          "key": "scaleway",
+          "reasons": [
+            {
+              "code": "not-classified",
+              "text": "not classified"
+            }
+          ]
+        },
+        {
+          "key": "upcloud",
+          "reasons": [
+            {
+              "code": "not-classified",
+              "text": "not classified"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

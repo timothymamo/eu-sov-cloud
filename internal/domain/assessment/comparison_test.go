@@ -261,6 +261,102 @@ func TestCompare(t *testing.T) {
 	})
 }
 
+// TestComparisonValidate pins the preconditions a comparison of several targets
+// must meet before a reporter lays it out: every target assesses the same
+// resources in the same order (the one inventory's order), and every shared
+// blocker names only compared targets. Both reporters refuse a comparison that
+// breaks them, so the check lives here, in the domain, and not in one of them.
+func TestComparisonValidate(t *testing.T) {
+	t.Parallel()
+
+	// The fixture comparison has shared blockers to break, and its targets
+	// assess the same inventory in the same order.
+	if len(assessment.Compare(comparisonTargets(t, ovhcloudKey, scalewayKey, upcloudKey)).SharedBlockers) == 0 {
+		t.Fatal("precondition failed: the fixture comparison has no shared blocker")
+	}
+
+	tests := []struct {
+		name   string
+		change func(t *testing.T, c *assessment.Comparison)
+		// wantErr is true when Validate must refuse the comparison.
+		wantErr bool
+	}{
+		{
+			name:   "every target assesses the same resources in the same order",
+			change: func(*testing.T, *assessment.Comparison) {},
+		},
+		{
+			name: "a later target holds more verdicts than the first",
+			change: func(t *testing.T, c *assessment.Comparison) {
+				t.Helper()
+
+				c.Targets[1].Assessment.Verdicts = append(slices.Clone(c.Targets[1].Assessment.Verdicts),
+					validationExtraVerdict())
+			},
+			wantErr: true,
+		},
+		{
+			name: "a later target holds fewer verdicts than the first",
+			change: func(_ *testing.T, c *assessment.Comparison) {
+				c.Targets[1].Assessment.Verdicts = c.Targets[1].Assessment.Verdicts[1:]
+			},
+			wantErr: true,
+		},
+		{
+			name: "the targets report on the same resources in another order",
+			change: func(_ *testing.T, c *assessment.Comparison) {
+				c.Targets[1].Assessment.Verdicts[0], c.Targets[1].Assessment.Verdicts[1] =
+					c.Targets[1].Assessment.Verdicts[1], c.Targets[1].Assessment.Verdicts[0]
+			},
+			wantErr: true,
+		},
+		{
+			name: "a shared blocker names a target the comparison does not hold",
+			change: func(t *testing.T, c *assessment.Comparison) {
+				t.Helper()
+
+				c.SharedBlockers[0].Targets = append(c.SharedBlockers[0].Targets, assessment.TargetReasons{
+					Key:     "missing",
+					Reasons: []mapping.Reason{{Code: mapping.NotClassified}},
+				})
+			},
+			wantErr: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			c := assessment.Compare(comparisonTargets(t, ovhcloudKey, scalewayKey, upcloudKey))
+			tt.change(t, &c)
+
+			err := c.Validate()
+
+			switch {
+			case tt.wantErr && err == nil:
+				t.Fatalf("Validate() = nil, want an error for a comparison whose %s", tt.name)
+			case !tt.wantErr && err != nil:
+				t.Errorf("Validate() = %v, want nil for a comparison whose %s", err, tt.name)
+			}
+		})
+	}
+}
+
+// validationExtraVerdict is a verdict on a resource the comparison inventory
+// does not hold, for the target that must report on other resources.
+func validationExtraVerdict() assessment.Verdict {
+	return assessment.Verdict{
+		Resource: inventory.Resource{
+			ID:       "extra-example",
+			RawType:  "AWS::SQS::Queue",
+			Category: taxonomy.Unclassified,
+		},
+		Fit:     mapping.None,
+		Reasons: []mapping.Reason{{Code: mapping.NotClassified}},
+	}
+}
+
 // TestCompareNoTargets pins that comparing nothing is not an error and holds
 // nothing: no assessments, and no shared blockers rather than an empty list.
 func TestCompareNoTargets(t *testing.T) {

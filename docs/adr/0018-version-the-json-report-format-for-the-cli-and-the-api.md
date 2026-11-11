@@ -1,0 +1,118 @@
+# 0018. Version the JSON report format, shared by the CLI and the HTTP API
+
+- Status: Accepted
+- Date: 2026-11-11
+
+## Context
+
+PRD #103 (issue #103) serves assessments over an HTTP API, and its first milestone adds
+`eusov assess --format json`. Until now the only output was the Markdown report ([ADR 0016](0016-compare-targets-through-a-second-reporter-port-and-use-case.md) for the
+comparison), written for people. Scripts, CI jobs and the website need a document they can parse, and
+once one is published, changing what it means breaks them. [ADR 0006](0006-json-inventory-file-format-v1.md)
+gave the inventory file, our input, a recorded shape and a version policy; the report, our output,
+needs the same before anyone depends on it.
+
+The version policy deliberately differs from ADR 0006's. There, any change, even a new optional key, is
+a new version, because `eusov` is the reader and decodes strictly: a version 1 reader refuses a key it
+does not know, so an added key would break it anyway. Here `eusov` is the writer, and the readers are
+scripts, CI jobs and the website, which ignore keys they do not know. Forcing a new version for every
+added key would make each of them upgrade for a change that cannot break them, and would contradict the
+API's rule that additive fields are not breaking (PRD #103). So only a change that can break such a
+reader is a new version.
+
+Forces:
+
+- Every string in a report comes from the inventory or a catalog and is untrusted: quotes,
+  backslashes, control characters, `</script>`, U+2028 and invalid UTF-8 must not break the document
+  or a page that embeds it.
+- Reports must be deterministic (CLAUDE.md, Testing): golden files pin them byte for byte.
+- The JSON report must say what the Markdown report says, ties and required changes included, so the
+  two never disagree.
+- The CLI and the API must give the same bytes for the same request (PRD #103, Decisions).
+- CLAUDE.md rule 6 prefers the standard library; there is no JSON Schema validator in it.
+
+## Decision
+
+The JSON report format **v1** is two documents, rendered by `internal/adapter/report/jsonreport`,
+which implements both `analysis.Reporter` and `analysis.ComparisonReporter`:
+
+- `"kind": "assessment"`: one inventory against one target. Keys: `schemaVersion`, `kind`,
+  `inventoryName`, `source`, `target` (`name`, `snapshot` with `source` and `retrieved`), `summary`
+  (`direct`, `partial`, `none`, `total`), `resources` and `blockers`.
+- `"kind": "comparison"`: one inventory against several targets. Keys: `schemaVersion`, `kind`,
+  `inventoryName`, `source`, `targets` (each `key` plus the single document's `target`, `summary`,
+  `resources`, `blockers`) and `sharedBlockers` (`resourceId`, `targets` with `key` and `reasons`).
+
+A resource holds `id`, `rawType`, `category`, `region`, `fit` (`direct`, `partial`, `none`),
+`bestOffering`, `ties`, `reasons` and `requiredChanges`. A reason holds `code` and `text` (the plain
+sentence of `mapping.Reason.String`, no Markdown), and `target`, `category`, `offering` and `capability`
+only when the reason sets them; the same reason object is used in resources, blockers and shared
+blockers. Ties and required changes come from `assessment.Verdict.Ties` and `ChangesToList`, which the
+Markdown renderer uses too. The JSON also carries each resource's `region`, which the Markdown report
+does not show.
+
+Every document carries `"schemaVersion": 1` and its `kind`, so a reader can dispatch on both before
+reading anything else.
+
+**Schemas.** `internal/adapter/report/jsonreport/schema/assessment-v1.schema.json` and
+`comparison-v1.schema.json`, JSON Schema draft 2020-12, restricted to the keywords `$schema`, `$id`,
+`title`, `description`, `$defs`, local `$ref`, `type`, `properties`, `required`,
+`additionalProperties` (false only), `items`, `enum`, `const`, `minimum` and `pattern`. Every object
+has `"additionalProperties": false` and lists its always-present keys in `required`. Each file is
+self-contained: the comparison schema repeats the shared definitions instead of a cross-file `$ref`.
+A test validates every golden document against its schema with a validator written on the standard
+library alone, which refuses any keyword outside the subset, so the schemas never use a construct
+nobody checks. No new dependency.
+
+**Encoding.** Documents are built from private Go structs with `json` tags and encoded with
+`encoding/json`, never by concatenating strings: two-space indent and exactly one trailing newline.
+`encoding/json` escapes `<`, `>`, `&`, U+2028 and U+2029 and writes each invalid UTF-8 byte as U+FFFD,
+so every document is valid JSON and valid UTF-8. Keys are camelCase. Required keys are always present:
+an empty string is `""` and an empty array is `[]`, never `null`. Order is the domain's (resources
+and blockers in the assessment's order, targets by key, shared blockers by resource ID), never map
+order. `retrieved` is the snapshot's UTC calendar date, `YYYY-MM-DD`, as the Markdown report prints it.
+
+**Versioning.**
+
+- Adding an optional key, or a new value of an open set such as a reason `code`, keeps
+  `schemaVersion` 1. The schema files are updated in the same change. A consumer must ignore keys it
+  does not know and accept reason codes it does not know (`text` always explains them). The schemas'
+  `additionalProperties: false` pins what this release writes; it is not a promise that no key is
+  ever added, so a consumer that validates documents uses the schema of the release that wrote them.
+- Removing, renaming or retyping a key, making a required key optional, adding a `fit` or `kind`
+  value, or changing what a value means is a new `schemaVersion`, with new schema files beside the old
+  ones and an ADR. This matches the API's rule that additive fields are not breaking (PRD #103).
+
+**One format for the CLI and the API.** `eusov assess --format json` writes these documents (the
+default stays `markdown`, byte-identical to before), and the HTTP API of PRD #103 answers with the
+same reporter and therefore the same bytes. The schema files are where milestone 2's API can serve
+or reference them from; embedding them is left to that milestone, so the reporter today imports only
+`encoding/json` beyond what the Markdown reporter does (the `reporters-stay-offline` depguard rule).
+
+## Alternatives considered
+
+- **Marshal the domain types directly.** No tags to write, but the document would follow every
+  internal rename, expose fields such as `Candidates` that are not part of the contract, and write
+  `null` for nil slices. Private structs keep the format a deliberate contract.
+- **Concatenate strings, as the Markdown renderer does.** Escaping JSON by hand is the bug the hostile
+  goldens exist to catch; `encoding/json` already gets it right.
+- **One document with an optional comparison part.** Every consumer would have to branch on which
+  keys are present. Two kinds with their own schemas say it up front.
+- **A third-party JSON Schema validator for the tests.** Full draft 2020-12 support, but a dependency
+  for tests only, and it would let the schemas use keywords that a reader of the schema has to know.
+  The small standard-library validator keeps the schemas simple and the module unchanged.
+- **Every change is a new `schemaVersion`.** Simple, but each added field would force every consumer
+  to upgrade, and it would disagree with the API's rule that additive fields are not breaking.
+
+## Consequences
+
+- Scripts and the website get a stable, documented document; the CLI and the API cannot drift apart.
+- The Markdown and JSON reports agree on ties and required changes because both read them from the
+  domain.
+- `cli.Deps` now takes `Formats`, a map of `--format` value to `cli.Format` (the two reporter
+  constructors); adding a format is one entry in `cmd/eusov`.
+- A change to the report's structs must update the schemas, the goldens and, for anything but an
+  additive change, the version and an ADR. The schema tests fail on a key the schema does not allow, so
+  an unplanned addition is caught.
+- The schemas stay within the keyword subset; a constraint that needs another keyword means extending
+  the test validator first.

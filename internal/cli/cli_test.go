@@ -46,6 +46,14 @@ const (
 	inventoryName = "inv.json"
 	// targetKey is the one target the fake deps support, as the CLI spells it.
 	targetKey = "scaleway"
+	// markdownFormat and jsonFormat are the two --format values the fake deps
+	// support, and supportedFormats is the list a usage error gives, sorted.
+	markdownFormat   = "markdown"
+	jsonFormat       = "json"
+	supportedFormats = jsonFormat + ", " + markdownFormat
+	// jsonReportBody is what the fake json reporter writes, so a test can tell a
+	// --format json run from the default one.
+	jsonReportBody = `{"schemaVersion": 1, "kind": "assessment"}` + "\n"
 	// errPrefix is how the CLI writes an error to stderr.
 	errPrefix = "eusov: "
 	// maxErrorLine is the longest error line the CLI may write: the cap on the
@@ -135,13 +143,18 @@ func (r *fakeReporter) Report(ctx context.Context, w io.Writer, _ assessment.Ass
 	return r.err
 }
 
-// harness holds the three fakes the CLI is run with and what they were asked
-// for, so each test says what it expects of the run without building deps
-// itself.
+// harness holds the fakes the CLI is run with and what they were asked for, so
+// each test says what it expects of the run without building deps itself. It
+// wires one format per --format value, each with its own reporters, so a test can
+// see which format a run picked.
 type harness struct {
-	inventory *fakeInventorySource
-	catalog   *fakeCatalogSource
-	reporter  *fakeReporter
+	inventory  *fakeInventorySource
+	catalog    *fakeCatalogSource
+	reporter   *fakeReporter
+	comparison *fakeComparisonReporter
+	// jsonReporter and jsonComparison are the reporters of the "json" format.
+	jsonReporter   *fakeReporter
+	jsonComparison *fakeComparisonReporter
 	// paths is every --inventory value the CLI passed to NewInventorySource.
 	paths []string
 }
@@ -161,13 +174,17 @@ func newHarness(t *testing.T) *harness {
 	}
 
 	return &harness{
-		inventory: &fakeInventorySource{inv: inv},
-		catalog:   &fakeCatalogSource{cat: testutil.ScalewayCatalog(t)},
-		reporter:  &fakeReporter{body: []byte(reportBody)},
+		inventory:      &fakeInventorySource{inv: inv},
+		catalog:        &fakeCatalogSource{cat: testutil.ScalewayCatalog(t)},
+		reporter:       &fakeReporter{body: []byte(reportBody)},
+		comparison:     &fakeComparisonReporter{},
+		jsonReporter:   &fakeReporter{body: []byte(jsonReportBody)},
+		jsonComparison: &fakeComparisonReporter{},
 	}
 }
 
-// deps returns the Deps the CLI is run with.
+// deps returns the Deps the CLI is run with: a format per supported --format
+// value, each with the reporters that format renders through.
 func (h *harness) deps() cli.Deps {
 	return cli.Deps{
 		NewInventorySource: func(path string) analysis.InventorySource {
@@ -178,7 +195,16 @@ func (h *harness) deps() cli.Deps {
 		Targets: map[string]func() analysis.CatalogSource{
 			targetKey: func() analysis.CatalogSource { return h.catalog },
 		},
-		NewReporter: func() analysis.Reporter { return h.reporter },
+		Formats: map[string]cli.Format{
+			markdownFormat: {
+				NewReporter:           func() analysis.Reporter { return h.reporter },
+				NewComparisonReporter: func() analysis.ComparisonReporter { return h.comparison },
+			},
+			jsonFormat: {
+				NewReporter:           func() analysis.Reporter { return h.jsonReporter },
+				NewComparisonReporter: func() analysis.ComparisonReporter { return h.jsonComparison },
+			},
+		},
 	}
 }
 
@@ -538,6 +564,212 @@ func TestRunAssessRuntimeErrorLeavesNoFile(t *testing.T) {
 	}
 
 	checkOnlyFile(t, dir, "")
+}
+
+// TestRunAssessFormat pins --format for one target: markdown is the default, and
+// the format a run names renders the report through its own reporter.
+func TestRunAssessFormat(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name string
+		// format is the --format value, or empty when the run passes none.
+		format string
+		// wantBody is what stdout holds.
+		wantBody string
+		// wantJSON is true when the "json" format must have rendered the report.
+		wantJSON bool
+	}{
+		{name: "no format is markdown", wantBody: reportBody},
+		{name: "markdown named explicitly", format: markdownFormat, wantBody: reportBody},
+		{name: "json", format: jsonFormat, wantBody: jsonReportBody, wantJSON: true},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			h := newHarness(t)
+
+			args := []string{"assess", "--inventory", inventoryPath, "--target", targetKey}
+			if tc.format != "" {
+				args = append(args, "--format", tc.format)
+			}
+
+			code, stdout, stderr := h.run(t.Context(), args...)
+
+			if code != 0 {
+				t.Fatalf("Run() = %d, want 0; stderr = %q", code, stderr)
+			}
+
+			if stderr != "" {
+				t.Errorf("stderr = %q, want empty", stderr)
+			}
+
+			if stdout != tc.wantBody {
+				t.Errorf("stdout = %q, want the selected format's output %q", stdout, tc.wantBody)
+			}
+
+			wantMarkdown, wantJSON := 1, 0
+			if tc.wantJSON {
+				wantMarkdown, wantJSON = 0, 1
+			}
+
+			if h.reporter.calls != wantMarkdown {
+				t.Errorf("the markdown reporter was called %d times, want %d", h.reporter.calls, wantMarkdown)
+			}
+
+			if h.jsonReporter.calls != wantJSON {
+				t.Errorf("the json reporter was called %d times, want %d", h.jsonReporter.calls, wantJSON)
+			}
+
+			// One target renders a report, never a comparison.
+			if h.comparison.calls != 0 || h.jsonComparison.calls != 0 {
+				t.Errorf("a comparison reporter was called %d (markdown) and %d (json) times, want 0",
+					h.comparison.calls, h.jsonComparison.calls)
+			}
+		})
+	}
+}
+
+// TestRunAssessFormatUsage pins the usage error of a wrong --format: exit code 2,
+// the message the format gives with its supported list, the usage text, nothing
+// on stdout and no adapter built.
+func TestRunAssessFormatUsage(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name   string
+		format string
+	}{
+		{name: "an unknown format", format: "yaml"},
+		{name: "an empty format", format: ""},
+		{name: "a format in another case", format: "JSON"},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			h := newHarness(t)
+
+			code, stdout, stderr := h.run(t.Context(), "assess", "--inventory", inventoryPath,
+				"--target", targetKey, "--format", tc.format)
+
+			if code != 2 {
+				t.Errorf("Run() = %d, want 2; stderr = %q", code, stderr)
+			}
+
+			if stdout != "" {
+				t.Errorf("stdout = %q, want empty", stdout)
+			}
+
+			wantFirstLine := errPrefix + "unknown format " + text.Quote(tc.format) +
+				"; supported formats: " + supportedFormats
+
+			firstLine, _, _ := strings.Cut(stderr, "\n")
+			if firstLine != wantFirstLine {
+				t.Errorf("the first line = %q, want %q", firstLine, wantFirstLine)
+			}
+
+			if !strings.Contains(strings.ToLower(stderr), "usage") {
+				t.Errorf("stderr = %q, want usage text", stderr)
+			}
+
+			if len(h.paths) != 0 || h.reporter.calls != 0 || h.jsonReporter.calls != 0 {
+				t.Errorf("a usage error built adapters: inventory paths %q, markdown calls %d, json calls %d",
+					h.paths, h.reporter.calls, h.jsonReporter.calls)
+			}
+		})
+	}
+}
+
+// TestRunAssessWithoutFormats pins that a Deps wired with no report format at all
+// is a missing adapter, not a user error: --format defaults to markdown, which a
+// complete Deps supports, so a run that holds no format lacks an adapter rather
+// than naming an unknown one. The run fails with exit code 1 as a run-time error,
+// on the one error line, with nothing on stdout and no adapter built.
+func TestRunAssessWithoutFormats(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name    string
+		formats map[string]cli.Format
+	}{
+		{name: "nil formats"},
+		{name: "no formats", formats: map[string]cli.Format{}},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			h := newHarness(t)
+
+			deps := h.deps()
+			deps.Formats = tc.formats
+
+			var out, errOut bytes.Buffer
+
+			code := cli.Run(t.Context(), []string{"assess", "--inventory", inventoryPath, "--target", targetKey},
+				&out, &errOut, deps)
+
+			if code != 1 {
+				t.Errorf("Run() = %d, want 1: a Deps without a report format is a wiring mistake, not a usage error; "+
+					"stderr = %q", code, errOut.String())
+			}
+
+			if out.Len() != 0 {
+				t.Errorf("stdout = %q, want empty", out.String())
+			}
+
+			checkErrorLine(t, errOut.String())
+
+			// The line names the mistake: an adapter the command needs is missing.
+			if !strings.Contains(errOut.String(), "adapter") {
+				t.Errorf("stderr = %q, want the missing-adapter error", errOut.String())
+			}
+
+			// It is not the usage error of an unknown --format: markdown is valid,
+			// the command was just wired without it.
+			if strings.Contains(errOut.String(), "unknown format") {
+				t.Errorf("stderr = %q, want the missing-adapter error, not the unknown-format usage error",
+					errOut.String())
+			}
+
+			if len(h.paths) != 0 || h.reporter.calls != 0 || h.jsonReporter.calls != 0 {
+				t.Errorf("the failed run built adapters: inventory paths %q, markdown calls %d, json calls %d",
+					h.paths, h.reporter.calls, h.jsonReporter.calls)
+			}
+		})
+	}
+}
+
+// TestRunAssessFormatFlagHelp pins that the usage text tells the user what
+// --format accepts: the supported formats, sorted, and which one is the default.
+func TestRunAssessFormatFlagHelp(t *testing.T) {
+	t.Parallel()
+
+	h := newHarness(t)
+
+	code, stdout, stderr := h.run(t.Context(), "assess", "--help")
+
+	if code != 0 {
+		t.Fatalf("Run() = %d, want 0; stderr = %q", code, stderr)
+	}
+
+	if stderr != "" {
+		t.Errorf("stderr = %q, want empty", stderr)
+	}
+
+	entry := flagHelp(t, stdout, "--format")
+	lowered := strings.ToLower(entry)
+
+	for _, want := range []string{jsonFormat, markdownFormat, supportedFormats, "default"} {
+		if !strings.Contains(lowered, want) {
+			t.Errorf("the --format usage entry %q, want it to mention %q", entry, want)
+		}
+	}
 }
 
 // TestRunUsageErrors pins every usage error: exit code 2, usage text on stderr,

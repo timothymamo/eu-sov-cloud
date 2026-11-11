@@ -49,16 +49,16 @@ use `net/http/httptest` and a server on `127.0.0.1`), unless marked *review*.
 
 **JSON report**
 
-- [ ] `eusov assess --format json` prints the assessment as JSON. Its document has a `schemaVersion` of
+- [x] `eusov assess --format json` prints the assessment as JSON. Its document has a `schemaVersion` of
   `1`, and holds the target, the snapshot source and date, the inventory name, the summary counts, and
   every verdict with its fit, best offering, ties, reasons and required changes, as well as blockers.
   This is the same content as the Markdown report, in the same resource order. `--format markdown` is
   the default, and its output is byte-identical to today's.
-- [ ] With several targets (PRD #89), `--format json` prints a comparison document. It holds the
+- [x] With several targets (PRD #89), `--format json` prints a comparison document. It holds the
   per-target assessments and the blockers every target shares.
-- [ ] Golden files pin both documents. The output is byte-identical across runs. A JSON Schema for each
+- [x] Golden files pin both documents. The output is byte-identical across runs. A JSON Schema for each
   document is in the repository, and a test validates the goldens against it.
-- [ ] Every string comes from the inventory or a catalog, and is JSON-encoded, never concatenated.
+- [x] Every string comes from the inventory or a catalog, and is JSON-encoded, never concatenated.
   Hostile values (quotes, backslashes, control characters, invalid UTF-8) produce valid JSON. Pinned by
   a hostile golden.
 
@@ -136,9 +136,17 @@ use `net/http/httptest` and a server on `127.0.0.1`), unless marked *review*.
 
 Each milestone ships as one PR, in this order.
 
-1. [ ] **JSON report v1.** `internal/adapter/report/jsonreport` renders an assessment and a comparison as
+1. [x] **JSON report v1.** `internal/adapter/report/jsonreport` renders an assessment and a comparison as
    versioned JSON, with JSON Schemas, goldens and hostile goldens. `eusov assess --format json|markdown`.
    An ADR records the schema and its versioning, the counterpart of ADR 0006 for inventories. No HTTP yet.
+
+   *Done:* `jsonreport` renders both documents (`schemaVersion` 1), with JSON Schemas under
+   `internal/adapter/report/jsonreport/schema/`, goldens and hostile goldens validated against them,
+   and `--format json` e2e goldens. `eusov assess --format json|markdown` selects the renderer;
+   Markdown stays the default and unchanged. A comparison is validated once, in the domain, for every
+   reporter. The format and its version policy are recorded in
+   [ADR 0018](../docs/adr/0018-version-the-json-report-format-for-the-cli-and-the-api.md).
+
 2. [ ] **HTTP API adapter.** `internal/httpapi`: the routes, request decoding and limits, error shapes,
    content negotiation, headers, and the OpenAPI document, tested with `httptest` and fakes for the use
    cases. An ADR records the API's design, versioning and security model. depguard and
@@ -169,9 +177,13 @@ Each milestone ships as one PR, in this order.
 - **Proposed: synchronous requests.** An assessment over an embedded snapshot takes milliseconds, so a
   request answers directly. Async jobs, queues and webhooks are left out until something makes requests
   slow, such as live discovery.
-- **Proposed: one JSON report format for the CLI and the API.** Users can script the CLI and the website
-  can call the API, and both read the same document. A test pins that both give the same bytes. The
-  format is versioned like the inventory format: a change to it is a new `schemaVersion` with an ADR.
+- **Decided: one JSON report format for the CLI and the API** ([ADR 0018](../docs/adr/0018-version-the-json-report-format-for-the-cli-and-the-api.md)).
+  Users can script the CLI and the website can call the API, and both read the same document. A test
+  pins that both give the same bytes. The format carries a `schemaVersion`: adding an optional key or a
+  new value of an open set (such as a reason code) keeps it, and readers ignore what they do not know;
+  removing, renaming or retyping a key, or any other change that can break a reader, is a new
+  `schemaVersion` with an ADR. Unlike the inventory format (ADR 0006), where `eusov` is the strict
+  reader, here `eusov` is the writer.
 - **Proposed: the API is versioned in the path (`/v1/`).** A breaking change is a `/v2/` route beside
   `/v1/` for a deprecation period. Additive fields are not breaking.
 - **Decided: no request content is ever stored or logged.** Inventories and reports are customer data

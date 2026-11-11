@@ -450,6 +450,7 @@ var pinnedDepguardRules = []check.DepguardRule{
 			"io$",
 			"strconv$",
 			"strings$",
+			"encoding/json$",
 			"github.com/timothymamo/eu-sov-cloud/internal/app/analysis$",
 			"github.com/timothymamo/eu-sov-cloud/internal/domain/assessment$",
 			"github.com/timothymamo/eu-sov-cloud/internal/domain/mapping$",

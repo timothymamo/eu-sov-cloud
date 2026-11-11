@@ -94,6 +94,10 @@ type targetListHarness struct {
 	catalogs   map[string]*fakeCatalogSource
 	reporter   *fakeReporter
 	comparison *fakeComparisonReporter
+	// jsonReporter and jsonComparison are the reporters of the "json" format,
+	// so a test can tell which format a run picked.
+	jsonReporter   *fakeReporter
+	jsonComparison *fakeComparisonReporter
 	// paths is every --inventory value the CLI passed to NewInventorySource.
 	paths []string
 	// built is every target key the CLI built a catalog source for, in order.
@@ -122,8 +126,10 @@ func newTargetListHarness(t *testing.T) *targetListHarness {
 			scalewayKey: {cat: testutil.ScalewayCatalog(t)},
 			upcloudKey:  {cat: testutil.UpCloudCatalog(t)},
 		},
-		reporter:   &fakeReporter{body: []byte(reportBody)},
-		comparison: &fakeComparisonReporter{},
+		reporter:       &fakeReporter{body: []byte(reportBody)},
+		comparison:     &fakeComparisonReporter{},
+		jsonReporter:   &fakeReporter{body: []byte(jsonReportBody)},
+		jsonComparison: &fakeComparisonReporter{},
 	}
 }
 
@@ -148,9 +154,17 @@ func (h *targetListHarness) deps() cli.Deps {
 
 			return h.inventory
 		},
-		Targets:               targets,
-		NewReporter:           func() analysis.Reporter { return h.reporter },
-		NewComparisonReporter: func() analysis.ComparisonReporter { return h.comparison },
+		Targets: targets,
+		Formats: map[string]cli.Format{
+			markdownFormat: {
+				NewReporter:           func() analysis.Reporter { return h.reporter },
+				NewComparisonReporter: func() analysis.ComparisonReporter { return h.comparison },
+			},
+			jsonFormat: {
+				NewReporter:           func() analysis.Reporter { return h.jsonReporter },
+				NewComparisonReporter: func() analysis.ComparisonReporter { return h.jsonComparison },
+			},
+		},
 	}
 }
 
@@ -354,6 +368,75 @@ func TestRunAssessSingleTargetIsUnchanged(t *testing.T) {
 	}
 
 	h.checkUnselectedCatalogsNotLoaded(t, []string{scalewayKey})
+}
+
+// TestRunAssessFormatComparison pins --format for a comparison: the format's own
+// comparison reporter renders the comparison of several targets, and the other
+// formats' reporters are left alone.
+func TestRunAssessFormatComparison(t *testing.T) {
+	t.Parallel()
+
+	target := ovhcloudKey + "," + scalewayKey
+
+	tests := []struct {
+		name string
+		// format is the --format value, or empty when the run passes none.
+		format string
+		// wantJSON is true when the "json" format must have rendered the report.
+		wantJSON bool
+	}{
+		{name: "no format is markdown"},
+		{name: "markdown named explicitly", format: markdownFormat},
+		{name: "json", format: jsonFormat, wantJSON: true},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			h := newTargetListHarness(t)
+
+			args := []string{"assess", "--inventory", inventoryPath, "--target", target}
+			if tc.format != "" {
+				args = append(args, "--format", tc.format)
+			}
+
+			code, stdout, stderr := h.run(t.Context(), args...)
+
+			if code != 0 {
+				t.Fatalf("Run() = %d, want 0; stderr = %q", code, stderr)
+			}
+
+			if stderr != "" {
+				t.Errorf("stderr = %q, want empty", stderr)
+			}
+
+			if want := comparisonBody([]string{ovhcloudKey, scalewayKey}); stdout != want {
+				t.Errorf("stdout = %q, want the selected format's comparison output %q", stdout, want)
+			}
+
+			wantMarkdown, wantJSON := 1, 0
+			if tc.wantJSON {
+				wantMarkdown, wantJSON = 0, 1
+			}
+
+			if h.comparison.calls != wantMarkdown {
+				t.Errorf("the markdown comparison reporter was called %d times, want %d",
+					h.comparison.calls, wantMarkdown)
+			}
+
+			if h.jsonComparison.calls != wantJSON {
+				t.Errorf("the json comparison reporter was called %d times, want %d",
+					h.jsonComparison.calls, wantJSON)
+			}
+
+			// A comparison never renders through a single-target reporter.
+			if h.reporter.calls != 0 || h.jsonReporter.calls != 0 {
+				t.Errorf("a single-target reporter was called %d (markdown) and %d (json) times, want 0",
+					h.reporter.calls, h.jsonReporter.calls)
+			}
+		})
+	}
 }
 
 // TestRunAssessTargetListUsage pins every usage error of a --target list: exit

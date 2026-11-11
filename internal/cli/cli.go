@@ -37,6 +37,14 @@ type Deps struct {
 	// Targets maps every supported --target value to the constructor of its
 	// catalog source.
 	Targets map[string]func() analysis.CatalogSource
+	// Formats maps every supported --format value to the reporters of that
+	// report format.
+	Formats map[string]Format
+}
+
+// Format is one report format --format selects: the constructors of its
+// reporters. Run builds only the one the run needs.
+type Format struct {
 	// NewReporter returns the reporter that renders the report of a run with one
 	// target.
 	NewReporter func() analysis.Reporter
@@ -106,15 +114,17 @@ func printError(w io.Writer, err error) {
 	fmt.Fprintf(w, "eusov: %s\n", sanitise(msg))
 }
 
-// usage is the help text; %s is the list of supported targets.
+// usage is the help text; the verbs are the list of supported targets, the
+// list of supported formats and the default format.
 const usage = `Usage:
-  eusov assess --inventory <file> --target <targets> [--output <file>]
+  eusov assess --inventory <file> --target <targets> [--format <format>]
+               [--output <file>]
   eusov version
   eusov help
 
 Commands:
   assess   Assess the resources of an inventory file against the catalog of a
-           target, or compare several targets, and write a Markdown report.
+           target, or compare several targets, and write a report.
            Runs offline and needs no credentials.
   version  Print the version.
   help     Print this help.
@@ -127,6 +137,9 @@ Flags of assess:
                       %s.
                       Several targets give one report that compares them,
                       then each target's own report.
+  --format <format>   The report format, one of: %s.
+                      The default is %s. json is the versioned JSON
+                      report of docs/adr/0018.
   --output <file>     Write the report to this file, with mode 0600, instead of
                       standard output. An existing regular file, a symbolic
                       link to one or a dangling link is replaced only once the
@@ -143,10 +156,15 @@ Exit codes:
 
 // printUsage writes the help text to w.
 func printUsage(w io.Writer, deps Deps) {
-	fmt.Fprintf(w, usage, strings.Join(targetKeys(deps), ", "))
+	fmt.Fprintf(w, usage, strings.Join(targetKeys(deps), ", "), strings.Join(formatKeys(deps), ", "), defaultFormat)
 }
 
 // targetKeys returns the supported --target values, sorted.
 func targetKeys(deps Deps) []string {
 	return slices.Sorted(maps.Keys(deps.Targets))
+}
+
+// formatKeys returns the supported --format values, sorted.
+func formatKeys(deps Deps) []string {
+	return slices.Sorted(maps.Keys(deps.Formats))
 }

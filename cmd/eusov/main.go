@@ -13,6 +13,7 @@ import (
 	"os/signal"
 	"syscall"
 
+	"github.com/timothymamo/eu-sov-cloud/internal/adapter/report/jsonreport"
 	"github.com/timothymamo/eu-sov-cloud/internal/adapter/report/markdown"
 	"github.com/timothymamo/eu-sov-cloud/internal/adapter/source/inventoryfile"
 	"github.com/timothymamo/eu-sov-cloud/internal/adapter/target/ovhcloud"
@@ -39,9 +40,10 @@ func main() {
 }
 
 // deps wires the adapters of the assess path: the inventory file, the embedded
-// OVHcloud, Scaleway and UpCloud catalogs and the Markdown reporter, which
-// renders both the single-target report and the comparison of several targets. None of
-// them uses the network or credentials.
+// OVHcloud, Scaleway and UpCloud catalogs, and the two report formats: the
+// Markdown reporter, the default, and the JSON reporter (docs/adr/0018), each
+// rendering both the single-target report and the comparison of several
+// targets. None of them uses the network or credentials.
 func deps() cli.Deps {
 	return cli.Deps{
 		NewInventorySource: func(path string) analysis.InventorySource {
@@ -52,7 +54,15 @@ func deps() cli.Deps {
 			"scaleway": func() analysis.CatalogSource { return scaleway.New() },
 			"upcloud":  func() analysis.CatalogSource { return upcloud.New() },
 		},
-		NewReporter:           func() analysis.Reporter { return markdown.New() },
-		NewComparisonReporter: func() analysis.ComparisonReporter { return markdown.New() },
+		Formats: map[string]cli.Format{
+			"markdown": {
+				NewReporter:           func() analysis.Reporter { return markdown.New() },
+				NewComparisonReporter: func() analysis.ComparisonReporter { return markdown.New() },
+			},
+			"json": {
+				NewReporter:           func() analysis.Reporter { return jsonreport.New() },
+				NewComparisonReporter: func() analysis.ComparisonReporter { return jsonreport.New() },
+			},
+		},
 	}
 }
