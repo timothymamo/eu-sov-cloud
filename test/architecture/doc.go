@@ -30,7 +30,7 @@
 // jsondoc$ allow entry, and no check noticed. Adding, removing or changing a
 // rule now means updating pinnedDepguardRules in the same commit, on purpose,
 // where review sees it. TestDepguardPinCatchesMutations proves the pin
-// notices, with 532 mutations of the real file: for every rule it deletes the
+// notices, with 533 mutations of the real file: for every rule it deletes the
 // rule and each of its files, allow and deny entries (every deny entry, a
 // shared list's too), drops the trailing $ of each exact allow entry, adds an
 // allow entry os and a negated files glob, and rewrites, deletes or adds the

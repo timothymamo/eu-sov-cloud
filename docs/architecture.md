@@ -73,7 +73,7 @@ the ways code could be hidden from it, and what refuses each:
   files and allow lists and the `pkg` of each deny entry, against a copy in
   `test/architecture/depguardpin_test.go`. Adding, removing or changing a rule means updating
   `pinnedDepguardRules` in the same commit, on purpose, so review sees it as a change to the
-  architecture rules. `TestDepguardPinCatchesMutations` proves the pin notices, with 532 mutations of
+  architecture rules. `TestDepguardPinCatchesMutations` proves the pin notices, with 533 mutations of
   the real file: for every rule it deletes the rule and each of its files, allow and deny entries
   (every deny entry, a shared list's too), drops the trailing `$` of each exact allow entry, adds an
   allow entry `os` and a negated files glob, and rewrites, deletes or adds the list-mode. A self-check
