@@ -612,10 +612,30 @@ func normalise(o Offering) (Offering, error) {
 
 	o = clone(o)
 	o.Categories = sortedUnique(o.Categories)
-	o.Capabilities = sortedUnique(o.Capabilities)
+	o.Capabilities = sortedUnique(withImplied(o.Capabilities))
 	o.Regions = sortedUnique(o.Regions)
 
 	return o, nil
+}
+
+// withImplied returns caps followed by every capability they imply,
+// transitively. The result may hold duplicates; sortedUnique removes them.
+func withImplied(caps []taxonomy.Capability) []taxonomy.Capability {
+	seen := make(map[taxonomy.Capability]struct{}, len(caps))
+	for _, c := range caps {
+		seen[c] = struct{}{}
+	}
+
+	for i := 0; i < len(caps); i++ {
+		for _, implied := range caps[i].Implies() {
+			if _, ok := seen[implied]; !ok {
+				seen[implied] = struct{}{}
+				caps = append(caps, implied)
+			}
+		}
+	}
+
+	return caps
 }
 
 // sortedUnique sorts s in place and removes duplicates, returning nil when

@@ -272,6 +272,88 @@ func TestOfferingHas(t *testing.T) {
 	}
 }
 
+// A snapshot may list only zone-level high availability: the taxonomy holds the
+// implication zone level implies node level, and New applies it to every
+// offering, so Offering.Has answers correctly everywhere (mapping, tests, a
+// future comparison report). Resources are never expanded, so this is the one
+// place the implication is applied. Capabilities stay sorted and de-duplicated,
+// so a node-level need appears exactly once.
+func TestNewExpandsImpliedCapabilities(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name    string
+		listed  []taxonomy.Capability
+		want    []taxonomy.Capability
+		hasNode bool
+		hasZone bool
+	}{
+		{
+			// The shape milestone 2 and 3 snapshots will have: only the zone
+			// level is written down.
+			name:    "zone level gives node level too",
+			listed:  []taxonomy.Capability{taxonomy.ZoneHighAvailability},
+			want:    []taxonomy.Capability{taxonomy.NodeHighAvailability, taxonomy.ZoneHighAvailability},
+			hasNode: true,
+			hasZone: true,
+		},
+		{
+			// The implication runs downwards only: a node-level offering does not
+			// survive the loss of a zone, so it must not claim the zone level.
+			name:    "node level does not give zone level",
+			listed:  []taxonomy.Capability{taxonomy.NodeHighAvailability},
+			want:    []taxonomy.Capability{taxonomy.NodeHighAvailability},
+			hasNode: true,
+			hasZone: false,
+		},
+		{
+			// A snapshot may list both levels. That is not a duplicate capability:
+			// the catalog still holds the node level once.
+			name:    "both levels listed stay valid",
+			listed:  []taxonomy.Capability{taxonomy.ZoneHighAvailability, taxonomy.NodeHighAvailability},
+			want:    []taxonomy.Capability{taxonomy.NodeHighAvailability, taxonomy.ZoneHighAvailability},
+			hasNode: true,
+			hasZone: true,
+		},
+		{
+			// The implication reaches only the capability the taxonomy states it
+			// for: everything else the snapshot lists is kept as given.
+			name:    "an unrelated capability is left alone",
+			listed:  []taxonomy.Capability{taxonomy.IPv6, taxonomy.ZoneHighAvailability},
+			want:    []taxonomy.Capability{taxonomy.IPv6, taxonomy.NodeHighAvailability, taxonomy.ZoneHighAvailability},
+			hasNode: true,
+			hasZone: true,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			cat := newCatalog(t, targetName, validSnapshot(), []catalog.Offering{{
+				Name:         "Managed Database for PostgreSQL",
+				Categories:   []taxonomy.Category{taxonomy.DatabasePostgreSQL},
+				Capabilities: tc.listed,
+				Regions:      []string{"fr-par"},
+			}})
+
+			offering := cat.Offerings()[0]
+
+			if diff := cmp.Diff(tc.want, offering.Capabilities); diff != "" {
+				t.Errorf("Capabilities mismatch (-want +got):\n%s", diff)
+			}
+
+			if got := offering.Has(taxonomy.NodeHighAvailability); got != tc.hasNode {
+				t.Errorf("Has(node-high-availability) = %t, want %t", got, tc.hasNode)
+			}
+
+			if got := offering.Has(taxonomy.ZoneHighAvailability); got != tc.hasZone {
+				t.Errorf("Has(zone-high-availability) = %t, want %t", got, tc.hasZone)
+			}
+		})
+	}
+}
+
 // The retrieval instant is normalised to UTC: report renderers format it as a
 // UTC calendar date, so keeping the caller's zone would shift the date.
 func TestSnapshotRetrievedOnIsUTC(t *testing.T) {

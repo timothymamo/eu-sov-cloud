@@ -3,7 +3,10 @@
 - Status: Accepted; the reader's implementation (it decodes through one strict decoder shared with
   the snapshot reader) and the quoting of the path in errors (`text.QuotePath`, which keeps the base
   name of a long path) are amended by
-  [0009](0009-decode-adapter-json-documents-through-one-strict-decoder.md)
+  [0009](0009-decode-adapter-json-documents-through-one-strict-decoder.md); the schema version policy
+  is amended by [0011](0011-scope-capabilities-and-one-offering-per-tier.md): retiring a vocabulary
+  value is not a version change while no tool writes inventory files, and needs a new version once
+  `eusov discover` does
 - Date: 2026-11-10
 
 ## Context

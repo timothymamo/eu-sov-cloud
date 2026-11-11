@@ -15,14 +15,25 @@ type Capability string
 
 // The capability vocabulary.
 const (
-	// IPv6 is IPv6 connectivity.
+	// IPv6 is IPv6 connectivity in both directions: the resource is reachable
+	// over IPv6 (inbound) and can reach IPv6 destinations (outbound).
 	IPv6 Capability = "ipv6"
 	// PointInTimeRestore is restoring data to any moment within a retention window.
 	PointInTimeRestore Capability = "point-in-time-restore"
 	// ObjectVersioning is keeping earlier versions of overwritten or deleted objects.
 	ObjectVersioning Capability = "object-versioning"
 	// HighAvailability is surviving the loss of a node or zone without manual failover.
+	// ADR 0011 retires it in favour of NodeHighAvailability and
+	// ZoneHighAvailability: it is kept only until PRD #14 milestone 4 and must
+	// not be used for new data.
 	HighAvailability Capability = "high-availability"
+	// NodeHighAvailability is the resource keeping serving through the loss of
+	// one node, server or host, without manual failover.
+	NodeHighAvailability Capability = "node-high-availability"
+	// ZoneHighAvailability is the resource keeping serving through the loss of a
+	// whole availability zone or data centre, without manual failover. It
+	// implies NodeHighAvailability.
+	ZoneHighAvailability Capability = "zone-high-availability"
 	// ReadReplicas is serving reads from replicas of a primary database.
 	ReadReplicas Capability = "read-replicas"
 	// Autoscaling is adding and removing capacity automatically with load.
@@ -46,10 +57,18 @@ var capabilities = []Capability{
 	EncryptionAtRest,
 	HighAvailability,
 	IPv6,
+	NodeHighAvailability,
 	ObjectVersioning,
 	PointInTimeRestore,
 	ReadReplicas,
 	Snapshots,
+	ZoneHighAvailability,
+}
+
+// implications maps a capability to the weaker capabilities it implies: an
+// offering that provides the key also provides every value. It is read-only.
+var implications = map[Capability][]Capability{
+	ZoneHighAvailability: {NodeHighAvailability},
 }
 
 // ParseCapability returns the capability whose value is exactly s. It does not
@@ -68,4 +87,11 @@ func ParseCapability(s string) (Capability, error) {
 // slice is a fresh copy on each call.
 func Capabilities() []Capability {
 	return slices.Clone(capabilities)
+}
+
+// Implies returns the capabilities that c directly implies, sorted by value, or
+// nil when it implies none (including for a value outside the vocabulary). The
+// slice is a fresh copy on each call.
+func (c Capability) Implies() []Capability {
+	return slices.Clone(implications[c])
 }
