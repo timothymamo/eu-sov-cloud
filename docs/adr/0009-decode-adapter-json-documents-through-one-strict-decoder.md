@@ -48,7 +48,9 @@ Forces:
 
 Every adapter that reads a JSON document decodes it through one package,
 `internal/adapter/internal/jsondoc`. Go's internal rule keeps it to packages under
-`internal/adapter`, and `adapters-are-built-in-cmd` already allows `internal/adapter/internal/`.
+`internal/adapter`, and `adapters-are-built-in-cmd` allows it by name
+(`internal/adapter/internal/jsondoc$`; before issues #49 and #50 it allowed every package under
+`internal/adapter/internal/`).
 
 **What jsondoc enforces.** The API is small and drives no reflection:
 
@@ -120,13 +122,18 @@ is no fault of the document.
 - `target-adapters-read-snapshots-through-the-reader` loses its exception for the reader: with the
   reader decoding through jsondoc, no non-test file under `internal/adapter/target` imports
   `encoding/json`.
-- `adapters-are-built-in-cmd` allows every package under `internal/adapter/internal/` and says
-  nothing about what such a helper imports. `adapter-helpers-do-no-io` (issue #42) holds every
-  helper there, jsondoc and a helper added later included, to a strict allow list of packages that
-  do no I/O, so a helper that needs I/O needs a rule of its own and is excluded from that one by
-  name. Because a helper under a `testdata` or `_` directory is never linted, each adapter that must
-  stay offline also names the helpers it imports, each ending in `$`, in a strict rule of its own;
-  the comment beside `adapters-are-built-in-cmd` says so.
+- `adapters-are-built-in-cmd` names each helper under `internal/adapter/internal/` that an adapter
+  may import, each ending in `$` (only `jsondoc$` today), and denies the rest of that directory
+  with its own message. It says nothing about what such a helper imports.
+  `adapter-helpers-do-no-io` (issue #42) holds every helper there, jsondoc and a helper added later
+  included, to a strict allow list of packages that do no I/O, so a helper that needs I/O needs a
+  rule of its own and is excluded from that one by name. A helper under a `testdata` or `_`
+  directory is never linted. This rule first allowed every package under
+  `internal/adapter/internal/` by prefix, which let an adapter without a strict rule of its own (the
+  reporters, the live sources) import such a helper; issues #49 and #50 closed that gap by naming
+  each helper. Each adapter that must stay offline also names the helpers it imports, each ending in
+  `$`, in a strict rule of its own (`reporters-stay-offline` for the reporters); the comment beside
+  `adapters-are-built-in-cmd` says so.
 
 **Declared region codes.** The snapshot format adds a rule for the values of its top-level `regions`
 list: each is a region code, ASCII letters and digits in groups joined by single hyphens
