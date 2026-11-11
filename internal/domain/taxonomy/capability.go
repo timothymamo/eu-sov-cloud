@@ -15,13 +15,17 @@ type Capability string
 
 // The capability vocabulary.
 const (
-	// IPv6 is IPv6 connectivity.
+	// IPv6 is IPv6 connectivity in both directions: the resource is reachable
+	// over IPv6 (inbound) and can reach IPv6 destinations (outbound).
 	IPv6 Capability = "ipv6"
 	// PointInTimeRestore is restoring data to any moment within a retention window.
 	PointInTimeRestore Capability = "point-in-time-restore"
 	// ObjectVersioning is keeping earlier versions of overwritten or deleted objects.
 	ObjectVersioning Capability = "object-versioning"
 	// HighAvailability is surviving the loss of a node or zone without manual failover.
+	// ADR 0011 retires it in favour of NodeHighAvailability and
+	// ZoneHighAvailability: it is kept only until PRD #14 milestone 4 and must
+	// not be used for new data.
 	HighAvailability Capability = "high-availability"
 	// NodeHighAvailability is the resource keeping serving through the loss of
 	// one node, server or host, without manual failover.
