@@ -107,6 +107,7 @@ internal/
   testutil/                   Test-only helpers (golden files, fixtures)
 test/e2e/                     Black-box tests of the built binary
 test/lint/                    Source rules golangci-lint cannot express
+test/architecture/            Layer dependencies checked package by package, per release target
 testdata/                     Shared, sanitised fixtures
 docs/                         Architecture, ADRs, dev environment
 prds/                         Product requirements, one per feature

@@ -4,13 +4,38 @@ on:
   push:
     tags: ["v*.*.*"]
 
-permissions:
-  contents: write # create the GitHub release and upload artifacts
+# No permission by default; each job asks for its own.
+permissions: {}
 
+# The steps of both jobs are a closed list that test/architecture holds
+# (check.ReleaseWorkflow): add no step, run: or env: here without changing it.
 jobs:
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+          cache: false # see the comment on the goreleaser job
+      - name: Test
+        run: make test
+
+  # A job of its own, on a fresh runner: no go env file and no environment or
+  # PATH that the tests set reaches goreleaser. setup-go's Actions cache
+  # (module and build cache) would carry state over from the test job or from
+  # CI on main, so both jobs set cache: false.
   goreleaser:
     name: GoReleaser
+    needs: test
     runs-on: ubuntu-latest
+    permissions:
+      contents: write # create the GitHub release and upload artifacts
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -19,8 +44,7 @@ jobs:
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: go.mod
-      - name: Test
-        run: make test
+          cache: false
       - uses: goreleaser/goreleaser-action@a4f02ab5355a589de60d917a659ce617ed19b3de # v7.3.0
         with:
           distribution: goreleaser
