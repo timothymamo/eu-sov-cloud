@@ -22,10 +22,17 @@ main checkout as before, or the dispatch worktree of a dispatched unit.
 
 - Run from inside a pull request's worktree (a linked worktree directly under a `.worktrees/`), it uses
   the checkout that holds that worktree, so pull request worktrees are never nested in each other.
-- A branch that already has a worktree gets that worktree's path, wherever it is (`git worktree list`),
-  so resuming works from the main checkout and from any dispatch worktree. The one exception is the
-  main checkout itself: a branch it is on is refused, never printed, because the main checkout stays on
-  `main` and is never a pull request's worktree (CLAUDE.md rule 4).
+- A branch that already has a pull request's worktree, one directly under a `.worktrees/`, gets that
+  worktree's path, wherever it is (`git worktree list`), so resuming works from the main checkout and
+  from any dispatch worktree. A branch checked out anywhere else is refused, never printed: the main
+  checkout stays on `main` (CLAUDE.md rule 4), and the pr-create merge step runs `git worktree remove`
+  on the printed path, which on a dispatch worktree would delete everything in it. So is an entry whose
+  directory git no longer sees as that worktree, such as one whose `.git` file is gone: git marks it
+  `prunable` unless it is locked, its directory may still hold work, and git commands there act on the
+  checkout around it.
+- A worktree on a detached HEAD at `.worktrees/<slug>`, in any checkout, is refused too. It may be the
+  branch in the middle of a rebase or bisect, or detached by hand, and git refuses a second worktree for
+  the branch only in the first two cases.
 - `.worktrees/` is git-ignored, so the dispatch worktree's `git status` stays clean, and the VM mounts
   the workspace (ADR 0008), which holds the dispatch worktree and everything in it.
 - A pull request's worktree is removed before the unit whose dispatch worktree holds it is closed.
@@ -56,11 +63,12 @@ main checkout as before, or the dispatch worktree of a dispatched unit.
   their entries behind, `prunable`, or `locked` for a locked one. Their branches and commits survive.
   So each pull request's worktree is removed first (`git -C <main checkout> worktree remove <path>`, the
   pr-create skill's merge step), and the unit is closed after. Only documentation guards that order.
-- When a unit was closed first anyway, `git worktree remove <path>` still clears the missing worktree's
-  entry, unless the entry is locked. Until it or `git worktree prune` has, `make worktree` refuses to
-  resume the branch and says so. Neither clears a locked entry, such as one left locked `initializing` by
-  a `git worktree add` that was killed, so for a locked entry `make worktree` says so and to run
-  `git worktree unlock <path>` before `git worktree prune`.
+- When a unit was closed first anyway, `make worktree` refuses to resume the branch until the missing
+  worktree's entry is cleared, and names the commands that clear that one entry:
+  `git worktree remove <path>`, after `git worktree unlock <path>` when the entry is locked, such as one
+  left locked `initializing` by a `git worktree add` that was killed. It never suggests
+  `git worktree prune`, which clears every stale entry in the repository, including the entries of
+  healthy worktrees on a disk that is not mounted (ADR 0008).
 - Follow-up: dot-agent-deck upstream is asked to keep a dispatch worktree that contains other
   registered worktrees, as it keeps one with uncommitted changes
   ([vfarcic/dot-agent-deck#2285](https://github.com/vfarcic/dot-agent-deck/issues/2285)). That would

@@ -21,9 +21,12 @@ has its own branch, and every branch its own worktree under `.worktrees/`
 2. Run `make worktree BRANCH=<branch>` from the checkout you started in: the repository root, or the
    dispatch worktree of a dispatched unit. It fetches `origin`, creates `.worktrees/<type>-<issue>-<slug>`
    in that checkout on a new branch cut from the latest `origin/main`, and prints the worktree's absolute
-   path. For a branch that already has a worktree it prints that worktree's path, wherever it is, and a
-   branch without one it reopens, so this is also how to resume. It refuses a branch that the main
-   checkout itself is on, because the main checkout stays on `main`.
+   path. For a branch that already has a PR worktree (one directly under a `.worktrees/`) it prints that
+   worktree's path, wherever it is, and a branch without one it reopens, so this is also how to resume.
+   It refuses a branch that is checked out anywhere else, such as the main checkout, which stays on
+   `main`, or a dispatch worktree. It also refuses when a worktree on a detached HEAD sits at
+   `.worktrees/<type>-<issue>-<slug>` in any checkout, which may be the branch in the middle of a rebase.
+   When it refuses, do what its message says; most say to leave the worktree where it is and report it.
 3. Work only in that worktree: run every non-git command from it (`cd <path> && ...`), and read and edit
    files only under it. Run git as `git -C <path> ...`, never `cd <path> && git ...`. Write the
    worktree path out in full; do not store it in a shell variable. `make check`, `go test ./...` and
@@ -41,8 +44,10 @@ A PR worktree inside a dispatch worktree is removed before that unit is closed. 
 dispatch worktree, which deletes everything in it, nested worktrees included, even dirty or locked ones;
 the branches and their commits survive
 (`docs/adr/0010-create-pull-request-worktrees-inside-the-dispatch-worktree.md`). If `make worktree` then
-reports that the branch's worktree no longer exists, do what it says: `git worktree prune`, after
-`git worktree unlock <path>` when it says the entry is locked, and run it again.
+reports that the branch's worktree no longer exists, do what it says, which clears that one entry:
+`git worktree remove <path>`, after `git worktree unlock <path>` when it says the entry is locked. Then
+run it again. Never run `git worktree prune`: it clears every stale entry in the repository, including
+those of healthy worktrees on a disk that is not mounted.
 
 ## Rules
 

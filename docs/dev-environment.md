@@ -120,9 +120,11 @@ start work on an issue or PRD.
   of them run the same removal: they remove the unit's worktree, or keep it when `git status` there
   shows uncommitted changes. That check does not see the git-ignored `.worktrees/`, so a unit closed
   with a PR worktree still inside it loses that worktree, uncommitted changes included, even when the
-  worktree is locked. The branch and its commits survive: `git worktree prune` clears the stale entry
-  and `make worktree` brings the worktree back. `prune` never clears a locked entry, so `make worktree`
-  says when the entry is locked; run `git worktree unlock <path>` before `prune` then.
+  worktree is locked. The branch and its commits survive. `make worktree` then names the commands that
+  clear that worktree's stale entry, `git worktree remove <path>`, after `git worktree unlock <path>`
+  when the entry is locked, and brings the worktree back once they have run. Do not use
+  `git worktree prune`: it clears every stale entry in the repository, including those of healthy
+  worktrees on a disk that is not mounted.
   `dot-agent-deck worktree list` shows what is left. The `agent/dispatch-*` branches stay; delete them
   with `git branch -d`.
 
