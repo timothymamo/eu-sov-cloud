@@ -23,12 +23,17 @@ import (
 var lintTags = strings.Join(slices.Sorted(maps.Keys(negatableTags)), ",")
 
 // offlineEnv pins the go command to answer the same on any host: the tags
-// given on the command line only, no go.work, and no network. The module cache
-// is already filled by the build that runs these tests.
+// given on the command line only, no go.work, no network, and the baseline
+// amd64 and arm64 levels the release builds at, as make lint and CI set them,
+// so a file such as one built only at amd64.v3 is never counted as loaded
+// because of a level this process happens to have. The module cache is already
+// filled by the build that runs these tests.
 var offlineEnv = []string{
 	"GOFLAGS=-mod=readonly",
 	"GOWORK=off",
 	"GOPROXY=off",
+	"GOAMD64=v1",
+	"GOARM64=v8.0",
 }
 
 // lintEnv is one environment golangci-lint loads packages in on CI, the native
@@ -182,6 +187,9 @@ func unloadedGoFiles(t *testing.T, root string, targets []releasetarget.Target) 
 	for _, target := range targets {
 		for _, p := range goListIn(t, root, targetEnv(target),
 			"Dir,GoFiles,CgoFiles,TestGoFiles,XTestGoFiles,InvalidGoFiles", "./...") {
+			if p.Dir == "" {
+				continue
+			}
 			dir, ok := relToRoot(t, root, p.Dir)
 			if !ok {
 				continue

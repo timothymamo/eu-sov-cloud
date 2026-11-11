@@ -1,6 +1,7 @@
 package releasetarget_test
 
 import (
+	_ "embed"
 	"strings"
 	"testing"
 
@@ -13,28 +14,28 @@ import (
 // repository's build, cut down to the keys Read reads. The build has
 // one build, CGO_ENABLED=0, and three goos by two goarch: six platforms, which
 // is the list every case below compares against or breaks.
-const (
+//
+// buildFlow and buildReal live in testdata, as files: the tests of
+// test/architecture/internal/check add a release section to the same two
+// documents, so there is one copy of each to keep in step with the release.
+var (
 	// buildFlow writes the goos and goarch lists in flow form, as
 	// .goreleaser.yaml does.
-	buildFlow = `version: 2
+	//
+	//go:embed testdata/flow.goreleaser.yaml
+	buildFlow string
 
-project_name: eusov
+	// buildReal is this repository's .goreleaser.yaml in the shape the release
+	// document really has: before hooks, archives, checksum and changelog
+	// around one build. The check may refuse a top-level key that could change
+	// what the release builds, so the document the release actually builds
+	// from must stay accepted, character for character.
+	//
+	//go:embed testdata/real.goreleaser.yaml
+	buildReal string
+)
 
-builds:
-  - id: eusov
-    main: ./cmd/eusov
-    binary: eusov
-    env:
-      - CGO_ENABLED=0
-    flags:
-      - -trimpath
-    goos: [linux, darwin, windows]
-    goarch: [amd64, arm64]
-
-archives:
-  - formats: [tar.gz]
-`
-
+const (
 	// buildBlock writes the same lists in block form.
 	buildBlock = `version: 2
 
@@ -63,48 +64,6 @@ builds:
     env: [CGO_ENABLED=0]
     goos: [linux, darwin, windows]
     goarch: [amd64, arm64]
-`
-
-	// buildReal is this repository's .goreleaser.yaml in the shape the release
-	// document really has: before hooks, archives, checksum and changelog
-	// around one build. The check may refuse a top-level key that could change
-	// what the release builds, so the document the release actually builds
-	// from must stay accepted, character for character.
-	buildReal = `version: 2
-
-project_name: eusov
-
-before:
-  hooks:
-    - go mod tidy
-
-builds:
-  - id: eusov
-    main: ./cmd/eusov
-    binary: eusov
-    env:
-      - CGO_ENABLED=0
-    flags:
-      - -trimpath
-    ldflags:
-      - -s -w
-      - -X github.com/timothymamo/eu-sov-cloud/internal/version.version={{ .Version }}
-      - -X github.com/timothymamo/eu-sov-cloud/internal/version.commit={{ .ShortCommit }}
-      - -X github.com/timothymamo/eu-sov-cloud/internal/version.date={{ .Date }}
-    goos: [linux, darwin, windows]
-    goarch: [amd64, arm64]
-
-archives:
-  - formats: [tar.gz]
-    format_overrides:
-      - goos: windows
-        formats: [zip]
-
-checksum:
-  name_template: checksums.txt
-
-changelog:
-  use: github
 `
 
 	// buildCgoOn turns cgo on: a release build that would link the host's C

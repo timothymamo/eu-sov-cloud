@@ -9,11 +9,10 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/timothymamo/eu-sov-cloud/test/internal/releasetarget"
-
 	"github.com/google/go-cmp/cmp"
 
 	"github.com/timothymamo/eu-sov-cloud/test/architecture/internal/check"
+	"github.com/timothymamo/eu-sov-cloud/test/internal/releasetarget"
 )
 
 const (

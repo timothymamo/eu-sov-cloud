@@ -1,6 +1,8 @@
 package check_test
 
 import (
+	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/timothymamo/eu-sov-cloud/test/architecture/internal/check"
@@ -12,6 +14,9 @@ import (
 // other document is refused.
 func TestGitHubRelease(t *testing.T) {
 	t.Parallel()
+
+	buildFlow := goreleaserFixture(t, "flow")
+	buildReal := goreleaserFixture(t, "real")
 
 	tests := []struct {
 		name       string
@@ -129,71 +134,17 @@ func TestGitHubRelease(t *testing.T) {
 	}
 }
 
-// The .goreleaser.yaml documents below are copies of two in
-// test/internal/releasetarget, kept here so each case adds a release section to
-// a build releasetarget.Read accepts.
-// reads, kept here so each case adds a release section to a build ReleaseTarget accepts.
-const (
-	// buildFlow writes the goos and goarch lists in flow form, as
-	// .goreleaser.yaml does.
-	buildFlow = `version: 2
+// goreleaserFixture returns the .goreleaser.yaml document name of
+// test/internal/releasetarget/testdata, the one copy of the builds that
+// releasetarget.Read accepts, so a case here only adds a release section to
+// a build the release-target reader reads.
+func goreleaserFixture(t *testing.T, name string) string {
+	t.Helper()
 
-project_name: eusov
+	doc, err := os.ReadFile(filepath.Join("..", "..", "..", "internal", "releasetarget", "testdata", name+".goreleaser.yaml"))
+	if err != nil {
+		t.Fatal(err)
+	}
 
-builds:
-  - id: eusov
-    main: ./cmd/eusov
-    binary: eusov
-    env:
-      - CGO_ENABLED=0
-    flags:
-      - -trimpath
-    goos: [linux, darwin, windows]
-    goarch: [amd64, arm64]
-
-archives:
-  - formats: [tar.gz]
-`
-
-	// buildReal is this repository's .goreleaser.yaml in the shape the release
-	// document really has: before hooks, archives, checksum and changelog
-	// around one build. The check may refuse a top-level key that could change
-	// what the release builds, so the document the release actually builds
-	// from must stay accepted, character for character.
-	buildReal = `version: 2
-
-project_name: eusov
-
-before:
-  hooks:
-    - go mod tidy
-
-builds:
-  - id: eusov
-    main: ./cmd/eusov
-    binary: eusov
-    env:
-      - CGO_ENABLED=0
-    flags:
-      - -trimpath
-    ldflags:
-      - -s -w
-      - -X github.com/timothymamo/eu-sov-cloud/internal/version.version={{ .Version }}
-      - -X github.com/timothymamo/eu-sov-cloud/internal/version.commit={{ .ShortCommit }}
-      - -X github.com/timothymamo/eu-sov-cloud/internal/version.date={{ .Date }}
-    goos: [linux, darwin, windows]
-    goarch: [amd64, arm64]
-
-archives:
-  - formats: [tar.gz]
-    format_overrides:
-      - goos: windows
-        formats: [zip]
-
-checksum:
-  name_template: checksums.txt
-
-changelog:
-  use: github
-`
-)
+	return string(doc)
+}

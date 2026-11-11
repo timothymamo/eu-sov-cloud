@@ -65,9 +65,13 @@
 // offline. TestLintLoadsEveryGoFile reads the release targets from
 // .goreleaser.yaml with test/internal/releasetarget, the reader
 // test/architecture holds the release to, and counts a file as loaded when the
-// go command loads it for any of them with cgo off, as the release builds
-// them; a file only for one release platform passes, and a platform the
-// release gains is one the test holds files to. TestUnloadedGoFilesProbe pins
+// go command loads it for any of them with cgo off and the baseline GOAMD64
+// and GOARM64 levels, as the release builds them; a file only for one release
+// platform passes, and a platform the release gains is one the test holds
+// files to. A file only a cgo build compiles is refused on purpose: the
+// release builds with CGO_ENABLED=0, and only the release targets count
+// toward loaded, not make lint's native run with cgo on, which the release
+// never ships. TestUnloadedGoFilesProbe pins
 // its helper on a probe module (testdata/platformprobe).
 //
 // TestNoInterfaceDeclaresACloudWrite and TestNoTypeHidesACloudSDKType close
