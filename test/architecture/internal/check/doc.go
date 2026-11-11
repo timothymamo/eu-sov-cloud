@@ -13,9 +13,16 @@
 // for an entry ending in $, by string prefix for one ending in /. AllowList
 // refuses a prefix entry that does not end in /, and a rule whose deny list
 // names a path its allow list allows, since depguard then decides by entry
-// length. A third-party package an allowed import reaches, and everything it
-// imports, is exempt: depguard lints no file of a dependency. Every other
-// package outside the module is reported. A package only a test imports is not
+// length. A third-party package that in-module packages import only where a
+// strict rule holds and allows the import, and everything it imports that no
+// in-module package imports directly, is exempt: depguard lints no file of a
+// dependency. Any other package outside the module that the layers reach is
+// reported. The exemption reads the strict allow lists only: the lax deny
+// rules (go-cmp-only-in-tests, cloud-sdks-only-in-provider-adapters) are held
+// by depguard in make lint alone, as is a third-party import in cmd/eusov or
+// internal/cli, which no checked rule holds. It trusts the import path, which
+// is sound because the root go.mod may hold no replace directive
+// (TestRootModuleHasNoReplace). A package only a test imports is not
 // listed by go list -deps, so it is not placed itself. Sources holds every
 // package of the module, layer or not, to the rules that do not depend on a
 // rule: it must belong to the main module, sit in the directory its import

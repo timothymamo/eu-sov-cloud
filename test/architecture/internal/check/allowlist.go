@@ -50,16 +50,34 @@ func (e AllowEntry) written() string {
 // written, $ included, are sorted; the entry that sorts nearest before imp,
 // comparing each with its trailing $ removed, is the only one tested. So with
 // a/ and a/b$ in one list, a/c is refused although a/ alone would allow it.
+//
+// allow must already be sorted by sortAllow: Packages sorts every rule's list
+// once (sortedAllowLists) rather than once per import.
 func allowedBy(allow []AllowEntry, imp string) bool {
-	sorted := slices.Clone(allow)
-	slices.SortFunc(sorted, func(a, b AllowEntry) int { return strings.Compare(a.written(), b.written()) })
-
-	i := sort.Search(len(sorted), func(i int) bool { return sorted[i].Path > imp }) - 1
+	i := sort.Search(len(allow), func(i int) bool { return allow[i].Path > imp }) - 1
 	if i < 0 {
 		return false
 	}
 
-	return sorted[i].allows(imp)
+	return allow[i].allows(imp)
+}
+
+// sortAllow sorts an allow list in place the way depguard sorts it: by the
+// entries as written, $ included.
+func sortAllow(allow []AllowEntry) {
+	slices.SortFunc(allow, func(a, b AllowEntry) int { return strings.Compare(a.written(), b.written()) })
+}
+
+// sortedAllowLists returns a copy of rules whose allow lists are copies sorted
+// by sortAllow, leaving the caller's rules as they are.
+func sortedAllowLists(rules []Rule) []Rule {
+	sorted := slices.Clone(rules)
+	for i := range sorted {
+		sorted[i].Allow = slices.Clone(sorted[i].Allow)
+		sortAllow(sorted[i].Allow)
+	}
+
+	return sorted
 }
 
 // AllowList returns the allow list of the depguard rule named rule in a

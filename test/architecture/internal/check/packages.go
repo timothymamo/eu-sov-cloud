@@ -299,17 +299,30 @@ func decodePackages(r io.Reader) ([]Package, error) {
 // Unlike Sources, it flags a package outside the module path too: the
 // patterns it is given are the layers, so every package they reach outside
 // the standard library must be one of them. The exception is third-party code
-// an allow list lets in: a package outside the module path that a package the
-// rules hold imports through an import every rule holding it allows (a cloud
-// SDK package under a prefix entry of the SDK-only rule), and every package
-// such a package imports, directly or not (smithy-go below the AWS SDK, which
-// no entry names). depguard lints no file of a dependency, so none of these
-// packages breaks a rule, and they are not checked at all: not their module,
-// not their sources, which in a real SDK may hold assembly. Everything else
-// outside the module, which no allow list reaches, is still reported, so the
-// release binary holds no third-party code the rules did not let in.
+// a strict allow list lets in (allowedThirdParty): a package outside the
+// module path that in-module packages import directly only where a strict
+// rule holds the import and every rule holding it allows it (a cloud SDK
+// package under a prefix entry of the SDK-only rule), and every package such
+// a package imports, directly or not, that no in-module package imports
+// directly (smithy-go below the AWS SDK, which no entry names). depguard lints
+// no file of a dependency, so none of these packages breaks a rule, and they
+// are not checked at all: not their module, not their sources, which in a
+// real SDK may hold assembly. Any other package outside the module that the
+// layers reach is still reported.
+//
+// The exemption follows only the strict allow lists in rules. The lax
+// deny rules of .golangci.yml, such as go-cmp-only-in-tests and
+// cloud-sdks-only-in-provider-adapters, cover these packages too and are held
+// by depguard in make lint alone: a non-test go-cmp import in a layer, or an
+// SDK import in a new helper package beside the provider adapters, passes
+// this check where depguard refuses it. Nor does this check speak for the
+// release binary as a whole: its patterns are the layers, not cmd/eusov, and
+// Sources skips every package outside the module, so a third-party import in
+// cmd/eusov, or in internal/cli whose rule allows $gostd and is skipped, is
+// caught by depguard only.
 func Packages(root, module string, rules []Rule, pkgs []Package) []string {
 	m := newModuleRoot(root, module)
+	rules = sortedAllowLists(rules)
 	exempt := allowedThirdParty(m, rules, pkgs)
 
 	var messages []string
@@ -356,27 +369,50 @@ func Packages(root, module string, rules []Rule, pkgs []Package) []string {
 }
 
 // allowedThirdParty returns the import paths of the packages of pkgs outside
-// the module path that an allow list lets in: those a package the rules hold
-// imports through an import every rule holding it allows, its test files'
-// imports included where the rule holds them, and every package of pkgs those
-// import, followed through the import graph.
+// the module path that an allow list lets in, followed through the import
+// graph.
+//
+// The exemption starts at the third-party paths that in-module packages import
+// directly. Such a path is exempt only when every in-module package that
+// imports it is held by a strict rule and every rule holding that import
+// allows it. The path is refused when any importer is held by no rule (one
+// outside every directory, or one a rule excludes), or when a holding rule
+// refuses the import. A refused path is never exempt, even when an exempt
+// package also imports it. Otherwise one in-module package no rule holds could
+// import smithy-go directly because the SDK's closure lets it in for the
+// adapter. From the exempt paths the exemption follows every package they
+// import that no in-module package imports directly: depguard lints no file of
+// a dependency.
+//
+// A test file's import counts as held only by the covering rules that hold
+// tests (Tests), as depguard lints a test file only under a rule whose files:
+// list matches it. The check cannot observe that today: go list -deps without
+// -test never lists a package that only a test imports. It is kept for parity
+// with depguard and with packageCheck.imports.
 func allowedThirdParty(m moduleRoot, rules []Rule, pkgs []Package) map[string]bool {
 	byPath := make(map[string]Package, len(pkgs))
 	for _, pkg := range pkgs {
 		byPath[pkg.ImportPath] = pkg
 	}
 
-	exempt := make(map[string]bool)
+	seeds := make(map[string]bool)
+	refused := make(map[string]bool)
 
-	var queue []string
-
-	reach := func(imp string) {
-		if _, inModule := m.rel(imp); inModule || exempt[imp] {
+	// judge records one direct import of a third-party path: allowed when the
+	// rules holding it all allow it, refused when none holds it or one
+	// refuses it.
+	judge := func(holding []Rule, imp string) {
+		if _, inModule := m.rel(imp); inModule {
 			return
 		}
 
-		exempt[imp] = true
-		queue = append(queue, imp)
+		if len(holding) == 0 || slices.ContainsFunc(holding, func(r Rule) bool { return !allowedBy(r.Allow, imp) }) {
+			refused[imp] = true
+
+			return
+		}
+
+		seeds[imp] = true
 	}
 
 	for _, pkg := range pkgs {
@@ -390,25 +426,33 @@ func allowedThirdParty(m moduleRoot, rules []Rule, pkgs []Package) map[string]bo
 		}
 
 		covering, _ := rulesFor(rules, rel)
-		if len(covering) == 0 {
-			continue
+		testing := slices.DeleteFunc(slices.Clone(covering), func(r Rule) bool { return !r.Tests })
+
+		for _, imp := range pkg.Imports {
+			judge(covering, imp)
 		}
 
-		tests := slices.ContainsFunc(covering, func(r Rule) bool { return r.Tests })
+		for _, imp := range slices.Concat(pkg.TestImports, pkg.XTestImports) {
+			judge(testing, imp)
+		}
+	}
 
-		imports := slices.Clone(pkg.Imports)
-		if tests {
-			imports = append(imports, pkg.TestImports...)
-			imports = append(imports, pkg.XTestImports...)
+	exempt := make(map[string]bool)
+
+	var queue []string
+
+	reach := func(imp string) {
+		if _, inModule := m.rel(imp); inModule || exempt[imp] || refused[imp] {
+			return
 		}
 
-		for _, imp := range imports {
-			if slices.ContainsFunc(covering, func(r Rule) bool { return !allowedBy(r.Allow, imp) }) {
-				continue
-			}
+		exempt[imp] = true
+		queue = append(queue, imp)
+	}
 
-			reach(imp)
-		}
+	// The order the seeds are reached in does not change the set returned.
+	for imp := range seeds {
+		reach(imp)
 	}
 
 	for len(queue) != 0 {

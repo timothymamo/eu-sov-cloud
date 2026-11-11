@@ -65,8 +65,14 @@
 // TestCloudAdapterSDKRuleHoldsItsSDKProbeForEveryReleaseTarget passes a fixture
 // adapter that imports a stand-in SDK: the SDK package and what it imports are
 // third-party code an allowed import reaches, which depguard never lints, so
-// the check exempts them, while a third-party package no allow list reaches is
-// still reported. TestOnlyTheSDKRuleHoldsPrefixEntries keeps prefix entries,
+// the check exempts them, while a third-party package that a package no
+// strict rule holds imports directly, or that no allow list reaches, is still
+// reported. The exemption reads the strict allow lists only: the lax deny
+// rules (go-cmp-only-in-tests, cloud-sdks-only-in-provider-adapters) and any
+// third-party import in cmd/eusov or internal/cli are held by depguard in make
+// lint alone. It trusts the import path, which TestRootModuleHasNoReplace
+// keeps sound: the root go.mod may replace no module.
+// TestOnlyTheSDKRuleHoldsPrefixEntries keeps prefix entries,
 // which must end in /, to that rule.
 //
 // The checks are tests: they run in make test, make check and CI's make cover,

@@ -228,10 +228,14 @@ hand-written GCP package, add an entry for it, a probe line only it refuses and 
   end in `/`, matched as depguard matches them (only the entry sorted nearest before an import
   decides), the two directories it excludes and its test files, integration tests included. The
   SDK packages an allowed import reaches, and their own dependencies, are exempt, as depguard
-  lints no file of a dependency. `go list -deps` lists
-  the imports of a held package's tests but not those imported packages themselves, so a package
-  only a test imports is checked against the test's allow list, not for its own module, directory
-  or non-Go sources.
+  lints no file of a dependency, unless a package no strict rule holds imports one directly. The
+  exemption trusts the import path, which is sound only because the root `go.mod` may hold no
+  `replace` directive (`test/architecture/gomod_test.go`). It reads the strict allow lists only:
+  the lax deny rules (`go-cmp-only-in-tests`, `cloud-sdks-only-in-provider-adapters`) and any
+  third-party import in `cmd/eusov` or `internal/cli` are held by depguard in `make lint` alone.
+  `go list -deps` lists the imports of a held package's tests but not those imported packages
+  themselves, so a package only a test imports is checked against the test's allow list, not for
+  its own module, directory or non-Go sources.
 - **Files lint never loads**: a file behind a build tag other than `integration` and `e2e`, a
   `//go:build ignore` helper, and the `testdata`, `_` and `.` directories `./...` skips. `test/lint`
   fails on such a file, and on an imported package in such a directory. A main package there, run

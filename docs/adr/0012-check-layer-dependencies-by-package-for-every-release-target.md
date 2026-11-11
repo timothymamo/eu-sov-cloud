@@ -75,15 +75,25 @@ matches an import as depguard v2.2.1 does: the allow entries are sorted as writt
 and only the entry nearest before the import decides, so `a/b$` shadows `a/` for `a/c`. A prefix
 entry must end in `/` (`os` would also allow `osfoo`), and a rule whose deny list names a path its
 allow list allows is refused, since depguard then decides by entry length; the deny list is read
-fail-closed. A third-party package that a held package reaches through an import its rules allow,
-and every package that one imports, is exempt from the check, sources included: depguard lints no
-file of a dependency, and a real SDK may hold assembly. Every other package outside the module is
-still reported. The check anchors a rule's `**/<dir>/**` and `!**/<dir>/**` at the module root,
-while depguard matches them at any depth of the file path, so a nested path such as
+fail-closed. A third-party package is exempt from the check, sources included, when every in-module
+package that imports it directly is held by a strict rule and every rule holding that import allows
+it; so is every package it imports that no in-module package imports directly. depguard lints no
+file of a dependency, and a real SDK may hold assembly. A third-party package that a package no
+strict rule holds (one outside every directory, or one a rule excludes) imports directly is
+reported, as is one no allow list reaches. The exemption trusts the import path, which is sound only
+because the root `go.mod` may hold no `replace` directive (`TestRootModuleHasNoReplace`): a replace
+would let a fork stand in for a path a prefix entry allows. It reads the strict allow lists only:
+the lax deny rules, such as `go-cmp-only-in-tests` and `cloud-sdks-only-in-provider-adapters`, are
+held by depguard in `make lint` alone, so a non-test go-cmp import or an SDK import in a new helper
+beside the provider adapters passes this check and fails lint. A third-party import in `cmd/eusov`
+or `internal/cli` is also lint's alone: the layers do not include `cmd/eusov`, `internal/cli`'s
+rule allows `$gostd` and is skipped, and `check.Sources` skips every package outside the module.
+The check anchors a rule's `**/<dir>/**` and `!**/<dir>/**` at the module root, while depguard
+matches them at any depth of the file path, so a nested path such as
 `internal/adapter/target/x/internal/adapter/source/y` is read differently; an exclusion must lie
-under one of its rule's directories. A
-package that only a test imports is not itself listed by `go list -deps`, so its own placement
-(module, directory, sources) is not checked; the importing test's allow list is. A further
+under one of its rule's directories. A package that only a test imports is not itself listed by
+`go list -deps`, so its own placement (module, directory, sources) is not checked; the importing
+test's allow list is. A further
 test refuses a line directive (`//line ` or `/*line `, found with `go/scanner`) in any Go file of the
 repository, testdata and `_` directories included, and any symlink. The files are those
 `git ls-files --cached --others --exclude-standard` lists: everything tracked, and everything
