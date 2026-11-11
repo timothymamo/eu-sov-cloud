@@ -56,7 +56,7 @@ make check             # lint + test + govulncheck: must pass before every commi
 make test              # unit + contract tests, race detector, no network
 make test-integration  # real cloud APIs, read-only credentials (never in default CI)
 make test-e2e          # build the binary and run it against testdata fixtures
-make lint              # golangci-lint, including architecture rules
+make lint              # golangci-lint and test/lint, including architecture rules
 make fmt               # gofumpt + goimports
 make build             # ./bin/eusov
 ```

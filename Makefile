@@ -37,8 +37,9 @@ fmt: ## Format code (gofumpt + goimports via golangci-lint)
 	golangci-lint fmt
 
 .PHONY: lint
-lint: ## Lint, including the architecture (depguard) rules
+lint: ## Lint, including the architecture (depguard) rules and the source rules in test/lint
 	golangci-lint run
+	go test -count=1 ./test/lint/
 
 .PHONY: tidy
 tidy: ## Tidy go.mod and go.sum

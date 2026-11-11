@@ -1,7 +1,7 @@
 // Package lint holds rules on the repository's Go source that golangci-lint
-// cannot express, written as plain tests. They carry no build tag, so make
-// test, make check and make cover (CI's Test job) run them. The package has no
-// code of its own.
+// cannot express, written as plain tests. make lint runs them after
+// golangci-lint, and as they carry no build tag, make test, make check and make
+// cover (CI's Test job) run them too. The package has no code of its own.
 //
 // TestNoNolintSilencesDepguard refuses every nolint directive that would hide a
 // depguard issue, which is how the dependency rule is enforced
