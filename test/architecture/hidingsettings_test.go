@@ -31,3 +31,22 @@ func TestGolangciSettingsHideNoIssue(t *testing.T) {
 		t.Error(problem)
 	}
 }
+
+// TestRepositoryReadsOnlyGolangciYML pins that `make lint` reads the
+// .golangci.yml the check above reads. golangci-lint looks its config up
+// through viper in the order .golangci.json, .golangci.toml, .golangci.yaml,
+// .golangci.yml, and takes the first it finds, so another of those documents at
+// the root, which git could commit, would run in place of this one: forbidigo
+// off, and an exit code 0 with every issue hidden (issue #81).
+func TestRepositoryReadsOnlyGolangciYML(t *testing.T) {
+	t.Parallel()
+
+	stray, err := check.StrayLintConfigs(t.Context(), repositoryRoot(t))
+	if err != nil {
+		t.Fatalf("StrayLintConfigs(): %v", err)
+	}
+
+	for _, message := range stray {
+		t.Error(message)
+	}
+}
