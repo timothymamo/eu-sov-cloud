@@ -167,11 +167,11 @@ func TestBodyReadTimeoutReleasesTheSlot(t *testing.T) {
 		t.Fatalf("writing the stalled request: %v", err)
 	}
 
-	answer, rec := stalledAnswer(t, conn)
+	status, askedToClose, rec := stalledAnswer(t, conn)
 
-	if answer.StatusCode != http.StatusBadRequest {
+	if status != http.StatusBadRequest {
 		t.Fatalf("the stalled request was answered %d, want %d; body: %q",
-			answer.StatusCode, http.StatusBadRequest, rec.Body.String())
+			status, http.StatusBadRequest, rec.Body.String())
 	}
 
 	requireHardeningHeaders(t, rec)
@@ -179,7 +179,7 @@ func TestBodyReadTimeoutReleasesTheSlot(t *testing.T) {
 
 	// The answer announces the close and the server performs it: a request
 	// that goes on holding an open connection leaks one per stalled body.
-	if !answer.Close {
+	if !askedToClose {
 		t.Error("the answer to the stalled body does not ask for the connection to close, want resp.Close == true")
 	}
 
@@ -230,11 +230,13 @@ func TestBodyReadTimeoutReleasesTheSlot(t *testing.T) {
 const closeBound = 5 * time.Second
 
 // stalledAnswer reads client A's answer within the settle bound, with its body,
-// and returns the response and a recorder carrying the same status, headers and
-// body, so the test can hold the answer to the documented error shape. It fails
-// the test when the server neither answers nor closes within the bound, because
-// the documented answer is 400 invalid_request, not a bare close.
-func stalledAnswer(t *testing.T, conn net.Conn) (*http.Response, *httptest.ResponseRecorder) {
+// and returns what the test asserts on: the status code, whether the answer asks
+// for the connection to close, and a recorder carrying the same status, headers
+// and body, so the test can hold the answer to the documented error shape. The
+// response itself is not returned, because its body is read and closed here. It
+// fails the test when the server neither answers nor closes within the bound,
+// because the documented answer is 400 invalid_request, not a bare close.
+func stalledAnswer(t *testing.T, conn net.Conn) (int, bool, *httptest.ResponseRecorder) {
 	t.Helper()
 
 	if err := conn.SetReadDeadline(time.Now().Add(settle)); err != nil {
@@ -268,7 +270,7 @@ func stalledAnswer(t *testing.T, conn net.Conn) (*http.Response, *httptest.Respo
 
 	rec.Body.Write(body)
 
-	return resp, rec
+	return resp.StatusCode, resp.Close, rec
 }
 
 // requireClosedConnection pins that the server closed conn after answering: the
