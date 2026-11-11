@@ -37,6 +37,11 @@
       matchDepNames: ['golangci/golangci-lint'],
       groupName: 'golangci-lint',
     },
+    {
+      description: 'govulncheck: CI and dev/lima.yaml stay on the same version',
+      matchDepNames: ['golang.org/x/vuln'],
+      groupName: 'govulncheck',
+    },
   ],
   customManagers: [
     {
