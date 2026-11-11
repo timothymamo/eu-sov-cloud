@@ -25,11 +25,12 @@ var (
 	//go:embed testdata/flow.goreleaser.yaml
 	buildFlow string
 
-	// buildReal is this repository's .goreleaser.yaml in the shape the release
-	// document really has: before hooks, archives, checksum and changelog
-	// around one build. The check may refuse a top-level key that could change
-	// what the release builds, so the document the release actually builds
-	// from must stay accepted, character for character.
+	// buildReal is a snapshot of the shape of this repository's
+	// .goreleaser.yaml: before hooks, archives, checksum and changelog around
+	// one build. It is not a copy of that file. The check may refuse a
+	// top-level key that could change what the release builds, so a document
+	// of this shape must stay accepted; test/architecture/repository_test.go
+	// checks the real .goreleaser.yaml itself.
 	//
 	//go:embed testdata/real.goreleaser.yaml
 	buildReal string

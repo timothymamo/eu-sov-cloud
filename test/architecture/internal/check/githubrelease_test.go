@@ -135,9 +135,11 @@ func TestGitHubRelease(t *testing.T) {
 }
 
 // goreleaserFixture returns the .goreleaser.yaml document name of
-// test/internal/releasetarget/testdata, the one copy of the builds that
-// releasetarget.Read accepts, so a case here only adds a release section to
-// a build the release-target reader reads.
+// test/internal/releasetarget/testdata, a snapshot of the shape of this
+// repository's .goreleaser.yaml (before hooks, archives, checksum and
+// changelog around one build) that releasetarget.Read accepts, so a case here
+// only adds a release section to a build the release-target reader reads.
+// test/architecture/repository_test.go checks the real .goreleaser.yaml itself.
 func goreleaserFixture(t *testing.T, name string) string {
 	t.Helper()
 
