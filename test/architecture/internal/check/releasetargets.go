@@ -25,9 +25,9 @@ type Target struct {
 // change what the release compiles:
 //
 //   - The top level may hold only version, project_name, before, builds,
-//     archives, checksum and changelog. Any other key is refused: a top-level
-//     env applies to every build, gomod picks the Go binary that builds, and a
-//     key the check does not know may do either.
+//     archives, checksum, changelog and release. Any other key is refused: a
+//     top-level env applies to every build, gomod picks the Go binary that
+//     builds, and a key the check does not know may do either.
 //   - before may hold only hooks, and they must be exactly [go mod tidy]: a
 //     hook runs before the build and could rewrite what it compiles.
 //   - builds must hold exactly one entry. It may hold only id, main, binary,
@@ -81,10 +81,11 @@ func topLevel(lines []line) ([]line, error) {
 
 	for _, e := range entries {
 		switch e.key {
-		case "version", "project_name", "archives", "checksum", "changelog":
+		case "version", "project_name", "archives", "checksum", "changelog", "release":
 			// The format version, the project's name, and how the built
-			// binaries are packed, summed and announced: none changes what is
-			// compiled.
+			// binaries are packed, summed, announced and published: none
+			// changes what is compiled. GitHubRelease holds release to its
+			// one setting.
 		case "before":
 			err = checkBefore(e)
 		case "builds":

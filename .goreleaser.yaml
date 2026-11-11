@@ -51,3 +51,9 @@ changelog:
       - '^docs:'
       - '^test:'
       - '^chore:'
+
+# A tag with a pre-release suffix (v0.1.0-rc.2) is a GitHub pre-release, never
+# the latest release, as its image gets no X.Y and no latest tag (ADR 0015,
+# issue #92). test/architecture (check.GitHubRelease) pins this section.
+release:
+  prerelease: auto

@@ -1,6 +1,6 @@
 # 0015. Publish the signed container image to GHCR from release jobs of their own, with docker buildx
 
-- Status: Accepted
+- Status: Accepted. Amended by issue #92: a pre-release tag is a GitHub pre-release too (Tags, below).
 - Date: 2026-11-11
 
 ## Context
@@ -76,7 +76,10 @@ attestations, pushed to the registry beside the image.
   `git tag -l 'v*.*.*' --merged refs/remotes/origin/main` by version, leaving out pre-releases, and
   passes `true` or `false` to `metadata-action` (`flavor: latest=...`). A patch to
   an older line (`v1.2.4` after `v1.3.0`) does not move `latest`, which `latest=auto` would. A
-  pre-release tag (`v0.1.0-rc.1`) gets only its own tag: no `X.Y`, no `latest`. Counting only tags
+  pre-release tag (`v0.1.0-rc.1`) gets only its own tag: no `X.Y`, no `latest`. The GitHub release
+  follows the same rule (issue #92): `.goreleaser.yaml` sets `release.prerelease: auto`, so a tag with
+  a pre-release suffix is published as a GitHub pre-release, never the latest release, and a plain
+  `vX.Y.Z` as a normal one; `check.GitHubRelease` pins that section to exactly that one key. Counting only tags
   merged into `main` keeps a stray tag off `main`, one the guard refused and nobody deleted, from
   outranking every later release and freezing `latest`.
 - **One release at a time.** The workflow's `concurrency` group `release`, with
