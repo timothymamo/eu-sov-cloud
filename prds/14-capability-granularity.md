@@ -342,7 +342,7 @@ Each milestone ships as one PR. Milestones 2 and 3 depend only on 1, and can run
    The taxonomy adds `node-high-availability` and `zone-high-availability`. `high-availability` stays
    until milestone 4. Unit tests in `taxonomy`, `catalog` and `mapping`, against test catalogs, pin the
    first three *Vocabulary* criteria. No snapshot changes, so no golden changes.
-2. [ ] **Scaleway snapshot.** In this milestone:
+2. [x] **Scaleway snapshot.** In this milestone:
    - re-verify against the live pages, as issue #15 did, the scope of every high-availability claim,
      Kapsule's included, and replace each claim with its scoped capability;
    - add tier variants: Kapsule with the Dedicated control plane, Managed Database with the High
