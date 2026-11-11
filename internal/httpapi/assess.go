@@ -11,6 +11,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/timothymamo/eu-sov-cloud/internal/app/analysis"
 	"github.com/timothymamo/eu-sov-cloud/internal/domain/inventory"
@@ -35,7 +36,7 @@ const (
 func (a *api) assess(w http.ResponseWriter, r *http.Request) {
 	if !isJSONRequest(r) {
 		writeError(w, http.StatusUnsupportedMediaType, "unsupported_media_type",
-			"the request body must be application/json")
+			"the request body must be application/json in utf-8")
 
 		return
 	}
@@ -105,23 +106,47 @@ func (a *api) assess(w http.ResponseWriter, r *http.Request) {
 }
 
 // isJSONRequest reports whether the request's Content-Type is
-// application/json, with or without parameters.
+// application/json, with no charset parameter or charset utf-8 (compared
+// ignoring case): the body is decoded as UTF-8 only.
 func isJSONRequest(r *http.Request) bool {
-	mediaType, _, err := mime.ParseMediaType(r.Header.Get("Content-Type"))
+	mediaType, params, err := mime.ParseMediaType(r.Header.Get("Content-Type"))
+	if err != nil || mediaType != jsonMediaType {
+		return false
+	}
 
-	return err == nil && mediaType == jsonMediaType
+	charset, ok := params["charset"]
+
+	return !ok || strings.EqualFold(charset, "utf-8")
 }
 
-// readBody reads the whole body, up to the cap. It returns a status other than
-// 0 when it cannot: 413 for a body over the cap, 400 for one that cannot be
-// read.
+// readBody reads the whole body, up to the cap and within the body read
+// timeout. It returns a status other than 0 when it cannot: 413 for a body
+// over the cap, 400 for one that cannot be read in time or at all.
+//
+// The cap is http.MaxBytesReader's, which counts the bytes read, so a chunked
+// body or one that states a smaller ContentLength is refused too; a stated
+// ContentLength over the cap only saves the read. The read deadline is set on
+// the server's connection through http.ResponseController; a writer that
+// cannot take one (a test recorder) reads without it. A body read in full
+// clears the deadline. A failed read leaves it, and asks the server to close
+// the connection: the server drains an unread body after the handler, which
+// must not wait on a client that stalled.
 func (a *api) readBody(w http.ResponseWriter, r *http.Request) ([]byte, int) {
 	if r.ContentLength > a.cfg.maxBodyBytes {
 		return nil, http.StatusRequestEntityTooLarge
 	}
 
+	controller := http.NewResponseController(w)
+	deadline := controller.SetReadDeadline(time.Now().Add(a.cfg.bodyReadTimeout)) == nil
+
 	body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, a.cfg.maxBodyBytes))
+	if err == nil && deadline {
+		_ = controller.SetReadDeadline(time.Time{})
+	}
+
 	if err != nil {
+		w.Header().Set("Connection", "close")
+
 		var tooLarge *http.MaxBytesError
 		if errors.As(err, &tooLarge) {
 			return nil, http.StatusRequestEntityTooLarge
@@ -266,7 +291,8 @@ type mediaRange struct {
 }
 
 // parseAccept parses an Accept header leniently: an entry that is not a media
-// range, or has an invalid q, is skipped.
+// range, or has an invalid q (not a number in [0, 1], NaN included), is
+// skipped.
 func parseAccept(accept string) []mediaRange {
 	var ranges []mediaRange
 
@@ -287,7 +313,8 @@ func parseAccept(accept string) []mediaRange {
 			}
 
 			parsed, err := strconv.ParseFloat(strings.TrimSpace(value), 64)
-			if err != nil || parsed < 0 || parsed > 1 {
+			// Written so that NaN, which ParseFloat accepts, fails it too.
+			if err != nil || !(parsed >= 0 && parsed <= 1) {
 				valid = false
 
 				break

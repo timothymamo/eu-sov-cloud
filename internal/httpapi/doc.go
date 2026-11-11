@@ -68,8 +68,10 @@
 //     leaks neither the token nor its length. An empty or malformed token is a
 //     configuration error from New. /healthz and /readyz stay open.
 //   - WithAllowedHosts, when set, names the Host values served, compared
-//     ignoring case; any other Host is 421 misdirected_request, before any
-//     other check. /healthz and /readyz are exempt. It defends a server on
+//     ignoring case (an entry without a port matches any port, one with a
+//     port that port only); any other Host is 421 misdirected_request, before
+//     any other check. The Host is read from the request, never from a
+//     forwarded header. /healthz and /readyz are exempt. It defends a server on
 //     loopback against DNS rebinding.
 //   - CORS is off unless WithAllowedOrigins names origins. New refuses an entry
 //     that is null or *, has a path, query, fragment or user info, or a scheme

@@ -4,7 +4,7 @@
     "title": "eusov-server API",
     "version": "1",
     "summary": "Assess an inventory against EU cloud targets.",
-    "description": "The HTTP API of eusov-server (PRD #103, docs/adr/0019). It takes inventory documents (docs/adr/0006) and answers with the JSON report (docs/adr/0018) or the Markdown report. It is stateless: nothing from a request is stored or logged. TLS and users belong to a reverse proxy. Every response, errors included, sets Cache-Control: no-store and X-Content-Type-Options: nosniff. Every error has the shape of the Error schema. Two errors belong to no operation: a path no route has is 404 not_found (components.responses.NotFound), and a method a path does not declare is 405 method_not_allowed with an Allow header (components.responses.MethodNotAllowed). Within /v1/, adding a route, a response key, a header or an error code is not breaking; a breaking change is a /v2/ route.",
+    "description": "The HTTP API of eusov-server (PRD #103, docs/adr/0019). It takes inventory documents (docs/adr/0006) and answers with the JSON report (docs/adr/0018) or the Markdown report. It is stateless: nothing from a request is stored or logged. TLS and users belong to a reverse proxy. Every response, errors included, sets Cache-Control: no-store and X-Content-Type-Options: nosniff. Every error has the shape of the Error schema. Two errors belong to no operation: a path no route has is 404 not_found (components.responses.NotFound), and a method a path does not declare is 405 method_not_allowed with an Allow header (components.responses.MethodNotAllowed). When the server is configured with an allow-list of hosts, a request whose Host is not in it is 421 misdirected_request (components.responses.MisdirectedRequest) on every path but /healthz and /readyz, before any other check, a 404 included. When the server is configured with an allow-list of CORS origins, every response carries Vary: Origin, and a response to an allowed Origin on a /v1/ path carries Access-Control-Allow-Origin with that origin and Access-Control-Expose-Headers: Retry-After, WWW-Authenticate. Within /v1/, adding a route, a response key, a header or an error code is not breaking; a breaking change is a /v2/ route.",
     "license": {
       "name": "MIT",
       "identifier": "MIT"
@@ -44,10 +44,10 @@
           "assessments"
         ],
         "summary": "Assess an inventory against one target, or compare several.",
-        "description": "One target answers with an assessment document; several, or [\"all\"], with a comparison document, in sorted key order. The JSON body is byte for byte what `eusov assess --format json` prints for the same inventory and targets, with the inventory named inventory.json. With Accept text/markdown (or text/*) the answer is the Markdown report, byte for byte the CLI's. No Accept, */*, application/* or application/json gives JSON; a range with q=0 is excluded; nothing acceptable is 406. At most a configured number of assessments run at once; over it the request is refused at once with 503 busy.",
+        "description": "One target answers with an assessment document; several, or [\"all\"], with a comparison document, in sorted key order. The JSON body is byte for byte what `eusov assess --format json` prints for the same inventory and targets, with the inventory named inventory.json. With Accept text/markdown (or text/*) the answer is the Markdown report, byte for byte the CLI's. No Accept, */*, application/* or application/json gives JSON; a range with q=0 is excluded, and one whose q is not a number in [0, 1] is skipped; nothing acceptable is 406. At most a configured number of assessments run at once; over it the request is refused at once with 503 busy.",
         "requestBody": {
           "required": true,
-          "description": "Content-Type must be application/json (parameters such as charset=utf-8 allowed), else 415. The body is capped at the inventory reader's cap plus 64 KiB (413 over it), and decoded strictly: an unknown key, a repeated key (also ignoring case), a wrong type, null, invalid UTF-8 or trailing data is 400 invalid_request.",
+          "description": "Content-Type must be application/json, else 415; a charset parameter other than utf-8 (compared ignoring case) is 415 too, as the body is decoded as UTF-8 only. The body is capped at the inventory reader's cap plus 64 KiB (413 over it), and decoded strictly: an unknown key, a repeated key (also ignoring case), a wrong type, null, invalid UTF-8 or trailing data is 400 invalid_request.",
           "content": {
             "application/json": {
               "schema": {
@@ -103,6 +103,9 @@
           "415": {
             "$ref": "#/components/responses/UnsupportedMediaType"
           },
+          "421": {
+            "$ref": "#/components/responses/MisdirectedRequest"
+          },
           "500": {
             "$ref": "#/components/responses/Internal"
           },
@@ -113,7 +116,7 @@
       },
       "options": {
         "summary": "CORS preflight.",
-        "description": "Only when the server is configured with an allow-list of origins and the request's Origin is in it: 204 with the CORS headers. Any other OPTIONS request, including one from an origin not in the list, is 405. Never requires the token.",
+        "description": "Only when the server is configured with an allow-list of origins and the request's Origin is in it: 204 with the CORS headers. Any other OPTIONS request, including one from an origin not in the list, is 405. Never requires the token. A Host outside the configured allow-list of hosts is 421, before the preflight is answered.",
         "security": [
           {}
         ],
@@ -129,6 +132,9 @@
               },
               "Access-Control-Allow-Origin": {
                 "$ref": "#/components/headers/Access-Control-Allow-Origin"
+              },
+              "Access-Control-Expose-Headers": {
+                "$ref": "#/components/headers/Access-Control-Expose-Headers"
               },
               "Access-Control-Allow-Methods": {
                 "$ref": "#/components/headers/Access-Control-Allow-Methods"
@@ -180,6 +186,9 @@
           "401": {
             "$ref": "#/components/responses/Unauthorized"
           },
+          "421": {
+            "$ref": "#/components/responses/MisdirectedRequest"
+          },
           "500": {
             "$ref": "#/components/responses/Internal"
           }
@@ -187,7 +196,7 @@
       },
       "options": {
         "summary": "CORS preflight.",
-        "description": "Only when the server is configured with an allow-list of origins and the request's Origin is in it: 204 with the CORS headers. Any other OPTIONS request, including one from an origin not in the list, is 405. Never requires the token.",
+        "description": "Only when the server is configured with an allow-list of origins and the request's Origin is in it: 204 with the CORS headers. Any other OPTIONS request, including one from an origin not in the list, is 405. Never requires the token. A Host outside the configured allow-list of hosts is 421, before the preflight is answered.",
         "security": [
           {}
         ],
@@ -203,6 +212,9 @@
               },
               "Access-Control-Allow-Origin": {
                 "$ref": "#/components/headers/Access-Control-Allow-Origin"
+              },
+              "Access-Control-Expose-Headers": {
+                "$ref": "#/components/headers/Access-Control-Expose-Headers"
               },
               "Access-Control-Allow-Methods": {
                 "$ref": "#/components/headers/Access-Control-Allow-Methods"
@@ -304,7 +316,7 @@
       "bearerAuth": {
         "type": "http",
         "scheme": "bearer",
-        "description": "Optional. When the server is configured with a token, every /v1/ request must send Authorization: Bearer <token>, else 401 unauthorized with WWW-Authenticate: Bearer, checked before the body is read. /healthz and /readyz never require it."
+        "description": "Optional. When the server is configured with a token (an RFC 6750 token68), every /v1/ request must send Authorization: Bearer <token>, else 401 unauthorized with WWW-Authenticate: Bearer, checked before the body is read. /healthz and /readyz never require it."
       }
     },
     "headers": {
@@ -343,9 +355,16 @@
         }
       },
       "Access-Control-Allow-Origin": {
-        "description": "The request's Origin, only when it is in the configured allow-list; never *.",
+        "description": "The request's Origin, only when it matches the configured allow-list (scheme and host ignoring case, port exactly); never *.",
         "schema": {
           "type": "string"
+        }
+      },
+      "Access-Control-Expose-Headers": {
+        "description": "The response headers a browser at an allowed origin may read: the back-off of 503 busy and the challenge of 401 unauthorized.",
+        "schema": {
+          "type": "string",
+          "const": "Retry-After, WWW-Authenticate"
         }
       },
       "Access-Control-Allow-Methods": {
@@ -369,7 +388,7 @@
         }
       },
       "Vary": {
-        "description": "Origin, whenever CORS headers are set.",
+        "description": "Origin, on every response while the server is configured with an allow-list of CORS origins, whatever the request's Origin.",
         "schema": {
           "type": "string"
         }
@@ -382,7 +401,7 @@
         "properties": {
           "inventory": {
             "type": "object",
-            "description": "An inventory document, version 1 (docs/adr/0006), read with the CLI's inventory reader and its rules; one it refuses is 400 invalid_inventory."
+            "description": "An inventory document, version 1 (docs/adr/0006), read with the CLI's inventory reader and its rules; one it refuses is 400 invalid_inventory, whose message names the position and field at fault (resources[1].category), never the value."
           },
           "targets": {
             "type": "array",
@@ -484,7 +503,7 @@
       },
       "Error": {
         "type": "object",
-        "description": "Every error response. The message never echoes request content beyond a quoted, escaped key or field name.",
+        "description": "Every error response. The message never echoes request content beyond a quoted, escaped key or field name: a refused inventory value is named by its position and field, never by the value.",
         "properties": {
           "error": {
             "type": "object",
@@ -501,6 +520,7 @@
                   "payload_too_large",
                   "unsupported_media_type",
                   "not_acceptable",
+                  "misdirected_request",
                   "busy",
                   "not_ready",
                   "internal"
@@ -640,7 +660,25 @@
         }
       },
       "UnsupportedMediaType": {
-        "description": "The body is not application/json. Codes: unsupported_media_type.",
+        "description": "The body is not application/json, or has a charset other than utf-8. Codes: unsupported_media_type.",
+        "headers": {
+          "Cache-Control": {
+            "$ref": "#/components/headers/Cache-Control"
+          },
+          "X-Content-Type-Options": {
+            "$ref": "#/components/headers/X-Content-Type-Options"
+          }
+        },
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            }
+          }
+        }
+      },
+      "MisdirectedRequest": {
+        "description": "The server is configured with an allow-list of hosts and the request's Host is not in it, compared ignoring case (an entry without a port matches any port). Checked before anything else; /healthz and /readyz are exempt. Codes: misdirected_request.",
         "headers": {
           "Cache-Control": {
             "$ref": "#/components/headers/Cache-Control"

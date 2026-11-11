@@ -209,6 +209,7 @@ var pinnedDepguardRules = []check.DepguardRule{
 		Allow: []string{
 			"bytes$",
 			"context$",
+			"crypto/sha256$",
 			"crypto/subtle$",
 			"encoding/json$",
 			"errors$",
@@ -217,6 +218,7 @@ var pinnedDepguardRules = []check.DepguardRule{
 			"maps$",
 			"mime$",
 			"net/http$",
+			"net/url$",
 			"runtime$",
 			"slices$",
 			"sort$",

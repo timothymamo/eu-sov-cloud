@@ -372,6 +372,7 @@ linters:
           allow:
             - bytes$
             - context$
+            - crypto/sha256$
             - crypto/subtle$
             - encoding/json$
             - errors$
@@ -380,6 +381,7 @@ linters:
             - maps$
             - mime$
             - net/http$
+            - net/url$
             - runtime$
             - slices$
             - sort$

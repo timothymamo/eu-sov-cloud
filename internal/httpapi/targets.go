@@ -1,6 +1,7 @@
 package httpapi
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 )
@@ -34,17 +35,39 @@ type statusDocument struct {
 	Status string `json:"status"`
 }
 
-// targets serves GET /v1/targets: every supported target, sorted by key. A
-// catalog that cannot be loaded is 500 internal.
+// targets serves GET /v1/targets: every supported target, sorted by key. The
+// catalogs are loaded on the first request and the body kept; a catalog that
+// cannot be loaded is 500 internal, and nothing is kept, so the next request
+// loads them again.
 func (a *api) targets(w http.ResponseWriter, r *http.Request) {
-	doc := targetsDocument{Targets: make([]targetEntry, 0, len(a.keys))}
+	// The lock is held while the catalogs load, so concurrent first requests
+	// load each catalog once between them.
+	a.targetsMu.Lock()
+	defer a.targetsMu.Unlock()
 
-	for _, key := range a.keys {
-		cat, err := a.deps.Targets[key]().Catalog(r.Context())
+	if a.targetsBody == nil {
+		body, err := a.loadTargets(r.Context())
 		if err != nil {
 			writeInternal(w)
 
 			return
+		}
+
+		a.targetsBody = body
+	}
+
+	writeBody(w, http.StatusOK, a.targetsBody)
+}
+
+// loadTargets loads every target's catalog and returns the body of GET
+// /v1/targets.
+func (a *api) loadTargets(ctx context.Context) ([]byte, error) {
+	doc := targetsDocument{Targets: make([]targetEntry, 0, len(a.keys))}
+
+	for _, key := range a.keys {
+		cat, err := a.deps.Targets[key]().Catalog(ctx)
+		if err != nil {
+			return nil, err
 		}
 
 		snapshot := cat.Snapshot()
@@ -58,7 +81,7 @@ func (a *api) targets(w http.ResponseWriter, r *http.Request) {
 		})
 	}
 
-	writeJSON(w, http.StatusOK, doc)
+	return json.Marshal(doc)
 }
 
 // healthz serves GET /healthz: the process runs.
