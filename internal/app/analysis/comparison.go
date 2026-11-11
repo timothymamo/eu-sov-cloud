@@ -96,10 +96,14 @@ func validTarget(target Target) error {
 // assesses the inventory against each, compares the assessments with
 // assessment.Compare and renders the comparison with meta to w.
 //
-// meta is checked as Analysis.Run checks it, before any port is called. An error
-// from a port stops the run, nothing is rendered, and the error is wrapped with the stage that failed: "load inventory", "target <key>: load
-// catalog" or "render report". Run checks ctx itself before the first port is
-// called and again before rendering, as Analysis.Run does.
+// meta is checked as Analysis.Run checks it, before any port is called. An
+// error from a port stops the run, nothing is rendered, and the error is
+// wrapped with the stage that failed: "load inventory",
+// `target "<key>": load catalog` (the key is quoted) or "render report".
+//
+// Run checks ctx itself before the first port is called, before each target's
+// catalog is loaded and again before rendering, so a cancelled run stops at
+// the next target instead of loading the remaining catalogs.
 //
 // Blockers are a result, not an error.
 func (c *Comparison) Run(ctx context.Context, w io.Writer, meta ReportMeta) error {
@@ -119,6 +123,10 @@ func (c *Comparison) Run(ctx context.Context, w io.Writer, meta ReportMeta) erro
 	assessed := make([]assessment.TargetAssessment, 0, len(c.targets))
 
 	for _, target := range c.targets {
+		if err := ctx.Err(); err != nil {
+			return fmt.Errorf("target %s: cancelled before loading the catalog: %w", text.Quote(target.Key), err)
+		}
+
 		cat, err := target.Catalog.Catalog(ctx)
 		if err != nil {
 			return fmt.Errorf("target %s: load catalog: %w", text.Quote(target.Key), err)
