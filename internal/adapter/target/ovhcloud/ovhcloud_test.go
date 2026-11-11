@@ -5,7 +5,9 @@
 // the two verdicts PRD 11 asks of the data: categories OVHcloud does not serve
 // are a blocker, and a resource needing high availability is pointed at the
 // offering whose tier provides it. Since ADR 0011 that tier is the 3-AZ variant
-// for zone level and a multi-node plan for the databases. The snapshot document
+// for zone level and a multi-node plan for the databases, and a capability is
+// listed only where the documentation states it in full, which puts read replicas
+// on the Advanced database plan alone. The snapshot document
 // format itself, its strictness, its errors and
 // the SOURCES.md rule are pinned once, in the shared reader's own tests
 // (internal/adapter/target/snapshot). It is black-box: only the package's
@@ -398,9 +400,15 @@ func TestThreeAZVariantsServeHighAvailability(t *testing.T) {
 	variants := []struct {
 		category taxonomy.Category
 		name     string
+		// secondZoneLevelTier says the product reaches zone level in more than one
+		// tier: the databases offer it on the Business multi-node plan and on the
+		// Advanced one. The Advanced plan's name sorts behind the Business plan's,
+		// which stays the best candidate, but it is a Direct candidate too, and it
+		// must still be 3-AZ only.
+		secondZoneLevelTier bool
 	}{
-		{category: taxonomy.DatabaseMySQL, name: "Managed MySQL Multi-node 3-AZ"},
-		{category: taxonomy.DatabasePostgreSQL, name: "Managed PostgreSQL Multi-node 3-AZ"},
+		{category: taxonomy.DatabaseMySQL, name: "Managed MySQL Multi-node 3-AZ", secondZoneLevelTier: true},
+		{category: taxonomy.DatabasePostgreSQL, name: "Managed PostgreSQL Multi-node 3-AZ", secondZoneLevelTier: true},
 		{category: taxonomy.KubernetesManaged, name: "Managed Kubernetes Service 3-AZ"},
 		{category: taxonomy.StorageBlock, name: "Block Storage 3-AZ Regional Classic"},
 		{category: taxonomy.StorageObject, name: "Object Storage 3-AZ"},
@@ -452,9 +460,22 @@ func TestThreeAZVariantsServeHighAvailability(t *testing.T) {
 			}
 
 			for _, c := range got.Candidates[min(1, len(got.Candidates)):] {
-				if c.Fit == mapping.Direct {
+				if c.Fit != mapping.Direct {
+					continue
+				}
+
+				if !tc.secondZoneLevelTier {
 					t.Errorf("Map() also fits %s directly, want %s to be the only direct candidate: no 1-AZ offering meets %s",
 						text.Quote(c.Offering.Name), text.Quote(tc.name), text.Quote(string(taxonomy.ZoneHighAvailability)))
+
+					continue
+				}
+
+				for _, region := range c.Offering.Regions {
+					if !slices.Contains(threeAZRegions(), region) {
+						t.Errorf("Map() also fits %s directly, and it is available in region %s, want every direct candidate beside %s to be 3-AZ only, in %v",
+							text.Quote(c.Offering.Name), text.Quote(region), text.Quote(tc.name), threeAZRegions())
+					}
 				}
 			}
 		})
@@ -465,11 +486,15 @@ func TestThreeAZVariantsServeHighAvailability(t *testing.T) {
 // OVHcloud's databases. A multi-node plan adds high availability, so the snapshot
 // lists a Multi-node variant beside each base offering, at node level in the 1-AZ
 // regions and at zone level in the 3-AZ ones. The base offering is the Discovery
-// plan, one node, which is highly available at neither level. The 3-AZ variant's
-// name keeps the 1-AZ one as its prefix (`<base> Multi-node 3-AZ`), so a resource
-// that needs only node-level high availability or read replicas is pointed at the
-// 1-AZ multi-node plan, which exists in every region, rather than at the 3-AZ one
-// that exists only in MIL and PAR.
+// plan, one node, which is highly available at neither level. ADR 0011 splits the
+// multi-node plan further by tier: the Business plan (`Multi-node`) and the
+// Advanced one (`Multi-node Advanced`) both survive the loss of a node, and both
+// have a 3-AZ variant that survives the loss of a zone. The 3-AZ variants carry
+// the tier before the 3-AZ suffix, so a resource that needs only node-level high
+// availability is pointed at the 1-AZ multi-node plan, which exists in every
+// region, rather than at a 3-AZ one that exists only in MIL and PAR. For a
+// resource that needs zone level, the Business plan's 3-AZ variant wins the tie
+// against the Advanced one by name.
 //
 // It replaces TestDatabaseVariantsBothServeHighAvailability, whose name no longer
 // fits: the two variants no longer both serve high availability at the level the
@@ -492,6 +517,8 @@ func TestDatabaseMultiNodeVariantsServeHighAvailability(t *testing.T) {
 			want: []candidateFit{
 				{Name: "Managed PostgreSQL Multi-node", Fit: mapping.Direct},
 				{Name: "Managed PostgreSQL Multi-node 3-AZ", Fit: mapping.Direct},
+				{Name: "Managed PostgreSQL Multi-node Advanced", Fit: mapping.Direct},
+				{Name: "Managed PostgreSQL Multi-node Advanced 3-AZ", Fit: mapping.Direct},
 				{Name: "Managed PostgreSQL", Fit: mapping.Partial},
 			},
 		},
@@ -501,8 +528,10 @@ func TestDatabaseMultiNodeVariantsServeHighAvailability(t *testing.T) {
 			capability: taxonomy.ZoneHighAvailability,
 			want: []candidateFit{
 				{Name: "Managed PostgreSQL Multi-node 3-AZ", Fit: mapping.Direct},
+				{Name: "Managed PostgreSQL Multi-node Advanced 3-AZ", Fit: mapping.Direct},
 				{Name: "Managed PostgreSQL", Fit: mapping.Partial},
 				{Name: "Managed PostgreSQL Multi-node", Fit: mapping.Partial},
+				{Name: "Managed PostgreSQL Multi-node Advanced", Fit: mapping.Partial},
 			},
 		},
 		{
@@ -512,6 +541,8 @@ func TestDatabaseMultiNodeVariantsServeHighAvailability(t *testing.T) {
 			want: []candidateFit{
 				{Name: "Managed MySQL Multi-node", Fit: mapping.Direct},
 				{Name: "Managed MySQL Multi-node 3-AZ", Fit: mapping.Direct},
+				{Name: "Managed MySQL Multi-node Advanced", Fit: mapping.Direct},
+				{Name: "Managed MySQL Multi-node Advanced 3-AZ", Fit: mapping.Direct},
 				{Name: "Managed MySQL", Fit: mapping.Partial},
 			},
 		},
@@ -521,8 +552,10 @@ func TestDatabaseMultiNodeVariantsServeHighAvailability(t *testing.T) {
 			capability: taxonomy.ZoneHighAvailability,
 			want: []candidateFit{
 				{Name: "Managed MySQL Multi-node 3-AZ", Fit: mapping.Direct},
+				{Name: "Managed MySQL Multi-node Advanced 3-AZ", Fit: mapping.Direct},
 				{Name: "Managed MySQL", Fit: mapping.Partial},
 				{Name: "Managed MySQL Multi-node", Fit: mapping.Partial},
+				{Name: "Managed MySQL Multi-node Advanced", Fit: mapping.Partial},
 			},
 		},
 	}
@@ -537,6 +570,83 @@ func TestDatabaseMultiNodeVariantsServeHighAvailability(t *testing.T) {
 			if got.Fit != mapping.Direct {
 				t.Errorf("Map() fit = %q, want %q: the Multi-node 3-AZ variant offers %s",
 					got.Fit, mapping.Direct, text.Quote(string(tc.capability)))
+			}
+
+			if diff := cmp.Diff(tc.want, fits(got.Candidates)); diff != "" {
+				t.Errorf("Map() candidates mismatch (-want +got):\n%s", diff)
+			}
+		})
+	}
+}
+
+// TestOnlyAdvancedDatabaseVariantsServeReadReplicas pins ADR 0011's target rule
+// that a capability is listed only where the documentation states it in full.
+// OVHcloud's PostgreSQL and MySQL product pages name read replicas on the Advanced
+// plan only, not on the Business one, so the snapshot lists read-replicas on
+// `Multi-node Advanced` and on `Multi-node Advanced 3-AZ` alone. A resource that
+// needs read replicas is therefore pointed at the 1-AZ Advanced plan, which exists
+// in every region, while the Business plan's 3-AZ variant is only Partial.
+func TestOnlyAdvancedDatabaseVariantsServeReadReplicas(t *testing.T) {
+	t.Parallel()
+
+	cat := catalogOf(t)
+
+	tests := []struct {
+		name                string
+		category            taxonomy.Category
+		withoutReadReplicas []string
+		want                []candidateFit
+	}{
+		{
+			name:     "postgresql",
+			category: taxonomy.DatabasePostgreSQL,
+			withoutReadReplicas: []string{
+				"Managed PostgreSQL Multi-node",
+				"Managed PostgreSQL Multi-node 3-AZ",
+			},
+			want: []candidateFit{
+				{Name: "Managed PostgreSQL Multi-node Advanced", Fit: mapping.Direct},
+				{Name: "Managed PostgreSQL Multi-node Advanced 3-AZ", Fit: mapping.Direct},
+				{Name: "Managed PostgreSQL", Fit: mapping.Partial},
+				{Name: "Managed PostgreSQL Multi-node", Fit: mapping.Partial},
+				{Name: "Managed PostgreSQL Multi-node 3-AZ", Fit: mapping.Partial},
+			},
+		},
+		{
+			name:     "mysql",
+			category: taxonomy.DatabaseMySQL,
+			withoutReadReplicas: []string{
+				"Managed MySQL Multi-node",
+				"Managed MySQL Multi-node 3-AZ",
+			},
+			want: []candidateFit{
+				{Name: "Managed MySQL Multi-node Advanced", Fit: mapping.Direct},
+				{Name: "Managed MySQL Multi-node Advanced 3-AZ", Fit: mapping.Direct},
+				{Name: "Managed MySQL", Fit: mapping.Partial},
+				{Name: "Managed MySQL Multi-node", Fit: mapping.Partial},
+				{Name: "Managed MySQL Multi-node 3-AZ", Fit: mapping.Partial},
+			},
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			for _, name := range tc.withoutReadReplicas {
+				o := offeringNamed(t, cat, name)
+				if o.Has(taxonomy.ReadReplicas) {
+					t.Errorf("offering %s lists %s, want only the Advanced multi-node plan to list it: OVHcloud states it on the Advanced plan alone",
+						text.Quote(o.Name), text.Quote(string(taxonomy.ReadReplicas)))
+				}
+			}
+
+			r := newResource(t, "res-example", tc.category, taxonomy.ReadReplicas)
+
+			got := mapping.Map(r, cat)
+			if got.Fit != mapping.Direct {
+				t.Errorf("Map() fit = %q, want %q: the Advanced multi-node plan offers %s",
+					got.Fit, mapping.Direct, text.Quote(string(taxonomy.ReadReplicas)))
 			}
 
 			if diff := cmp.Diff(tc.want, fits(got.Candidates)); diff != "" {
