@@ -37,6 +37,40 @@ type Verdict struct {
 	RequiredChanges []taxonomy.Capability
 }
 
+// Ties returns the names of the other candidates a reader could take for the
+// best one: those with the best candidate's fit and as many missing
+// capabilities, in candidate order. The best candidate is the first one. Ties
+// is nil when there is no such candidate. Every report format shows the same
+// ties.
+func (v Verdict) Ties() []string {
+	if len(v.Candidates) == 0 {
+		return nil
+	}
+
+	first := v.Candidates[0]
+
+	var ties []string
+
+	for _, c := range v.Candidates[1:] {
+		if c.Fit == first.Fit && len(c.Missing) == len(first.Missing) {
+			ties = append(ties, c.Offering.Name)
+		}
+	}
+
+	return ties
+}
+
+// ChangesToList returns the required changes a report lists for the verdict:
+// RequiredChanges for a partial fit, and nil for any other fit. Every report
+// format lists the same changes.
+func (v Verdict) ChangesToList() []taxonomy.Capability {
+	if v.Fit != mapping.Partial {
+		return nil
+	}
+
+	return v.RequiredChanges
+}
+
 // Summary counts the verdicts per fit.
 type Summary struct {
 	// Total is the number of resources assessed.

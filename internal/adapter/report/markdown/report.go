@@ -130,12 +130,13 @@ func writeRequiredChanges(b *strings.Builder, verdicts []assessment.Verdict, hea
 	items := 0
 
 	for _, v := range verdicts {
-		if v.Fit != mapping.Partial || len(v.RequiredChanges) == 0 {
+		listed := v.ChangesToList()
+		if len(listed) == 0 {
 			continue
 		}
 
-		changes := make([]string, 0, len(v.RequiredChanges))
-		for _, c := range v.RequiredChanges {
+		changes := make([]string, 0, len(listed))
+		for _, c := range listed {
 			changes = append(changes, codeSpan(string(c), false))
 		}
 
@@ -184,22 +185,15 @@ func writeSeparator(b *strings.Builder, columns int) {
 // in candidate order. The best candidate is the first one.
 func renderBestOffering(v assessment.Verdict) string {
 	best := codeSpan(v.BestOffering, true)
-	if len(v.Candidates) == 0 {
+
+	names := v.Ties()
+	if len(names) == 0 {
 		return best
 	}
 
-	first := v.Candidates[0]
-
-	var ties []string
-
-	for _, c := range v.Candidates[1:] {
-		if c.Fit == first.Fit && len(c.Missing) == len(first.Missing) {
-			ties = append(ties, codeSpan(c.Offering.Name, true))
-		}
-	}
-
-	if len(ties) == 0 {
-		return best
+	ties := make([]string, 0, len(names))
+	for _, name := range names {
+		ties = append(ties, codeSpan(name, true))
 	}
 
 	return best + " (tie: " + strings.Join(ties, nameSeparator) + ")"
