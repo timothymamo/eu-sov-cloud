@@ -391,15 +391,16 @@ func TestThreeAZVariantsServeHighAvailability(t *testing.T) {
 
 	// The products OVHcloud makes highly available across zones only in its 3-AZ
 	// regions, and the variant the snapshot lists for them there. For the databases
-	// the tier that reaches zone level is the multi-node plan, which is why their
-	// 3-AZ variant is named after it; for Block Storage it is the Regional Classic
-	// volume class.
+	// the tier that reaches zone level is the multi-node plan; for Block Storage it
+	// is the Regional Classic volume class. The databases carry the tier before the
+	// 3-AZ suffix so that the 1-AZ multi-node offering, which is a prefix of them,
+	// wins a tie by name.
 	variants := []struct {
 		category taxonomy.Category
 		name     string
 	}{
-		{category: taxonomy.DatabaseMySQL, name: "Managed MySQL 3-AZ Multi-node"},
-		{category: taxonomy.DatabasePostgreSQL, name: "Managed PostgreSQL 3-AZ Multi-node"},
+		{category: taxonomy.DatabaseMySQL, name: "Managed MySQL Multi-node 3-AZ"},
+		{category: taxonomy.DatabasePostgreSQL, name: "Managed PostgreSQL Multi-node 3-AZ"},
 		{category: taxonomy.KubernetesManaged, name: "Managed Kubernetes Service 3-AZ"},
 		{category: taxonomy.StorageBlock, name: "Block Storage 3-AZ Regional Classic"},
 		{category: taxonomy.StorageObject, name: "Object Storage 3-AZ"},
@@ -464,7 +465,11 @@ func TestThreeAZVariantsServeHighAvailability(t *testing.T) {
 // OVHcloud's databases. A multi-node plan adds high availability, so the snapshot
 // lists a Multi-node variant beside each base offering, at node level in the 1-AZ
 // regions and at zone level in the 3-AZ ones. The base offering is the Discovery
-// plan, one node, which is highly available at neither level.
+// plan, one node, which is highly available at neither level. The 3-AZ variant's
+// name keeps the 1-AZ one as its prefix (`<base> Multi-node 3-AZ`), so a resource
+// that needs only node-level high availability or read replicas is pointed at the
+// 1-AZ multi-node plan, which exists in every region, rather than at the 3-AZ one
+// that exists only in MIL and PAR.
 //
 // It replaces TestDatabaseVariantsBothServeHighAvailability, whose name no longer
 // fits: the two variants no longer both serve high availability at the level the
@@ -485,8 +490,8 @@ func TestDatabaseMultiNodeVariantsServeHighAvailability(t *testing.T) {
 			category:   taxonomy.DatabasePostgreSQL,
 			capability: taxonomy.NodeHighAvailability,
 			want: []candidateFit{
-				{Name: "Managed PostgreSQL 3-AZ Multi-node", Fit: mapping.Direct},
 				{Name: "Managed PostgreSQL Multi-node", Fit: mapping.Direct},
+				{Name: "Managed PostgreSQL Multi-node 3-AZ", Fit: mapping.Direct},
 				{Name: "Managed PostgreSQL", Fit: mapping.Partial},
 			},
 		},
@@ -495,7 +500,7 @@ func TestDatabaseMultiNodeVariantsServeHighAvailability(t *testing.T) {
 			category:   taxonomy.DatabasePostgreSQL,
 			capability: taxonomy.ZoneHighAvailability,
 			want: []candidateFit{
-				{Name: "Managed PostgreSQL 3-AZ Multi-node", Fit: mapping.Direct},
+				{Name: "Managed PostgreSQL Multi-node 3-AZ", Fit: mapping.Direct},
 				{Name: "Managed PostgreSQL", Fit: mapping.Partial},
 				{Name: "Managed PostgreSQL Multi-node", Fit: mapping.Partial},
 			},
@@ -505,8 +510,8 @@ func TestDatabaseMultiNodeVariantsServeHighAvailability(t *testing.T) {
 			category:   taxonomy.DatabaseMySQL,
 			capability: taxonomy.NodeHighAvailability,
 			want: []candidateFit{
-				{Name: "Managed MySQL 3-AZ Multi-node", Fit: mapping.Direct},
 				{Name: "Managed MySQL Multi-node", Fit: mapping.Direct},
+				{Name: "Managed MySQL Multi-node 3-AZ", Fit: mapping.Direct},
 				{Name: "Managed MySQL", Fit: mapping.Partial},
 			},
 		},
@@ -515,7 +520,7 @@ func TestDatabaseMultiNodeVariantsServeHighAvailability(t *testing.T) {
 			category:   taxonomy.DatabaseMySQL,
 			capability: taxonomy.ZoneHighAvailability,
 			want: []candidateFit{
-				{Name: "Managed MySQL 3-AZ Multi-node", Fit: mapping.Direct},
+				{Name: "Managed MySQL Multi-node 3-AZ", Fit: mapping.Direct},
 				{Name: "Managed MySQL", Fit: mapping.Partial},
 				{Name: "Managed MySQL Multi-node", Fit: mapping.Partial},
 			},
