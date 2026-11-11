@@ -38,7 +38,8 @@ Arrows are imports. They point inwards only:
   offline (the inventory-file reader, the snapshot reader, the embedded-snapshot targets and the
   reporters) each name what they import in a strict allow list. A reporter writes only to the
   `io.Writer` it is given: it reads no file, no environment and no clock, and makes no network
-  call. The live sources get their strict allow list in the PR that adds each one.
+  call. The live sources share one strict allow list, `cloud-adapters-reach-the-cloud-through-the-sdk`
+  (Cloud read-only rule below).
 - **CLI** (`internal/cli`) turns user input into use-case calls and prints results. No business rules.
   Only `cmd/eusov` imports it.
 - **`cmd/eusov`** is the only place that constructs adapters and injects them.
@@ -66,6 +67,157 @@ the ways code could be hidden from it, and what refuses each:
   binary to Go sources in their own directory, so assembly, cgo, line directives and symlinked
   directories cannot get past the file-name-based rules
   ([ADR 0012](adr/0012-check-layer-dependencies-by-package-for-every-release-target.md)).
+
+A cloud SDK is imported only in its provider's adapter package (`source/aws`, `source/azure`,
+`source/gcp`, `target/ovhcloud`, `target/scaleway`, `target/upcloud`): the depguard rule
+`cloud-sdks-only-in-provider-adapters` refuses it everywhere else, a sibling helper package and
+`cmd/eusov` included.
+
+## Cloud read-only rule
+
+A source adapter only reads from a cloud (CLAUDE.md rule 1) and never handles a credential itself
+(rule 3). An import rule alone cannot hold that, because a cloud SDK puts reads and writes on the same
+client, and the operator's credential chain may hold more rights than the read-only role. Three lint
+guardrails hold it instead; [ADR 0014](adr/0014-lint-guardrails-for-read-only-cloud-access.md) records
+why.
+
+1. **forbidigo, group `cloud-read-only`, an allowlist of reads.** In every file lint checks, tests and
+   integration tests included, an SDK client allows only read verbs: AWS `Describe*`, `Get*` and
+   `List*`; Azure `Get*`, `List*`, `NewGet*` and `NewList*` (the pagers); GCP `Get*`, `List*`,
+   `AggregatedList*` and `Close`. Only a read operation's input, output, options, request or response
+   type may be named. Further entries refuse whole packages or single names: clients no allowlist
+   covers (`google.golang.org/api`, the hand-written GCP clients, the AWS SDK v1, Azure track 1), the
+   hooks through which a read is rewritten into a write or a credential is handed out (signers,
+   credentials providers, middleware, `aws.Config.Credentials`, `config.With*`, Azure transports and
+   policies, `option.With*` transports and credentials, gRPC connections), allowed verbs that return
+   a secret, and, on a source adapter's own types, a method named for a write.
+2. **depguard, rule `cloud-adapters-reach-the-cloud-through-the-sdk`, a strict import allow list.**
+   Every package under `internal/adapter/source` but `inventoryfile` and `sourcetest`, tests
+   included, imports only the standard packages an adapter needs, the cloud SDK roots and the project
+   packages it uses. So nothing that calls a method by a name forbidigo cannot see (`reflect`,
+   `text/template`, `html/template`), runs a program (`os`, `os/exec`, `syscall`, `golang.org/x/sys`,
+   cgo) or opens a connection of its own (`net`, `database/sql`) gets in.
+3. **`test/lint`, on the AST.** An interface that a cloud source adapter declares, named, literal or a
+   type-parameter constraint, may declare only read verbs (`Describe`, `Get`, `List`, `NewGet`,
+   `NewList`, `AggregatedList`, `Close`, `HasMorePages`, `NextPage`, `More`) or unexported methods:
+   an SDK client would satisfy any other with its operation types left to inference, and a call
+   through a type parameter has no type name forbidigo can match. Elsewhere in the module an interface
+   may not declare a method named for a write (a denylist of verbs; a source adapter cannot import
+   such a package anyway). No struct embeds an SDK type, no alias names one, no file dot-imports an
+   SDK.
+
+As with depguard, every file is linted, also one that looks generated, and `test/lint` fails on any
+nolint directive that would hide a depguard or forbidigo issue.
+
+### How the rule is pinned
+
+forbidigo's type-aware patterns fail silently when they are wrong. `TestCloudReadOnlyProbe` runs the
+golangci-lint version CI pins, forbidigo and depguard, on probe adapters over stub SDKs
+(`test/lint/testdata/cloudreadonly`), offline, with lines left unmerged (`--uniq-by-line=false`). A
+line marked `// want "<message prefix>"` must be refused with that message, no other line may be,
+and every entry of the group must refuse a line of its own, so an entry that stops matching fails.
+The stubs have the real SDKs' import paths, package names and shapes; azcore's `ClientOptions` is laid
+out as in the real SDK. `TestCloudReadOnlyPatterns` checks the client and operation patterns against
+long lists of write and read names, so a typo in a first-letter class fails without golangci-lint. It
+covers the denylist entries too (the secret, credential, hook and gRPC entries and the refused
+packages): `cloudDenied` gives names each entry must refuse, and the test drops each alternative and
+optional part (`x?`, `x*`, `x{0,n}`) of an entry's pattern and pkg in turn and fails unless one of
+those names then gets through. So narrowing an entry, say dropping `Secrets?` from the Azure secret
+entry or the `\w*` in `List\w*AuthTokens`, fails at once. Where no real name needs a part, a stand-in
+of its shape does, marked `// stand-in`. A character class is not mutated, and `regexp/syntax` turns
+an alternation of single letters (`URI|URL`) into one (`UR[IL]`).
+`cloudDenylistReads` holds reads the entries were narrowed to allow (`armkeyvault.KeysClient`).
+`TestInterfaceFindingsProbe` runs the AST rule on the same probe. `make lint` and every entry of CI's
+lint-target matrix, which reports as the Lint check, run them; CI fails on a golangci-lint version
+that differs from the pinned one, and elsewhere the probe runs anyway and logs a warning that points
+at the dev VM ([dev-environment.md](dev-environment.md)).
+
+### How forbidigo renders a name
+
+Probed on golangci-lint v2.15.0 (forbidigo v2.3.1). Probe again when either moves.
+
+- A method is `<package name>.<type>.<method>`, with a pointer receiver dropped:
+  `ec2.Client.RunInstances` for `(*ec2.Client).RunInstances`. A package-level name is
+  `<package name>.<name>`: `ec2.RunInstancesInput`. It is the package name, not its path or import
+  alias: `armcompute` for `.../armcompute/v5`, and `compute` for both GCP compute SDKs.
+- A field read or set through a selector is `<package>.<type>.<field>`, as a method is:
+  `policy.ClientOptions.Transport`. A key in a composite literal is `<package>.<field>`, without the
+  type: `policy.Transport` in `policy.ClientOptions{Transport: t}`.
+- The type is the one the selector is used on, not the one that declares the method or field: a
+  method promoted from an embedded client is matched against the embedding type, and a field of an
+  embedded struct against the outer one. A value of an alias type is matched against the type the
+  alias names (a `*policy.Request` is an `exported.Request`), a generic type by its name alone.
+- `pkg` is matched against the import path of the package that declares that type, or of the package a
+  qualified name names, which is what tells the SDKs apart.
+- A call through an interface is matched against the interface, not the type behind it. A selector on
+  a type parameter, an interface literal or an unnamed struct has no type name, so no entry can match
+  it; `test/lint` refuses the declarations that lead there.
+- `pattern` and `pkg` are unanchored, so every entry spells out `^` and `$`.
+- golangci-lint turns forbidigo's `//permit:` comments off. `exclude-godoc-examples` is false, so a
+  godoc example is checked like other code.
+- depguard sees the imports of the code cgo generates, not `C`: cgo is refused through `unsafe`.
+
+### Allowing a new read verb
+
+Go regexps have no lookahead, so "a name that does not start with an allowed verb" is written as a
+prefix trie, one branch for each way a name can leave the verbs. For AWS:
+
+```
+[A-CEFH-KM-Z]      a first letter no verb starts with (not D, G, L)
+D[^e]|De[^s]|...   the first letters of a verb, then another letter
+Describe[^A-Z0-9]  the whole verb run on in lower case, so Describes, Getaway and Listen are refused
+```
+
+Every other name is allowed: `Get`, `GetObject`, `DescribeInstances`. A name that stops part-way
+through a verb (`Ge`, `Lis`, `Aggregate`) is not refused; no SDK client has one. Azure's `New` branch
+repeats the `Get` and `List` branches after `New` (`NewDeletePager` is refused); GCP's `Close` is a
+whole name, so `Close\w` refuses anything longer.
+
+To allow a read verb, say `Search` on AWS, drop `S` from the first-letter class and add
+`S[^e]|Se[^a]|Sea[^r]|Sear[^c]|Searc[^h]|Search[^A-Z0-9]`. Where two verbs share a prefix, the class
+at the fork leaves out both next letters (`L[^io]` for `List` and `Lookup`). Change the SDK's method
+and operation entries alike, add only a verb that cannot write, add the verb to the reads in
+`TestCloudReadOnlyPatterns` and to `readName` in `test/lint/sourcewrites_test.go`, add a read call of
+it to the probe, and run `make lint`. Before using an SDK type no entry covers, such as a new
+hand-written GCP package, add an entry for it, a probe line only it refuses and names for it in
+`cloudDenied`.
+
+### Gaps that remain
+
+- **No package check of the source adapters' imports.** `test/architecture` (ADR 0012) skips
+  `cloud-adapters-reach-the-cloud-through-the-sdk` (`skippedStrictRules`): its files cover every
+  directory under `internal/adapter/source` but two, and its allow list names SDK roots as prefixes,
+  neither of which a package-by-package list can say. depguard holds it, in `make lint` and CI, for
+  the host and every release target.
+- **Files lint never loads**: a file behind a build tag other than `integration` and `e2e`, a
+  `//go:build ignore` helper, and the `testdata`, `_` and `.` directories `./...` skips. `test/lint`
+  fails on such a file, and on an imported package in such a directory. A main package there, run
+  with `go run`, is not checked. `make lint` and CI lint the host and every release target, but
+  `test/lint` lists only linux/amd64, so it also fails on a file only for another release platform
+  until it lists that platform too.
+- **A write or a credential that uses no SDK type**: a request signed, or given a bearer token, by hand
+  with only the standard library. The strict import list leaves no `net` package to send it with,
+  but an SDK's own HTTP client could carry it. Lint is a guardrail; the read-only role is the
+  backstop.
+- **Endpoint overrides are a reviewer check, an accepted gap.** `aws.Config.BaseEndpoint`,
+  `option.WithEndpoint` and an Azure `cloud.Configuration` send a signed request or a bearer token to
+  another host. A sovereign cloud region needs one, so lint does not refuse them. A reviewer checks
+  that every endpoint an adapter sets comes from configuration naming a known cloud endpoint, never
+  from a constant or input that could point elsewhere.
+- **An interface from another module** that declares a write and that an adapter could name: the SDK
+  interfaces with a write method are refused by name (`manager.UploadAPIClient`), so check a new SDK,
+  a new package of one, or a new dependency for such interfaces.
+- **Allowed verbs that do more than read.** The secret entries refuse the known ones that mint
+  credentials, register an identity, return a secret or a presigned URL; others remain, such as AWS
+  Cost Explorer `Get*` calls, billed per request, and the secrets in the fields of an ordinary read
+  (EC2 user data, Lambda and ECS environment variables), which the adapter drops. A secret read
+  through a generic interface with its types inferred (a `Get*` method) is not refused by name. The
+  secret entries also refuse a few reads that return none, such as Azure
+  `GetAuthSettingsV2WithoutSecrets` and the key-vault `SecretsClient` listings.
+- **Write verbs outside the source adapters** are a denylist (`writeVerbs` in `test/lint` and the
+  last forbidigo entry), so an interface elsewhere named with a verb not on it gets through. A source
+  adapter can import only the project packages its depguard rule lists, which keeps that interface
+  out of its reach unless one of those packages declares it.
 
 ## Domain model
 
@@ -111,7 +263,7 @@ its expectations itself: its display name, its EU regions and the categories its
 | Golden | Report and CLI output | `testdata/*.golden` | yes |
 | Integration | Real provider APIs, read-only | `//go:build integration` | no (manual, credentials) |
 | E2E | The built binary against fixtures | `test/e2e`, `//go:build e2e` | yes |
-| Source rules | Rules on the Go source and its packages that golangci-lint cannot express | `test/lint`, `test/architecture` | yes |
+| Source rules | Rules on the Go source and its packages that golangci-lint cannot express, and the probes that prove the cloud-read-only lint rules fire | `test/lint`, `test/architecture` | yes |
 
 Most tests sit in the domain, where they are fast and need no fakes. Adapters are tested against
 recorded, sanitised API responses through the contract suites, so adding a provider means passing an

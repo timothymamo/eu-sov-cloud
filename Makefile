@@ -56,8 +56,8 @@ fmt: ## Format code (gofumpt + goimports via golangci-lint)
 # make lint runs golangci-lint natively first, for the host's GOOS/GOARCH with cgo at the host's default (the
 # build make test's -race compiles; it warns when the host's cgo is off, and make test, so make check,
 # refuses such a host), then once per release target with cgo off, and last runs the source rules in
-# test/lint natively. It attempts every run and fails at the end if any of them failed. Each golangci-lint
-# run waits for
+# test/lint natively, with EUSOV_LINT_PROBES=require so the forbidigo probes must run. It attempts every
+# run and fails at the end if any of them failed. Each golangci-lint run waits for
 # golangci-lint's lock (--allow-serial-runners) instead of failing while another worktree lints, and sees
 # the same build settings: GOFLAGS=-mod=readonly (a non-empty GOFLAGS also overrides the go env file's, so
 # a -tags of yours cannot take files out of lint), GOAMD64=v1 and GOARM64=v8.0 (the levels the release
@@ -88,7 +88,7 @@ lint: ## Lint natively and for every release target, incl. the architecture (dep
 		GOOS="$$goos" GOARCH="$$goarch" CGO_ENABLED=0 GOLANGCI_LINT_CACHE="$$cache/$$goos-$$goarch" \
 			golangci-lint run --allow-serial-runners || failed="$$failed $$target"; \
 	done; \
-	( unset GOOS GOARCH CGO_ENABLED; go test -count=1 ./test/lint/ ) || failed="$$failed test/lint"; \
+	( unset GOOS GOARCH CGO_ENABLED; EUSOV_LINT_PROBES=require go test -count=1 ./test/lint/ ) || failed="$$failed test/lint"; \
 	if [ -n "$$failed" ]; then echo "lint: failed for:$$failed" >&2; exit 1; fi
 
 .PHONY: tidy

@@ -39,13 +39,15 @@ Hexagonal (ports and adapters). Dependencies point inwards only. See `docs/archi
 | Application | `internal/app/analysis` | Domain. Declares the ports (interfaces) it consumes |
 | Adapters | `internal/adapter/source/{inventoryfile,aws,azure,gcp}`, `internal/adapter/target/{ovhcloud,scaleway,upcloud}`, `internal/adapter/report/{markdown,jsonreport}`, and `internal/adapter/internal/jsondoc`, the JSON decoder they share | Domain, the ports they implement, SDKs. Never `internal/cli` or `cmd/` |
 | Driving adapter | `internal/cli` | Application, domain, `internal/version` |
-| Composition root | `cmd/eusov` | Everything; the only place adapters are constructed |
+| Composition root | `cmd/eusov` | Everything but a cloud SDK; the only place adapters are constructed |
 
 - The dependency rule is **enforced by `golangci-lint` (depguard)** and, package by package for every
   release target, by `test/architecture` (ADR 0012). Do not add `//nolint:depguard`; fix the design.
-  `test/lint` fails on any nolint directive that would hide a depguard issue, and nolintlint wants a named
+  `test/lint` fails on any nolint directive that would hide a depguard or forbidigo issue, and nolintlint wants a named
   linter and a reason on every directive (`//nolint:gosec // why`).
-- Cloud SDKs live only in their provider's adapter package. SDK types never cross the adapter boundary.
+- Cloud SDKs live only in their provider's adapter package (depguard). SDK types never cross the adapter boundary.
+  Source adapters call only read verbs on an SDK client and import only a strict allow list (forbidigo
+  `cloud-read-only`, depguard, `test/lint`; `docs/architecture.md`, Cloud read-only rule).
 - Providers meet only through the taxonomy. Never write a direct source-service-to-target-service table.
 - Every package has a `doc.go` stating its responsibility. Read it before changing the package; update it when the responsibility changes.
 

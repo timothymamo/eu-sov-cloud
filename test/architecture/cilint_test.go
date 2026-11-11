@@ -370,6 +370,26 @@ func TestCILintMatrixCoversEveryReleaseTarget(t *testing.T) {
 		"cache: false",
 	})
 
+	// test/lint runs the forbidigo probes with the golangci-lint the step above
+	// installs, and EUSOV_LINT_PROBES=require makes a missing golangci-lint
+	// fail them rather than skip them.
+	probes := slices.IndexFunc(items, func(item ciItem) bool {
+		_, run, ok := ciScalar(item.lines, "run")
+
+		return ok && run == "go test -count=1 ./test/lint/"
+	})
+	if probes < 0 {
+		t.Fatalf("no step of the lint-target job runs go test -count=1 ./test/lint/, so CI never runs the lint probes")
+	}
+
+	if probesEnv, ok := ciBlock(items[probes].lines, "env"); !ok {
+		t.Errorf("line %d: the test/lint step holds no env: block, want EUSOV_LINT_PROBES: require so the probes fail rather than skip",
+			items[probes].num)
+	} else if _, got, ok := ciScalar(probesEnv, "EUSOV_LINT_PROBES"); !ok || got != "require" {
+		t.Errorf("line %d: the test/lint step sets EUSOV_LINT_PROBES to %q, want require so the probes fail rather than skip",
+			items[probes].num, got)
+	}
+
 	// Lint is a required status check on main, and a matrix reports one check
 	// per entry: the lint job reports the matrix under that one name.
 	aggregate, ok := jobs["lint"]

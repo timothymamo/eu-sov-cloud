@@ -9,6 +9,8 @@ version: "2"
 #   - test/e2e has a depguard rule of its own, e2e-is-black-box. Every other
 #     depguard rule but app-tests-use-fakes-not-adapters leaves _test.go files
 #     out, so an integration test gets no depguard rule.
+#   - forbidigo's cloud-read-only group checks them like any other file,
+#     which matters most here, where the credentials are real.
 # e2e and integration are the only custom build tags. Never negate them: lint
 # always sets both, so a file behind !e2e or !integration would never be
 # linted, and test/lint refuses such a build constraint.
@@ -24,6 +26,7 @@ linters:
     - depguard
     - errorlint
     - exhaustive
+    - forbidigo
     - gocritic
     - gosec
     - misspell
@@ -295,9 +298,9 @@ linters:
         # target-snapshot-reader-parses-bytes,
         # embedded-snapshot-targets-stay-offline and reporters-stay-offline.
         # The live sources (aws, azure, gcp; doc.go stubs today) need the
-        # network through their SDK, so each gets its strict allow list in
-        # the PR that adds it (the add-cloud-provider skill); until then the
-        # exact helper entries here already keep them from any unnamed helper.
+        # network through their SDK, so they share the strict allow list
+        # cloud-adapters-reach-the-cloud-through-the-sdk (ADR 0014), which
+        # names no helper under internal/adapter/internal/ at all.
         adapters-are-built-in-cmd:
           list-mode: lax
           files:
@@ -549,6 +552,137 @@ linters:
           deny:
             - pkg: encoding/json
               desc: decode the inventory file through internal/adapter/internal/jsondoc (ADR 0009)
+        # A cloud source adapter reaches its cloud only through the SDK calls
+        # forbidigo's cloud-read-only group checks (CLAUDE.md rule 1, ADR
+        # 0014). Anything else that can call a method by a name forbidigo
+        # cannot see, run a program or open a connection would get past that
+        # group, and a deny list always misses one (text/template calls a
+        # method named in a string). So its imports are a strict allow list:
+        # the standard packages an adapter needs that do no such thing, each
+        # ending in $; the cloud SDK roots, whose packages forbidigo checks
+        # (google.golang.org/api and grpc only for their helper packages); and
+        # the project packages it may use, named one by one. The rule covers
+        # every package under internal/adapter/source but inventoryfile, which
+        # has a strict rule of its own, and sourcetest, the contract suite, so
+        # a sibling helper (source/awsutil) is held to it too, _test.go files
+        # and integration tests included: they run with real credentials. Its
+        # tests also get testing, go-cmp, testutil and sourcetest. A helper an
+        # adapter shares goes in the adapter's own package, or a subpackage of
+        # it named here. Add a standard package only when an adapter needs
+        # it, never one that calls by name (reflect, text/template), runs a
+        # program (os, os/exec, syscall, golang.org/x/sys) or opens a
+        # connection of its own (net, database/sql); add an SDK root only with
+        # forbidigo entries that hold its clients to reads.
+        #
+        # The allow list already refuses every package below; these entries
+        # only say why. They have no $, so each also covers its subpackages:
+        # os covers os/exec, and net covers net/http (net/url and net/netip are
+        # allowed by name, which is longer, so it wins).
+        cloud-adapters-reach-the-cloud-through-the-sdk:
+          list-mode: strict
+          files:
+            - "**/internal/adapter/source/**"
+            - "!**/internal/adapter/source/inventoryfile/**"
+            - "!**/internal/adapter/source/sourcetest/**"
+          allow:
+            - bytes$
+            - context$
+            - errors$
+            - fmt$
+            - iter$
+            - log/slog$
+            - maps$
+            - net/netip$
+            - net/url$
+            - slices$
+            - sort$
+            - strconv$
+            - strings$
+            - sync$
+            - time$
+            - unicode$
+            - unicode/utf8$
+            - testing$
+            - github.com/aws/aws-sdk-go-v2/
+            - github.com/aws/smithy-go$
+            - github.com/Azure/azure-sdk-for-go/sdk/
+            - cloud.google.com/go/
+            - google.golang.org/api/googleapi$
+            - google.golang.org/api/iterator$
+            - google.golang.org/api/option$
+            - google.golang.org/grpc/codes$
+            - google.golang.org/grpc/status$
+            - github.com/google/go-cmp/cmp
+            - github.com/timothymamo/eu-sov-cloud/internal/adapter/source/aws$
+            - github.com/timothymamo/eu-sov-cloud/internal/adapter/source/azure$
+            - github.com/timothymamo/eu-sov-cloud/internal/adapter/source/gcp$
+            - github.com/timothymamo/eu-sov-cloud/internal/adapter/source/sourcetest$
+            - github.com/timothymamo/eu-sov-cloud/internal/app/analysis$
+            - github.com/timothymamo/eu-sov-cloud/internal/domain/inventory$
+            - github.com/timothymamo/eu-sov-cloud/internal/domain/taxonomy$
+            - github.com/timothymamo/eu-sov-cloud/internal/domain/text$
+            - github.com/timothymamo/eu-sov-cloud/internal/testutil$
+          deny:
+            - pkg: reflect
+              desc: reflection calls a method by a name forbidigo cannot see, such as a write; call the SDK client directly
+            - pkg: text/template
+              desc: a template calls a method by a name forbidigo cannot see, such as a write, and can print a credential
+            - pkg: html/template
+              desc: a template calls a method by a name forbidigo cannot see, such as a write, and can print a credential
+            - pkg: unsafe
+              desc: unsafe code, and cgo, whose generated code imports it, can reach a method or a credential no lint rule sees
+            - pkg: os
+              desc: a cloud CLI run as a program (os.StartProcess, os/exec) bypasses the read-only rule, and a source adapter reads no file or environment of its own; call the SDK
+            - pkg: plugin
+              desc: code loaded at run time bypasses the read-only rule
+            - pkg: syscall
+              desc: a raw system call can run a program or open a connection no lint rule sees
+            - pkg: golang.org/x/sys
+              desc: a raw system call can run a program or open a connection no lint rule sees
+            - pkg: runtime/cgo
+              desc: C code can run a program or open a connection no lint rule sees
+            - pkg: net
+              desc: a connection of the adapter's own bypasses the read-only rule; call the SDK
+            - pkg: database/sql
+              desc: a database connection can write to a cloud database; read the database's metadata through the SDK
+        # Cloud SDKs live only in their provider's adapter package (CLAUDE.md,
+        # Architecture): an AWS, Azure, GCP, OVHcloud, Scaleway or UpCloud SDK
+        # package, and the auth and transport packages they are built on, may
+        # be imported only under source/aws, source/azure, source/gcp,
+        # target/ovhcloud, target/scaleway and target/upcloud, tests
+        # included. Elsewhere, a sibling helper or cmd/eusov included, no
+        # lint rule would hold its calls to reads.
+        cloud-sdks-only-in-provider-adapters:
+          list-mode: lax
+          files:
+            - "$all"
+            - "!**/internal/adapter/source/aws/**"
+            - "!**/internal/adapter/source/azure/**"
+            - "!**/internal/adapter/source/gcp/**"
+            - "!**/internal/adapter/target/ovhcloud/**"
+            - "!**/internal/adapter/target/scaleway/**"
+            - "!**/internal/adapter/target/upcloud/**"
+          deny:
+            - pkg: github.com/aws/
+              desc: the AWS SDK belongs in internal/adapter/source/aws
+            - pkg: github.com/Azure/
+              desc: the Azure SDK belongs in internal/adapter/source/azure
+            - pkg: cloud.google.com/go
+              desc: the GCP SDK belongs in internal/adapter/source/gcp
+            - pkg: google.golang.org/api
+              desc: the GCP SDK belongs in internal/adapter/source/gcp
+            - pkg: google.golang.org/grpc
+              desc: the GCP SDK's transport belongs in internal/adapter/source/gcp
+            - pkg: github.com/googleapis/
+              desc: the GCP SDK's helpers belong in internal/adapter/source/gcp
+            - pkg: golang.org/x/oauth2
+              desc: cloud credentials belong to the SDK in a provider's adapter
+            - pkg: github.com/ovh/
+              desc: the OVHcloud SDK belongs in internal/adapter/target/ovhcloud
+            - pkg: github.com/scaleway/
+              desc: the Scaleway SDK belongs in internal/adapter/target/scaleway
+            - pkg: github.com/UpCloudLtd/
+              desc: the UpCloud SDK belongs in internal/adapter/target/upcloud
         # A target that serves an embedded snapshot (ADR 0007) reads only the
         # bytes it embeds with //go:embed: it opens no file, reads no
         # environment, makes no network or system call and loads no code. The
@@ -732,6 +866,226 @@ linters:
               desc: the e2e tier runs offline and calls no cloud SDK
     exhaustive:
       default-signifies-exhaustive: true
+    # forbidigo refuses calls, which an import rule cannot see. Its entries
+    # come in groups, one per rule, each opened by a comment, and every msg in
+    # a group starts with the group's tag (cloud-read-only:). forbidigo has no
+    # per-entry file scope: a group that holds for some files only gets an
+    # entry in linters.exclusions.rules with linters [forbidigo], a path or
+    # path-except, and a text of exactly this form:
+    #   text: 'because "<tag>: [^"]*"$'
+    # The issue text is: use of `<expression>` forbidden because "<msg>".
+    # The expression keeps its string literals, so a text of just '<tag>:'
+    # also drops another group's issue on a call that passes that string.
+    # The form above matches only the quoted msg at the end, so no msg may
+    # contain a double quote. Add a group after the last one; no other
+    # group's entries change.
+    #
+    # How analyze-types matching renders a call, field or type, and so how to
+    # write a pattern, is in docs/architecture.md (Cloud read-only rule),
+    # probed on the golangci-lint version CI pins. pattern and pkg are
+    # unanchored, so every entry spells out ^ and $. golangci-lint turns
+    # forbidigo's //permit: comments off; test/lint refuses every nolint
+    # directive that would silence forbidigo.
+    forbidigo:
+      analyze-types: true
+      exclude-godoc-examples: false
+      forbid:
+        # Group cloud-read-only: source adapters only read from a cloud
+        # (CLAUDE.md rule 1), and never handle a credential themselves (rule
+        # 3). A cloud SDK puts reads and writes on the same client, so
+        # depguard cannot keep a write out. ADR 0014 records the decision, and
+        # docs/architecture.md (Cloud read-only rule) how the entries match,
+        # how to allow a new read verb, and the gaps that remain.
+        #
+        # Scope: every file lint checks, _test.go files and integration tests
+        # included, so the group has no exclusion rule. Like depguard, it
+        # relies on linters.exclusions.generated being disable.
+        #
+        # It is an allowlist. On a client type only these verbs are allowed and
+        # every other method is refused:
+        #   AWS     Describe*, Get*, List*
+        #   Azure   Get*, List*, NewGet* and NewList* (the pagers)
+        #   GCP     Get*, List*, AggregatedList*, Close
+        # Go regexps have no lookahead, so "a name that does not start with an
+        # allowed verb" is a prefix trie: a first-letter class no verb starts
+        # with, then one branch per letter at which a name leaves a verb, then
+        # the verb run on in lower case (Describe[^A-Z0-9], so Describes,
+        # Getaway and Listen are refused). Each SDK has an entry for its client
+        # methods and one for the types that name an operation. The other
+        # entries refuse whole packages or single names: clients no allowlist
+        # covers, hooks that rewrite a request or hand out a credential, and
+        # allowed verbs that return a secret.
+        #
+        # Every entry is pinned twice in test/lint: TestCloudReadOnlyProbe
+        # runs lint on probe adapters over stub SDKs
+        # (testdata/cloudreadonly), where each entry has a line only it
+        # refuses, and TestCloudReadOnlyPatterns checks the client and
+        # operation patterns against lists of real write and read names, and
+        # the denylist entries against names that need every alternative and
+        # optional part (x?, x*).
+        # Change an entry, and both tell you what moved.
+        #
+        # The AWS pkg takes a service package or a feature package, with or
+        # without a major version (service/sqs/v2), and leaves out the types
+        # packages beneath them. The input entry also takes <Op>Output, which
+        # an interface that leaves its input type to inference still names,
+        # and <Op>APIClient, the one-method interface a service declares for a
+        # paginator or waiter.
+        - pattern: '^\w+\.\w*Client\.(?:[A-CEFH-KM-Z]|D[^e]|De[^s]|Des[^c]|Desc[^r]|Descr[^i]|Descri[^b]|Describ[^e]|Describe[^A-Z0-9]|G[^e]|Ge[^t]|Get[^A-Z0-9]|L[^i]|Li[^s]|Lis[^t]|List[^A-Z0-9])\w*$'
+          pkg: '^github\.com/aws/aws-sdk-go-v2/(?:service/[^/]+|feature/[^/]+/[^/]+)(?:/v[0-9]+)?$'
+          msg: 'cloud-read-only: an AWS SDK client allows Describe*, Get* and List* calls only (CLAUDE.md rule 1)'
+        - pattern: '^\w+\.(?:[A-CEFH-KM-Z]|D[^e]|De[^s]|Des[^c]|Desc[^r]|Descr[^i]|Descri[^b]|Describ[^e]|Describe[^A-Z0-9]|G[^e]|Ge[^t]|Get[^A-Z0-9]|L[^i]|Li[^s]|Lis[^t]|List[^A-Z0-9])\w*(?:Input|Output|APIClient)$'
+          pkg: '^github\.com/aws/aws-sdk-go-v2/(?:service/[^/]+|feature/[^/]+/[^/]+)(?:/v[0-9]+)?$'
+          msg: 'cloud-read-only: only the input, output or APIClient of an AWS Describe*, Get* or List* operation may be named (CLAUDE.md rule 1)'
+        # The S3 upload manager writes through a type of its own, not a client,
+        # and declares interfaces that hold write methods. The input entry
+        # refuses those interfaces too; they are named here as well.
+        - pattern: '^manager\.(?:NewUploader|Uploader(?:\.\w+)?|UploadAPIClient|DeleteObjectsAPIClient)$'
+          pkg: '^github\.com/aws/aws-sdk-go-v2/feature/s3/manager(?:/v[0-9]+)?$'
+          msg: 'cloud-read-only: the S3 upload manager and its write interfaces write to S3 (CLAUDE.md rule 1)'
+        - pattern: '^\w+\.\w*Client\.(?:[A-FH-KMO-Z]|G[^e]|Ge[^t]|Get[^A-Z0-9]|L[^i]|Li[^s]|Lis[^t]|List[^A-Z0-9]|N[^e]|Ne[^w]|New(?:[^GL]|G[^e]|Ge[^t]|Get[^A-Z0-9]|L[^i]|Li[^s]|Lis[^t]|List[^A-Z0-9]))\w*$'
+          pkg: '^github\.com/Azure/azure-sdk-for-go/sdk/'
+          msg: 'cloud-read-only: an Azure SDK client allows Get*, List*, NewGet* and NewList* calls only (CLAUDE.md rule 1)'
+        - pattern: '^\w+\.\w*Client(?:[A-FH-KMO-Z]|G[^e]|Ge[^t]|Get[^A-Z0-9]|L[^i]|Li[^s]|Lis[^t]|List[^A-Z0-9]|N[^e]|Ne[^w]|New(?:[^GL]|G[^e]|Ge[^t]|Get[^A-Z0-9]|L[^i]|Li[^s]|Lis[^t]|List[^A-Z0-9]))\w*Options$'
+          pkg: '^github\.com/Azure/azure-sdk-for-go/sdk/resourcemanager/'
+          msg: 'cloud-read-only: only the options of an Azure Get* or List* operation may be named (CLAUDE.md rule 1)'
+        # A data-plane SDK (blobs, secrets, queues, ...) names its options
+        # <Op>Options, without the client. pkg lists the roots under sdk/ that
+        # hold one, which leaves out azcore, azidentity and resourcemanager; a
+        # new root needs adding. The entry also refuses the package's
+        # ClientOptions, which configures the request pipeline, where a policy
+        # can rewrite any request: pass nil to the client's constructor.
+        - pattern: '^\w+\.(?:[A-FH-KM-Z]|G[^e]|Ge[^t]|Get[^A-Z0-9]|L[^i]|Li[^s]|Lis[^t]|List[^A-Z0-9])\w*Options$'
+          pkg: '^github\.com/Azure/azure-sdk-for-go/sdk/(?:ai|batch|containers|data|messaging|monitor|security|storage)/'
+          msg: 'cloud-read-only: only the options of an Azure data-plane Get* or List* operation may be named; pass nil for ClientOptions (CLAUDE.md rule 1)'
+        - pattern: '^\w+\.\w*Client\.(?:[BD-FH-KM-Z]|A[^g]|Ag[^g]|Agg[^r]|Aggr[^e]|Aggre[^g]|Aggreg[^a]|Aggrega[^t]|Aggregat[^e]|Aggregate[^d]|Aggregated[^L]|AggregatedL[^i]|AggregatedLi[^s]|AggregatedLis[^t]|AggregatedList[^A-Z0-9]|C[^l]|Cl[^o]|Clo[^s]|Clos[^e]|Close\w|G[^e]|Ge[^t]|Get[^A-Z0-9]|L[^i]|Li[^s]|Lis[^t]|List[^A-Z0-9])\w*$'
+          pkg: '^cloud\.google\.com/go/'
+          msg: 'cloud-read-only: a GCP SDK client allows Get*, List*, AggregatedList* and Close calls only (CLAUDE.md rule 1)'
+        - pattern: '^\w+\.(?:[BD-FH-KM-Z]|A[^g]|Ag[^g]|Agg[^r]|Aggr[^e]|Aggre[^g]|Aggreg[^a]|Aggrega[^t]|Aggregat[^e]|Aggregate[^d]|Aggregated[^L]|AggregatedL[^i]|AggregatedLi[^s]|AggregatedLis[^t]|AggregatedList[^A-Z0-9]|C[^l]|Cl[^o]|Clo[^s]|Clos[^e]|Close\w|G[^e]|Ge[^t]|Get[^A-Z0-9]|L[^i]|Li[^s]|Lis[^t]|List[^A-Z0-9])\w*(?:Request|Response)$'
+          pkg: '^cloud\.google\.com/go/.+pb$'
+          msg: 'cloud-read-only: only the request or response of a GCP Get*, List* or AggregatedList* operation may be named (CLAUDE.md rule 1)'
+        # google.golang.org/api, the discovery-based GCP clients, is refused
+        # outright: use cloud.google.com/go. A discovery method builds a call
+        # value (svc.Instances.Delete returns an *InstancesDeleteCall) that a
+        # generic helper or an interface variable runs with Do, naming no
+        # operation type, and its nested services are fields, matched as
+        # <package>.<type>.<field> like methods, so neither its services nor
+        # its calls can be allowlisted. pkg takes every generated package,
+        # whose path ends in a version (compute/v1, admin/directory/v1,
+        # merchantapi/products_v1beta), and leaves the helper packages
+        # option, iterator and googleapi usable (transport and some options
+        # are refused below). Allowing a discovery client needs a reviewed
+        # entry that refuses its write operations first.
+        - pattern: '^\w+\.\w+'
+          pkg: '^google\.golang\.org/api/.+[/_]v[0-9][^/]*$'
+          msg: 'cloud-read-only: use cloud.google.com/go; a google.golang.org/api client can run a write without naming it (CLAUDE.md rule 1)'
+        # Allowed verbs that mint credentials, register an identity, return a
+        # secret or hand out a presigned URL (an upload URL is a write),
+        # refused by name, and Azure clients whose name says they hold keys,
+        # secrets, credentials or tokens, refused whole. This is a denylist
+        # and holds only the ones known; it is not complete. The entries were
+        # checked against every AWS operation and every Azure and GCP client
+        # method in the SDK repositories (2026-11). Generic endings that
+        # refused ordinary reads were narrowed: Access to Compute, Instance
+        # and Data Access (not GetEndpointAccess), GetConnection to Glue and
+        # DataZone, Value to ListValue (not GetFeatureValue), key clients to
+        # the ones named for a secret (not armkeyvault.KeysClient or
+        # SSHPublicKeysClient), GCP secrets to the ones that return one (not
+        # secretmanager GetSecret).
+        - pattern: '^(?:\w+\.(?:\w*Client\.)?(?:Get\w*(?:Token(?:For\w+)?|Credentials\w*|SecretValue|Password|PasswordData|AccessDetails|(?:Compute|Instance|Data)Access|A(?:pi|PI)Keys?|StreamKey|(?:Embed|Login|Upload|Presigned)U(?:rl|RL)|Signed\w*Url)|GetId|GetParameter\w*|Describe\w*Credentials|DescribeUserPoolClient|List(?:Api|API)Keys|ListUserPoolClientSecrets)|(?:glue|datazone)\.(?:Client\.)?GetConnections?)(?:Input|APIClient)?$'
+          pkg: '^github\.com/aws/aws-sdk-go-v2/(?:service/[^/]+|feature/[^/]+/[^/]+)(?:/v[0-9]+)?$'
+          msg: 'cloud-read-only: this AWS call mints credentials, registers an identity, returns a secret or a presigned URL (CLAUDE.md rule 1)'
+        - pattern: '^\w+\.(?:\w*Client\.?)?(?:(?:New)?(?:Get|List)\w*(?:Keys?|KeysForKeyName|SAS|Sas|SASURL|SasURL|Secrets?|ConnectionStrings?|ConnectionInfo|Credentials?|Tokens?|CallbackURL|FullURL|DownloadURI|UploadURL|AccessProfile|ApplicationSettings|AppSettings|AuthSettings(?:V2)?|GatewaySettings|PublishingUser|Password)(?:Slot)?(?:Pager|Options)?|ListValue(?:Options)?)$'
+          pkg: '^github\.com/Azure/azure-sdk-for-go/sdk/'
+          msg: 'cloud-read-only: this Azure call mints credentials or returns keys, secrets or a SAS or callback URL (CLAUDE.md rule 1)'
+        - pattern: '^(?:\w+\.\w*(?:(?:API|Auth|Admin|Query|Shared|Endpoint|Metrics|BitLocker|Activation)Keys|Secrets?|Credentials?|Tokens?)|armautomation\.Keys)Client(?:\.\w+|\w*Options)$'
+          pkg: '^github\.com/Azure/azure-sdk-for-go/sdk/'
+          msg: 'cloud-read-only: this Azure client holds keys, secrets, credentials or tokens (CLAUDE.md rule 1)'
+        - pattern: '^\w+\.(?:\w*Client\.)?(?:Get\w*(?:KeyString|AuthString|Tokens?|Password|Credentials?|ActivationKeys?|MeasurementProtocolSecret)|List\w*(?:AuthTokens|ActivationKeys|MeasurementProtocolSecrets))(?:Request)?$'
+          pkg: '^cloud\.google\.com/go/'
+          msg: 'cloud-read-only: this GCP call returns a key, token, password or secret (CLAUDE.md rule 1)'
+        # The AWS SDK v1, and every package of the Azure SDK's root module
+        # outside sdk/ (track 1 and legacy storage: services/, profiles/,
+        # storage), are superseded, and no entry above covers their clients,
+        # so every use of them is refused.
+        - pattern: '^\w+\.\w+'
+          pkg: '^github\.com/(?:aws/aws-sdk-go/|Azure/azure-sdk-for-go/(?:[^s]|s[^d]|sd[^k]|sdk[^/]))'
+          msg: 'cloud-read-only: use aws-sdk-go-v2 or the Azure SDK under sdk/, whose clients the entries above cover (CLAUDE.md rule 1)'
+        # The hand-written GCP clients return handles whose methods write
+        # (storage.BucketHandle, and the DocumentRef in each snapshot
+        # firestore.Client.GetAll returns), and profiler.Start uploads
+        # profiles, so they are refused whole, and so is the metadata server,
+        # which hands out the instance's token. Their generated clients
+        # (storage/control/apiv2, firestore/apiv1) stay under the allowlist. A
+        # new hand-written package needs adding here.
+        - pattern: '^\w+\.\w+'
+          pkg: '^cloud\.google\.com/go/(?:compute/metadata|profiler|datastore|firestore|spanner|bigtable|storage(?:/transfermanager|/dataflux|/experimental)?|bigquery(?:/v2(?:/query)?|/storage/managedwriter(?:/adapt)?)?|pubsub(?:/v2)?)(?:/aliasshim)?$'
+          msg: 'cloud-read-only: a hand-written GCP client hands out handles that write, and the metadata server a token; use a generated apiv client (CLAUDE.md rules 1 and 3)'
+        # Hooks through which an allowed read is rewritten into a write on its
+        # way out, or a credential is handed out (CLAUDE.md rule 3). AWS: a
+        # request signer, a credentials provider, the instance metadata client,
+        # the RDS and DSQL token builders, and smithy's middleware, transport
+        # and auth packages are refused whole; an API error code is read with
+        # smithy.APIError from the root smithy-go package. aws.Config stays
+        # usable, as config.LoadDefaultConfig returns it and NewFromConfig
+        # takes it, but not its credentials, HTTP client, API options,
+        # interceptors or service options, nor the config.With* options that
+        # set them, nor the same fields of a service's Options, which a
+        # func(*ec2.Options) passed to a call can set.
+        - pattern: '^\w+\.\w+'
+          pkg: '^github\.com/aws/(?:aws-sdk-go-v2/(?:aws/signer|credentials|feature/(?:ec2/imds|rds/auth|dsql/auth))|smithy-go/(?:middleware|transport|auth))(?:/|$)'
+          msg: 'cloud-read-only: an AWS signer, credentials provider, metadata client, middleware or transport rewrites a request or hands out a credential (CLAUDE.md rules 1 and 3)'
+        - pattern: '^(?:aws\.(?:Config\.)?(?:\w*Credential\w*|BearerAuthTokenProvider|HTTPClient|APIOptions|Interceptors|ServiceOptions)(?:\.\w+)?|config\.With(?:(?:Before|After)\w+|HTTPClient|APIOptions|ServiceOptions|CredentialsProvider|BearerAuthTokenProvider|\w*Credential\w*Options|\w*ProviderOptions|\w*CacheOptions|SharedCredentialsFiles))$'
+          pkg: '^github\.com/aws/aws-sdk-go-v2/(?:aws|config)$'
+          msg: 'cloud-read-only: the credentials, HTTP client, API options and interceptors of an AWS config rewrite a request or hand out a credential; use config.LoadDefaultConfig and NewFromConfig (CLAUDE.md rules 1 and 3)'
+        - pattern: '^\w+\.(?:(?:Options\.)?(?:APIOptions|HTTPClient|Credentials|BearerAuthTokenProvider|HTTPSignerV4|Interceptors|AuthSchemes|AuthSchemeResolver)|WithAPIOptions)$'
+          pkg: '^github\.com/aws/aws-sdk-go-v2/(?:service/[^/]+|feature/[^/]+/[^/]+)(?:/v[0-9]+)?$'
+          msg: 'cloud-read-only: the credentials, HTTP client, API options and interceptors of an AWS client rewrite a request or hand out a credential (CLAUDE.md rules 1 and 3)'
+        # Azure: a credential's GetToken mints a bearer token, and a request
+        # the adapter builds and sends itself (runtime.NewPipeline,
+        # runtime.NewRequest, Pipeline.Do), or a policy, which gets every
+        # request before it is sent (policy.Request.Raw), can write. A
+        # client's options set no Transport and no per-call or per-retry
+        # policy: pass nil or an empty &arm.ClientOptions{}.
+        - pattern: '^\w+\.(?:\w*Credential\.GetToken|Request(?:\.\w+)?|Pipeline\.Do|NewPipeline|NewRequest(?:For\w+|From\w+)?)$'
+          pkg: '^github\.com/Azure/azure-sdk-for-go/sdk/(?:azcore|azidentity)(?:/|$)'
+          msg: 'cloud-read-only: an Azure token, request or pipeline of your own can write or hand out a credential; call a client method (CLAUDE.md rules 1 and 3)'
+        - pattern: '^policy\.(?:ClientOptions\.)?(?:Transport|PerCallPolicies|PerRetryPolicies)$'
+          pkg: '^github\.com/Azure/azure-sdk-for-go/sdk/azcore/(?:arm/)?policy$'
+          msg: 'cloud-read-only: an Azure transport or policy can rewrite a request; pass nil or an empty arm.ClientOptions (CLAUDE.md rule 1)'
+        # GCP: an OAuth2 token source and the packages that build an
+        # authenticated transport are refused whole. The option package stays
+        # usable (option.WithQuotaProject), but not the options that put in a
+        # transport or a credential: an adapter uses the default credentials
+        # and transport. From grpc, a connection of the adapter's own, its
+        # Invoke and NewStream, and an interceptor, which gets every call,
+        # are refused; grpc/codes and grpc/status stay usable.
+        - pattern: '^\w+\.\w+'
+          pkg: '^(?:golang\.org/x/oauth2|google\.golang\.org/api/transport|cloud\.google\.com/go/auth)(?:/|$)'
+          msg: 'cloud-read-only: a GCP token source or authenticated transport of your own hands out a credential; let the client use the default credentials (CLAUDE.md rule 3)'
+        - pattern: '^option\.(?:With(?:HTTPClient|GRPC\w+|TokenSource|\w*Credentials\w*|APIKey|ClientCertSource|ServiceAccountFile)|Impersonate\w*)$'
+          pkg: '^google\.golang\.org/api/option$'
+          msg: 'cloud-read-only: this option puts a transport or a credential into a GCP client; use the defaults (CLAUDE.md rules 1 and 3)'
+        - pattern: '^grpc\.(?:Dial\w*|NewClient|NewClientStream|Invoke|With\w*Interceptor|\w*ClientInterceptor|ClientConn\w*\.(?:Invoke|NewStream))$'
+          pkg: '^google\.golang\.org/grpc$'
+          msg: 'cloud-read-only: a gRPC connection, call or interceptor of your own can write; call a client method (CLAUDE.md rule 1)'
+        # Types a source adapter declares itself, tests included: a method or
+        # func field whose name starts with a write verb is refused, so a write
+        # cannot go through a named interface of the adapter's own or a struct
+        # that embeds a client. pkg covers every package under
+        # internal/adapter/source; inventoryfile and sourcetest are not
+        # exempt, as nothing there needs a write verb. It is a denylist,
+        # because forbidigo cannot tell a method from a field, and an
+        # allowlist would refuse the adapter's own fields and the port's
+        # Inventory method. The allowlist is in test/lint instead
+        # (TestNoInterfaceDeclaresACloudWrite), which sees declarations: an
+        # interface a cloud source adapter declares, generic or not, may
+        # declare only read verbs, and an interface elsewhere none of these
+        # verbs. test/lint (sourcewrites_test.go) holds the same verbs, and
+        # fails when the two lists differ.
+        - pattern: '^\w+\.\w+\.(?:Abandon|Abort|Accept|Acquire|Activate|Add|Advertise|Allocate|Apply|Archive|Assign|Associate|Assume|Attach|Authorize|Backtrack|Batch|Begin|Break|Bulk|Bundle|Cancel|Change|Clear|Commit|Complete|Confirm|Continue|Copy|Create|Deactivate|Deallocate|Decrypt|Delete|Deploy|Deprecate|Deprovision|Deregister|Detach|Disable|Disassociate|Enable|Execute|Expand|Export|Failover|Flush|Generalize|Generate|Grant|Import|Initiate|Insert|Invoke|Leave|Lock|Merge|Modify|Monitor|Move|Patch|Perform|Power|Promote|Provision|Publish|Purchase|Purge|Put|Reapply|Reboot|Receive|Recreate|Redeploy|Regenerate|Register|Reimage|Reject|Release|Remove|Renew|Replace|Request|Reset|Resize|Restart|Restore|Resume|Revoke|Rollback|Rotate|Run|Scale|Send|Set|Sign|Signal|Simulate|Split|Start|Stop|Subscribe|Suspend|Swap|Switch|Tag|Terminate|Truncate|Unarchive|Unassign|Undelete|Unlock|Unmonitor|Unsubscribe|Untag|Update|Upgrade|Upload|Upsert|Withdraw|Write)(?:[A-Z0-9]\w*)?$'
+          pkg: '^github\.com/timothymamo/eu-sov-cloud/internal/adapter/source/'
+          msg: 'cloud-read-only: a source adapter calls no method named for a write on a type of its own; call the SDK client directly, or rename the helper (CLAUDE.md rule 1)'
     gosec:
       excludes:
         - G104 # unchecked errors are already reported by errcheck
