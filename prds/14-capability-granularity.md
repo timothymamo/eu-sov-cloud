@@ -353,10 +353,11 @@ Each milestone ships as one PR. Milestones 2 and 3 depend only on 1, and can run
    - update the Scaleway catalog golden and its e2e golden.
 
    The reviewer checks each claim against Scaleway's documentation. Depends on 1.
-3. [ ] **OVHcloud snapshot.** In this milestone:
+3. [x] **OVHcloud snapshot.** In this milestone:
    - set the 1-AZ databases to node level, and the 3-AZ variants (databases, Managed Kubernetes, Object
      Storage, Block Storage) to zone level;
-   - add multi-node plan variants for MySQL and PostgreSQL, carrying high availability and read replicas;
+   - add multi-node plan variants for MySQL and PostgreSQL, carrying high availability, and read
+     replicas on the Enterprise/Advanced plan only;
    - decide Object Storage and Managed Kubernetes Service in the 1-AZ regions under the new definitions,
      and remove the references to #14;
    - extend `TestThreeAZVariantsServeHighAvailability` to the databases at zone level;
@@ -438,6 +439,16 @@ Each milestone ships as one PR. Milestones 2 and 3 depend only on 1, and can run
   `zone-high-availability`, so the report does not say that the named offering also lacks node level.
   Revisit this with the product-preference order too. A ranking rule could prefer a candidate that
   holds the implied lower level.
+- **Decided (milestone 3): the tier comes before the region-group suffix.** A tier variant is named
+  `<base offering> <tier>`, and a suffix such as `3-AZ` follows the tier: `Managed PostgreSQL Multi-node
+  3-AZ`, not `Managed PostgreSQL 3-AZ Multi-node`, and `Managed PostgreSQL Multi-node Advanced 3-AZ` for
+  the Advanced plan. The 1-AZ variant's name is then a prefix and wins ties by name, so a resource that
+  needs only `node-high-availability` is pointed at `Managed PostgreSQL Multi-node`, and one that needs
+  `read-replicas` at `Managed PostgreSQL Multi-node Advanced`, the variants offered in the 1-AZ regions,
+  not at an offering in Milan and Paris only. A `zone-high-availability` need still has only 3-AZ
+  variants as direct candidates. This departs from PRD #11's `<product> 3-AZ` pattern only where a tier
+  variant also has a 3-AZ form. *Block Storage 3-AZ Regional Classic* keeps `<product> 3-AZ <tier>`,
+  because that volume class exists only in the 3-AZ regions and has no 1-AZ form to win ties against.
 - **Note: releases between milestones.** From milestone 1 to milestone 4, the vocabulary accepts
   `high-availability` beside its replacements. A release in that window would ship that mixed state, so
   tag none.

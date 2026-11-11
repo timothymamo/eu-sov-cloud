@@ -1,17 +1,23 @@
 target: OVHcloud
 sourceURL: https://www.ovhcloud.com/en/public-cloud/regions-availability/
-retrievedOn: 2026-11-10
+retrievedOn: 2026-11-11
 Block Storage | storage.block | snapshots | GRA, LIM, RBX, SBG, WAW
-Block Storage 3-AZ | storage.block | high-availability | MIL, PAR
+Block Storage 3-AZ Regional Classic | storage.block | node-high-availability, zone-high-availability | MIL, PAR
 Block Storage LUKS | storage.block | encryption-at-rest, snapshots | GRA, LIM, RBX, SBG
 Block Storage LUKS Zonal | storage.block | encryption-at-rest | MIL, PAR
 Instances | compute.vm | ipv6, snapshots | GRA, LIM, MIL, PAR, RBX, SBG, WAW
 Managed Kubernetes Service | kubernetes.managed | autoscaling | GRA, LIM, RBX, SBG, WAW
-Managed Kubernetes Service 3-AZ | kubernetes.managed | autoscaling, high-availability | MIL, PAR
-Managed MySQL | database.mysql | encryption-at-rest, high-availability, point-in-time-restore, read-replicas | GRA, LIM, RBX, SBG, WAW
-Managed MySQL 3-AZ | database.mysql | encryption-at-rest, high-availability, point-in-time-restore, read-replicas | MIL, PAR
-Managed PostgreSQL | database.postgresql | encryption-at-rest, high-availability, point-in-time-restore, read-replicas | GRA, LIM, RBX, SBG, WAW
-Managed PostgreSQL 3-AZ | database.postgresql | encryption-at-rest, high-availability, point-in-time-restore, read-replicas | MIL, PAR
+Managed Kubernetes Service 3-AZ | kubernetes.managed | autoscaling, node-high-availability, zone-high-availability | MIL, PAR
+Managed MySQL | database.mysql | encryption-at-rest, point-in-time-restore | GRA, LIM, RBX, SBG, WAW
+Managed MySQL Multi-node | database.mysql | encryption-at-rest, node-high-availability, point-in-time-restore | GRA, LIM, RBX, SBG, WAW
+Managed MySQL Multi-node 3-AZ | database.mysql | encryption-at-rest, node-high-availability, point-in-time-restore, zone-high-availability | MIL, PAR
+Managed MySQL Multi-node Advanced | database.mysql | encryption-at-rest, node-high-availability, point-in-time-restore, read-replicas | GRA, LIM, RBX, SBG, WAW
+Managed MySQL Multi-node Advanced 3-AZ | database.mysql | encryption-at-rest, node-high-availability, point-in-time-restore, read-replicas, zone-high-availability | MIL, PAR
+Managed PostgreSQL | database.postgresql | encryption-at-rest, point-in-time-restore | GRA, LIM, RBX, SBG, WAW
+Managed PostgreSQL Multi-node | database.postgresql | encryption-at-rest, node-high-availability, point-in-time-restore | GRA, LIM, RBX, SBG, WAW
+Managed PostgreSQL Multi-node 3-AZ | database.postgresql | encryption-at-rest, node-high-availability, point-in-time-restore, zone-high-availability | MIL, PAR
+Managed PostgreSQL Multi-node Advanced | database.postgresql | encryption-at-rest, node-high-availability, point-in-time-restore, read-replicas | GRA, LIM, RBX, SBG, WAW
+Managed PostgreSQL Multi-node Advanced 3-AZ | database.postgresql | encryption-at-rest, node-high-availability, point-in-time-restore, read-replicas, zone-high-availability | MIL, PAR
 Metal Instances | compute.vm | ipv6, snapshots | GRA, LIM, SBG, WAW
-Object Storage | storage.object | encryption-at-rest, object-versioning | GRA, LIM, RBX, SBG, WAW
-Object Storage 3-AZ | storage.object | encryption-at-rest, high-availability, object-versioning | MIL, PAR
+Object Storage | storage.object | encryption-at-rest, node-high-availability, object-versioning | GRA, LIM, RBX, SBG, WAW
+Object Storage 3-AZ | storage.object | encryption-at-rest, node-high-availability, object-versioning, zone-high-availability | MIL, PAR

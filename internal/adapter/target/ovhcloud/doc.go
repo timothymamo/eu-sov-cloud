@@ -13,9 +13,13 @@
 // prints it (PRD 11). A capability that OVHcloud offers in only some of a
 // product's regions makes a separate offering, since an offering has one set
 // of capabilities for all its regions: the 3-AZ variants, highly available
-// across zones in the 3-AZ regions only, and the two Block Storage LUKS
-// offerings, encrypted volumes that are not offered in every region and have
-// snapshots only in the 1-AZ regions, sit beside the product's main offering.
+// across zones (zone-high-availability) in the 3-AZ regions only, and the two
+// Block Storage LUKS offerings, encrypted volumes that are not offered in every
+// region and have snapshots only in the 1-AZ regions, sit beside the product's
+// main offering. Likewise, all of an offering's capabilities hold in one tier
+// (ADR 0011): a plan or class that adds a capability is a variant named after
+// it, such as the Multi-node and Multi-node Advanced database plans (read
+// replicas only on the Advanced one) and Block Storage 3-AZ Regional Classic.
 //
 // catalog.json is a target catalog snapshot of schema version 1, the format
 // every target with an embedded snapshot shares (ADR 0007). Source.Catalog and
