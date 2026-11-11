@@ -82,11 +82,12 @@ records where each fact comes from, so the snapshot can be checked and refreshed
 Category `storage.block`. Pages: <https://upcloud.com/docs/products/block-storage/availability/>,
 <https://upcloud.com/docs/products/block-storage/backups/>,
 <https://upcloud.com/docs/products/block-storage/tiers/>,
+<https://upcloud.com/docs/products/block-storage/storage-system/>,
 <https://upcloud.com/docs/products/cloud-servers/storage/>.
 
 The base offering is a storage device created without encryption, the default: the Cloud Servers storage
 page says "You can optionally create storage devices with encryption at rest enabled". The tiers MaxIOPS,
-Standard and Archive add no capability ("All storage tiers share the same production model", tiers page),
+Standard and Archive add no capability ("All storage tiers share the same production model", storage system page),
 so none gets an offering.
 
 - `snapshots`: the backups page says "Backups on UpCloud are instant one-to-one snapshots of an entire
@@ -111,8 +112,8 @@ after creation". Pages: <https://upcloud.com/docs/products/block-storage/encrypt
   **Needs:** the encryption option, which keeps them.
 - Regions `de-fra1`, `dk-cph1`, `es-mad1`, `fi-hel1`, `fi-hel2`, `nl-ams1`, `pl-waw1`, `se-sto1`
   (tier-variant zones): the availability page says "All Block Storage tiers are available in all UpCloud
-  locations", and the encryption page says "Encryption is available for all block storage tiers: MaxIOPS,
-  Standard and Archive", with no location caveat.
+  locations", and the encryption page says "Encryption is available for all block storage tiers", with no
+  location caveat.
 
 ### Cloud Servers
 
@@ -157,14 +158,17 @@ Category `kubernetes.managed`. A variant of *Managed Kubernetes* (tier-variant r
 **Production** control-plane plan (`prod-md-ha`). Pages:
 <https://upcloud.com/docs/products/managed-kubernetes/control-plane/>,
 <https://upcloud.com/docs/products/managed-kubernetes/billing/>,
-<https://upcloud.com/docs/products/managed-kubernetes/availability/>.
+<https://upcloud.com/docs/products/managed-kubernetes/availability/>,
+<https://upcloud.com/docs/products/managed-kubernetes/data-plane/>,
+<https://upcloud.com/docs/products/managed-kubernetes/faq/>.
 
 - `node-high-availability`: the control plane page says the Production plan "runs a highly available
   control plane with three API servers and a three-member etcd cluster. The etcd members run on separate
   hosts." The billing page lists it with "High Availability". Three API servers and a three-member etcd
   on separate hosts keep the control plane serving through the loss of a host with no manual action.
   **Needs:** the Production plan. **Scope:** node level only. The cluster lives in one zone (its nodes
-  are connected through private networks "in the same zone as the Managed Kubernetes cluster"), and a
+  are connected through private networks "in the same zone as the Managed Kubernetes cluster", data plane page, and "Worker nodes
+  are deployed to the same zone as the cluster is located in", Kubernetes FAQ), and a
   zone is one data centre, so zone level is not claimed.
 - Regions `de-fra1`, `dk-cph1`, `es-mad1`, `fi-hel1`, `fi-hel2`, `nl-ams1`, `pl-waw1`, `se-sto1`
   (tier-variant zones): the availability page says "Managed Kubernetes is available in all UpCloud
@@ -229,7 +233,7 @@ Category `storage.object`. Pages: <https://upcloud.com/docs/products/managed-obj
 
 No storage classes or tiers are documented, so there are no variants.
 
-- `encryption-at-rest`: the full encryption page says the service "encrypts all data it stores at rest,
+- `encryption-at-rest`: the full encryption page says the service "encrypts all the data it stores at rest,
   using server-side encryption with the AES-256 algorithm. Encryption is always on." **Needs:** nothing.
 - `object-versioning`: the S3 compatibility page lists "Bucket versioning, Object versioning" among the
   supported S3 APIs, and the versioning guide says "Versioning keeps every version of the files in a
@@ -343,8 +347,8 @@ or three nodes, which the documentation calls a multi-node plan. Pages:
 - **Cloud Servers `node-high-availability` and `zone-high-availability`.** The system architecture page
   (<https://upcloud.com/docs/products/cloud-servers/system-architecture/>) describes "Automatic transfer of
   Cloud Servers to healthy hosts" after compute host failures: the server is moved and restarted, not
-  kept serving through the loss, as for the other targets' virtual machines. Live migration is "performed
-  only within the same data centre". No Cloud Server autoscaling product is documented either.
+  kept serving through the loss, as for the other targets' virtual machines. Live migrations are "performed
+  only within the same data centre" (<https://upcloud.com/docs/products/cloud-servers/live-migration/>). No Cloud Server autoscaling product is documented either.
 - **`zone-high-availability` on every offering.** Each zone is one data centre, and no product documents a
   service that keeps serving through the loss of its zone. For Managed PostgreSQL and MySQL, the backups
   pages say backups are kept "in another location in the same region", available "even in the unlikely
@@ -358,5 +362,6 @@ or three nodes, which the documentation calls a multi-node plan. Pages:
   automated and restore is point-in-time into a new service. OVHcloud's databases do not list it either.
 - **Features the vocabulary has no capability for**, left out: customer-managed keys (Object Storage
   server-side encryption with customer keys; LUKS inside a server), off-site database backups in another
-  location, Kubernetes private node groups, node anti-affinity (documented as "best effort"), S3
+  location, Kubernetes private node groups, node anti-affinity (documented as "best effort",
+  <https://upcloud.com/docs/products/managed-kubernetes/data-plane/>), S3
   lifecycle policies, and PostgreSQL connection pooling.
