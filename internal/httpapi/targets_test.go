@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"net/http"
+	"slices"
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
@@ -195,5 +196,61 @@ func TestReadyz(t *testing.T) {
 				t.Errorf("GET /readyz body mismatch (-want +got):\n%s", diff)
 			}
 		})
+	}
+}
+
+// TestTargetsLoadsEachCatalogOnce pins that GET /v1/targets does not reload a
+// catalog on every request: a catalog is read at most once for the handler's
+// lifetime, whether it is loaded by New or by the first request.
+func TestTargetsLoadsEachCatalogOnce(t *testing.T) {
+	t.Parallel()
+
+	h := newHarness(t)
+	handler := h.handler(t)
+
+	for range 2 {
+		rec := serve(handler, newRequest(http.MethodGet, "/v1/targets"))
+		if rec.Code != http.StatusOK {
+			t.Fatalf("GET /v1/targets = %d, want %d; body: %q", rec.Code, http.StatusOK, rec.Body.String())
+		}
+	}
+
+	for _, key := range supportedKeys {
+		if got := h.catalogs[key].callCount(); got > 1 {
+			t.Errorf("the %s catalog was loaded %d times for two requests, want at most once", key, got)
+		}
+	}
+}
+
+// TestTargetsRetriesACatalogThatFailed pins that a failed catalog load is not
+// cached: the first request answers 500 internal, and the next one loads the
+// catalog again and answers 200 once the catalog is available.
+func TestTargetsRetriesACatalogThatFailed(t *testing.T) {
+	t.Parallel()
+
+	h := newHarness(t)
+	h.catalogs[betaKey].errs = []error{errors.New("catalog: MARKER-C-9")}
+	handler := h.handler(t)
+
+	first := serve(handler, newRequest(http.MethodGet, "/v1/targets"))
+	if first.Code != http.StatusInternalServerError {
+		t.Fatalf("the first GET /v1/targets = %d, want %d; body: %q",
+			first.Code, http.StatusInternalServerError, first.Body.String())
+	}
+
+	decodeError(t, first, "internal")
+	requireNoEcho(t, first, "MARKER-C-9")
+
+	second := serve(handler, newRequest(http.MethodGet, "/v1/targets"))
+	if second.Code != http.StatusOK {
+		t.Fatalf("the second GET /v1/targets = %d, want %d; body: %q",
+			second.Code, http.StatusOK, second.Body.String())
+	}
+
+	var got targetsDocument
+	strictDecode(t, second, &got)
+
+	if !slices.ContainsFunc(got.Targets, func(entry targetEntry) bool { return entry.Key == betaKey }) {
+		t.Errorf("the second GET /v1/targets does not list the %s target it could load", betaKey)
 	}
 }

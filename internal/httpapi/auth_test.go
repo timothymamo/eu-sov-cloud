@@ -116,3 +116,39 @@ func TestNoTokenNeedsNoAuth(t *testing.T) {
 		t.Errorf("WWW-Authenticate = %q on a handler without a token, want no header", got)
 	}
 }
+
+// TestNewRejectsAnInvalidToken pins that a token the composition root gives
+// explicitly must be usable as one: an empty, blank or control-character token
+// is a configuration error, never a quiet "authentication off", and never a
+// token no request could ever match.
+func TestNewRejectsAnInvalidToken(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name  string
+		token string
+	}{
+		{name: "an empty token", token: ""},
+		{name: "white space only", token: "   "},
+		{name: "leading white space", token: " " + bearerToken},
+		{name: "trailing white space", token: bearerToken + " "},
+		{name: "a space inside", token: "s3cret token"},
+		{name: "a control character", token: "s3cret\x00token"},
+		{name: "a line break", token: "s3cret\ntoken"},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			handler, err := httpapi.New(newHarness(t).deps(), httpapi.WithBearerToken(tc.token))
+			if err == nil {
+				t.Fatalf("httpapi.New() returned no error for %s", tc.name)
+			}
+
+			if handler != nil {
+				t.Errorf("httpapi.New() returned a non-nil handler beside the error")
+			}
+		})
+	}
+}

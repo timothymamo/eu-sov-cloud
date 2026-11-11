@@ -166,10 +166,12 @@ func (s *fakeInventorySource) callCount() int {
 }
 
 // fakeCatalogSource is an analysis.CatalogSource returning a fixed catalog or a
-// fixed error.
+// fixed error. errs are returned by the first calls, in order, before err, so a
+// test can make a source fail once and then succeed.
 type fakeCatalogSource struct {
-	cat catalog.Catalog
-	err error
+	cat  catalog.Catalog
+	err  error
+	errs []error
 
 	mu    sync.Mutex
 	calls int
@@ -178,17 +180,29 @@ type fakeCatalogSource struct {
 func (s *fakeCatalogSource) Catalog(ctx context.Context) (catalog.Catalog, error) {
 	s.mu.Lock()
 	s.calls++
+
+	err := s.err
+	if len(s.errs) > 0 {
+		err, s.errs = s.errs[0], s.errs[1:]
+	}
 	s.mu.Unlock()
 
 	if err := ctx.Err(); err != nil {
 		return catalog.Catalog{}, err
 	}
 
-	if s.err != nil {
-		return catalog.Catalog{}, s.err
+	if err != nil {
+		return catalog.Catalog{}, err
 	}
 
 	return s.cat, nil
+}
+
+func (s *fakeCatalogSource) callCount() int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	return s.calls
 }
 
 // singleBody is what a reporter of format writes for one target, so a test can

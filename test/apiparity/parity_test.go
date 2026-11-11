@@ -296,8 +296,8 @@ func cliDeps() cli.Deps {
 // apiHandler wires the HTTP API as its composition root does: the strict request
 // decoder, the in-memory inventory source, the same targets and reporters as the
 // CLI, and the body cap assessmentrequest declares.
-func apiHandler(t *testing.T) http.Handler {
-	t.Helper()
+func apiHandler(tb testing.TB) http.Handler {
+	tb.Helper()
 
 	handler, err := httpapi.New(httpapi.Deps{
 		DecodeRequest: assessmentrequest.Decode,
@@ -315,7 +315,7 @@ func apiHandler(t *testing.T) http.Handler {
 		},
 	}, httpapi.WithMaxBodyBytes(assessmentrequest.MaxBodySize))
 	if err != nil {
-		t.Fatalf("httpapi.New() returned unexpected error: %v", err)
+		tb.Fatalf("httpapi.New() returned unexpected error: %v", err)
 	}
 
 	return handler

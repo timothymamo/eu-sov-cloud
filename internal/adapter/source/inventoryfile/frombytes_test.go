@@ -17,6 +17,7 @@ import (
 	"github.com/timothymamo/eu-sov-cloud/internal/adapter/source/inventoryfile"
 	"github.com/timothymamo/eu-sov-cloud/internal/adapter/source/sourcetest"
 	"github.com/timothymamo/eu-sov-cloud/internal/domain/inventory"
+	"github.com/timothymamo/eu-sov-cloud/internal/domain/taxonomy"
 )
 
 // FromBytes must build the source type New builds: pin the signature at compile
@@ -242,16 +243,23 @@ func TestInventoryFromBytesErrors(t *testing.T) {
 // TestInventoryFromBytesErrorNeverEchoesAValue pins that a value in the document
 // never reaches the error, however the document is refused: an in-memory
 // document has no file name to fall back on, and the error is read by whoever
-// sent the bytes.
+// sent the bytes. The error still has to say where the document is wrong and
+// which field is at fault, by position and name, never by quoting the value.
 func TestInventoryFromBytesErrorNeverEchoesAValue(t *testing.T) {
 	t.Parallel()
 
-	const marker = "SECRET-MARKER-123"
+	const marker = "ACCT-MARKER-4242"
 
 	tests := []struct {
 		name     string
 		document string
 		wantErr  error
+		// value is the document value the error must not echo.
+		value string
+		// wantMentions lists what the error must still say: where the resource
+		// is and which field is at fault. Matched case-insensitively, so a
+		// message naming its field as a key or in prose both pass.
+		wantMentions []string
 	}{
 		{
 			// The unknown key is named; the ID beside it is not.
@@ -259,6 +267,7 @@ func TestInventoryFromBytesErrorNeverEchoesAValue(t *testing.T) {
 			document: `{"schemaVersion":1,"source":"aws","resources":[` +
 				`{"id":"` + marker + `","category":"compute.vm","bogus":true}]}`,
 			wantErr: inventoryfile.ErrDecode,
+			value:   marker,
 		},
 		{
 			// The wrong type is named by its path, and the value that is wrong is
@@ -267,6 +276,7 @@ func TestInventoryFromBytesErrorNeverEchoesAValue(t *testing.T) {
 			document: `{"schemaVersion":1,"source":"aws","resources":[` +
 				`{"id":"` + marker + `","category":42}]}`,
 			wantErr: inventoryfile.ErrDecode,
+			value:   marker,
 		},
 		{
 			// A version that is not an integer is described by its type, not by
@@ -274,12 +284,55 @@ func TestInventoryFromBytesErrorNeverEchoesAValue(t *testing.T) {
 			name:     "marker as an unsupported schema version",
 			document: `{"schemaVersion":"` + marker + `","source":"aws","resources":[]}`,
 			wantErr:  inventoryfile.ErrSchemaVersion,
+			value:    marker,
 		},
 		{
 			name: "marker in an unknown resource field name's value",
 			document: `{"schemaVersion":1,"source":"aws","resources":[` +
 				`{"id":"i-0123456789abcdef0","category":"compute.vm","regoin":"` + marker + `"}]}`,
 			wantErr: inventoryfile.ErrDecode,
+			value:   marker,
+		},
+		{
+			// The duplicate is named by the position of the second resource and
+			// the field, never by repeating the ID both share.
+			name: "a duplicate resource ID",
+			document: `{"schemaVersion":1,"source":"aws","resources":[` +
+				`{"id":"` + marker + `","category":"compute.vm"},` +
+				`{"id":"` + marker + `","category":"compute.vm"}]}`,
+			wantErr:      inventory.ErrDuplicateID,
+			value:        marker,
+			wantMentions: []string{"resources[1]", "id"},
+		},
+		{
+			// The category value is the second resource's, named by position and
+			// field, not by quoting the value the taxonomy does not know.
+			name: "an unknown category value",
+			document: `{"schemaVersion":1,"source":"aws","resources":[` +
+				`{"id":"instance-one","category":"compute.vm"},` +
+				`{"id":"instance-two","category":"` + marker + `"}]}`,
+			wantErr:      taxonomy.ErrUnknownCategory,
+			value:        marker,
+			wantMentions: []string{"1", "category"},
+		},
+		{
+			// Likewise a capability the vocabulary does not hold: the resource's
+			// position and the capabilities field identify it.
+			name: "an unknown capability value",
+			document: `{"schemaVersion":1,"source":"aws","resources":[` +
+				`{"id":"instance-one","category":"compute.vm","capabilities":["` + marker + `"]}]}`,
+			wantErr:      taxonomy.ErrUnknownCapability,
+			value:        marker,
+			wantMentions: []string{"0", "capabilit"},
+		},
+		{
+			// A schemaVersion that is the wrong number is named by its key and
+			// the version the reader wants, never by the number it read.
+			name:         "a schema version number",
+			document:     `{"schemaVersion":4242,"source":"aws","resources":[]}`,
+			wantErr:      inventoryfile.ErrSchemaVersion,
+			value:        "4242",
+			wantMentions: []string{"schemaVersion"},
 		},
 	}
 
@@ -296,8 +349,16 @@ func TestInventoryFromBytesErrorNeverEchoesAValue(t *testing.T) {
 				t.Errorf("FromBytes(...).Inventory() error = %v, want it to wrap %v", err, tt.wantErr)
 			}
 
-			if msg := err.Error(); strings.Contains(msg, marker) {
-				t.Errorf("FromBytes(...).Inventory() error = %q, want it not to echo the document value %q", msg, marker)
+			msg := err.Error()
+			if strings.Contains(msg, tt.value) {
+				t.Errorf("FromBytes(...).Inventory() error = %q, want it not to echo the document value %q", msg, tt.value)
+			}
+
+			lowered := strings.ToLower(msg)
+			for _, mention := range tt.wantMentions {
+				if !strings.Contains(lowered, strings.ToLower(mention)) {
+					t.Errorf("FromBytes(...).Inventory() error = %q, want it to name %q", msg, mention)
+				}
 			}
 		})
 	}

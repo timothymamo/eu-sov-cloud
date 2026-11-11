@@ -615,6 +615,31 @@ func apiScenarios() []apiScenario {
 			marker:     "MARKER-PANIC-READY",
 			wantStatus: http.StatusInternalServerError,
 		},
+		{
+			// A request the API does not serve, by Host, is 421 misdirected_request
+			// before the body is decoded: the document declares it too.
+			name:      "a report for another host",
+			operation: reportsOperation,
+			options:   func() []httpapi.Option { return []httpapi.Option{httpapi.WithAllowedHosts(allowedHost)} },
+			request: func(t *testing.T) *http.Request {
+				t.Helper()
+
+				return assessRequestForHost(t, "other.example.com")
+			},
+			wantStatus: http.StatusMisdirectedRequest,
+		},
+		{
+			name:      "the target list for another host",
+			operation: "GET " + targetsPath,
+			options:   func() []httpapi.Option { return []httpapi.Option{httpapi.WithAllowedHosts(allowedHost)} },
+			request: func(*testing.T) *http.Request {
+				req := newRequest(http.MethodGet, targetsPath)
+				req.Host = "other.example.com"
+
+				return req
+			},
+			wantStatus: http.StatusMisdirectedRequest,
+		},
 	}
 }
 
