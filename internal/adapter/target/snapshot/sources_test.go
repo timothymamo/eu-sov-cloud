@@ -33,7 +33,7 @@ const (
 // target adapter that embeds one. Finding none of them would make the glob below
 // pass while checking nothing, so the absence of any one is a failure, and a new
 // target's snapshot is added here so the check cannot silently skip it.
-var requiredSnapshots = []string{"../scaleway/catalog.json", "../ovhcloud/catalog.json"}
+var requiredSnapshots = []string{"../scaleway/catalog.json", "../ovhcloud/catalog.json", "../upcloud/catalog.json"}
 
 // TestEveryOfferingHasASourcesSection pins that every offering in an embedded
 // snapshot has exactly one section of its own in the SOURCES.md beside it, that
