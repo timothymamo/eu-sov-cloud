@@ -13,6 +13,17 @@ records where each fact comes from, so the snapshot can be checked and refreshed
   Serverless Functions gained the capability `ipv6`, and its section says why. It also found one
   conflict: the availability page lists Managed Database for PostgreSQL and MySQL in Milan, but the
   product's API does not declare Milan. The region stays out, as that offering's section explains.
+- **Re-verified on 2026-11-11 for PRD #14 (capability granularity).** Every high-availability claim was
+  checked again, and replaced by its scoped capability (`node-high-availability` or
+  `zone-high-availability`) or dropped, under the target rule and the tier-variant rule (*Rules
+  applied*). `www.scaleway.com` answered HTTP 403 to every fetch that day, for the documentation pages,
+  their `.md` form and the product pages. The documentation source was read instead:
+  `scaleway/docs-content` `main` was still at commit `e149770a6eacd436b33ef8c36ad40cdff90ebdca`, the
+  commit cited below, which issue #15 found identical to the live pages. The URLs cited are the pages
+  that source publishes. The availability page could not be re-read, so no declared region changed,
+  except that the new variant *Kubernetes Kapsule Dedicated* lists the regions its own section gives.
+  This re-verification removed `ipv6` from Serverless Functions and removed Serverless SQL Database
+  (*Left out on purpose*).
 - **Availability page:** <https://www.scaleway.com/en/product-availability-by-region/>, where every
   offering's regions come from, subject to the API check under *Rules applied*. It has one column per
   region (Paris, Amsterdam, Warsaw, Milan). For a zonal product it gives one mark per zone, and for a
@@ -79,9 +90,26 @@ records where each fact comes from, so the snapshot can be checked and refreshed
   Zones are not modelled. Regions are within the declared list below.
 - **Capabilities:** only from the taxonomy vocabulary, and only when the documentation describes the
   feature as generally available. Features in public or private beta are left out and listed under
-  *Left out on purpose*. A capability may need a particular tier or option of the product; that is
-  noted where it applies, as **Needs:** on the capability's line, and **Scope:** says where an offering
-  meets only part of the taxonomy's definition.
+  *Left out on purpose*.
+- **Target rule** (ADR 0011): an offering lists a capability only where the documentation states it
+  **in full**. An offering that meets only part of a capability's definition does not list it, and
+  *Left out on purpose* records the omission with its reason. A product that does not fully serve a
+  taxonomy category is not in the snapshot for that category.
+- **Tier-variant rule** (ADR 0011): all of an offering's capabilities hold in **one** tier. The base
+  offering is the product's default tier. A tier that adds a capability is a variant named
+  `<base offering> <tier>`, with its own section below. A tier that only lacks capabilities gets no
+  offering. Here the default tiers are Standalone (Managed Database), Mutualized (Kubernetes Kapsule)
+  and Standard Multi-AZ (Object Storage), and the variants are *Managed Database for PostgreSQL and
+  MySQL High Availability* and *Kubernetes Kapsule Dedicated*. A **Needs:** line names the tier its
+  offering is named after, or the product's default tier.
+- **Scope:** high availability is listed at the level the documentation states in full:
+  `node-high-availability` when the offering survives the loss of a node with no manual failover,
+  `zone-high-availability` when it keeps serving through the loss of a whole zone. A **Scope:** line on
+  the capability says which level, and why the other is not claimed. The catalog adds node level to
+  every offering that lists zone level (ADR 0011).
+- **Regions and capabilities** (PRD #11's rule): a capability that holds in only some of an offering's
+  regions makes a separate offering in those regions. No Scaleway capability needs one today; see
+  Object Storage for the Milan check.
 
 ## Declared EU regions
 
@@ -149,33 +177,68 @@ Category `kubernetes.managed`. Pages: <https://www.scaleway.com/en/docs/kubernet
 <https://www.scaleway.com/en/docs/kubernetes/faq/>,
 <https://www.scaleway.com/en/docs/kubernetes/reference-content/kubernetes-control-plane-offers/>.
 
+The base offering is the default control-plane tier, **Mutualized**: free and shared, "suitable for
+development, testing, staging environments" (concepts page). The control-plane type is chosen when the
+cluster is created (FAQ).
+
 - `autoscaling`: pools autoscale between a minimum and maximum node count (concepts *Autoscale*, FAQ).
-- `high-availability`. **Needs:** a Dedicated control plane (Dedicated 4, 8 or 16). Those tiers run two
-  API server replicas "for HA" (control-plane offers page); the free Mutualized tier runs one API server
-  replica, so a cluster on it does not have this capability. On every tier etcd keeps three replicas
-  across zones, and regional clusters spread the control plane across zones.
+  **Needs:** nothing beyond the default tier, Mutualized.
+- No high availability: the Mutualized tier runs "1 resilient replica" of the API server and has no SLA
+  (control-plane offers page). Its etcd keeps "3 replicas in multi-AZ", which protects the cluster's
+  state, not the API server's availability. The Dedicated tiers add high availability, in the variant
+  *Kubernetes Kapsule Dedicated*.
 - Regions `fr-par`, `it-mil`, `nl-ams`, `pl-waw`: the availability page marks Kapsule "Available across
   the region" in all four regions, and the changelog entry opening MIL-1 (2026-03-10) names Kapsule. SDK
   `api/k8s/v1` and the schema of the Kubernetes API reference
   (<https://www.scaleway.com/en/developers/api/kubernetes/>) declare all four regions, although the API
   reference's introduction names only Paris, Amsterdam and Warsaw.
 
+### Kubernetes Kapsule Dedicated
+
+Category `kubernetes.managed`. A variant of *Kubernetes Kapsule* (tier-variant rule): a cluster with a
+Dedicated control plane, Dedicated 4, 8 or 16, which share the same availability row. Pages:
+<https://www.scaleway.com/en/docs/kubernetes/reference-content/kubernetes-control-plane-offers/>,
+<https://www.scaleway.com/en/docs/kubernetes/concepts/>,
+<https://www.scaleway.com/en/docs/kubernetes/reference-content/multi-az-clusters/>.
+
+- `autoscaling`: as for the base offering; autoscaling has no tier restriction (concepts *Autoscale*).
+  **Needs:** a Dedicated control plane.
+- `node-high-availability`. **Needs:** a Dedicated control plane (Dedicated 4, 8 or 16). The
+  control-plane offers page gives these tiers "2 replicas for HA" of the API server, etcd "3 replicas in
+  multi-AZ", and a "99.5% uptime" SLA (the Mutualized tier: "1 resilient replica", SLA "N/A"). So the
+  control plane survives the loss of a node with no manual failover. **Scope: node level only.** The
+  concepts page says a regional cluster spreads control-plane replicas "across multiple zones", and is
+  "only available with HA Dedicated control planes". But the Multi-AZ clusters page, *Limitations*,
+  says the control plane is reached through a Load Balancer in the region's primary zone, and "If this
+  zone fails globally, the control plane will be unreachable, even if the cluster spans multiple zones.
+  This limitation also applies to HA Dedicated control planes." The cluster therefore does not keep
+  serving through the loss of every zone, and `zone-high-availability` is not claimed (target rule).
+- Regions `fr-par`, `nl-ams`, `pl-waw`: the changelog entries *Dedicated control plane offers are now
+  available!* (2023-09-06) and *Dedicated control plane offers now available in Warsaw* (2023-12-15).
+  **Milan is left out:** nothing read states Dedicated control planes in Milan. The entry opening MIL-1
+  (2026-03-10) names "Kapsule", not the tier, and the availability page could not be re-read on
+  2026-11-11. Add `it-mil` once a source states it.
+
 ### Managed Database for PostgreSQL and MySQL
 
 Categories `database.mysql` and `database.postgresql`: one product for both engines, with the same
 features. Pages: <https://www.scaleway.com/en/docs/managed-databases-for-postgresql-and-mysql/concepts/>,
 <https://www.scaleway.com/en/docs/managed-databases-for-postgresql-and-mysql/faq/>,
+<https://www.scaleway.com/en/docs/managed-databases-for-postgresql-and-mysql/how-to/create-a-database/>,
 <https://www.scaleway.com/en/docs/managed-databases-for-postgresql-and-mysql/how-to/manage-read-replicas/>.
 
+The base offering is the default node configuration, **Standalone**: the page *Create a Database
+Instance* offers "High Availability" and "Standalone: creates a standalone database provisioned on a
+single node". The concepts page says a standalone node can be upgraded to High Availability after
+creation, "but not the opposite". The High Availability option is the variant *Managed Database for
+PostgreSQL and MySQL High Availability*. Every capability below has **Needs:** nothing beyond the
+default tier, Standalone.
+
 - `encryption-at-rest`: LUKS volume encryption, generally available since 2025-01-16 (changelog).
-- `high-availability`. **Needs:** the High Availability option (a standalone node can be upgraded to it,
-  not back). **Scope: node-level only.** A hot standby node, kept current by synchronous replication,
-  takes over when the main node fails (concepts *High availability*). The FAQ says the two nodes are in
-  the same data centre, in separate racks. So the pair survives the failure of a node, not the loss of
-  the data centre or zone: it meets the "node" half of the taxonomy's definition (surviving the loss of
-  a node or zone), never the "zone" half.
-- `read-replicas`: Read Replicas for PostgreSQL and MySQL Database Instances.
+- `read-replicas`: Read Replicas for PostgreSQL and MySQL Database Instances. The page *Manage Read
+  Replicas* sets no High Availability requirement, so both tiers list it.
 - `snapshots`: Database snapshots of the instance's volume (concepts *Database snapshot*).
+- No high availability: a Standalone instance runs on a single node.
 - Regions `fr-par`, `nl-ams`, `pl-waw`: the availability page marks the product "Available across the
   region" in each of them. SDK `api/rdb/v1` and the schema of the Managed Database API reference
   (<https://www.scaleway.com/en/developers/api/managed-database-postgre-mysql/>) declare these three
@@ -199,6 +262,27 @@ features. Pages: <https://www.scaleway.com/en/docs/managed-databases-for-postgre
 
   Add `it-mil` once the SDK or the API reference's schema declares it.
 
+### Managed Database for PostgreSQL and MySQL High Availability
+
+Categories `database.mysql` and `database.postgresql`. A variant of *Managed Database for PostgreSQL and
+MySQL* (tier-variant rule): a Database Instance created with, or upgraded to, the High Availability node
+configuration. Pages:
+<https://www.scaleway.com/en/docs/managed-databases-for-postgresql-and-mysql/concepts/>,
+<https://www.scaleway.com/en/docs/managed-databases-for-postgresql-and-mysql/faq/>,
+<https://www.scaleway.com/en/docs/managed-databases-for-postgresql-and-mysql/how-to/create-a-database/>,
+<https://www.scaleway.com/en/docs/managed-databases-for-postgresql-and-mysql/how-to/manage-read-replicas/>.
+Its `encryption-at-rest`, `read-replicas` and
+`snapshots` are the base offering's, and hold on this tier too.
+
+- `node-high-availability`. **Needs:** the High Availability option. A hot standby node, kept current
+  by synchronous replication, takes over when the main node fails: "If the main node fails for any
+  reason, the standby can take over requests" (concepts *High availability*). **Scope: node level
+  only.** The FAQ says: "In a high-availability cluster, active and hot standby nodes are indeed
+  located in the same data center but in two separate racks." The pair survives the loss of a node, not
+  the loss of the data centre or zone, so `zone-high-availability` is not claimed.
+- Regions `fr-par`, `nl-ams`, `pl-waw`: the base offering's regions, for the same reasons; no page
+  limits the High Availability option to some regions.
+
 ### Object Storage
 
 Category `storage.object`. Pages: <https://www.scaleway.com/en/docs/object-storage/concepts/>,
@@ -206,17 +290,31 @@ Category `storage.object`. Pages: <https://www.scaleway.com/en/docs/object-stora
 
 - `encryption-at-rest`: server-side encryption with SSE-C, SSE-ONE and SSE-KMS (FAQ *How can I encrypt
   my objects?*).
-- `high-availability`. **Needs:** the Standard Multi-AZ storage class (S3 class `STANDARD`). The FAQ
-  says that class spreads data across three Availability Zones, and that after "a complete data center
-  failure in an AZ" Scaleway can still rebuild the data. Standard One Zone keeps data in three racks of
-  a single zone, and Glacier is archive storage: objects in either class do not have this capability.
-  The availability page marks the Standard Multi-AZ class available in all four regions, so the
-  capability is not limited to some of the offering's regions.
+The base offering is the default storage class, **Standard Multi-AZ** (S3 class `STANDARD`). The page
+*Object operations* (<https://www.scaleway.com/en/docs/object-storage/api-cli/object-operations/>)
+says: "If no class is specified via the `--storage-class <class>` option, the object is created as
+Standard (Multi-AZ) by default." Standard One Zone and Glacier only lack capabilities, so they get no
+offering (tier-variant rule). Every capability below has **Needs:** nothing beyond the default class,
+Standard Multi-AZ.
+
+- `encryption-at-rest`: server-side encryption with SSE-C, SSE-ONE and SSE-KMS (FAQ *How can I encrypt
+  my objects?*).
 - `object-versioning`: bucket versioning (concepts *Versioning*; the 2026-05-20 changelog adds full
   versioning and Object Lock support to the console).
+- No high availability: see *Left out on purpose*.
 - Regions `fr-par`, `it-mil`, `nl-ams`, `pl-waw`: the availability page marks the Standard Multi-AZ and
   Standard One Zone classes "Available across the region" in all four regions. The concepts page lists
   an S3 endpoint in each of the four regions. Object Storage has no API in the SDK (it is S3-compatible).
+- **Milan multi-AZ (PRD #11's open question), resolved: no split.** PRD #11 asked whether Scaleway
+  should follow OVHcloud's rule, a separate offering where a capability holds only in some regions.
+  The changelog entry *A full 3-AZ Region in Milan!* (2026-10-12) names the "Object Storage Standard
+  Multi-AZ class" among the products in MIL-2 and MIL-3, and the availability page marks that class in
+  all four regions. So the default class is the same in every region, and the offering needs no
+  regional split. The concepts page and the quickstart still say Standard Multi-AZ "is available in the
+  Paris, Amsterdam and Warsaw regions"; like the Instances FAQ and the Block Storage concepts page,
+  they predate the Milan entry and are stale. Since Object Storage now lists no capability that
+  depends on zones, the question would only matter again if a refresh found the default class missing
+  from a region, and then the region rule applies.
 
 ### Queues
 
@@ -236,37 +334,10 @@ Category `serverless.function`. Pages: <https://www.scaleway.com/en/docs/serverl
 
 - `autoscaling`: functions scale between a minimum (down to zero) and maximum number of instances with
   demand.
-- `ipv6`. **Added on verification.** The page *IPv6 and the Scaleway ecosystem* lists Serverless
-  Functions among the products that support IPv6: "A function or container endpoint resolves to both
-  IPv4 and IPv6 addresses (dual stack)". The first compilation left this capability out for want of a
-  clear statement; it had not read this page. **Scope:** the page states it for a function's public
-  endpoint, so for incoming traffic. It says nothing about IPv6 for traffic a function sends.
+- No `ipv6`: see *Left out on purpose*.
 - Regions `fr-par`, `nl-ams`, `pl-waw`: the availability page marks Serverless Functions available in
   Paris, Amsterdam and Warsaw, and "Available soon" in Milan, so `it-mil` is not listed. SDK
   `api/function/v1beta1` serves the same three regions.
-
-### Serverless SQL Database
-
-Category `database.postgresql`: a PostgreSQL-compatible database with documented differences from
-default PostgreSQL. Generally available since 2024-06-28 (changelog). Pages:
-<https://www.scaleway.com/en/docs/serverless-sql-databases/faq/>,
-<https://www.scaleway.com/en/docs/serverless-sql-databases/reference-content/serverless-sql-databases-overview/>,
-<https://www.scaleway.com/en/docs/serverless-sql-databases/reference-content/known-differences/>.
-
-- **Compatibility caveat:** the known-differences page lists what does not behave as in standard
-  PostgreSQL, because of connection pooling and scaling to zero. In summary: no temporary tables or
-  views, no subscriptions (so no change-data-capture), no prepared transactions, and no concurrent
-  materialized-view refresh; `LISTEN`/`NOTIFY` delivery, advisory locks (and so state locking of the
-  Terraform/OpenTofu `pg` backend) and session settings are not guaranteed; databases and users are
-  managed through the console, API or IAM, not DDL; and some clients need recent versions for SNI. The
-  page points to Managed Database for PostgreSQL where strict compatibility is needed. The
-  `database.postgresql` category does not capture these differences; a workload that relies on any of
-  them needs Managed Database for PostgreSQL instead.
-
-- `autoscaling`: compute scales up and down with vCPU use, down to zero.
-- Region `fr-par`: the availability page marks Serverless SQL Database available in Paris, "Not
-  available" in Amsterdam and Warsaw, and "Available soon" in Milan. SDK `api/serverless_sqldb/v1alpha1`
-  serves Paris only.
 
 ## Left out on purpose
 
@@ -284,9 +355,7 @@ default PostgreSQL. Generally available since 2024-06-28 (changelog). Pages:
 - **Managed Database `point-in-time-restore` and `ipv6`:** no point-in-time restore is documented (backups
   are restored as taken; snapshots and clones copy the current state), and the FAQ says IPv6 is not
   supported.
-- **Serverless SQL Database `point-in-time-restore`:** seven days of daily automated backups, no restore to
-  an arbitrary moment.
-- **`ipv6` on Kubernetes Kapsule, Object Storage, Queues and Serverless SQL Database:** the page *IPv6 and
+- **`ipv6` on Kubernetes Kapsule (both tiers), Object Storage and Queues:** the page *IPv6 and
   the Scaleway ecosystem* (<https://www.scaleway.com/en/docs/ipam/reference-content/ipv6/>) lists the
   products that support IPv6, and none of these is among them. It says that "Products other than those
   listed here do not officially support IPv6", and names Managed Databases and Kubernetes Kapsule among
@@ -294,4 +363,36 @@ default PostgreSQL. Generally available since 2024-06-28 (changelog). Pages:
 - **Products not in the snapshot:** Kubernetes Kosmos (multi-cloud Kubernetes whose nodes may run
   outside Scaleway; Kapsule already serves the category); Serverless Containers and Serverless Jobs
   (containers and batch jobs, not per-invocation functions); NATS and Topics and Events (streams and
-  pub/sub, not queues); Managed Database for Redis and Document Database (no matching taxonomy category).
+  pub/sub, not queues); Managed Database for Redis and Document Database (no matching taxonomy category);
+  Serverless SQL Database (see below).
+- **Serverless SQL Database, removed from the snapshot (PRD #14, target rule).** It is a
+  PostgreSQL-compatible database with documented differences from standard PostgreSQL: the
+  known-differences page
+  (<https://www.scaleway.com/en/docs/serverless-sql-databases/reference-content/known-differences/>)
+  lists, because of connection pooling and scaling to zero, no temporary tables or views, no
+  subscriptions, no prepared transactions, and no guarantee for `LISTEN`/`NOTIFY`, advisory locks or
+  session settings, and it points to Managed Database for PostgreSQL where strict compatibility is
+  needed. So it does not fully serve `database.postgresql`, and a PostgreSQL workload is pointed at
+  Managed Database instead. It returns once a report can say "compatible, with differences".
+- **Serverless Functions `ipv6` (PRD #14, target rule).** `ipv6` means IPv6 connectivity in both
+  directions (ADR 0011). The page *IPv6 and the Scaleway ecosystem*
+  (<https://www.scaleway.com/en/docs/ipam/reference-content/ipv6/>), section *Serverless Functions and
+  Containers and IPv6*, says only that "A function or container endpoint resolves to both IPv4 and IPv6
+  addresses (dual stack)": inbound traffic only. Nothing documents IPv6 for traffic a function sends.
+- **Object Storage `node-high-availability` and `zone-high-availability` (PRD #14, target rule).** The
+  FAQ (<https://www.scaleway.com/en/docs/object-storage/faq/>) says Standard Multi-AZ distributes data
+  "across three different Availability Zones (AZ). In the event of a complete data center failure in an
+  AZ, we are still able to rebuild your data and make it accessible". Rebuilding the data and making it
+  accessible again is recovery, not continuity without manual failover, so neither level is stated in
+  full. Node level is not claimed either: the FAQ describes Standard One Zone's three racks as where
+  data is stored, not as continuity of service.
+- **Kubernetes Kapsule Dedicated `zone-high-availability`:** the control plane is reached through a Load
+  Balancer in the region's primary zone and is unreachable if that zone fails, "This limitation also
+  applies to HA Dedicated control planes" (Multi-AZ clusters page,
+  <https://www.scaleway.com/en/docs/kubernetes/reference-content/multi-az-clusters/>). See that
+  offering's section.
+- **Managed Database `zone-high-availability`:** the High Availability option keeps both nodes in one
+  data centre (FAQ). A Read Replica can be "Multi-AZ", hosted in a different zone (page *Manage Read
+  Replicas*), but promoting it is a manual, irreversible step ("It is possible to promote a Read Replica
+  node to a standalone Database Instance"), so it is not failover without manual action, and neither
+  tier lists zone level.

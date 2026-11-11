@@ -18,7 +18,7 @@
 | ID | Raw type | Category | Fit | Best offering | Reasons |
 |---|---|---|---|---|---|
 | `bucket-example` | `AWS::S3::Bucket` | `storage.object` | direct | `Object Storage` | `Object Storage` offers every capability the resource uses |
-| `db-example` | `AWS::RDS::DBInstance` | `database.postgresql` | partial | `Managed Database for PostgreSQL and MySQL` | `Managed Database for PostgreSQL and MySQL` does not offer `point-in-time-restore` |
+| `db-example` | `AWS::RDS::DBInstance` | `database.postgresql` | partial | `Managed Database for PostgreSQL and MySQL` (tie: `Managed Database for PostgreSQL and MySQL High Availability`) | `Managed Database for PostgreSQL and MySQL` does not offer `point-in-time-restore` |
 | `fn-example` | `AWS::Lambda::Function` | `serverless.function` | direct | `Serverless Functions` | `Serverless Functions` offers every capability the resource uses |
 | `i-0123456789abcdef0` | `AWS::EC2::Instance` | `compute.vm` | direct | `Elastic Metal` (tie: `Instances`) | `Elastic Metal` offers every capability the resource uses |
 | `misc-example` | `AWS::CloudFormation::CustomResource` | `unclassified` | none |  | not classified |
