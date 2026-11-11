@@ -6,14 +6,21 @@
 // cgo off or on and with a set of build tags, in an environment built from an
 // allow list so that nothing outside its arguments changes the listing.
 // Packages holds each package of the module to the allow list of every
-// depguard rule whose directory covers it and does not exclude it, exact and
-// prefix entries read as depguard reads them, and, for a rule that holds test
-// files, the imports of its _test.go files too (issue #79). A package only a
-// test imports is not listed by go list -deps, so it is not placed itself.
-// Sources holds every package of the
-// module, layer or not, to the rules that do not depend on a rule: it must
-// belong to the main module, sit in the directory its import path names with
-// symlinks resolved, and hold no cgo, C, assembly or other non-Go source.
+// depguard rule whose directory covers it and does not exclude it, and, for a
+// rule that holds test files, the imports of its _test.go files too (issue
+// #79). An import is matched as depguard v2.2.1 matches it: the entries are
+// sorted as written and only the one nearest before the import decides, exact
+// for an entry ending in $, by string prefix for one ending in /. AllowList
+// refuses a prefix entry that does not end in /, and a rule whose deny list
+// names a path its allow list allows, since depguard then decides by entry
+// length. A third-party package an allowed import reaches, and everything it
+// imports, is exempt: depguard lints no file of a dependency. Every other
+// package outside the module is reported. A package only a test imports is not
+// listed by go list -deps, so it is not placed itself. Sources holds every
+// package of the module, layer or not, to the rules that do not depend on a
+// rule: it must belong to the main module, sit in the directory its import
+// path names with symlinks resolved, and hold no cgo, C, assembly or other
+// non-Go source.
 // FindLineDirectives reports every line directive in a Go file git tracks or
 // would add under a root, and every symlink among those files.
 // StrayReleaseFiles and ReleaseWorkflow pin that the release builds what the

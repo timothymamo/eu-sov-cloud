@@ -51,10 +51,12 @@ build tag, `e2e`, `integration` and both, it runs `go list -deps` twice:
   not exclude it, as depguard holds a file to every rule whose globs match it: it must belong to the
   main module, sit in the directory its import path names once symlinks are resolved, hold no cgo,
   C, assembly, syso or other non-Go source, and import only what its rule allows
-  (`check.Packages`). An allow entry ending in `$` allows that package alone; one without is a
-  prefix, as depguard reads it. A rule without `!$test` holds the imports of the package's
-  `_test.go` files too (go list's `TestImports` and `XTestImports`, integration files in the
-  `integration` passes). Any other non-standard package the layers reach is flagged.
+  (`check.Packages`). An allow entry ending in `$` allows that package alone; one ending in `/` is
+  a prefix, as depguard reads it, and only the entry sorted nearest before an import decides. A
+  rule without `!$test` holds the imports of the package's `_test.go` files too (go list's
+  `TestImports` and `XTestImports`, integration files in the `integration` passes). A third-party
+  package an allowed import reaches, and its own dependencies, are exempt; any other non-standard
+  package the layers reach is flagged.
 - **The release binary**, `./cmd/eusov`: every package under the module path must belong to the main
   module, sit in its own real directory and hold only Go sources (`check.Sources`). Imports are not
   checked there; third-party packages are skipped.
@@ -68,7 +70,18 @@ does not list as a layer.
 name `!$test`, so it skipped `cloud-adapters-reach-the-cloud-through-the-sdk`, whose allow list
 names the cloud SDK roots as prefixes and whose `files:` list takes `inventoryfile` and
 `sourcetest` out of `internal/adapter/source` and holds test files. It now reads prefix entries,
-negated whole-directory globs and test-file imports, and holds that rule like every other. A
+negated whole-directory globs and test-file imports, and holds that rule like every other. It
+matches an import as depguard v2.2.1 does: the allow entries are sorted as written, `$` included,
+and only the entry nearest before the import decides, so `a/b$` shadows `a/` for `a/c`. A prefix
+entry must end in `/` (`os` would also allow `osfoo`), and a rule whose deny list names a path its
+allow list allows is refused, since depguard then decides by entry length; the deny list is read
+fail-closed. A third-party package that a held package reaches through an import its rules allow,
+and every package that one imports, is exempt from the check, sources included: depguard lints no
+file of a dependency, and a real SDK may hold assembly. Every other package outside the module is
+still reported. The check anchors a rule's `**/<dir>/**` and `!**/<dir>/**` at the module root,
+while depguard matches them at any depth of the file path, so a nested path such as
+`internal/adapter/target/x/internal/adapter/source/y` is read differently; an exclusion must lie
+under one of its rule's directories. A
 package that only a test imports is not itself listed by `go list -deps`, so its own placement
 (module, directory, sources) is not checked; the importing test's allow list is. A further
 test refuses a line directive (`//line ` or `/*line `, found with `go/scanner`) in any Go file of the

@@ -224,8 +224,11 @@ hand-written GCP package, add an entry for it, a probe line only it refuses and 
 
 - **Packages only a test imports are not placed.** `test/architecture` (ADR 0012) holds
   `cloud-adapters-reach-the-cloud-through-the-sdk` package by package on every release target,
-  as depguard does in `make lint` and CI (issue #79): its SDK-root prefix entries, the two
-  directories it excludes and its test files, integration tests included. `go list -deps` lists
+  as depguard does in `make lint` and CI (issue #79): its SDK-root prefix entries, which must
+  end in `/`, matched as depguard matches them (only the entry sorted nearest before an import
+  decides), the two directories it excludes and its test files, integration tests included. The
+  SDK packages an allowed import reaches, and their own dependencies, are exempt, as depguard
+  lints no file of a dependency. `go list -deps` lists
   the imports of a held package's tests but not those imported packages themselves, so a package
   only a test imports is checked against the test's allow list, not for its own module, directory
   or non-Go sources.

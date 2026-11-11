@@ -4,6 +4,8 @@ import (
 	"errors"
 	"fmt"
 	"path"
+	"slices"
+	"sort"
 	"strings"
 )
 
@@ -21,8 +23,10 @@ type AllowEntry struct {
 	Prefix bool
 }
 
-// allows reports whether the entry allows the import path imp, as depguard
-// matches it: exactly, or by plain string prefix for a prefix entry.
+// allows reports whether the entry, on its own, allows the import path imp:
+// exactly, or by plain string prefix for a prefix entry. depguard tests an
+// import against one entry of a list only, the nearest preceding one
+// (allowedBy).
 func (e AllowEntry) allows(imp string) bool {
 	if e.Prefix {
 		return strings.HasPrefix(imp, e.Path)
@@ -31,12 +35,47 @@ func (e AllowEntry) allows(imp string) bool {
 	return imp == e.Path
 }
 
+// written returns the entry as .golangci.yml writes it: an exact entry with
+// its trailing $.
+func (e AllowEntry) written() string {
+	if e.Prefix {
+		return e.Path
+	}
+
+	return e.Path + "$"
+}
+
+// allowedBy reports whether an allow list allows the import path imp the way
+// depguard v2.2.1 decides it (settings.go, strInPrefixList): the entries as
+// written, $ included, are sorted; the entry that sorts nearest before imp,
+// comparing each with its trailing $ removed, is the only one tested. So with
+// a/ and a/b$ in one list, a/c is refused although a/ alone would allow it.
+func allowedBy(allow []AllowEntry, imp string) bool {
+	sorted := slices.Clone(allow)
+	slices.SortFunc(sorted, func(a, b AllowEntry) int { return strings.Compare(a.written(), b.written()) })
+
+	i := sort.Search(len(sorted), func(i int) bool { return sorted[i].Path > imp }) - 1
+	if i < 0 {
+		return false
+	}
+
+	return sorted[i].allows(imp)
+}
+
 // AllowList returns the allow list of the depguard rule named rule in a
 // .golangci.yml document: the entries under linters: settings: depguard: rules:
 // <rule>: allow:, in file order, without their quotes. An entry that ends in $
-// comes back exact, its $ removed; any other comes back as a prefix entry,
-// written as it is, since depguard allows every import path that starts with
-// it (the SDK-only rule names the cloud SDK roots that way, issue #79).
+// comes back exact, its $ removed; one that ends in / comes back as a prefix
+// entry, written as it is, since depguard allows every import path that starts
+// with it (the SDK-only rule names the cloud SDK roots that way, issue #79).
+// Any other entry is refused: depguard reads it as a plain string prefix, so os
+// would allow osfoo and an entry that lost its $ would widen the rule.
+//
+// The rule's deny list is read too, its entries a scalar path or a mapping of
+// pkg and desc, and the rule is refused when an allow entry allows the path a
+// deny entry names: depguard then decides that import by entry length, so the
+// allow list would not say what the rule allows. A deny list given as an
+// alias is refused, as this reader of one rule cannot see its anchor.
 //
 // The rule is found by walking those keys by indentation, not by its line or
 // its place among the rules, so edits elsewhere in the file do not move it. It
@@ -199,14 +238,101 @@ func readAllow(body []line) ([]AllowEntry, error) {
 			continue
 		}
 
-		if !isImportPath(strings.TrimSuffix(value, "/")) {
+		root, ok := strings.CutSuffix(value, "/")
+		if !ok {
+			return nil, fmt.Errorf("allow entry %s ends in neither $ nor /: depguard would allow every import path that starts with it, look-alikes such as %sfoo included; write %s$ for the package or %s/ for its tree", value, value, value, value)
+		}
+
+		if !isImportPath(root) {
 			return nil, fmt.Errorf("allow entry %s does not name an import path or an import path prefix", value)
 		}
 
 		out = append(out, AllowEntry{Path: value, Prefix: true})
 	}
 
+	if err := checkDeny(entries, out); err != nil {
+		return nil, err
+	}
+
 	return out, nil
+}
+
+// checkDeny reads the deny list of a rule's body, if it has one, and returns
+// an error when an allow entry allows the path a deny entry names: depguard
+// then decides that import by which entry is longer, not by which list holds
+// it, so the allow list alone no longer says what the rule allows. A deny
+// entry no allow entry allows, such as net beside net/netip$, leaves the allow
+// list as the whole answer and is fine.
+func checkDeny(entries []entry, allow []AllowEntry) error {
+	for _, e := range entries {
+		if e.key != "deny" {
+			continue
+		}
+
+		paths, err := readDenyPaths(e)
+		if err != nil {
+			return err
+		}
+
+		for _, p := range paths {
+			name := strings.TrimSuffix(p, "$")
+
+			for _, a := range allow {
+				if a.allows(name) {
+					return fmt.Errorf("line %d: deny entry %s is allowed by allow entry %s: depguard decides that import by entry length, so the allow list does not say what the rule allows", e.num, p, a.written())
+				}
+			}
+		}
+	}
+
+	return nil
+}
+
+// readDenyPaths returns the path of each entry of a deny list: a block
+// sequence below the key, optionally anchored (deny: &name), whose entries are
+// a scalar path or a mapping of pkg and desc. It fails closed on an alias,
+// whose entries this reader of one rule cannot see.
+func readDenyPaths(e entry) ([]string, error) {
+	if e.value != "" && !strings.HasPrefix(e.value, "&") {
+		return nil, fmt.Errorf("line %d: deny has %q on its own line, want an anchor or nothing", e.num, e.value)
+	}
+
+	if strings.HasPrefix(e.value, "&") {
+		if _, err := anchorName(e, e.value[1:]); err != nil {
+			return nil, err
+		}
+	}
+
+	items, err := sequence(e.block)
+	if err != nil {
+		return nil, fmt.Errorf("deny: %w", err)
+	}
+
+	paths := make([]string, 0, len(items))
+
+	for _, it := range items {
+		if len(it.lines) == 1 {
+			if _, _, isKey := keyValue(it.lines[0].text); !isKey {
+				value, err := scalar(it.lines[0].text)
+				if err != nil {
+					return nil, fmt.Errorf("line %d: a deny entry: %w", it.num, err)
+				}
+
+				paths = append(paths, value)
+
+				continue
+			}
+		}
+
+		pkg, err := denyPkg(it)
+		if err != nil {
+			return nil, err
+		}
+
+		paths = append(paths, pkg)
+	}
+
+	return paths, nil
 }
 
 // isImportPath reports whether name looks like an import path: clean, relative,

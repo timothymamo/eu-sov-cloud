@@ -62,6 +62,12 @@
 // check reads its SDK-root prefix entries, the two directories it excludes and
 // its test files, and TestCloudAdapterSDKRuleHoldsItsProbeForEveryReleaseTarget
 // fails a fixture adapter that imports net/http on every release platform.
+// TestCloudAdapterSDKRuleHoldsItsSDKProbeForEveryReleaseTarget passes a fixture
+// adapter that imports a stand-in SDK: the SDK package and what it imports are
+// third-party code an allowed import reaches, which depguard never lints, so
+// the check exempts them, while a third-party package no allow list reaches is
+// still reported. TestOnlyTheSDKRuleHoldsPrefixEntries keeps prefix entries,
+// which must end in /, to that rule.
 //
 // The checks are tests: they run in make test, make check and CI's make cover,
 // with no workflow of their own. They need no network and no credentials.

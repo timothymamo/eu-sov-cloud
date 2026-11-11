@@ -84,7 +84,8 @@ type Rule struct {
 	// (TestImports and XTestImports) are held to the allow list as well.
 	Tests bool
 	// Allow are the entries the imports are held to, each exact or a prefix
-	// as depguard reads it.
+	// as depguard reads it. An import is tested against the entry that sorts
+	// nearest before it only, as depguard does (allowedBy).
 	Allow []AllowEntry
 }
 
@@ -297,9 +298,19 @@ func decodePackages(r io.Reader) ([]Package, error) {
 //
 // Unlike Sources, it flags a package outside the module path too: the
 // patterns it is given are the layers, so every package they reach outside
-// the standard library must be one of them.
+// the standard library must be one of them. The exception is third-party code
+// an allow list lets in: a package outside the module path that a package the
+// rules hold imports through an import every rule holding it allows (a cloud
+// SDK package under a prefix entry of the SDK-only rule), and every package
+// such a package imports, directly or not (smithy-go below the AWS SDK, which
+// no entry names). depguard lints no file of a dependency, so none of these
+// packages breaks a rule, and they are not checked at all: not their module,
+// not their sources, which in a real SDK may hold assembly. Everything else
+// outside the module, which no allow list reaches, is still reported, so the
+// release binary holds no third-party code the rules did not let in.
 func Packages(root, module string, rules []Rule, pkgs []Package) []string {
 	m := newModuleRoot(root, module)
+	exempt := allowedThirdParty(m, rules, pkgs)
 
 	var messages []string
 
@@ -308,9 +319,12 @@ func Packages(root, module string, rules []Rule, pkgs []Package) []string {
 			continue
 		}
 
-		c := packageCheck{pkg: pkg}
-
 		rel, inModule := m.rel(pkg.ImportPath)
+		if !inModule && exempt[pkg.ImportPath] {
+			continue
+		}
+
+		c := packageCheck{pkg: pkg}
 
 		var (
 			covering []Rule
@@ -339,6 +353,74 @@ func Packages(root, module string, rules []Rule, pkgs []Package) []string {
 	slices.Sort(messages)
 
 	return messages
+}
+
+// allowedThirdParty returns the import paths of the packages of pkgs outside
+// the module path that an allow list lets in: those a package the rules hold
+// imports through an import every rule holding it allows, its test files'
+// imports included where the rule holds them, and every package of pkgs those
+// import, followed through the import graph.
+func allowedThirdParty(m moduleRoot, rules []Rule, pkgs []Package) map[string]bool {
+	byPath := make(map[string]Package, len(pkgs))
+	for _, pkg := range pkgs {
+		byPath[pkg.ImportPath] = pkg
+	}
+
+	exempt := make(map[string]bool)
+
+	var queue []string
+
+	reach := func(imp string) {
+		if _, inModule := m.rel(imp); inModule || exempt[imp] {
+			return
+		}
+
+		exempt[imp] = true
+		queue = append(queue, imp)
+	}
+
+	for _, pkg := range pkgs {
+		if pkg.Standard {
+			continue
+		}
+
+		rel, inModule := m.rel(pkg.ImportPath)
+		if !inModule {
+			continue
+		}
+
+		covering, _ := rulesFor(rules, rel)
+		if len(covering) == 0 {
+			continue
+		}
+
+		tests := slices.ContainsFunc(covering, func(r Rule) bool { return r.Tests })
+
+		imports := slices.Clone(pkg.Imports)
+		if tests {
+			imports = append(imports, pkg.TestImports...)
+			imports = append(imports, pkg.XTestImports...)
+		}
+
+		for _, imp := range imports {
+			if slices.ContainsFunc(covering, func(r Rule) bool { return !allowedBy(r.Allow, imp) }) {
+				continue
+			}
+
+			reach(imp)
+		}
+	}
+
+	for len(queue) != 0 {
+		imp := queue[0]
+		queue = queue[1:]
+
+		for _, dep := range byPath[imp].Imports {
+			reach(dep)
+		}
+	}
+
+	return exempt
 }
 
 // Sources checks every package of pkgs whose import path is module or under
@@ -520,7 +602,7 @@ func (c *packageCheck) imports(rule Rule) {
 
 			seen[imp] = true
 
-			if !slices.ContainsFunc(rule.Allow, func(e AllowEntry) bool { return e.allows(imp) }) {
+			if !allowedBy(rule.Allow, imp) {
 				c.report("imports %s%s, which %s does not hold", imp, g.where, holder)
 			}
 		}

@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"path"
+	"slices"
 	"strings"
 )
 
@@ -38,8 +39,14 @@ type RuleFiles struct {
 // error when the rule or its files: list is missing, when the list holds no
 // directory (an empty list, or one that only takes directories out), and for
 // any other entry, such as $all, $test, a file glob, a negated file glob, a
-// negated $all or a bare path. The document is held to the same characters AllowList
-// holds it to.
+// negated $all or a bare path, and for an exclusion that equals one of the
+// rule's directories or lies under none of them. The document is held to the
+// same characters AllowList holds it to.
+//
+// The directories are anchored at the module root, while depguard matches
+// **/<dir>/** at any depth of a file's path: the two differ only for a path
+// that repeats a directory below another, such as
+// internal/adapter/target/x/internal/adapter/source/y.
 func RuleDirs(golangci []byte, rule string) (RuleFiles, error) {
 	lines, err := splitLines(golangci)
 	if err != nil {
@@ -113,6 +120,16 @@ func readFiles(body []line) (RuleFiles, error) {
 
 	if len(out.Dirs) == 0 {
 		return RuleFiles{}, fmt.Errorf("line %d: the files list names no directory", files.num)
+	}
+
+	for _, ex := range out.Excludes {
+		if slices.Contains(out.Dirs, ex) {
+			return RuleFiles{}, fmt.Errorf("line %d: the files list takes out %s, which it also names as a directory, so it holds nothing there", files.num, ex)
+		}
+
+		if !slices.ContainsFunc(out.Dirs, func(dir string) bool { return strings.HasPrefix(ex, dir+"/") }) {
+			return RuleFiles{}, fmt.Errorf("line %d: the files list takes out %s, which lies under none of its directories, so it narrows nothing", files.num, ex)
+		}
 	}
 
 	return out, nil
