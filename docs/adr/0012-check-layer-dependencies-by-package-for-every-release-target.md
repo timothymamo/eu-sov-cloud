@@ -1,4 +1,4 @@
-# 0011. Check the layers' dependencies by package for every release target
+# 0012. Check the layers' dependencies by package for every release target
 
 - Status: Accepted
 - Date: 2026-11-11

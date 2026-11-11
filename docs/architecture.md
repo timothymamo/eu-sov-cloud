@@ -65,7 +65,7 @@ the ways code could be hidden from it, and what refuses each:
   allow list of every rule that covers it, and it holds every package of the module in the release
   binary to Go sources in their own directory, so assembly, cgo, line directives and symlinked
   directories cannot get past the file-name-based rules
-  ([ADR 0011](adr/0011-check-layer-dependencies-by-package-for-every-release-target.md)).
+  ([ADR 0012](adr/0012-check-layer-dependencies-by-package-for-every-release-target.md)).
 
 ## Domain model
 
