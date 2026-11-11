@@ -567,7 +567,7 @@ func TestReleaseWorkflow(t *testing.T) {
 		{
 			name:     "a step replaced in the goreleaser job",
 			workflow: in("goreleaser", "      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0\n        with:\n          go-version-file: go.mod\n          cache: false\n", "      - run: ./scripts/prepare.sh\n"),
-			wantIn:   "step 2",
+			wantIn:   `want actions/setup-go holds the key "run"`,
 		},
 		{
 			name:     "the test job running another command",
@@ -580,7 +580,7 @@ func TestReleaseWorkflow(t *testing.T) {
 		// repository code, and exact.
 		{name: "the test checkout without the full history", workflow: in("test", "          fetch-depth: 0\n", ""), wantIn: "fetch-depth"},
 		{name: "no guard step", workflow: steps("test", withoutStep(t, testSteps, "name: The tagged commit is on main")), wantIn: "holds 3 steps, want exactly 4"},
-		{name: "the guard after setup-go", workflow: steps("test", swappedSteps(t, testSteps, "name: The tagged commit is on main", "actions/setup-go@")), wantIn: "step 2"},
+		{name: "the guard after setup-go", workflow: steps("test", swappedSteps(t, testSteps, "name: The tagged commit is on main", "actions/setup-go@")), wantIn: `want the guard that the tagged commit is on main holds the key "uses"`},
 		{
 			name:     "the guard without the ancestry check",
 			workflow: in("test", `git merge-base --is-ancestor "$GITHUB_SHA" refs/remotes/origin/main || {`, `git rev-parse --verify --quiet "$GITHUB_SHA" > /dev/null || {`),
@@ -629,7 +629,7 @@ func TestReleaseWorkflow(t *testing.T) {
 		{name: "a working-directory", workflow: in("test", "        run: make test\n", "        run: make test\n        working-directory: sub\n"), wantIn: `key "working-directory"`},
 		{name: "an env on another step", workflow: in("goreleaser", "          cache: false\n", "          cache: false\n        env:\n          A: b\n"), wantIn: `key "env"`},
 		{name: "a local action", workflow: in("test", "actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e", "./.github/actions/setup"), wantIn: "uses"},
-		{name: "a reusable workflow", workflow: in("goreleaser", "    runs-on: ubuntu-latest\n", "    uses: example/repo/.github/workflows/x.yml@main\n"), wantIn: "runs-on"},
+		{name: "a reusable workflow", workflow: in("goreleaser", "    runs-on: ubuntu-latest\n", "    uses: example/repo/.github/workflows/x.yml@main\n"), wantIn: `holds no "runs-on", want exactly name, runs-on, permissions, steps, needs`},
 
 		// What goreleaser is asked to do.
 		{name: "an argument glued to --clean", workflow: in("goreleaser", "args: release --clean", "args: release --clean-f.goreleaser.prod.yaml"), wantIn: "args"},
@@ -687,7 +687,7 @@ func TestReleaseWorkflow(t *testing.T) {
 		// The image job's steps are a closed list too.
 		{name: "an extra step in the image job", workflow: steps("image", beforeStep(t, imageSteps, "      - uses: docker/setup-buildx-action@", "run: ./scripts/prepare.sh")), wantIn: "holds 7 steps, want exactly 6"},
 		{name: "a missing step in the image job", workflow: steps("image", withoutStep(t, imageSteps, "docker/login-action@")), wantIn: "holds 5 steps, want exactly 6"},
-		{name: "two image steps swapped", workflow: steps("image", swappedSteps(t, imageSteps, "docker/setup-buildx-action@", "docker/login-action@")), wantIn: "step 3"},
+		{name: "two image steps swapped", workflow: steps("image", swappedSteps(t, imageSteps, "docker/setup-buildx-action@", "docker/login-action@")), wantIn: "want docker/setup-buildx-action: uses is"},
 		{name: "build-push-action pinned by tag", workflow: in("image", "docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc", "docker/build-push-action@v7"), wantIn: "build-push-action@v7"},
 		{name: "setup-buildx-action pinned by tag", workflow: in("image", "docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069", "docker/setup-buildx-action@v4"), wantIn: "setup-buildx-action@v4"},
 		{name: "metadata-action pinned by tag", workflow: in("image", "docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302", "docker/metadata-action@v6"), wantIn: "metadata-action@v6"},
@@ -763,7 +763,7 @@ func TestReleaseWorkflow(t *testing.T) {
 		// and the SPDX document under the name the sign job downloads.
 		{name: "an extra step in the sbom job", workflow: steps("sbom", beforeStep(t, sbomSteps, "      - uses: anchore/sbom-action@", "run: ./scripts/prepare.sh")), wantIn: "holds 4 steps, want exactly 3"},
 		{name: "a missing step in the sbom job", workflow: steps("sbom", withoutStep(t, sbomSteps, "actions/upload-artifact@")), wantIn: "holds 2 steps, want exactly 3"},
-		{name: "two sbom steps swapped", workflow: steps("sbom", swappedSteps(t, sbomSteps, "docker/login-action@", "anchore/sbom-action@")), wantIn: "step 1"},
+		{name: "two sbom steps swapped", workflow: steps("sbom", swappedSteps(t, sbomSteps, "docker/login-action@", "anchore/sbom-action@")), wantIn: "want docker/login-action: uses is"},
 		{name: "the SBOM read by tag", workflow: in("sbom", "image: registry:ghcr.io/timothymamo/eusov@${{ needs.image.outputs.digest }}", "image: registry:ghcr.io/timothymamo/eusov:latest"), wantIn: "with: image"},
 		{name: "another SBOM format", workflow: in("sbom", "          format: spdx-json\n", "          format: cyclonedx-json\n"), wantIn: "format"},
 		{name: "the SBOM uploaded to the run", workflow: in("sbom", "          upload-artifact: false\n", "          upload-artifact: true\n"), wantIn: "upload-artifact"},
@@ -781,9 +781,9 @@ func TestReleaseWorkflow(t *testing.T) {
 		{name: "the sign job without needs", workflow: in("sign", "    needs: [image, sbom]\n", ""), wantIn: `no "needs"`},
 		{name: "an extra step in the sign job", workflow: steps("sign", beforeStep(t, signSteps, "      - uses: actions/download-artifact@", "uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1")), wantIn: "holds 7 steps, want exactly 6"},
 		{name: "a checkout in place of the cosign installer", workflow: steps("sign", slices.Replace(slices.Clone(signSteps), 0, 1, "      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1\n")), wantIn: "cosign-installer"},
-		{name: "a docker login in place of the cosign login", workflow: steps("sign", slices.Replace(slices.Clone(signSteps), 1, 2, "      - uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550 # v4.8.0\n        with:\n          registry: ghcr.io\n")), wantIn: "step 2"},
-		{name: "an anchore action in place of the provenance attestation", workflow: steps("sign", slices.Replace(slices.Clone(signSteps), 3, 4, "      - uses: anchore/sbom-action@66cbf4bc1f1c0d2edc94016e65bc221b6bb0ad6c # v0.24.3\n")), wantIn: "actions/attest"},
-		{name: "two sign steps swapped", workflow: steps("sign", swappedSteps(t, signSteps, "name: Attest the build provenance", "actions/download-artifact@")), wantIn: "step 4"},
+		{name: "a docker login in place of the cosign login", workflow: steps("sign", slices.Replace(slices.Clone(signSteps), 1, 2, "      - uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550 # v4.8.0\n        with:\n          registry: ghcr.io\n")), wantIn: `want the cosign login holds the key "uses"`},
+		{name: "an anchore action in place of the provenance attestation", workflow: steps("sign", slices.Replace(slices.Clone(signSteps), 3, 4, "      - uses: anchore/sbom-action@66cbf4bc1f1c0d2edc94016e65bc221b6bb0ad6c # v0.24.3\n")), wantIn: `want actions/attest (the build provenance) holds no "with", want exactly name, uses, with`},
+		{name: "two sign steps swapped", workflow: steps("sign", swappedSteps(t, signSteps, "name: Attest the build provenance", "actions/download-artifact@")), wantIn: `want actions/download-artifact holds the key "name"`},
 		{name: "an upload in place of the artifact download", workflow: in("sign", "      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2\n", "      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2\n"), wantIn: "download-artifact"},
 		{name: "a cosign installer pinned by tag", workflow: in("sign", "sigstore/cosign-installer@756fe2d284c7292c4e9b62c8a28f1e5629c59532", "sigstore/cosign-installer@v4"), wantIn: "cosign-installer@v4"},
 		{name: "a cosign release range", workflow: in("sign", "cosign-release: v3.1.4", "cosign-release: v3"), wantIn: "cosign-release"},
@@ -804,7 +804,7 @@ func TestReleaseWorkflow(t *testing.T) {
 		{name: "the sign step by tag", workflow: in("sign", `run: cosign sign --yes --recursive "ghcr.io/timothymamo/eusov@${DIGEST}"`, `run: cosign sign --yes --recursive "ghcr.io/timothymamo/eusov:${DIGEST}"`), wantIn: "@${DIGEST}"},
 		{name: "the sign step without the digest env", workflow: in("sign", "        env:\n          DIGEST: ${{ needs.image.outputs.digest }}\n", ""), wantIn: `no "env"`},
 		{name: "a shell on the sign step", workflow: in("sign", "        env:\n          DIGEST: ${{ needs.image.outputs.digest }}\n", "        shell: bash\n        env:\n          DIGEST: ${{ needs.image.outputs.digest }}\n"), wantIn: `key "shell"`},
-		{name: "GOFLAGS on the sign step", workflow: in("sign", "          DIGEST: ${{ needs.image.outputs.digest }}\n", "          DIGEST: ${{ needs.image.outputs.digest }}\n          GOFLAGS: -tags=sneaky\n"), wantIn: "GOFLAGS"},
+		{name: "GOFLAGS on the sign step", workflow: in("sign", "          DIGEST: ${{ needs.image.outputs.digest }}\n", "          DIGEST: ${{ needs.image.outputs.digest }}\n          GOFLAGS: -tags=sneaky\n"), wantIn: `the signature: env holds ["DIGEST: ${{ needs.image.outputs.digest }}" "GOFLAGS: -tags=sneaky"]`},
 
 		// The attestations: the image and its SBOM by digest, pushed to the
 		// registry, and nothing stored in an organisation API.

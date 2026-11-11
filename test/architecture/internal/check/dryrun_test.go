@@ -151,10 +151,10 @@ func TestDryRunMirrorsRelease(t *testing.T) {
 		// provenance and SBOM settings, compared on the step that builds what
 		// the release publishes (not the ci's second, single-platform load for
 		// the smoke test).
-		{name: "a drifted platform", ci: mutate(t, ciDryRun, "          platforms: linux/amd64,linux/arm64\n", "          platforms: linux/amd64\n"), release: releaseDryRun, wantIn: "platforms"},
-		{name: "a drifted annotation", ci: mutate(t, ciDryRun, "https://github.com/timothymamo/eu-sov-cloud", "https://example.com"), release: releaseDryRun, wantIn: "annotations"},
-		{name: "a drifted provenance", ci: mutate(t, ciDryRun, "          provenance: false\n", "          provenance: true\n"), release: releaseDryRun, wantIn: "provenance"},
-		{name: "a drifted sbom setting", ci: mutate(t, ciDryRun, "          sbom: false\n", "          sbom: true\n"), release: releaseDryRun, wantIn: "sbom"},
+		{name: "a drifted platform", ci: mutate(t, ciDryRun, "          platforms: linux/amd64,linux/arm64\n", "          platforms: linux/amd64\n"), release: releaseDryRun, wantIn: `with: platforms is "linux/amd64", release.yml's`},
+		{name: "a drifted annotation", ci: mutate(t, ciDryRun, "https://github.com/timothymamo/eu-sov-cloud", "https://example.com"), release: releaseDryRun, wantIn: "with: annotations is"},
+		{name: "a drifted provenance", ci: mutate(t, ciDryRun, "          provenance: false\n", "          provenance: true\n"), release: releaseDryRun, wantIn: `with: provenance is "true"`},
+		{name: "a drifted sbom setting", ci: mutate(t, ciDryRun, "          sbom: false\n", "          sbom: true\n"), release: releaseDryRun, wantIn: `with: sbom is "true"`},
 
 		// The tags: the release's rules with a sample tag in place of
 		// github.ref_name, and the same image name.
@@ -162,27 +162,101 @@ func TestDryRunMirrorsRelease(t *testing.T) {
 			name:    "a drifted tag rule",
 			ci:      mutate(t, ciDryRun, "type=semver,pattern={{major}}.{{minor}},value=v1.2.3", "type=semver,pattern={{major}},value=v1.2.3"),
 			release: releaseDryRun,
-			wantIn:  "tags",
+			wantIn:  "with: tags are",
 		},
 		{
 			name:    "a tag rule the release does not have",
 			ci:      mutate(t, ciDryRun, "            type=semver,pattern={{raw}},value=v1.2.3\n", "            type=semver,pattern={{raw}},value=v1.2.3\n            type=ref,event=branch\n"),
 			release: releaseDryRun,
-			wantIn:  "tags",
+			wantIn:  "with: tags are",
 		},
-		{name: "a drifted image name", ci: mutate(t, ciDryRun, "          images: ghcr.io/timothymamo/eusov\n", "          images: ghcr.io/example/eusov\n"), release: releaseDryRun, wantIn: "images"},
+		{name: "a drifted image name", ci: mutate(t, ciDryRun, "          images: ghcr.io/timothymamo/eusov\n", "          images: ghcr.io/example/eusov\n"), release: releaseDryRun, wantIn: `with: images is "ghcr.io/example/eusov"`},
 
 		// The SBOM: the release's format and exact syft.
-		{name: "a drifted syft version", ci: mutate(t, ciDryRun, "syft-version: v1.57.1", "syft-version: v1.58.0"), release: releaseDryRun, wantIn: "syft-version"},
-		{name: "a drifted SBOM format", ci: mutate(t, ciDryRun, "          format: spdx-json\n", "          format: cyclonedx-json\n"), release: releaseDryRun, wantIn: "format"},
+		{name: "a drifted syft version", ci: mutate(t, ciDryRun, "syft-version: v1.57.1", "syft-version: v1.58.0"), release: releaseDryRun, wantIn: `with: syft-version is "v1.58.0"`},
+		{name: "a drifted SBOM format", ci: mutate(t, ciDryRun, "          format: spdx-json\n", "          format: cyclonedx-json\n"), release: releaseDryRun, wantIn: `with: format is "cyclonedx-json"`},
 
 		// The pins: the same commit for every action the two share, and the
 		// same BuildKit image by tag and digest.
-		{name: "a drifted metadata-action pin", ci: mutate(t, ciDryRun, "docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302", "docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411303"), release: releaseDryRun, wantIn: "metadata-action"},
-		{name: "a drifted build-push-action pin", ci: ciDryRun, release: mutate(t, releaseDryRun, "docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc", "docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dd"), wantIn: "build-push-action"},
-		{name: "a drifted sbom-action pin", ci: mutate(t, ciDryRun, "anchore/sbom-action@66cbf4bc1f1c0d2edc94016e65bc221b6bb0ad6c", "anchore/sbom-action@66cbf4bc1f1c0d2edc94016e65bc221b6bb0ad6d"), release: releaseDryRun, wantIn: "sbom-action"},
-		{name: "a drifted setup-buildx-action pin", ci: ciDryRun, release: mutate(t, releaseDryRun, "docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069", "docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497070"), wantIn: "setup-buildx-action"},
-		{name: "a drifted BuildKit image", ci: mutate(t, ciDryRun, "v0.34.2@sha256:c5f8862f52499773af85bc07695b2379ef08e8002352b0df2c4864c91d78dabe", "v0.35.0@sha256:1111111111111111111111111111111111111111111111111111111111111111"), release: releaseDryRun, wantIn: "moby/buildkit"},
+		{name: "a drifted metadata-action pin", ci: mutate(t, ciDryRun, "docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302", "docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411303"), release: releaseDryRun, wantIn: "docker/metadata-action runs at"},
+		{name: "a drifted build-push-action pin", ci: ciDryRun, release: mutate(t, releaseDryRun, "docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc", "docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dd"), wantIn: "docker/build-push-action runs at c3c9e263c25d99ce0380d002d59b67737d91b0dc (line 24) and at c3c9e263c25d99ce0380d002d59b67737d91b0dd"},
+		{name: "a drifted sbom-action pin", ci: mutate(t, ciDryRun, "anchore/sbom-action@66cbf4bc1f1c0d2edc94016e65bc221b6bb0ad6c", "anchore/sbom-action@66cbf4bc1f1c0d2edc94016e65bc221b6bb0ad6d"), release: releaseDryRun, wantIn: "anchore/sbom-action runs at"},
+		{name: "a drifted setup-buildx-action pin", ci: ciDryRun, release: mutate(t, releaseDryRun, "docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069", "docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497070"), wantIn: "docker/setup-buildx-action runs at"},
+		{name: "a drifted BuildKit image", ci: mutate(t, ciDryRun, "v0.34.2@sha256:c5f8862f52499773af85bc07695b2379ef08e8002352b0df2c4864c91d78dabe", "v0.35.0@sha256:1111111111111111111111111111111111111111111111111111111111111111"), release: releaseDryRun, wantIn: "the dry run must build with the release's moby/buildkit tag and digest"},
+
+		// The one build the dry run compares is the one that does not load the
+		// image: none left, or a second one, is refused rather than guessed at.
+		{
+			name:    "a multi-platform build that loads the image too",
+			ci:      mutate(t, ciDryRun, "          outputs: type=oci,dest=${{ runner.temp }}/eusov.oci.tar\n", "          load: true\n          outputs: type=oci,dest=${{ runner.temp }}/eusov.oci.tar\n"),
+			release: releaseDryRun,
+			wantIn:  "load: true left out, holds 0 docker/build-push-action steps, want exactly 1",
+		},
+		{
+			name:    "a second build that does not load the image",
+			ci:      mutate(t, ciDryRun, "      - name: Load linux/amd64 for the smoke test\n", "      - name: Build once more\n        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0\n        with:\n          context: .\n          platforms: linux/amd64,linux/arm64\n          push: false\n          outputs: type=oci,dest=${{ runner.temp }}/eusov-2.oci.tar\n      - name: Load linux/amd64 for the smoke test\n"),
+			release: releaseDryRun,
+			wantIn:  "load: true left out, holds 2 docker/build-push-action steps, want exactly 1",
+		},
+		{
+			// The load: true step is the dry run's own smoke test, not part of
+			// what the release publishes: leaving it out leaves the one build.
+			name:    "the dry run without its smoke-test load",
+			ci:      mutate(t, ciDryRun, "      - name: Load linux/amd64 for the smoke test\n        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0\n        with:\n          context: .\n          platforms: linux/amd64\n          load: true\n", ""),
+			release: releaseDryRun,
+		},
+
+		// The sample tag the dry run's tag rules must carry for the release's
+		// github.ref_name rules to be compared at all.
+		{
+			name:    "a metadata step without a sample tag",
+			ci:      mutate(t, ciDryRun, "            type=semver,pattern={{raw}},value=v1.2.3\n            type=semver,pattern={{major}}.{{minor}},value=v1.2.3,enable=${{ !contains('v1.2.3', '-') }}\n", "            type=semver,pattern={{raw}}\n            type=semver,pattern={{major}}.{{minor}},enable=${{ !contains(github.ref_name, '-') }}\n"),
+			release: releaseDryRun,
+			wantIn:  "holds no ,value=<sample>",
+		},
+		{
+			name:    "a metadata step with an empty sample tag",
+			ci:      mutate(t, ciDryRun, "            type=semver,pattern={{raw}},value=v1.2.3\n", "            type=semver,pattern={{raw}},value=\n"),
+			release: releaseDryRun,
+			wantIn:  "holds an empty ,value=",
+		},
+		{
+			name:    "a dry run without the metadata-action step",
+			ci:      mutate(t, ciDryRun, "      - name: Image tags for a sample release tag, the highest\n        uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6.2.0\n        with:\n          images: ghcr.io/timothymamo/eusov\n          flavor: latest=${{ steps.latest.outputs.highest }}\n          tags: |\n            type=semver,pattern={{raw}},value=v1.2.3\n            type=semver,pattern={{major}}.{{minor}},value=v1.2.3,enable=${{ !contains('v1.2.3', '-') }}\n", ""),
+			release: releaseDryRun,
+			wantIn:  "so the dry run checks none of the release's tags",
+		},
+
+		// The with: keys the build and the SBOM are compared on, and the steps
+		// themselves: a key or a step the dry run does not have is named.
+		{name: "a build step without platforms", ci: mutate(t, ciDryRun, "          platforms: linux/amd64,linux/arm64\n          push: false\n", "          push: false\n"), release: releaseDryRun, wantIn: "holds no with: platforms"},
+		{name: "a metadata step without images", ci: mutate(t, ciDryRun, "          images: ghcr.io/timothymamo/eusov\n", ""), release: releaseDryRun, wantIn: "holds no with: images"},
+
+		// The BuildKit image comes from the job's env:, which the check resolves
+		// and refuses when it cannot.
+		{
+			name:    "a BuildKit expression that is not an env variable",
+			ci:      mutate(t, ciDryRun, "          driver-opts: image=moby/buildkit:${{ env.BUILDKIT_VERSION }}\n", "          driver-opts: image=moby/buildkit:${{ github.sha }}\n"),
+			release: releaseDryRun,
+			wantIn:  `the expression "github.sha" is not an env. variable`,
+		},
+		{
+			name:    "a BuildKit expression the job env does not hold",
+			ci:      mutate(t, ciDryRun, "${{ env.BUILDKIT_VERSION }}", "${{ env.BUILDKIT }}"),
+			release: releaseDryRun,
+			wantIn:  "the job's env: holds no BUILDKIT",
+		},
+		{
+			name:    "a job without the env the BuildKit image is in",
+			ci:      mutate(t, ciDryRun, "    env:\n      BUILDKIT_VERSION: v0.34.2@sha256:c5f8862f52499773af85bc07695b2379ef08e8002352b0df2c4864c91d78dabe\n", ""),
+			release: releaseDryRun,
+			wantIn:  "the job's env: holds no BUILDKIT_VERSION",
+		},
+		{name: "an env variable whose name the reader does not follow", ci: mutate(t, ciDryRun, "      BUILDKIT_VERSION:", "      buildkit_version:"), release: releaseDryRun, wantIn: "is not one variable this reader understands"},
+
+		// The jobs the two documents must hold to be compared at all.
+		{name: "a ci.yml without an image job", ci: mutate(t, ciDryRun, "jobs:\n  image:\n", "jobs:\n  images:\n"), release: releaseDryRun, wantIn: "ci.yml: no jobs: image"},
+		{name: "a release.yml without an sbom job", ci: ciDryRun, release: mutate(t, releaseDryRun, "  sbom:\n", "  provenance:\n"), wantIn: "release.yml: no jobs: sbom"},
 	}
 
 	for _, tc := range tests {
