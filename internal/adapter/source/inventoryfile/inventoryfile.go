@@ -67,10 +67,17 @@ func New(path string) *Source {
 // FromBytes returns a Source over data, an inventory document held in memory,
 // such as the body of an HTTP request. It reads data under the rules New reads a
 // file under: the MaxFileSize cap (ErrTooLarge), the same strict decoding and
-// sentinels. FromBytes keeps a copy of data, so the caller may reuse it; the
-// document is decoded on every call to Inventory, never by FromBytes.
+// sentinels. FromBytes takes ownership of data and keeps it without a copy, so
+// that a large document is held in memory once: the caller must not change data
+// afterwards. The document is decoded on every call to Inventory, never by
+// FromBytes.
+//
+// Its errors never repeat a value from the document: where a file's error
+// quotes a refused value (an unknown category, a duplicate ID, a schemaVersion
+// other than 1), a FromBytes source names its position and field instead,
+// resources[1].category, and wraps the same sentinel.
 func FromBytes(data []byte) *Source {
-	return &Source{data: append([]byte(nil), data...), inMemory: true}
+	return &Source{data: data, inMemory: true}
 }
 
 // Inventory reads, decodes and validates the inventory file and returns the
@@ -115,9 +122,13 @@ func (s *Source) inventory(ctx context.Context) (inventory.Inventory, error) {
 		return inventory.Inventory{}, err
 	}
 
-	doc, err := decode(data)
+	doc, err := decode(data, s.inMemory)
 	if err != nil {
 		return inventory.Inventory{}, err
+	}
+
+	if s.inMemory {
+		return newValueFree(doc)
 	}
 
 	return inventory.New(doc.source, doc.resources)
@@ -210,8 +221,9 @@ func stringVersion(doc jsondoc.Document) error {
 // exact, known and not repeated, every value of the right JSON type, no string
 // that escapes a lone surrogate, a resources list, at most MaxResources
 // resources and at most MaxCapabilities capabilities in each, each counted
-// before it is read.
-func decode(data []byte) (document, error) {
+// before it is read. valueFree, for a FromBytes source, refuses a schemaVersion
+// other than 1 by its JSON type alone (versionValueFree), never by its value.
+func decode(data []byte, valueFree bool) (document, error) {
 	doc, err := jsondoc.Open(data, MaxFileSize, ErrDecode)
 	if err != nil {
 		return document{}, err
@@ -219,6 +231,12 @@ func decode(data []byte) (document, error) {
 
 	if err := stringVersion(doc); err != nil {
 		return document{}, err
+	}
+
+	if valueFree {
+		if err := versionValueFree(doc); err != nil {
+			return document{}, err
+		}
 	}
 
 	if err := doc.Version(keySchemaVersion, schemaVersion, ErrSchemaVersion); err != nil {
