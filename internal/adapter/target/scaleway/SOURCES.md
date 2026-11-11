@@ -72,7 +72,7 @@ records where each fact comes from, so the snapshot can be checked and refreshed
   - the availability page marks the product "Available" there, either across the region or in at least
     one of its zones ("Available soon" does not count);
   - the product's API serves the region: the SDK declares it (or at least one zone in it), or the API
-    reference's schema accepts it. Object Storage has no API in the SDK (it is S3-compatible), so for it
+    reference's schema declares it. Object Storage has no API in the SDK (it is S3-compatible), so for it
     the documentation must name an S3 endpoint in the region.
 
   Where the two disagree, the region is left out until they agree, and the offering's section says so.
@@ -157,7 +157,7 @@ Category `kubernetes.managed`. Pages: <https://www.scaleway.com/en/docs/kubernet
 - Regions `fr-par`, `it-mil`, `nl-ams`, `pl-waw`: the availability page marks Kapsule "Available across
   the region" in all four regions, and the changelog entry opening MIL-1 (2026-03-10) names Kapsule. SDK
   `api/k8s/v1` and the schema of the Kubernetes API reference
-  (<https://www.scaleway.com/en/developers/api/kubernetes/>) accept all four regions, although the API
+  (<https://www.scaleway.com/en/developers/api/kubernetes/>) declare all four regions, although the API
   reference's introduction names only Paris, Amsterdam and Warsaw.
 
 ### Managed Database for PostgreSQL and MySQL
