@@ -552,6 +552,15 @@ linters:
     gosec:
       excludes:
         - G104 # unchecked errors are already reported by errcheck
+    # A nolint directive names the linters it silences and says why, as in
+    # //nolint:gosec // a test golden file, not user input. A bare //nolint
+    # silences every linter on its line, depguard included. nolintlint cannot
+    # refuse one named linter, and it accepts some directives that silence
+    # every linter, such as //nolint: all with a space after the colon, so
+    # test/lint refuses each directive that would hide a depguard issue.
+    nolintlint:
+      require-explanation: true
+      require-specific: true
     revive:
       rules:
         - name: exported

@@ -35,6 +35,9 @@ Arrows are imports. They point inwards only:
 - **`cmd/eusov`** is the only place that constructs adapters and injects them.
 
 The rule is enforced by `depguard` in `.golangci.yml`, so `make lint` fails on a violating import.
+A comment cannot switch it off: every file is linted, also one that looks generated, and `test/lint`
+fails on any nolint directive that would hide a depguard issue (one naming `depguard`, `all` or no
+linter).
 
 ## Domain model
 
@@ -80,6 +83,7 @@ its expectations itself: its display name, its EU regions and the categories its
 | Golden | Report and CLI output | `testdata/*.golden` | yes |
 | Integration | Real provider APIs, read-only | `//go:build integration` | no (manual, credentials) |
 | E2E | The built binary against fixtures | `test/e2e`, `//go:build e2e` | yes |
+| Source rules | Rules on the Go source that golangci-lint cannot express | `test/lint` | yes |
 
 Most tests sit in the domain, where they are fast and need no fakes. Adapters are tested against
 recorded, sanitised API responses through the contract suites, so adding a provider means passing an
