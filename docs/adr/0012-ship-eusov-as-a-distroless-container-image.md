@@ -61,9 +61,14 @@ and smoke-tests it on every pull request; publishing it to a registry is a follo
 
 ## Alternatives considered
 
-- **`scratch` as the final stage.** As small, but the CA bundle and an `/etc/passwd` entry for the user
-  would have to be copied from the builder by hand, and kept current with it. distroless maintains both
-  and adds about 2 MB; it is built from Debian packages that its own scanners track.
+- **`scratch` as the final stage.** Smaller, but the CA bundle (and tzdata, if the binary ever needs
+  it) and an `/etc/passwd` entry for the user would have to be copied from the builder by hand, and
+  kept current with it. distroless maintains them; it is built from Debian packages that its own
+  scanners track. Measured in CI (run 43029400887, linux/amd64): the `eusov` binary is 3.17 MB and the
+  distroless `static-debian12` layers about 5.5 MB, for about 8.6 MB uncompressed. tzdata is most of
+  the base (4.24 MB), then base-files (0.58 MB) and the CA bundle (0.32 MB), the rest under 0.2 MB.
+  `scratch` would save roughly those 5.5 MB, less what has to be copied in by hand; on an image this
+  size that does not outweigh maintaining the files ourselves.
 - **distroless `static` without `nonroot`, or `USER 65532:65532`.** Works the same; the `nonroot` tag
   makes the default user non-root even if `USER` is dropped, and names the home directory credentials
   are mounted into (`/home/nonroot`).
