@@ -30,7 +30,7 @@
 // jsondoc$ allow entry, and no check noticed. Adding, removing or changing a
 // rule now means updating pinnedDepguardRules in the same commit, on purpose,
 // where review sees it. TestDepguardPinCatchesMutations proves the pin
-// notices, with 532 mutations of the real file: for every rule it deletes the
+// notices, with 533 mutations of the real file: for every rule it deletes the
 // rule and each of its files, allow and deny entries (every deny entry, a
 // shared list's too), drops the trailing $ of each exact allow entry, adds an
 // allow entry os and a negated files glob, and rewrites, deletes or adds the
@@ -38,6 +38,24 @@
 // reader refuses counts as caught only for the one mutation expected to break
 // it: deleting app-uses-ports-not-adapters, which removes the &app-deny anchor
 // a later alias reads.
+//
+// TestGolangciSettingsHideNoIssue covers what the pin does not: whether the
+// rules run and what lint reports (issue #81). It fails, naming the setting, on
+// linters.exclusions.paths or paths-except, a linters.exclusions.generated that
+// is missing or not disable, an issues cap or filter, a run.issues-exit-code
+// outside 1..125 (os.Exit truncates it to 8 bits, so 0, 256 or -256 exits 0),
+// linters.default other than standard or all, run.tests not true, depguard or
+// forbidigo missing from linters.enable or in linters.disable, and a
+// linters.exclusions.rules entry naming depguard, naming forbidigo without a
+// text or with an empty one, or naming no linter. The document's shape is an
+// allow list that fails closed: version must be "2", and a key, a default or a
+// preset the check does not know is refused. TestRepositoryReadsOnlyGolangciYML
+// refuses a .golangci.json, .golangci.toml or .golangci.yaml at the root that
+// git could commit, which golangci-lint would read in place of .golangci.yml.
+// The golangci-lint command lines are pinned already, so neither can point
+// lint at another config: TestMakeLintRunsEveryReleaseTarget wants exactly
+// run --allow-serial-runners, and TestCILintMatrixCoversEveryReleaseTarget
+// wants only version and skip-cache in the golangci-lint step's with: block.
 //
 // The checks are tests: they run in make test, make check and CI's make cover,
 // with no workflow of their own. They need no network and no credentials.

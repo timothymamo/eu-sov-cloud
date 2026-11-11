@@ -73,17 +73,38 @@ the ways code could be hidden from it, and what refuses each:
   files and allow lists and the `pkg` of each deny entry, against a copy in
   `test/architecture/depguardpin_test.go`. Adding, removing or changing a rule means updating
   `pinnedDepguardRules` in the same commit, on purpose, so review sees it as a change to the
-  architecture rules. `TestDepguardPinCatchesMutations` proves the pin notices, with 532 mutations of
+  architecture rules. `TestDepguardPinCatchesMutations` proves the pin notices, with 533 mutations of
   the real file: for every rule it deletes the rule and each of its files, allow and deny entries
   (every deny entry, a shared list's too), drops the trailing `$` of each exact allow entry, adds an
   allow entry `os` and a negated files glob, and rewrites, deletes or adds the list-mode. A self-check
   fails if the walk misses an entry, and a document the reader refuses counts as caught only for the
   one mutation expected to break it: deleting `app-uses-ports-not-adapters`, which removes the
   `&app-deny` anchor a later alias reads.
-- Turning depguard off. The pin covers the rules, not whether depguard runs: removing it from
-  `linters.enable`, `linters.default: none`, `linters.disable: [depguard]`, a
-  `linters.exclusions.rules` entry naming it, or `run.tests: false` would switch rules off while every
-  rule stays pinned. That is not pinned yet; it is proposed as an addition to issue #81.
+- A setting that hides issues or turns depguard off. The pin covers the rules, not whether they run
+  or what lint reports. `test/architecture` (`TestGolangciSettingsHideNoIssue`, issue #81) reads
+  `.golangci.yml` with the same strict reader and fails, naming the setting, on a non-empty
+  `linters.exclusions.paths` or `paths-except`; a `linters.exclusions.generated` that is missing or
+  not `disable` (absent, golangci-lint v2 reads it as `lax`, which drops every issue, depguard's and
+  forbidigo's included, in a file with a "code generated" comment); any `issues` setting but a value
+  that reports every issue (`max-issues-per-linter` and `max-same-issues` absent or 0, where
+  golangci-lint's defaults are 50 and 3 and 0 means unlimited; `new`, `whole-files` and `fix` false;
+  `uniq-by-line` either value; no `new-from-*`); `run.issues-exit-code` outside 1..125, Go's
+  portable exit range (`os.Exit` truncates the code to 8 bits, so 0, 256 or -256 lets lint exit 0
+  while it prints issues); `run.tests` other than true; `linters.default` other than `standard` or
+  `all`; depguard or forbidigo missing from `linters.enable` or listed in `linters.disable`; and a
+  `linters.exclusions.rules` entry that names depguard, names forbidigo without a `text` or with an
+  empty one, or names no linter at all. The document's shape is an allow list that fails closed:
+  `version` must be `"2"`, and a top-level, `run`, `linters`, `linters.exclusions` or `issues` key, or
+  a `linters.exclusions.presets` entry, the check does not know is refused, since a later
+  golangci-lint may act on it. forbidigo is held the same way as depguard because the
+  `cloud-read-only` and `domain-is-pure` groups depend on it; its two text-scoped `domain-is-pure`
+  exclusion rules pass, and `test/lint` (`TestForbidigoExclusionsDropOneGroup`) pins their texts.
+  `TestRepositoryReadsOnlyGolangciYML` refuses a `.golangci.json`, `.golangci.toml` or
+  `.golangci.yaml` at the root that git could commit: golangci-lint finds those before
+  `.golangci.yml` and would run with them instead. The command lines cannot point lint elsewhere
+  either: `test/architecture` pins `make lint`'s arguments to `run --allow-serial-runners` and the
+  CI golangci-lint step's `with:` block to `version` and `skip-cache`. `test/lint` and this check
+  each read `linters.exclusions.rules`; the two readers could later share one (issue #82).
 
 A cloud SDK is imported only in its provider's adapter package (`source/aws`, `source/azure`,
 `source/gcp`, `target/ovhcloud`, `target/scaleway`, `target/upcloud`): the depguard rule

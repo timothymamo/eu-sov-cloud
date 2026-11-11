@@ -171,9 +171,20 @@ workflow change.
   list read through its YAML anchor) and compares it with `pinnedDepguardRules`. A rule dropped or
   weakened by a merge fails the test with the rule named; a deliberate change updates the pin in the
   same commit, where review sees it. `TestDepguardPinCatchesMutations` proves the pin is not vacuous
-  with 532 mutations of the real file: each rule and each files, allow and deny entry deleted, the
+  with 533 mutations of the real file: each rule and each files, allow and deny entry deleted, the
   trailing `$` of each exact allow entry dropped, an allow entry `os` and a negated files glob added,
   and each list-mode rewritten, deleted or added. A self-check fails if it misses an entry, and a
   refused document counts as caught only where deleting `app-uses-ports-not-adapters` removes the
   `&app-deny` anchor.
+- So is whether they run (issue #81): `TestGolangciSettingsHideNoIssue` reads `.golangci.yml` with the
+  same reader and fails, naming the setting, on every setting that hides issues without touching a
+  rule: exclusion paths, a `linters.exclusions.generated` other than `disable` (absent means `lax`),
+  `issues` caps and filters, `run.issues-exit-code` outside 1..125 (`os.Exit`
+  truncates it to 8 bits, so 256 exits 0), `linters.default` other than `standard` or
+  `all`, `run.tests` not true, depguard or forbidigo not enabled or disabled, and an exclusion rule
+  naming depguard, or forbidigo without a text or with an empty one. The document's shape is an allow
+  list that fails closed: `version` must be `"2"`, and a key or preset it does not know is refused.
+  `TestRepositoryReadsOnlyGolangciYML` refuses a `.golangci.json`, `.golangci.toml` or
+  `.golangci.yaml` that git could commit, which golangci-lint would read before `.golangci.yml`; the
+  lint command lines, in the Makefile and the CI step, are pinned already by `test/architecture`.
 - Lint and this check now say the same thing twice: a violation that lint catches also fails here.
