@@ -25,9 +25,9 @@ import (
 //   - A message names the setting by its dotted key as written in
 //     .golangci.yml (issues.max-same-issues, linters.exclusions.paths,
 //     linters.exclusions.paths-except, linters.enable, linters.disable,
-//     linters.default, linters.exclusions.rules, run.tests, and the key of an
-//     unknown issues entry). When the setting turns a linter off or keeps it
-//     from a file, the message also names that linter.
+//     linters.default, linters.exclusions.rules, run.tests, run.issues-exit-code,
+//     and the key of an unknown issues entry). When the setting turns a linter
+//     off or keeps it from a file, the message also names that linter.
 //   - The settings refused are: a non-empty linters.exclusions.paths or
 //     linters.exclusions.paths-except; a linters.exclusions.generated that is
 //     not disable (the key must be there: golangci-lint v2 reads it as lax when
@@ -36,14 +36,17 @@ import (
 //     lint finds, meaning a non-zero max-issues-per-linter or max-same-issues
 //     (0 means unlimited; golangci-lint v2's defaults are 50 and 3), new: true,
 //     any new-from-rev, new-from-patch or new-from-merge-base, whole-files:
-//     true, and any key the check does not know, which fails closed; and for
+//     true, fix: true, and any key the check does not know, which fails closed;
+//     and for
 //     the two linters the architecture depends on, depguard and forbidigo, that
 //     the linter is in linters.enable and not in linters.disable,
 //     linters.default is not none or fast, and run.tests is not false.
 //   - The document's shape is an allow list too, because a key the check does
 //     not read is one a later golangci-lint may act on: version must be "2";
 //     run may hold only the keys that do not hide an issue, so
-//     run.issues-exit-code: 0 is refused and 1, or timeout and the other keys
+//     run.issues-exit-code outside Go's portable 1..125 is refused, 256 and
+//     -256 included (os.Exit truncates them to the 8 bits of the exit status,
+//     so 256 exits 0), and a code in that range, or timeout and the other keys
 //     that only bound how lint runs, are allowed; linters may hold only default,
 //     enable, disable, settings and exclusions; linters.default may be standard
 //     or all, not fast, none or a value the check does not know; and
@@ -117,6 +120,33 @@ func TestHidingSettings(t *testing.T) {
 		{
 			name:   "run.issues-exit-code: 1 fails when it finds an issue",
 			mutate: insertsAfter("run:", "  issues-exit-code: 1"),
+		},
+		{
+			// os.Exit truncates the code to the 8 bits the exit status holds, so
+			// a shell reads 256 as 0: lint prints every issue it finds and make
+			// lint passes. Reproduced with golangci-lint 2.15.0.
+			name:   "run.issues-exit-code: 256 exits 0, because os.Exit truncates it",
+			mutate: insertsAfter("run:", "  issues-exit-code: 256"),
+			want:   []string{"run.issues-exit-code"},
+		},
+		{
+			// -256 truncates to the same 0, so it hides issues the same way.
+			name:   "run.issues-exit-code: -256 exits 0, because os.Exit truncates it",
+			mutate: insertsAfter("run:", "  issues-exit-code: -256"),
+			want:   []string{"run.issues-exit-code"},
+		},
+		{
+			// Go's os.Exit takes a code in the portable range 0..125; a shell
+			// reads 126 and 127 as "cannot execute" and "not found", so no code
+			// above 125 says lint found an issue in a way every platform agrees
+			// on.
+			name:   "run.issues-exit-code: 126 is outside Go's portable exit range",
+			mutate: insertsAfter("run:", "  issues-exit-code: 126"),
+			want:   []string{"run.issues-exit-code"},
+		},
+		{
+			name:   "run.issues-exit-code: 125 is the top of Go's portable exit range",
+			mutate: insertsAfter("run:", "  issues-exit-code: 125"),
 		},
 		{
 			name:   "a run key the check does not know fails closed",
@@ -244,8 +274,32 @@ func TestHidingSettings(t *testing.T) {
 			name:   "issues settings that report every issue hide nothing",
 			mutate: appendsBlock("issues:\n  new: false\n  whole-files: false\n  fix: false\n  uniq-by-line: false\n"),
 		},
+		{
+			// issues.fix rewrites the code lint reports on, so a run changes
+			// the working tree instead of only naming the issues: a reviewer
+			// sees code fixed by a tool, and make lint can pass on it.
+			name:   "issues.fix: true rewrites the code instead of naming the issues",
+			mutate: appendsBlock("issues:\n  fix: true\n"),
+			want:   []string{"issues.fix"},
+		},
 
 		// depguard and forbidigo: every way of turning one off.
+		{
+			// A document with no linters key at all runs golangci-lint's
+			// default set, which holds neither depguard nor forbidigo: the
+			// architecture rules would never run, so the whole linters block
+			// is required, not just the two names.
+			name:   "a document with no linters key never runs depguard or forbidigo",
+			mutate: deletesLinters(),
+			want:   []string{"linters.enable", "depguard", "forbidigo"},
+		},
+		{
+			// Without the exclusions block linters.exclusions.generated is
+			// absent too, which golangci-lint reads as lax.
+			name:   "a document with no linters.exclusions block hides every generated file",
+			mutate: deletesLintersExclusions(),
+			want:   []string{"linters.exclusions.generated", "depguard", "forbidigo"},
+		},
 		{
 			name:   "depguard missing from linters.enable never runs",
 			mutate: deletesLine("    - depguard"),
@@ -310,6 +364,14 @@ func TestHidingSettings(t *testing.T) {
 		{
 			name:   "an exclusion rule naming depguard drops its issues on a path",
 			mutate: insertsAfter("    rules:", "      - path: internal/domain/\n        linters:\n          - depguard"),
+			want:   []string{"linters.exclusions.rules", "depguard"},
+		},
+		{
+			// An entry that names a linter with a reason to be excluded drops
+			// depguard's issues as well, which fails as silently as an entry
+			// that names depguard alone.
+			name:   "an exclusion rule naming depguard beside another linter drops its issues on a path",
+			mutate: insertsAfter("    rules:", "      - path: internal/domain/\n        linters:\n          - gosec\n          - depguard"),
 			want:   []string{"linters.exclusions.rules", "depguard"},
 		},
 		{
@@ -489,6 +551,36 @@ func deletesUnderLintersExclusions(text string) mutation {
 			i := onlyLintersExclusionsLine(t, lines, text)
 
 			return slices.Concat(lines[:i], lines[i+1:])
+		})
+	}
+}
+
+// deletesLinters returns a mutation that deletes the linters key and every
+// block below it, so the document has no linters settings at all.
+func deletesLinters() mutation {
+	return func(t *testing.T, doc string) string {
+		t.Helper()
+
+		return edit(t, doc, func(lines []string) []string {
+			start := onlyLine(t, lines, "linters:")
+			end := onlyLine(t, lines, "formatters:")
+
+			return slices.Concat(lines[:start], lines[end:])
+		})
+	}
+}
+
+// deletesLintersExclusions returns a mutation that deletes the whole
+// linters.exclusions block, so the document holds none.
+func deletesLintersExclusions() mutation {
+	return func(t *testing.T, doc string) string {
+		t.Helper()
+
+		return edit(t, doc, func(lines []string) []string {
+			start := lintersExclusions(t, lines)
+			end := onlyLine(t, lines, "formatters:")
+
+			return slices.Concat(lines[:start], lines[end:])
 		})
 	}
 }
