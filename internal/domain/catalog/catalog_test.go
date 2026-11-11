@@ -993,6 +993,31 @@ func TestNewErrors(t *testing.T) {
 			wantErr: taxonomy.ErrUnknownCapability,
 			wantMsg: []string{"Instances", "pitr"},
 		},
+		{
+			// ADR 0011 retired the unscoped value and catalog.New reads every
+			// capability through taxonomy.ParseCapability, so a snapshot still
+			// listing it is refused rather than silently read as one of the two
+			// scopes. The error names the offering and quotes the retired value and
+			// both replacements, which a file written before the split can act on.
+			name:     "offering with retired high-availability capability",
+			target:   targetName,
+			snapshot: validSnapshot(),
+			offerings: []catalog.Offering{{
+				Name:         "Instances",
+				Categories:   []taxonomy.Category{taxonomy.ComputeVM},
+				Capabilities: []taxonomy.Capability{taxonomy.Capability("high-availability")},
+				Regions:      []string{"fr-par"},
+			}},
+			wantErr: taxonomy.ErrUnknownCapability,
+			// Each value is quoted: the retired value is a substring of
+			// "node-high-availability", so the quotes keep the assertions apart.
+			wantMsg: []string{
+				text.Quote("Instances"),
+				text.Quote("high-availability"),
+				text.Quote("node-high-availability"),
+				text.Quote("zone-high-availability"),
+			},
+		},
 	}
 
 	for _, tc := range tests {
