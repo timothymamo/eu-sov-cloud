@@ -317,13 +317,15 @@ func TestEveryStrictRuleIsChecked(t *testing.T) {
 	}
 }
 
-// TestReleaseReadsOnlyGoreleaserYAML pins that the release builds what the
-// check lists: no other goreleaser document, go.work, go.work.sum or vendor at
-// the root that git could commit (check.StrayReleaseFiles), and a release
-// workflow that holds exactly the jobs and steps the check lists, so goreleaser
-// runs with exactly release --clean, after no repository code and with no
-// environment of its own for the go command (check.ReleaseWorkflow).
-func TestReleaseReadsOnlyGoreleaserYAML(t *testing.T) {
+// TestReleaseWorkflowIsClosed pins that the release is closed to what the
+// check lists: the workflow holds exactly the three jobs the check knows, test,
+// goreleaser and image, with exactly their steps, so goreleaser runs with
+// exactly release --clean after no repository code and with no environment of
+// its own for the go command, and the image job publishes only the signed
+// image, its provenance and its SBOM (check.ReleaseWorkflow). Nor may any
+// other goreleaser document, go.work, go.work.sum or vendor sit at the root
+// that git could commit (check.StrayReleaseFiles).
+func TestReleaseWorkflowIsClosed(t *testing.T) {
 	t.Parallel()
 
 	stray, err := check.StrayReleaseFiles(t.Context(), repositoryRoot(t))

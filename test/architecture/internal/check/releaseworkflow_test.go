@@ -348,7 +348,7 @@ func TestReleaseWorkflow(t *testing.T) {
 		{
 			name:     "the test job running another command",
 			workflow: strings.Replace(releaseWorkflow, "run: make test", "run: make test && go env -w GOFLAGS=-x", 1),
-			wantIn:   "run",
+			wantIn:   "want make test: run is",
 		},
 
 		// setup-go's Actions cache (GOMODCACHE and GOCACHE) would carry
@@ -413,9 +413,9 @@ func TestReleaseWorkflow(t *testing.T) {
 		{name: "id-token: write for goreleaser too", workflow: strings.Replace(releaseWorkflow, "      contents: write # create the GitHub release and upload artifacts\n", "      contents: write # create the GitHub release and upload artifacts\n      id-token: write # sign\n", 1), wantIn: "id-token"},
 
 		// The image job's steps are a closed list too.
-		{name: "an extra step in the image job", workflow: beforeImageStep("      - uses: sigstore/cosign-installer@", "run: ./scripts/prepare.sh"), wantIn: "steps"},
-		{name: "a missing step in the image job", workflow: releaseWorkflowWithImage(withoutImageStep("docker/login-action@")), wantIn: "steps"},
-		{name: "two image steps swapped", workflow: releaseWorkflowWithImage(swappedImageSteps("actions/attest-build-provenance@", "name: Sign the image")), wantIn: "steps"},
+		{name: "an extra step in the image job", workflow: beforeImageStep("      - uses: sigstore/cosign-installer@", "run: ./scripts/prepare.sh"), wantIn: "holds 12 steps, want exactly 11"},
+		{name: "a missing step in the image job", workflow: releaseWorkflowWithImage(withoutImageStep("docker/login-action@")), wantIn: "holds 10 steps, want exactly 11"},
+		{name: "two image steps swapped", workflow: releaseWorkflowWithImage(swappedImageSteps("actions/attest-build-provenance@", "name: Sign the image")), wantIn: `want the signature holds the key "uses"`},
 		{name: "build-push-action pinned by tag", workflow: inImage("docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc", "docker/build-push-action@v7"), wantIn: "build-push-action@v7"},
 		{name: "setup-buildx-action pinned by tag", workflow: inImage("docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069", "docker/setup-buildx-action@v4"), wantIn: "setup-buildx-action@v4"},
 		{name: "cosign-installer pinned by tag", workflow: inImage("sigstore/cosign-installer@756fe2d284c7292c4e9b62c8a28f1e5629c59532", "sigstore/cosign-installer@v4"), wantIn: "cosign-installer@v4"},
@@ -442,7 +442,7 @@ func TestReleaseWorkflow(t *testing.T) {
 		// Signed and attested by digest, by the image job's own OIDC identity,
 		// with tag-derived values through env: and never ${{ }} in a run:.
 		{name: "the sign step by tag", workflow: inImage(`run: cosign sign --yes "ghcr.io/timothymamo/eusov@${DIGEST}"`, `run: cosign sign --yes "ghcr.io/timothymamo/eusov:${TAG}"`), wantIn: "run"},
-		{name: "an interpolation inside a run script", workflow: inImage("            echo \"version=${TAG#v}\"\n", "            echo \"version=${{ github.ref_name }}\"\n"), wantIn: "run"},
+		{name: "an interpolation inside a run script", workflow: inImage("            echo \"version=${TAG#v}\"\n", "            echo \"version=${{ github.ref_name }}\"\n"), wantIn: "holds a ${{ }} expression"},
 		{name: "provenance not pushed to the registry", workflow: inImage("          subject-digest: ${{ steps.build.outputs.digest }}\n          push-to-registry: true\n", "          subject-digest: ${{ steps.build.outputs.digest }}\n          push-to-registry: false\n"), wantIn: "push-to-registry"},
 		{name: "the SBOM attestation not pushed to the registry", workflow: inImage("          sbom-path: eusov.spdx.json\n          push-to-registry: true\n", "          sbom-path: eusov.spdx.json\n          push-to-registry: false\n"), wantIn: "push-to-registry"},
 		{name: "a provenance attestation of another subject", workflow: inImage("          subject-name: ghcr.io/timothymamo/eusov\n          subject-digest: ${{ steps.build.outputs.digest }}\n          push-to-registry: true\n", "          subject-name: ghcr.io/example/eusov\n          subject-digest: ${{ steps.build.outputs.digest }}\n          push-to-registry: true\n"), wantIn: "subject-name"},
@@ -453,6 +453,22 @@ func TestReleaseWorkflow(t *testing.T) {
 		{name: "the SBOM read by tag", workflow: inImage("image: registry:ghcr.io/timothymamo/eusov@${{ steps.build.outputs.digest }}", "image: registry:ghcr.io/timothymamo/eusov:latest"), wantIn: "with: image"},
 		{name: "the SBOM uploaded to the run", workflow: inImage("          upload-artifact: false\n", "          upload-artifact: true\n"), wantIn: "upload-artifact"},
 		{name: "the SBOM uploaded to the release", workflow: inImage("          upload-release-assets: false\n", "          upload-release-assets: true\n"), wantIn: "upload-release-assets"},
+
+		// The literal blocks the image job's tags, build arguments and stamp
+		// script are: a line a YAML reader keeps as content (a # line, a blank
+		// line, a line after the last one) is part of the value, and a block form
+		// the reader does not follow (chomped |-, folded >, a line indented less
+		// than the first) is refused, so none of them slips a line past the exact
+		// value the check lists.
+		{name: "a comment line inside the tags block", workflow: inImage("            type=semver,pattern={{major}}.{{minor}},enable=${{ !contains(github.ref_name, '-') }}\n", "            # a comment the reader must not treat as one\n            type=semver,pattern={{major}}.{{minor}},enable=${{ !contains(github.ref_name, '-') }}\n"), wantIn: "with: tags"},
+		{name: "a comment line after the build arguments", workflow: inImage("            DATE=${{ steps.stamp.outputs.date }}\n", "            DATE=${{ steps.stamp.outputs.date }}\n            # a comment the reader must not treat as one\n"), wantIn: "with: build-args"},
+		{name: "a comment line after the tags block content", workflow: inImage("            type=semver,pattern={{major}}.{{minor}},enable=${{ !contains(github.ref_name, '-') }}\n", "            type=semver,pattern={{major}}.{{minor}},enable=${{ !contains(github.ref_name, '-') }}\n            # a trailing note\n"), wantIn: "with: tags"},
+		{name: "a blank line inside the tags block", workflow: inImage("            type=semver,pattern={{major}}.{{minor}},enable=${{ !contains(github.ref_name, '-') }}\n", "\n            type=semver,pattern={{major}}.{{minor}},enable=${{ !contains(github.ref_name, '-') }}\n"), wantIn: "with: tags"},
+		{name: "an extra line in the stamp script", workflow: inImage("          } >> \"$GITHUB_OUTPUT\"\n", "          } >> \"$GITHUB_OUTPUT\"\n          echo sneaky=1\n"), wantIn: "want the stamp of the build arguments: run is"},
+		{name: "a stamp script in a chomped block", workflow: inImage("        run: |\n", "        run: |-\n"), wantIn: "run has lines below it, want one value on its line"},
+		{name: "a stamp script in a folded block", workflow: inImage("        run: |\n", "        run: >\n"), wantIn: "run has lines below it, want one value on its line"},
+		{name: "a stamp script line indented less than its first", workflow: inImage("          } >> \"$GITHUB_OUTPUT\"\n", "          } >> \"$GITHUB_OUTPUT\"\n         ; echo sneaky=1\n"), wantIn: "a line of run indented less than its first"},
+		{name: "a comment line before the stamp script's first line", workflow: inImage("        run: |\n", "        run: |\n          # a comment the reader must not treat as one\n"), wantIn: "run has a line before its first content line"},
 
 		// The forbidden names the check refuses anywhere, the image job too.
 		{name: "GOFLAGS on the image job", workflow: inImage("    needs: test\n", "    needs: test\n    env:\n      GOFLAGS: -tags=sneaky\n"), wantIn: "GOFLAGS"},
