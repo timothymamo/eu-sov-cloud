@@ -327,7 +327,8 @@ under `make test` or `make test-e2e`, unless marked *review*.
 
 Each milestone ships as one PR. Milestones 2 and 3 depend only on 1, and can run in parallel.
 
-1. [ ] **ADR and the scoped high-availability vocabulary.** The ADR records:
+1. [x] **ADR and the scoped high-availability vocabulary.** The ADR
+   ([0011](../docs/adr/0011-scope-capabilities-and-one-offering-per-tier.md)) records:
    - the chosen options and the definitions of each capability they change;
    - the implication, zone level implies node level, which lives in the taxonomy and which `catalog.New`
      applies to offerings only;
@@ -382,7 +383,8 @@ Each milestone ships as one PR. Milestones 2 and 3 depend only on 1, and can run
 - **Decided (2026-11-11): A for scope, E for tiers, and F for direction and compatibility.** The user
   accepted the recommendation (*Options*, *Recommendation*). B is the fallback if a later need cannot
   be expressed with these three. C and D are deferred until a source adapter shows a gap that needs
-  them. Milestone 1's ADR records the decision.
+  them. Milestone 1's ADR,
+  [0011](../docs/adr/0011-scope-capabilities-and-one-offering-per-tier.md), records the decision.
 - **Decided with A: the names `node-high-availability` and `zone-high-availability`.** These are the
   names option A was accepted with. The alternatives were `high-availability-node` and
   `high-availability-zone`, which group together in sorted lists, and `multi-zone-high-availability`,

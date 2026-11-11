@@ -4,7 +4,10 @@
   and the declared regions and the lint rules are amended, by
   [0009](0009-decode-adapter-json-documents-through-one-strict-decoder.md). 0009 adds the declared
   region code shape within schema version 1, a one-time, recorded exception to this ADR's schema
-  version policy that ends once a snapshot can come from outside this repository
+  version policy that ends once a snapshot can come from outside this repository; the schema version
+  policy is amended by [0011](0011-scope-capabilities-and-one-offering-per-tier.md): snapshots are
+  embedded and rewritten in the same change as the vocabulary, so retiring a vocabulary value is not
+  a version change
 - Date: 2026-11-10
 
 ## Context
