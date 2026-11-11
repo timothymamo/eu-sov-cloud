@@ -23,8 +23,13 @@ coverage.*
 .env
 .env.*
 .envrc
+**/*.pem
+**/*.key
 **/*credentials*.json
 **/*service-account*.json
+**/.aws
+**/.azure
+**/.config/gcloud
 
 # Real inventories and reports describe someone's infrastructure (CLAUDE.md rule 2): no layer may hold
 # one. Matches file names only, so the internal/adapter/report packages are kept.
