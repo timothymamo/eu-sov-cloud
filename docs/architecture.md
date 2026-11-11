@@ -52,9 +52,12 @@ Arrows are imports. They point inwards only:
   internal to `internal/adapter`: the request body is decoded by the adapter
   `adapter/request/assessmentrequest` (`request-decoders-parse-bytes`: `errors`, `fmt` and `jsondoc`
   only, no `net/http`), and the inventory in it by `inventoryfile.FromBytes`, both passed in as function
-  values. Only `cmd/eusov-server` imports it (`httpapi-imported-only-by-the-server`); `cmd/eusov` never
-  does, so the CLI stays offline. `api/openapi.json` (OpenAPI 3.1) describes the API and refers to the
-  JSON report's schemas rather than copying them.
+  values. `FromBytes` reads in an in-memory-only mode whose errors name a position and field, never a
+  value, so no value from a request is ever echoed in an API error. Only `cmd/eusov-server` imports it,
+  and of the tests only the parity test in `test/apiparity` (`httpapi-imported-only-by-the-server`);
+  `cmd/eusov` never does, so the CLI stays offline. `api/openapi.json` (OpenAPI 3.1) describes the API
+  and refers to the JSON report's schemas rather than copying them; milestone 4 bundles them into the
+  published document.
 - **`cmd/eusov`** and **`cmd/eusov-server`** are the composition roots, the only places that construct
   adapters and inject them: `cmd/eusov` into the CLI, `cmd/eusov-server` into the HTTP API.
 

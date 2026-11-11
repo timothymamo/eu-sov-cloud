@@ -37,19 +37,30 @@ A second binary, `eusov-server`, serves a small JSON API under `/v1/`, through a
 nothing from a request, and leaves TLS and users to a reverse proxy or the website's backend.
 
 **A separate binary.** `cmd/eusov-server` is the API's composition root (milestone 3). `cmd/eusov`
-never imports `internal/httpapi` (depguard rule `httpapi-imported-only-by-the-server`), so the CLI's
-offline test stays unchanged and passes. Both binaries are built from the same module and reuse every
+never imports `internal/httpapi` (depguard rule `httpapi-imported-only-by-the-server`, which exempts only
+`cmd/eusov-server`, the package itself and the parity test in `test/apiparity`, test files elsewhere
+included), so the CLI's offline test stays unchanged and passes. Both binaries are built from the same module and reuse every
 package.
 
 **Three pieces, so strict decoding stays in the adapters.**
 
 1. `inventoryfile.FromBytes(data)` returns the same `*Source` as `New(path)`, over an in-memory
    inventory document: the same `MaxFileSize` cap, the same strict decoding and sentinels, and the
-   `sourcetest` contract suite.
+   `sourcetest` contract suite. It takes ownership of `data` (the caller must not change it afterwards)
+   rather than copying it, so a request holds one copy of its inventory's bytes. Its errors are in an
+   in-memory-only mode that never quotes a value from the document: they name what is wrong by its
+   position and field (`resources[3].category`) and why (missing, the wrong JSON type, unknown,
+   repeated, not in the taxonomy), never the value. `New(path)`, the CLI's reader, keeps its messages
+   exactly as they are, values included: the CLI's user wrote the file and is the only one who reads
+   them.
 2. A new adapter, `internal/adapter/request/assessmentrequest`, decodes the body of
    `POST /v1/assessments` through `jsondoc`: one object with exactly the keys `inventory` (an object,
    returned as its raw bytes) and `targets` (a non-empty array of strings, in order). Anything else wraps
-   `assessmentrequest.ErrDecode`, with jsondoc's wording, which never quotes a value from the body.
+   `assessmentrequest.ErrDecode`. Its messages never quote a value from the body, by construction rather
+   than because of `jsondoc`: `jsondoc`'s own errors place a problem by line and column and name a key,
+   but its `Describe`, which a format may use for its own errors, does quote a scalar (`the string "1"`,
+   `the number "1.0"`), so `assessmentrequest` never calls it (nor `Document.Version`, which does) and
+   names a wrong value by its JSON type only (`an array`, `a string`).
    `MaxBodySize` is the inventory cap plus 64 KiB for the envelope; an adapter imports no other adapter,
    so the constant is written out and a test pins it to `inventoryfile.MaxFileSize + 64<<10`. Its imports
    are a strict allow list (`request-decoders-parse-bytes`): `errors`, `fmt` and `jsondoc`, no `net/http`.
@@ -81,7 +92,8 @@ package.
 
 **Content negotiation.** With no `Accept`, or `*/*`, `application/*` or `application/json`, the answer is
 the JSON report as `application/json`. With `text/markdown` or `text/*` it is the Markdown report,
-byte-identical to the CLI's, as `text/markdown; charset=utf-8`. A `q=0` range is excluded. When nothing
+byte-identical to the CLI's, as `text/markdown; charset=utf-8`. A `q=0` range is excluded, and an entry
+whose `q` is not a number in [0, 1] (`NaN` included) is invalid and skipped, as if it were absent. When nothing
 the client accepts is available the answer is **406 `not_acceptable`**, a status the PRD's list did not
 name: answering JSON to a client that refused it would hide the mismatch.
 
@@ -89,9 +101,13 @@ name: answering JSON to a client that refused it would hide the mismatch.
 `{"error": {"code": "<code>", "message": "<message>"}}` as `application/json`, with the codes
 `invalid_request`, `invalid_inventory`, `invalid_targets` (400), `unauthorized` (401), `not_found` (404),
 `method_not_allowed` (405), `not_acceptable` (406), `payload_too_large` (413),
-`unsupported_media_type` (415), `internal` (500), `busy` and `not_ready` (503). A message never echoes
-request content beyond a quoted, escaped key or field name: no target value, header value or path the
-client sent. A 500 says `internal error` and nothing more; a panic is recovered into one.
+`misdirected_request` (421), `unsupported_media_type` (415), `internal` (500), `busy` and `not_ready`
+(503). **No value from a request is ever echoed**: a message names what is wrong by position and field
+(`targets[2]`, `resources[3].category`) or by a quoted, escaped key name, never a target value, an
+inventory value, a header value, the `Host` or the path the client sent. A website may show an error
+message to a user, or log it, so a message must be safe to show to anyone and to store; the client
+already holds the value it sent. A 500 says `internal error` and nothing more; a panic is recovered into
+one.
 
 **Versioning.** The API is versioned in the path. Within `/v1/`, adding a route, an optional request
 key that changes nothing for a client that leaves it out, a response key, a response header or an
@@ -113,27 +129,77 @@ the one source of truth for the report.
 - Stateless. A request's body, inventory and report exist only in memory while it is served; nothing
   is written to disk, and `internal/httpapi` takes no logger. The access log (milestone 3) holds the
   method, path, status, duration and size only.
-- Limits. The body is read through `http.MaxBytesReader` up to `MaxBodySize` (413 over it) and decoded
-  strictly (400 for an unknown key, a duplicate key or trailing data). At most N assessments run at once
-  (default the number of CPUs, at least 1) through a non-blocking semaphore; one over the cap gets
-  **503 `busy`** with `Retry-After: 1` at once, never queued. 503 rather than 429: the limit is the
-  server's capacity, not the client's rate.
+- Media type. A POST body must be `application/json`; a `charset` parameter other than `utf-8`
+  (compared ignoring case) is 415, as the body is decoded as UTF-8 only.
+- Limits. At most N requests to `POST /v1/assessments` are served at once (default the number of
+  CPUs, at least 1) through a non-blocking semaphore; one over the cap gets **503 `busy`** with
+  `Retry-After: 1` at once, never queued. 503 rather than 429: the limit is the server's capacity, not
+  the client's rate. **The slot is taken before the body is read**, so at most N bodies are in memory at
+  once, whatever the clients send. The trade-off: a slow upload holds a slot while it trickles in, and N
+  slow clients can keep everyone else at 503. `WithBodyReadTimeout` (default 30 s) bounds how long
+  reading one body may hold its slot; past it the request fails and the slot is freed. Taking the slot
+  after the body would free slots from slow clients but put no bound on memory, which the cap exists
+  for. The body is read through `http.MaxBytesReader` up to `MaxBodySize` (413 over it) and decoded
+  strictly (400 for an unknown key, a duplicate key or trailing data).
+- Memory. One request holds its body (up to `MaxBodySize`), the decoded inventory and the rendered
+  report, which is built in memory in full before it is written; a comparison of every target over a
+  maximal inventory is the largest case. `FromBytes` takes the inventory's bytes without copying them.
+  The peak is therefore about N times one request's, and N's default must be sized against it
+  (milestone 3).
 - Optional bearer token. When configured, every `/v1/` request without `Authorization: Bearer <token>`
-  gets 401 with `WWW-Authenticate: Bearer`, compared in constant time and checked before the body is
-  read. `/healthz` and `/readyz` stay open for the platform's probes.
-- CORS is off unless an allow-list of origins is configured; then only an origin in the list gets
-  `Access-Control-Allow-Origin` with that origin (never `*`, never credentials), `Vary: Origin`, and a
-  204 preflight on `/v1/` routes.
+  gets 401 with `WWW-Authenticate: Bearer`, checked before the body is read. The token sent and the
+  token configured are compared as SHA-256 digests with `subtle.ConstantTimeCompare`, so neither the
+  content nor the length of the token leaks through timing. An explicitly empty token, or one that is
+  not a valid bearer token (RFC 6750 `token68`), is a configuration error from `New`, never a server
+  that accepts an empty `Authorization`. `/healthz` and `/readyz` stay open for the platform's probes.
+- Allowed hosts. `WithAllowedHosts` names the `Host` values the server answers to, compared ignoring case; any other `Host`
+  gets **421 `misdirected_request`**, before anything else is checked. `/healthz` and `/readyz` are
+  exempt, as probes address the server by its pod or container address. Without it every `Host` is
+  served. It stops DNS rebinding: a page on an attacker's domain that resolves to `127.0.0.1` reaches a
+  server on loopback as same-origin, past CORS, but sends the attacker's `Host`.
+- CORS is off unless an allow-list of origins is configured. `WithAllowedOrigins` validates each entry
+  and refuses, as a configuration error from `New`, `null`, `*`, an entry with a path, query, fragment
+  or user info, and any scheme but `http` and `https`. An `Origin` is compared with the list by scheme
+  and host ignoring case, and port exactly. Only an origin in the list gets
+  `Access-Control-Allow-Origin` with that origin (never `*`, never credentials),
+  `Access-Control-Expose-Headers: Retry-After, WWW-Authenticate`, so a browser client can read the
+  back-off and the auth challenge, and a 204 preflight on `/v1/` routes. When CORS is configured, every
+  response, to any origin or none, carries `Vary: Origin`, so a shared cache never serves one origin's
+  answer to another.
 - Every response sets `Cache-Control: no-store` and `X-Content-Type-Options: nosniff`.
+- `GET /v1/targets` loads every target's catalog once, on the first request, and keeps the result; a
+  load that fails is not kept, and the next request tries again.
+- Route enumeration. A request without the token learns whether a path exists (404 against 401 or
+  405), because the route check runs before the token. This is accepted: the routes are public, in the
+  OpenAPI document.
+- The Markdown report contains text from the inventory (names, tags), escaped for Markdown but not for
+  HTML. A website that renders it as HTML must use a sanitising renderer (or render the JSON report
+  itself); the API does not make Markdown safe to inject as HTML.
 - TLS, users, accounts and per-user rate limits belong to the reverse proxy or the website's backend,
   which the README will describe (milestone 4).
 
 **What milestone 3 adds, in `cmd/eusov-server`.** Flags and environment (listen address, token from an
-environment variable or a file, never a flag; concurrency; CORS origins), the server's read-header,
-read, write and idle timeouts and maximum header size, graceful shutdown on `SIGTERM` and `SIGINT`, the
-access log, the readiness check over every target's catalog, and the refusal to listen on a non-loopback
-address without a token unless `--insecure-no-auth` is given. `internal/httpapi` stays a handler with no
-listener of its own.
+environment variable or a file, never a flag; concurrency; CORS origins; allowed hosts), the server's
+read-header, read, write and idle timeouts and maximum header size, graceful shutdown on `SIGTERM` and
+`SIGINT`, the access log, the readiness check over every target's catalog, and the refusal to listen on
+a non-loopback address without a token unless `--insecure-no-auth` is given. `internal/httpapi` stays a
+handler with no listener of its own. Milestone 3 **must** also:
+
+- set `http.Server.ReadHeaderTimeout` and `ReadTimeout`: `WithBodyReadTimeout` bounds a body only once
+  the handler runs, and a client that is slow to send its headers holds a connection, not a slot;
+- treat a token source that is configured but empty (an empty variable, an empty file) as a startup
+  error, and trim the white space around a token read from a file, which ends with a line feed as
+  editors write it;
+- set `WithAllowedHosts` (to `localhost` and the loopback addresses with the port) whenever it listens
+  on loopback without a token, the case DNS rebinding attacks;
+- size the concurrency default against memory and `GOMEMLIMIT`, not only the number of CPUs, using the
+  benchmark `BenchmarkMaximalAllComparison` in `test/apiparity` for one request's peak;
+- check end to end that the built `eusov` and `eusov-server` binaries give the same bytes for the same
+  inventory and targets, beside the in-process parity test.
+
+**What milestone 4 adds (packaging).** The `eusov-server` image, the README's deployment notes, and a
+published OpenAPI document that bundles the report's JSON Schemas: `api/openapi.json` refers to them by
+repo-relative path, which a reader outside the repository cannot follow.
 
 ## Alternatives considered
 
@@ -160,7 +226,17 @@ listener of its own.
 - **`api/openapi.yaml`.** The usual format, but a test would need a YAML parser in the module. JSON is
   read with `encoding/json` and is valid OpenAPI.
 - **Copy the report schemas into the OpenAPI document.** Self-contained, but two copies of the report's
-  contract that can drift; the relative `$ref` keeps one.
+  contract that can drift; the relative `$ref` keeps one, and milestone 4 bundles them when it publishes
+  the document.
+- **Echo the offending value, escaped, in `invalid_inventory`** (the CLI's wording). Most helpful to a
+  developer, but the message reaches a website, its users and its logs, and an inventory value can be a
+  secret someone pasted into a tag. Naming the position and field is enough to find it in the document
+  the client still holds.
+- **Take the concurrency slot after the body is read.** A slow upload would hold no slot, but N slots
+  would no longer bound memory: every connection could hold a body of up to `MaxBodySize` at once. A
+  body read timeout bounds the slow-upload cost instead.
+- **Compare the token bytes directly with `subtle.ConstantTimeCompare`.** It returns at once when the
+  lengths differ, which leaks the token's length; comparing digests of fixed size does not.
 
 ## Consequences
 
@@ -173,9 +249,14 @@ listener of its own.
 - Two depguard rules hold `internal/httpapi` (`httpapi-gets-adapters-from-cmd`,
   `httpapi-imported-only-by-the-server`), and one the request decoders; all three are in the depguard pin
   (`test/architecture/depguardpin_test.go`). A standard package `internal/httpapi` needs is added to its
-  allow list and the pin on purpose. `cmd/eusov-server` will need `!**/cmd/eusov-server/**` in
+  allow list and the pin on purpose. A new test that needs the handler goes in `internal/httpapi` or
+  `test/apiparity`, or widens `httpapi-imported-only-by-the-server` on purpose. `cmd/eusov-server` will need `!**/cmd/eusov-server/**` in
   `adapters-are-built-in-cmd` to construct adapters (milestone 3).
 - A change to a route, a status code or an error code updates `api/openapi.json` in the same change,
   and a breaking one is a `/v2/` route and an ADR.
 - Operators must put the server behind a proxy for TLS and users; a token alone protects it from direct
   access, not from a client that holds the token.
+- API errors are less precise than the CLI's: they say where in the inventory the problem is, not what
+  value is there. A client that wants the value reads it from its own document.
+- A slow client can hold a slot for up to the body read timeout; with N slots, N such clients make the
+  API answer 503 `busy` for that long. Per-client limits belong to the proxy.
