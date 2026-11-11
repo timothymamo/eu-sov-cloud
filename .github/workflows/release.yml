@@ -7,6 +7,14 @@ on:
 # No permission by default; each job asks for its own.
 permissions: {}
 
+# One release at a time, across every tag: two tags pushed together would
+# otherwise race to move latest, and the run that finished last would win
+# whichever tag it carried. A queued run waits; none is cancelled, so no
+# release is left half published (ADR 0015).
+concurrency:
+  group: release
+  cancel-in-progress: false
+
 # The steps of all five jobs are a closed list that test/architecture holds
 # (check.ReleaseWorkflow): add no step, run: or env: here without changing it.
 jobs:
@@ -90,14 +98,16 @@ jobs:
           persist-credentials: false
       # The values GoReleaser stamps into the release binaries: .Version (the
       # tag without its v), .ShortCommit and .CommitDate (RFC 3339, UTC). And
-      # whether the tag is the highest release tag, pre-releases left out:
-      # only that tag moves latest, so a patch to an older line does not.
+      # whether the tag is the highest release tag on main, pre-releases left
+      # out: only that tag moves latest, so a patch to an older line does not,
+      # and a stray tag off main (one the guard refused and nobody deleted)
+      # cannot hold latest back. fetch-depth: 0 brings origin/main.
       - name: Build arguments, as GoReleaser stamps them
         id: stamp
         env:
           TAG: ${{ github.ref_name }}
         run: |
-          highest="$(git tag -l 'v*.*.*' | sed -nE '/^v[0-9]+\.[0-9]+\.[0-9]+$/p' | sort -V | tail -n 1)"
+          highest="$(git tag -l 'v*.*.*' --merged refs/remotes/origin/main | sed -nE '/^v[0-9]+\.[0-9]+\.[0-9]+$/p' | sort -V | tail -n 1)"
           latest=false
           if [ "$TAG" = "$highest" ]; then latest=true; fi
           {

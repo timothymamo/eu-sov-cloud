@@ -37,10 +37,13 @@ index to `ghcr.io/timothymamo/eusov`. `sbom` generates an SPDX SBOM of the pushe
 the index with cosign (keyless, GitHub OIDC) and attaches build provenance and the SBOM as GitHub
 attestations, pushed to the registry beside the image.
 
-- **Only a commit on `main` is released.** The `test` job checks out the whole history and first runs
-  `git merge-base --is-ancestor "$GITHUB_SHA" origin/main`, failing if `origin/main` is missing from the
-  checkout. Every other job needs `test`, so a `v*` tag on a commit that is not on `main` publishes
-  neither binaries nor an image, though anyone with push access can still push such a tag.
+- **Only a commit on `main` is released, by mistake-proofing.** The `test` job checks out the whole
+  history and first runs `git merge-base --is-ancestor "$GITHUB_SHA" origin/main`, failing if
+  `origin/main` is missing from the checkout. Every other job needs `test`, so a `v*` tag pushed by
+  mistake on a commit that is not on `main` publishes neither binaries nor an image. The guard is not a
+  security boundary: GitHub runs the workflow file of the tagged commit, so anyone who may push a `v*`
+  tag can tag a branch whose `release.yml` drops the guard, and get an image signed with this
+  repository's release identity. Only the tag ruleset below keeps that out.
 - **Publishing waits for the release.** `image` needs `test` and `goreleaser`: a failed GoReleaser run
   publishes no image.
 - **Three jobs, split by what they may do and what they run.** Job-level permissions, with the
@@ -69,10 +72,18 @@ attestations, pushed to the registry beside the image.
   `cosign sign --yes --recursive ghcr.io/timothymamo/eusov@<digest>`; `actions/attest` (provenance);
   `actions/download-artifact`; `actions/attest` (SBOM).
 - **Tags.** The git tag (`vX.Y.Z`) and `X.Y` from `metadata-action`'s semver rules. `latest` only when
-  the tag is the highest release tag: the build-arguments step sorts `git tag -l` by version, leaving
-  out pre-releases, and passes `true` or `false` to `metadata-action` (`flavor: latest=...`). A patch to
+  the tag is the highest release tag on `main`: the build-arguments step sorts
+  `git tag -l 'v*.*.*' --merged refs/remotes/origin/main` by version, leaving out pre-releases, and
+  passes `true` or `false` to `metadata-action` (`flavor: latest=...`). A patch to
   an older line (`v1.2.4` after `v1.3.0`) does not move `latest`, which `latest=auto` would. A
-  pre-release tag (`v0.1.0-rc.1`) gets only its own tag: no `X.Y`, no `latest`.
+  pre-release tag (`v0.1.0-rc.1`) gets only its own tag: no `X.Y`, no `latest`. Counting only tags
+  merged into `main` keeps a stray tag off `main`, one the guard refused and nobody deleted, from
+  outranking every later release and freezing `latest`.
+- **One release at a time.** The workflow's `concurrency` group `release`, with
+  `cancel-in-progress: false`, queues a tag's run while another runs. Two tags pushed together would
+  otherwise race on `latest`, and whichever run pushed last would win, not the highest tag. Nothing is
+  cancelled, so no release stops half published. GitHub keeps one pending run per group: a third tag
+  pushed while one run waits replaces the waiting one, which is then re-run by hand.
 - **Same stamp as the release binaries.** `VERSION` is the tag without its `v` (GoReleaser's
   `.Version`), `COMMIT` is `git rev-parse --short HEAD` on a full clone (`.ShortCommit`: git picks the
   short length from the object count, so both jobs clone the whole history), and `DATE` the commit date
@@ -108,17 +119,19 @@ attestations, pushed to the registry beside the image.
   `# renovate:` comment; the shared regex manager reads a value of the form `image=<name>:<tag>@<digest>`
   (setup-buildx's `driver-opts`) since this change.
 - **Dry run on every pull request.** CI's `image` job runs the same `latest` decision on sample tag
-  lists (one where the sample release is the highest, one where it is not, one pre-release), feeds the
+  lists, standing for the tags on `main` that `git tag -l --merged` lists in the release (one where the sample release is the highest, one where it is not, one pre-release), feeds the
   results to the same tag rules and checks the tags, builds the multi-arch image with the same settings into an OCI
   archive, and generates and checks the SBOM from it. Pushing, signing and attesting need the OIDC token
   and write access, so only a tag exercises them; the first tag, ideally a `-rc` pre-release, is verified
   by hand with the README's commands.
 - **Public package.** GHCR creates a new package private. After the first push it is made public once,
   by hand, in the package settings; later pushes keep it public.
-- **Recommended repository setting: a tag ruleset.** Who may create `v*` tags is a repository setting,
-  not code: a tag ruleset restricting the creation, update and deletion of `v*` tags to maintainers is
-  recommended, set by hand. The ancestry guard keeps a tag off a side branch from publishing; the ruleset
-  keeps everyone else with push access from tagging at all.
+- **Required repository setting: a `v*` tag ruleset.** Who may push a `v*` tag decides who can publish
+  under the release identity, and that is a repository setting, not code. A tag ruleset on
+  `refs/tags/v*` restricts creation, update and deletion to maintainers (optionally requiring signed
+  commits). It is set by hand and is the security boundary; the ancestry guard only catches mistakes.
+  It is a precondition of every release: the `release-tag` skill checks that it exists
+  (`gh api repos/{owner}/{repo}/rulesets`) and stops before tagging if it does not.
 - **Verification instructions** pin an exact identity per release: `cosign verify` with
   `--certificate-identity .../release.yml@refs/tags/vX.Y.Z` and the GitHub OIDC issuer, and
   `gh attestation verify` with `--source-ref refs/tags/vX.Y.Z`, `--signer-workflow` and
@@ -162,7 +175,10 @@ attestations, pushed to the registry beside the image.
 - A failed GoReleaser run publishes no image; a failed `image`, `sbom` or `sign` job does not undo the
   GitHub release. A failure is fixed forward with a new tag. An image pushed by a run whose `sign` job
   failed stays unsigned and fails verification.
-- A tag on a commit that is not on `main` fails the release run at its first check.
+- A tag on a commit that is not on `main` fails the release run at its first check, and never counts
+  for `latest`. Someone who may push `v*` tags can still bypass the check with an edited workflow, so
+  no release is cut until the `v*` tag ruleset exists.
+- Release runs are serialised; a tag pushed while one runs waits for it.
 - After the first push the GHCR package must be made public by hand, once.
 - New actions to keep updated: `docker/login-action`, `docker/metadata-action`,
   `sigstore/cosign-installer`, `anchore/sbom-action`, `actions/upload-artifact`,

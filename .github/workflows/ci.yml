@@ -136,12 +136,13 @@ jobs:
       - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
         with:
           driver-opts: image=moby/buildkit:${{ env.BUILDKIT_VERSION }}
-      # release.yml's latest rule, on sample tag lists in place of git tag -l: latest moves only for
-      # the highest release tag, pre-releases left out.
+      # release.yml's latest rule, on sample tag lists in place of its git tag -l --merged
+      # refs/remotes/origin/main: each list stands for the tags on main, and the same sed, sort and
+      # tail pick the highest. latest moves only for the highest release tag, pre-releases left out.
       - name: Latest for sample tags, as release.yml decides it
         id: latest
         run: |
-          # $1 is the pushed tag, the rest every tag in the repository.
+          # $1 is the pushed tag, the rest every tag merged into main.
           decide() {
             TAG="$1"
             shift
@@ -194,9 +195,9 @@ jobs:
           check() {
             got="$(printf '%s\n' "$2" | sed '/^$/d' | sort)"
             want="$(printf '%s\n' "$3" | sort)"
-            echo "$1: $(echo $got)"
+            echo "$1: $(printf '%s\n' "$got" | tr '\n' ' ')"
             if [ "$got" != "$want" ]; then
-              echo "$1: want $(echo $want)" >&2
+              echo "$1: want $(printf '%s\n' "$want" | tr '\n' ' ')" >&2
               exit 1
             fi
           }

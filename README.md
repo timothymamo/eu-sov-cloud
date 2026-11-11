@@ -153,7 +153,9 @@ docker run --rm "$IMAGE" version
 
 Each platform's image is signed too, so `cosign verify` also accepts the `linux/amd64` or
 `linux/arm64` digest that `docker buildx imagetools inspect` lists. `gh attestation verify ...
---format json` prints the attested statements, the SBOM's packages among them. The image's labels
+--format json` prints the attested statements, the SBOM's packages among them. The SBOM is attested
+on the index digest but generated from its `linux/amd64` image; the `linux/arm64` image is built from
+the same source, Go modules and distroless base. The image's labels
 name the source repository (`org.opencontainers.image.source`) and the commit
 (`org.opencontainers.image.revision`).
 
