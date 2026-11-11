@@ -443,6 +443,82 @@ func TestReportComparisonNoSharedBlocker(t *testing.T) {
 	}
 }
 
+// TestReportComparisonRefusesMalformedComparison pins that the document is
+// written only for a comparison the domain accepts: the targets must assess the
+// same resources in the same order, and every shared blocker must name only
+// compared targets. A document written from such a comparison would hold a
+// resource set the reader cannot line up across targets, or a blocker naming a
+// target the document does not hold. Each is an error, and nothing is written.
+func TestReportComparisonRefusesMalformedComparison(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name   string
+		change func(t *testing.T, c *assessment.Comparison)
+	}{
+		{
+			name: "the targets assess the same resources in another order",
+			change: func(_ *testing.T, c *assessment.Comparison) {
+				c.Targets[1].Assessment.Verdicts[0], c.Targets[1].Assessment.Verdicts[1] =
+					c.Targets[1].Assessment.Verdicts[1], c.Targets[1].Assessment.Verdicts[0]
+			},
+		},
+		{
+			name: "a later target holds a verdict the first target lacks",
+			change: func(t *testing.T, c *assessment.Comparison) {
+				t.Helper()
+
+				c.Targets[1].Assessment.Verdicts = append(slices.Clone(c.Targets[1].Assessment.Verdicts),
+					assessment.Verdict{
+						Resource: inventory.Resource{
+							ID:       "extra-example",
+							RawType:  "AWS::SQS::Queue",
+							Category: taxonomy.Unclassified,
+						},
+						Fit:     mapping.None,
+						Reasons: []mapping.Reason{{Code: mapping.NotClassified}},
+					})
+			},
+		},
+		{
+			name: "a shared blocker names a target the comparison does not hold",
+			change: func(t *testing.T, c *assessment.Comparison) {
+				t.Helper()
+
+				if len(c.SharedBlockers) == 0 {
+					t.Fatal("precondition failed: the fixture comparison has no shared blocker")
+				}
+
+				c.SharedBlockers[0].Targets = append(c.SharedBlockers[0].Targets, assessment.TargetReasons{
+					Key:     "missing",
+					Reasons: []mapping.Reason{{Code: mapping.NotClassified}},
+				})
+			},
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			c := assessment.Compare(assessTargets(t, comparisonInventory(t), threeTargetKeys()))
+			tc.change(t, &c)
+
+			var out bytes.Buffer
+
+			err := jsonreport.New().ReportComparison(t.Context(), &out, c,
+				analysis.ReportMeta{InventoryName: inventoryFileName})
+			if err == nil {
+				t.Fatalf("ReportComparison() error = nil, want an error when %s", tc.name)
+			}
+
+			if out.Len() != 0 {
+				t.Errorf("ReportComparison() wrote %d bytes to the writer, want none:\n%s", out.Len(), out.String())
+			}
+		})
+	}
+}
+
 // hostileComparisonKeys are the hostile comparison's target keys: the document
 // writes each one as targets[].key and as a shared blocker target's key, so a key
 // is a value like any other.
