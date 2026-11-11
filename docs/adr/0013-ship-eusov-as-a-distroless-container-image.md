@@ -26,7 +26,7 @@ Forces:
 ## Decision
 
 A multi-stage `Dockerfile` at the root builds `./cmd/eusov` in the `golang` image and copies only the
-binary into `gcr.io/distroless/static-debian12:nonroot`. CI builds it for both Linux release platforms
+binary into `gcr.io/distroless/static-debian13:nonroot` (Debian 13, trixie). CI builds it for both Linux release platforms
 and smoke-tests it on every pull request; publishing it to a registry is a follow-up.
 
 - **Final stage: distroless static, `nonroot` tag.** It holds CA certificates, tzdata, an `/etc/passwd`
@@ -66,10 +66,11 @@ and smoke-tests it on every pull request; publishing it to a registry is a follo
 - **`scratch` as the final stage.** Smaller, but the CA bundle (and tzdata, if the binary ever needs
   it) and an `/etc/passwd` entry for the user would have to be copied from the builder by hand, and
   kept current with it. distroless maintains them; it is built from Debian packages that its own
-  scanners track. Measured in CI (run 43029400887, linux/amd64): the `eusov` binary is 3.17 MB and the
-  distroless `static-debian12` layers about 5.5 MB, for about 8.6 MB uncompressed. tzdata is most of
-  the base (4.24 MB), then base-files (0.58 MB) and the CA bundle (0.32 MB), the rest under 0.2 MB.
-  `scratch` would save roughly those 5.5 MB, less what has to be copied in by hand; on an image this
+  scanners track. Measured in CI (run 43033381347, linux/amd64): the `eusov` binary is 3.17 MB and the
+  distroless `static-debian13` layers about 5.8 MB, for about 9.0 MB uncompressed. tzdata is most of
+  the base (4.39 MB, as trixie splits it into `tzdata` and `tzdata-legacy`), then base-files (0.75 MB)
+  and the CA bundle (0.32 MB), the rest under 0.2 MB.
+  `scratch` would save roughly those 5.8 MB, less what has to be copied in by hand; on an image this
   size that does not outweigh maintaining the files ourselves.
 - **distroless `static` without `nonroot`, or `USER 65532:65532`.** Works the same; the `nonroot` tag
   makes the default user non-root even if `USER` is dropped, and names the home directory credentials
@@ -96,5 +97,3 @@ and smoke-tests it on every pull request; publishing it to a registry is a follo
   mount at `docker run` time; the image never contains them.
 - Follow-up: publish to GHCR from the release, signed, with an SBOM. Done in issue #72:
   [ADR 0014](0014-publish-the-signed-image-to-ghcr-with-docker-buildx.md).
-- Follow-up: move the final stage to `gcr.io/distroless/static-debian13`. Renovate updates the
-  `static-debian12` digest but never changes the Debian suite in the image name.

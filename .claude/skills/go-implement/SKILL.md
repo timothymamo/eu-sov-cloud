@@ -20,7 +20,9 @@ description: Implementation conventions for eu-sov-cloud Go code - layering, err
   `domain-is-pure` rule in `.golangci.yml`. A new standard package needs its own entry there, never one
   that does I/O. A new domain package needs one too, as do the rules that list the domain packages for
   the application layer and the CLI. Pure types and functions. No I/O, no `context`, no clock (pass `time.Time` in), no
-  logging.
+  logging. `forbidigo` (group `domain-is-pure`) refuses the I/O and clock calls of `fmt` and `time` there,
+  such as `fmt.Println`, `time.Now`, `time.Local` and `time.Parse`; use `time.UTC` and
+  `time.ParseInLocation` with an explicit location instead.
 - `internal/app/...`: use cases. Declares the port interfaces it consumes, next to the consumer. Imports
   domain only. Never imports adapters or cloud SDKs.
 - `internal/adapter/...`: implements ports. Cloud SDKs live only here, in the provider's own package.

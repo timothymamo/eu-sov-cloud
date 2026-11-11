@@ -26,5 +26,6 @@
 // The target is the display name reports show (for example Scaleway), not a CLI
 // key: choosing an adapter from a key is the composition root's job.
 //
-// Domain layer: standard library and other domain packages only, no I/O.
+// Domain layer: standard library and other domain packages only, no I/O, no
+// clock.
 package catalog

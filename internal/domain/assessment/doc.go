@@ -4,5 +4,6 @@
 // that stop resources with fit none from moving, and summary counts per fit.
 // Fits and reasons come from package mapping unchanged.
 //
-// Domain layer: standard library and other domain packages only, no I/O.
+// Domain layer: standard library and other domain packages only, no I/O, no
+// clock.
 package assessment

@@ -14,7 +14,38 @@ serve. Never write a direct "AWS service X maps to OVH service Y" table.
 1. Package: `internal/adapter/source/<provider>`, implementing the inventory-source port declared in
    `internal/app/analysis`.
 2. Use only read APIs (`Describe*`, `List*`, `Get*`). Document the minimal read-only role or policy in
-   the package's `doc.go`.
+   the package's `doc.go`. `make lint` holds every file it checks to this, tests and integration tests
+   included (`docs/architecture.md`, Cloud read-only rule; ADR 0014):
+   - forbidigo's group `cloud-read-only` in `.golangci.yml` allows only read verbs on an AWS, Azure
+     or GCP SDK client, and only the input, output, options, request or response type of a read
+     operation. It refuses the credential and transport hooks (`aws.Config.Credentials`,
+     `config.With*` credentials, an Azure `Transport` or policy, `option.WithHTTPClient`, gRPC
+     connections), the reads that return a secret, `google.golang.org/api` (use
+     `cloud.google.com/go`), the AWS SDK v1 and Azure track 1. Pass nil for an Azure data-plane
+     client's `ClientOptions`.
+   - depguard's `cloud-adapters-reach-the-cloud-through-the-sdk` is a strict import allow list for
+     every package under `internal/adapter/source` but `inventoryfile` and `sourcetest`: no `os`,
+     `reflect`, `text/template`, `net`, `syscall` or cgo. Keep shared helpers in the adapter's own
+     package; a sibling package such as `source/awsutil` gets the same rule and may not import an
+     SDK at all (`cloud-sdks-only-in-provider-adapters`).
+   - `test/lint` lets an interface in the adapter, named, literal or a generic constraint, declare
+     only read verbs (`Describe`, `Get`, `List`, `NewGet`, `NewList`, `AggregatedList`, `Close`,
+     `HasMorePages`, `NextPage`, `More`) or unexported methods, and refuses a struct that embeds an
+     SDK type. Name no helper of your own with a write verb (`terminateAll` is fine, `Terminate` on
+     an adapter type is refused).
+   - For a read whose verb is not allowed yet (Azure Resource Graph `Resources`, GCP
+     `SearchAllResources`), follow "Allowing a new read verb" in `docs/architecture.md`: change the
+     SDK's method and operation entries, add the verb to `TestCloudReadOnlyPatterns` and `readName`,
+     and add a read call to the probe in `test/lint/testdata/cloudreadonly`. Before using an SDK
+     package no entry covers, such as a new hand-written GCP client, add an entry, a stub and a probe
+     line that only the entry refuses: `TestCloudReadOnlyProbe` fails on an entry with no line of its
+     own.
+   - Endpoint overrides (`aws.Config.BaseEndpoint`, `option.WithEndpoint`, an Azure
+     `cloud.Configuration`) are allowed, because a sovereign region needs them. They are a reviewer
+     check: set one only from configuration that names a known cloud endpoint.
+   - Never silence the rules: `test/lint` fails on a bare `//nolint`, `//nolint:all`,
+     `//nolint:forbidigo` and `//nolint:depguard`. Keep live calls in files lint loads, with no build
+     tag but `integration`.
 3. Translate SDK types into `internal/domain/inventory` types inside the adapter. SDK types never escape.
 4. Classify each resource into a taxonomy category. Unknown resource types are kept and marked
    unclassified, never dropped silently, so the assessment can report them.
@@ -46,6 +77,10 @@ only (for a live source, that includes its SDK packages). Add deny entries only 
 refused. Any new helper under `internal/adapter/internal/` must be named, ending in `$`, in the allow
 list of `adapters-are-built-in-cmd` before an adapter can import it, and `adapter-helpers-do-no-io`
 holds it to no I/O. Run `make lint` to confirm the rules hold.
+
+A live source under `internal/adapter/source` is already held by the shared strict rule
+`cloud-adapters-reach-the-cloud-through-the-sdk` (see "Source provider" above); a rule of its own
+narrows that list further and never widens it.
 
 ## Finish
 

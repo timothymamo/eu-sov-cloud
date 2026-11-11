@@ -59,6 +59,14 @@ jobs:
         with:
           version: v2.15.0
           skip-cache: true
+      # The rules in test/lint, and the probes that run the golangci-lint installed above to prove forbidigo's
+      # groups fire. The step sets no platform, so test/lint runs natively in every entry: the per-target
+      # settings live in the golangci-lint step's own env: only. It runs once per matrix entry, seven times with
+      # the same inputs, because the architecture test (cilint_test.go) forbids if: on a lint-target step.
+      - name: Source rules and lint probes
+        run: go test -count=1 ./test/lint/
+        env:
+          EUSOV_LINT_PROBES: require
 
   # Lint is a required status check, and a matrix reports one check per entry under its own name: this
   # job reports the whole matrix as the one Lint check, and fails unless every entry succeeded. It runs

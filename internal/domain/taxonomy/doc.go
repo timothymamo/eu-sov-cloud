@@ -15,5 +15,6 @@
 // is an error, never silently treated as unclassified. The error echoes the
 // rejected value quoted and truncated (package text), so its length is bounded.
 //
-// Domain layer: standard library and other domain packages only, no I/O.
+// Domain layer: standard library and other domain packages only, no I/O, no
+// clock.
 package taxonomy

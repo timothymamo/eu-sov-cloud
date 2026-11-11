@@ -35,13 +35,13 @@ exit 0
 
 // fakeGo is the go make lint finds on PATH. A go test call, the test/lint step
 // make lint ends with, is recorded in the same record as the linter runs, as a
-// line "#go\t<GOOS>\t<GOARCH>\t<CGO_ENABLED>\t<arguments>", so the record
+// line "#go\t<GOOS>\t<GOARCH>\t<CGO_ENABLED>\t<EUSOV_LINT_PROBES>\t<arguments>", so the record
 // tells whether it ran and whether it ran after them; it fails when
 // EUSOV_FAKE_LINT_FAIL is test/lint. Every other call is handed to the real go
 // command, whose path replaces %s, single-quoted.
 const fakeGo = `#!/bin/sh
 if [ "$1" = test ]; then
-	printf '#go\t%%s\t%%s\t%%s\t%%s\n' "${GOOS}" "${GOARCH}" "${CGO_ENABLED}" "$*" >> "${EUSOV_FAKE_LINT_RECORD}"
+	printf '#go\t%%s\t%%s\t%%s\t%%s\t%%s\n' "${GOOS}" "${GOARCH}" "${CGO_ENABLED}" "${EUSOV_LINT_PROBES}" "$*" >> "${EUSOV_FAKE_LINT_RECORD}"
 	if [ "${EUSOV_FAKE_LINT_FAIL}" = "test/lint" ]; then
 		exit 3
 	fi
@@ -87,6 +87,7 @@ type goTestRun struct {
 	GOOS       string
 	GOARCH     string
 	CGOEnabled string
+	Probes     string // EUSOV_LINT_PROBES
 	Args       string
 }
 
@@ -277,6 +278,9 @@ func TestMakeLintRunsEveryReleaseTarget(t *testing.T) {
 			} else if run.GOOS != "" || run.GOARCH != "" || run.CGOEnabled != "" {
 				t.Errorf("make lint ran test/lint with GOOS=%q GOARCH=%q CGO_ENABLED=%q, want all three unset, so it runs for the host",
 					run.GOOS, run.GOARCH, run.CGOEnabled)
+			} else if run.Probes != "require" {
+				t.Errorf("make lint ran test/lint with EUSOV_LINT_PROBES=%q, want require, so the forbidigo probes fail rather than skip without golangci-lint",
+					run.Probes)
 			}
 
 			// Every release target plus the native run, so a make lint that
@@ -469,6 +473,9 @@ func makeEnv(env map[string]string) []string {
 		// is the only thing that may decide which run it fails.
 		"EUSOV_FAKE_LINT_FAIL":   true,
 		"EUSOV_FAKE_LINT_RECORD": true,
+		// Only the Makefile may set it for test/lint: an inherited value
+		// would hide a Makefile that no longer does.
+		"EUSOV_LINT_PROBES": true,
 	}
 
 	out := make([]string, 0, len(os.Environ())+len(env))
@@ -517,13 +524,13 @@ func readLintRecord(t *testing.T, path string) ([]lintRun, []goTestRun) {
 
 	for i, line := range lines {
 		if rest, ok := strings.CutPrefix(line, "#go\t"); ok {
-			fields := strings.SplitN(rest, "\t", 4)
-			if len(fields) != 4 {
-				t.Fatalf("record line %d = %q, want #go and 4 tab-separated fields: GOOS, GOARCH, CGO_ENABLED and the arguments", i+1, line)
+			fields := strings.SplitN(rest, "\t", 5)
+			if len(fields) != 5 {
+				t.Fatalf("record line %d = %q, want #go and 5 tab-separated fields: GOOS, GOARCH, CGO_ENABLED, EUSOV_LINT_PROBES and the arguments", i+1, line)
 			}
 
 			goTests = append(goTests, goTestRun{
-				After: len(runs), GOOS: fields[0], GOARCH: fields[1], CGOEnabled: fields[2], Args: fields[3],
+				After: len(runs), GOOS: fields[0], GOARCH: fields[1], CGOEnabled: fields[2], Probes: fields[3], Args: fields[4],
 			})
 
 			continue
