@@ -621,9 +621,15 @@ func normalise(o Offering) (Offering, error) {
 // withImplied returns caps followed by every capability they imply,
 // transitively. The result may hold duplicates; sortedUnique removes them.
 func withImplied(caps []taxonomy.Capability) []taxonomy.Capability {
+	seen := make(map[taxonomy.Capability]struct{}, len(caps))
+	for _, c := range caps {
+		seen[c] = struct{}{}
+	}
+
 	for i := 0; i < len(caps); i++ {
 		for _, implied := range caps[i].Implies() {
-			if !slices.Contains(caps, implied) {
+			if _, ok := seen[implied]; !ok {
+				seen[implied] = struct{}{}
 				caps = append(caps, implied)
 			}
 		}
