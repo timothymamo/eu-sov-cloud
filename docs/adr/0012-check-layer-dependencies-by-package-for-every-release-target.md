@@ -166,4 +166,9 @@ workflow change.
     `cmd/eusov`): the release-binary pass checks their sources and directories, not their imports.
 - `make test` runs `go list` 96 times (6 platforms, cgo off and on, 4 tag sets, layers and binary).
   They run in parallel and take a few seconds.
+- The rules themselves are pinned too (issue #80): `TestDepguardRulesArePinned` reads every depguard
+  rule of `.golangci.yml` whole (list-mode, files, allow, the `pkg` of each deny entry, a shared deny
+  list read through its YAML anchor) and compares it with `pinnedDepguardRules`. A rule dropped or
+  weakened by a merge fails the test with the rule named; a deliberate change updates the pin in the
+  same commit, where review sees it.
 - Lint and this check now say the same thing twice: a violation that lint catches also fails here.

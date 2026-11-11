@@ -67,6 +67,14 @@ the ways code could be hidden from it, and what refuses each:
   binary to Go sources in their own directory, so assembly, cgo, line directives and symlinked
   directories cannot get past the file-name-based rules
   ([ADR 0012](adr/0012-check-layer-dependencies-by-package-for-every-release-target.md)).
+- An edit to the rules themselves. A merge conflict resolution once dropped the whole
+  `reporters-stay-offline` rule and the exact `jsondoc$` allow entry, and no check noticed (issue #80).
+  `test/architecture` (`TestDepguardRulesArePinned`) now pins every depguard rule: its list-mode, its
+  files and allow lists and the `pkg` of each deny entry, against a copy in
+  `test/architecture/depguardpin_test.go`. Adding, removing or changing a rule means updating
+  `pinnedDepguardRules` in the same commit, on purpose, so review sees it as a change to the
+  architecture rules. `TestDepguardPinCatchesMutations` deletes each rule and each entry, and drops the
+  `$` of each exact allow entry, to prove the pin notices.
 
 A cloud SDK is imported only in its provider's adapter package (`source/aws`, `source/azure`,
 `source/gcp`, `target/ovhcloud`, `target/scaleway`, `target/upcloud`): the depguard rule
