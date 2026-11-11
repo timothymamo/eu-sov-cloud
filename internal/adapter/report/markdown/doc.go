@@ -47,7 +47,12 @@
 //     one level lower.
 //
 // The comparison ranks no target and recommends none. Values are escaped as in
-// the single-target report. A comparison of no target is an error.
+// the single-target report.
+//
+// A comparison must hold at least one target, every target must assess the same
+// resources in the same order, the one inventory's, and every shared blocker
+// must name only compared targets. A comparison that breaks any of these is an
+// error, and nothing is written.
 //
 // # Values are code spans
 //

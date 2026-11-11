@@ -19,8 +19,13 @@ import (
 //
 // The output depends on c and meta only. ReportComparison builds the whole
 // report before writing it to w in one call, and returns a write error wrapped.
-// When ctx is already done it writes nothing and returns ctx.Err(); given a
-// comparison of no target it writes nothing and returns an error.
+// When ctx is already done it writes nothing and returns ctx.Err().
+//
+// The comparison must hold at least one target, every target must assess the
+// same resources in the same order (the one inventory's order), and every
+// shared blocker must name only compared targets. Otherwise ReportComparison
+// writes nothing and returns an error naming the offending target key or
+// resource ID.
 func (*Reporter) ReportComparison(ctx context.Context, w io.Writer, c assessment.Comparison, meta analysis.ReportMeta) error {
 	if err := ctx.Err(); err != nil {
 		return err
@@ -29,6 +34,10 @@ func (*Reporter) ReportComparison(ctx context.Context, w io.Writer, c assessment
 	if len(c.Targets) == 0 {
 		// The package may not import errors (depguard reporters-stay-offline).
 		return fmt.Errorf("render markdown comparison: the comparison holds no target")
+	}
+
+	if err := validateComparison(c); err != nil {
+		return fmt.Errorf("render markdown comparison: %w", err)
 	}
 
 	var b strings.Builder
@@ -46,6 +55,47 @@ func (*Reporter) ReportComparison(ctx context.Context, w io.Writer, c assessment
 
 	if _, err := io.WriteString(w, b.String()); err != nil {
 		return fmt.Errorf("write markdown comparison report: %w", err)
+	}
+
+	return nil
+}
+
+// validateComparison checks the preconditions ReportComparison documents for a
+// comparison of at least one target: every target's verdicts hold the first
+// target's resource IDs in the same order, and every shared blocker names only
+// targets the comparison holds.
+func validateComparison(c assessment.Comparison) error {
+	first := c.Targets[0]
+
+	for _, t := range c.Targets[1:] {
+		if len(t.Assessment.Verdicts) != len(first.Assessment.Verdicts) {
+			return fmt.Errorf("target %q has %d verdicts, target %q has %d: the targets must assess the same resources",
+				t.Key, len(t.Assessment.Verdicts), first.Key, len(first.Assessment.Verdicts))
+		}
+
+		for i, v := range t.Assessment.Verdicts {
+			if want := first.Assessment.Verdicts[i].Resource.ID; v.Resource.ID != want {
+				return fmt.Errorf("target %q has resource %q at position %d where target %q has %q: "+
+					"the targets must assess the same resources in the same order",
+					t.Key, v.Resource.ID, i, first.Key, want)
+			}
+		}
+	}
+
+	// Target keys are unique by contract: analysis.NewComparison refuses a
+	// repeated key and assessment.Compare documents it.
+	keys := make(map[string]bool, len(c.Targets))
+	for _, t := range c.Targets {
+		keys[t.Key] = true
+	}
+
+	for _, blocker := range c.SharedBlockers {
+		for _, t := range blocker.Targets {
+			if !keys[t.Key] {
+				return fmt.Errorf("the shared blocker of resource %q names target %q, which the comparison does not hold",
+					blocker.ResourceID, t.Key)
+			}
+		}
 	}
 
 	return nil
@@ -107,42 +157,30 @@ func writeComparisonSummary(b *strings.Builder, targets []assessment.TargetAsses
 }
 
 // writeComparisonResources writes one row per resource, in the first target's
-// verdict order, which is the inventory's: the ID, the category, and each
-// target's fit and best offering, without the tie note. A target with no
-// verdict for the resource gets empty cells.
+// verdict order, which is the inventory's and, as validateComparison checks,
+// every target's: the ID, the category, and each target's fit and best
+// offering, without the tie note.
 func writeComparisonResources(b *strings.Builder, targets []assessment.TargetAssessment) {
 	b.WriteString(subsectionHeading + " Resources\n\n")
 
 	header := []string{"ID", "Category"}
-	verdicts := make([]map[string]assessment.Verdict, len(targets))
 
-	for i, t := range targets {
+	for _, t := range targets {
 		name := codeSpan(t.Assessment.Target, true)
 		header = append(header, name+" fit", name+" best offering")
-
-		verdicts[i] = make(map[string]assessment.Verdict, len(t.Assessment.Verdicts))
-		for _, v := range t.Assessment.Verdicts {
-			verdicts[i][v.Resource.ID] = v
-		}
 	}
 
 	writeRow(b, header...)
 	writeSeparator(b, len(header))
 
-	for _, first := range targets[0].Assessment.Verdicts {
+	for i, first := range targets[0].Assessment.Verdicts {
 		row := []string{
 			codeSpan(first.Resource.ID, true),
 			codeSpan(string(first.Resource.Category), true),
 		}
 
-		for i := range targets {
-			v, ok := verdicts[i][first.Resource.ID]
-			if !ok {
-				row = append(row, "", "")
-
-				continue
-			}
-
+		for _, t := range targets {
+			v := t.Assessment.Verdicts[i]
 			row = append(row, escapeText(string(v.Fit)), codeSpan(v.BestOffering, true))
 		}
 
@@ -165,6 +203,9 @@ func writeSharedBlockers(b *strings.Builder, c assessment.Comparison) {
 		return
 	}
 
+	// Target keys are unique by contract (analysis.NewComparison refuses a
+	// repeated key; assessment.Compare documents it), and validateComparison has
+	// checked that every key a shared blocker names is here.
 	names := make(map[string]string, len(c.Targets))
 	for _, t := range c.Targets {
 		names[t.Key] = t.Assessment.Target
