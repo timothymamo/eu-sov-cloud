@@ -85,9 +85,14 @@ in taxonomy terms. This file records where each fact comes from, so the snapshot
   offering. Here the base tiers are the Essential/Discovery plan (Managed MySQL and Managed
   PostgreSQL), the Standard class (Object Storage 3-AZ) and the Standard plan (Managed Kubernetes
   Service 3-AZ, the only plan in Paris and Milan). The variants are *Managed MySQL Multi-node*,
-  *Managed PostgreSQL Multi-node* and their *3-AZ Multi-node* forms, and *Block Storage 3-AZ Regional
+  *Managed PostgreSQL Multi-node* and their *Multi-node 3-AZ* forms, and *Block Storage 3-AZ Regional
   Classic*, named after the volume class. A **Needs:** line names the tier its offering is named after,
-  or the product's default tier.
+  or the product's default tier. **Naming order:** a variant is `<base offering> <tier>`, and a
+  region-group suffix such as `3-AZ` comes after the tier (*Managed PostgreSQL Multi-node 3-AZ*). The
+  1-AZ variant's name is then a prefix of the 3-AZ one, so it wins ties by name, and a resource that
+  needs only a capability both variants share is pointed at the variant offered in the most regions.
+  This departs from PRD #11's `<product> 3-AZ` pattern only where a tier variant also has a 3-AZ form;
+  *Block Storage 3-AZ Regional Classic* keeps it, as its class exists only in the 3-AZ regions.
 - **Scope:** high availability is listed at the level the documentation states in full.
   `node-high-availability` is listed when the offering keeps serving through the loss of a node, server
   or host with no manual failover; `zone-high-availability` when it keeps serving through the loss of a
@@ -322,8 +327,8 @@ Category `kubernetes.managed`: Managed Kubernetes on the Standard plan in the 3-
 
 Category `database.mysql`: Public Cloud Databases for MySQL ("Managed MySQL" on the product page) on the
 Essential/Discovery plan, one node, in the 1-AZ regions. This is the base offering (tier-variant rule):
-the multi-node plans add capabilities, and are *Managed MySQL Multi-node* and *Managed MySQL 3-AZ
-Multi-node*. Pages: <https://www.ovhcloud.com/en/public-cloud/mysql/>,
+the multi-node plans add capabilities, and are *Managed MySQL Multi-node* and *Managed MySQL
+Multi-node 3-AZ*. Pages: <https://www.ovhcloud.com/en/public-cloud/mysql/>,
 <https://docs.ovhcloud.com/en/guides/public-cloud/databases/capabilities>,
 <https://docs.ovhcloud.com/en/guides/public-cloud/databases/mysql-capabilities>,
 <https://docs.ovhcloud.com/en/guides/public-cloud/databases/public-cloud-databases-regions-comparison>
@@ -346,7 +351,7 @@ Multi-node*. Pages: <https://www.ovhcloud.com/en/public-cloud/mysql/>,
   Databases offer is available "in all Public Cloud 1-AZ and 3-AZ regions". The 3-AZ regions are not
   listed for this plan; see *Left out on purpose*.
 
-### Managed MySQL 3-AZ Multi-node
+### Managed MySQL Multi-node 3-AZ
 
 Category `database.mysql`: Public Cloud Databases for MySQL on a multi-node plan in the 3-AZ regions. A
 tier variant of *Managed MySQL* (tier-variant rule). Pages: <https://www.ovhcloud.com/en/public-cloud/mysql/>,
@@ -405,7 +410,7 @@ tier variant of *Managed MySQL* (tier-variant rule). Pages: <https://www.ovhclou
   data center", and the service "offers resilience against node and disk failures" (deployment modes
   page). It survives the loss of a node, not of the zone, so `zone-high-availability` is not claimed.
 - `read-replicas`. **Needs:** a multi-node plan, Business/Production or Enterprise/Advanced. As for
-  *Managed MySQL 3-AZ Multi-node*: replica nodes accept reads only (FAQ), and the capability is counted on
+  *Managed MySQL Multi-node 3-AZ*: replica nodes accept reads only (FAQ), and the capability is counted on
   every multi-node plan although the product page names "Read replica included" on
   Enterprise/Advanced only.
 - Regions `GRA`, `LIM`, `RBX`, `SBG`, `WAW`: as for *Managed MySQL*.
@@ -414,8 +419,8 @@ tier variant of *Managed MySQL* (tier-variant rule). Pages: <https://www.ovhclou
 
 Category `database.postgresql`: Public Cloud Databases for PostgreSQL ("Managed PostgreSQL" on the product page) on the
 Essential/Discovery plan, one node, in the 1-AZ regions. This is the base offering (tier-variant rule):
-the multi-node plans add capabilities, and are *Managed PostgreSQL Multi-node* and *Managed PostgreSQL 3-AZ
-Multi-node*. Pages: <https://www.ovhcloud.com/en/public-cloud/postgresql/>,
+the multi-node plans add capabilities, and are *Managed PostgreSQL Multi-node* and *Managed
+PostgreSQL Multi-node 3-AZ*. Pages: <https://www.ovhcloud.com/en/public-cloud/postgresql/>,
 <https://docs.ovhcloud.com/en/guides/public-cloud/databases/capabilities>,
 <https://docs.ovhcloud.com/en/guides/public-cloud/databases/postgresql-capabilities>,
 <https://docs.ovhcloud.com/en/guides/public-cloud/databases/public-cloud-databases-regions-comparison>
@@ -438,7 +443,7 @@ Multi-node*. Pages: <https://www.ovhcloud.com/en/public-cloud/postgresql/>,
   Databases offer is available "in all Public Cloud 1-AZ and 3-AZ regions". The 3-AZ regions are not
   listed for this plan; see *Left out on purpose*.
 
-### Managed PostgreSQL 3-AZ Multi-node
+### Managed PostgreSQL Multi-node 3-AZ
 
 Category `database.postgresql`: Public Cloud Databases for PostgreSQL on a multi-node plan in the 3-AZ regions. A
 tier variant of *Managed PostgreSQL* (tier-variant rule). Pages: <https://www.ovhcloud.com/en/public-cloud/postgresql/>,
@@ -497,7 +502,7 @@ tier variant of *Managed PostgreSQL* (tier-variant rule). Pages: <https://www.ov
   data center", and the service "offers resilience against node and disk failures" (deployment modes
   page). It survives the loss of a node, not of the zone, so `zone-high-availability` is not claimed.
 - `read-replicas`. **Needs:** a multi-node plan, Business/Production or Enterprise/Advanced. As for
-  *Managed PostgreSQL 3-AZ Multi-node*: replica nodes accept reads only (FAQ), and the capability is counted on
+  *Managed PostgreSQL Multi-node 3-AZ*: replica nodes accept reads only (FAQ), and the capability is counted on
   every multi-node plan although the product page names "Read replica included" on
   Enterprise/Advanced only.
 - Regions `GRA`, `LIM`, `RBX`, `SBG`, `WAW`: as for *Managed PostgreSQL*.
@@ -628,7 +633,7 @@ Active Archive, and Cold Archive in Paris only). Pages: <https://www.ovhcloud.co
   Business/Production and Enterprise/Advanced only, and the deployment modes page
   (<https://docs.ovhcloud.com/en/guides/public-cloud/databases/public-cloud-databases-regions-comparison>)
   describes multi-node services there. So *Managed MySQL* and *Managed PostgreSQL* list the 1-AZ regions
-  only, and the former *Managed MySQL 3-AZ* and *Managed PostgreSQL 3-AZ* became *3-AZ Multi-node*
+  only, and the former *Managed MySQL 3-AZ* and *Managed PostgreSQL 3-AZ* became *Multi-node 3-AZ*
   variants. A Discovery service there would have exactly the base offering's capabilities, so a later
   refresh adds `MIL` and `PAR` to the base offering once a page states it, rather than a new offering.
 - **Managed MySQL and Managed PostgreSQL Multi-node (1-AZ) `zone-high-availability`:** the nodes "may be

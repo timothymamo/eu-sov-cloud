@@ -54,7 +54,7 @@
       "regions": ["GRA", "LIM", "RBX", "SBG", "WAW"]
     },
     {
-      "name": "Managed MySQL 3-AZ Multi-node",
+      "name": "Managed MySQL Multi-node 3-AZ",
       "categories": ["database.mysql"],
       "capabilities": ["encryption-at-rest", "point-in-time-restore", "read-replicas", "zone-high-availability"],
       "regions": ["MIL", "PAR"]
@@ -72,7 +72,7 @@
       "regions": ["GRA", "LIM", "RBX", "SBG", "WAW"]
     },
     {
-      "name": "Managed PostgreSQL 3-AZ Multi-node",
+      "name": "Managed PostgreSQL Multi-node 3-AZ",
       "categories": ["database.postgresql"],
       "capabilities": ["encryption-at-rest", "point-in-time-restore", "read-replicas", "zone-high-availability"],
       "regions": ["MIL", "PAR"]
