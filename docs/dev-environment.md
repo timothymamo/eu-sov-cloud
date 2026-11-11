@@ -110,7 +110,7 @@ start work on an issue or PRD.
   `make worktree` creates the PR's branch and worktree under the dispatch worktree's own `.worktrees/`,
   for example `../eu-sov-cloud-dispatch-<name>/.worktrees/feat-12-short-name`, so the unit's agents
   never leave their working directory and never stop at a permission prompt
-  ([ADR 0009](adr/0009-create-pull-request-worktrees-inside-the-dispatch-worktree.md)). `.worktrees/` is
+  ([ADR 0010](adr/0010-create-pull-request-worktrees-inside-the-dispatch-worktree.md)). `.worktrees/` is
   git-ignored, so the dispatch worktree stays clean. Its `agent/dispatch-*` branch never gets commits or
   a PR.
 - **Cleaning up, in this order.** First remove each PR worktree inside the unit, which the `pr-create`

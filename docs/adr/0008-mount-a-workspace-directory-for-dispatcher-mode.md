@@ -1,7 +1,7 @@
 # 0008. Mount a workspace directory so dot-agent-deck's dispatcher can run in the VM
 
 - Status: Accepted; the pull request worktree a dispatched orchestration creates goes inside its
-  dispatch worktree ([0009](0009-create-pull-request-worktrees-inside-the-dispatch-worktree.md))
+  dispatch worktree ([0010](0010-create-pull-request-worktrees-inside-the-dispatch-worktree.md))
 - Date: 2026-11-10
 
 ## Context

@@ -1,4 +1,4 @@
-# 0009. Create a dispatched unit's pull request worktrees inside its dispatch worktree
+# 0010. Create a dispatched unit's pull request worktrees inside its dispatch worktree
 
 - Status: Accepted
 - Date: 2026-11-10

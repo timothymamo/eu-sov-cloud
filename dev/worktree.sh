@@ -5,7 +5,7 @@
 #
 # The new worktree goes under the .worktrees/ of the checkout this runs in: the main checkout, or a
 # dispatch worktree that dot-agent-deck created beside it, whose agents can then reach it without leaving
-# their working directory (docs/adr/0009-create-pull-request-worktrees-inside-the-dispatch-worktree.md).
+# their working directory (docs/adr/0010-create-pull-request-worktrees-inside-the-dispatch-worktree.md).
 # Run from inside a pull request's worktree, it uses the checkout that holds that worktree, so pull
 # request worktrees are never nested in each other.
 #

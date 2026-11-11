@@ -3,7 +3,7 @@
 - Status: Accepted; dispatcher mode, rejected below, is adopted alongside it in
   [0008](0008-mount-a-workspace-directory-for-dispatcher-mode.md), and a dispatched unit's `.worktrees/`
   is the one in its dispatch worktree
-  ([0009](0009-create-pull-request-worktrees-inside-the-dispatch-worktree.md))
+  ([0010](0010-create-pull-request-worktrees-inside-the-dispatch-worktree.md))
 - Date: 2026-11-09
 
 ## Context

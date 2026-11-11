@@ -38,7 +38,7 @@ The PR's merge step (skill `pr-create`) removes the worktree with
 A PR worktree inside a dispatch worktree is removed before that unit is closed. Closing the unit runs
 `git worktree remove` on the dispatch worktree, which deletes everything in it, nested worktrees and
 their uncommitted changes included; the branches and their commits survive
-(`docs/adr/0009-create-pull-request-worktrees-inside-the-dispatch-worktree.md`). If `make worktree` then
+(`docs/adr/0010-create-pull-request-worktrees-inside-the-dispatch-worktree.md`). If `make worktree` then
 reports that the branch's worktree no longer exists, run `git worktree prune` and run it again.
 
 ## Rules
