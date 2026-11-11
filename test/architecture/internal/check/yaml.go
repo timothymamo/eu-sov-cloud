@@ -8,9 +8,9 @@ import (
 	"unicode/utf8"
 )
 
-// This file reads the small part of YAML that .goreleaser.yaml and
-// .golangci.yml use on the paths the checks follow, with the standard library
-// only. It reads by indentation, line by line: a key's value is the text on its
+// This file reads the small part of YAML that .goreleaser.yaml, .golangci.yml
+// and the workflows in .github/workflows use on the paths the checks follow,
+// with the standard library only. It reads by indentation, line by line: a key's value is the text on its
 // own line and the lines below it indented further. Along the path it walks and
 // in the values it reads, it refuses everything else (anchors, aliases, merge
 // keys, quoted or upper-case keys, tags, escapes, multi-line flow lists, folded

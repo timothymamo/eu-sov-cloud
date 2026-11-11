@@ -14,18 +14,24 @@
 // would add under a root, and every symlink among those files.
 // StrayReleaseFiles and ReleaseWorkflow pin that the release builds what the
 // check lists: no other goreleaser document, go.work or vendor at the root that
-// git could commit, and a release workflow read as a closed schema of three
-// jobs: the tests, a goreleaser job that runs no repository code and sets no
-// environment for the go command, and an image job that publishes only the
-// signed image, its provenance and its SBOM, by digest, with the write
-// permissions split between the two.
+// git could commit, and a release workflow read as a closed schema of five
+// jobs: the tests, behind the guard that the tagged commit is on main; a
+// goreleaser job that runs no repository code and sets no environment for the
+// go command; an image job that builds and pushes the image and can do nothing
+// more; an sbom job that can only read the registry; and a sign job, the only
+// one with an OIDC token, that signs and attests the image by digest with
+// sigstore's and GitHub's actions alone. WorkflowPrivileges keeps every other
+// workflow from publishing: no packages, id-token or attestations write, no
+// write-all, no tag trigger. DryRunMirrorsRelease holds ci.yml's image job, the
+// release's dry run, to the release's build settings, tag rules, SBOM settings,
+// action pins and BuildKit image.
 //
 // Nothing is copied: the release platforms are read from .goreleaser.yaml
 // (ReleaseTargets), and the strict rules and their allow lists from
-// .golangci.yml (StrictRules, RuleDirs, AllowList). Both files are read with
-// the standard library, by a strict line reader keyed on indentation that
-// refuses what it does not expect, and the characters YAML readers do not
-// agree on, rather than guess at them.
+// .golangci.yml (StrictRules, RuleDirs, AllowList). These files and the
+// workflows are read with the standard library, by a strict line reader keyed
+// on indentation that refuses what it does not expect, and the characters YAML
+// readers do not agree on, rather than guess at them.
 //
 // The package is internal to test/architecture: it is not an API of the module.
 package check

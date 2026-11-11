@@ -23,10 +23,11 @@ var (
 	loginAction            = regexp.MustCompile(`^docker/login-action` + actionPin)
 	metadataAction         = regexp.MustCompile(`^docker/metadata-action` + actionPin)
 	buildPushAction        = regexp.MustCompile(`^docker/build-push-action` + actionPin)
-	cosignInstallerAction  = regexp.MustCompile(`^sigstore/cosign-installer` + actionPin)
-	attestProvenanceAction = regexp.MustCompile(`^actions/attest-build-provenance` + actionPin)
 	sbomAction             = regexp.MustCompile(`^anchore/sbom-action` + actionPin)
-	attestSBOMAction       = regexp.MustCompile(`^actions/attest-sbom` + actionPin)
+	uploadArtifactAction   = regexp.MustCompile(`^actions/upload-artifact` + actionPin)
+	cosignInstallerAction  = regexp.MustCompile(`^sigstore/cosign-installer` + actionPin)
+	downloadArtifactAction = regexp.MustCompile(`^actions/download-artifact` + actionPin)
+	attestAction           = regexp.MustCompile(`^actions/attest` + actionPin)
 
 	// exactRelease matches one exact release of a tool: goreleaser, cosign,
 	// syft.
@@ -62,11 +63,16 @@ func exactly(value string) *regexp.Regexp {
 	return regexp.MustCompile(`^` + regexp.QuoteMeta(value) + `$`)
 }
 
-// The image the image job publishes, and the expression of the digest it
-// built, which every step after the build signs, attests and reads by.
+// The image the release publishes; the expression of the digest the image job
+// builds and gives as its output; and the expression through which the sbom
+// and sign jobs read that output, to read, sign and attest the image by.
 const (
-	imageName   = "ghcr.io/timothymamo/eusov"
-	imageDigest = "${{ steps.build.outputs.digest }}"
+	imageName     = "ghcr.io/timothymamo/eusov"
+	builtDigest   = "${{ steps.build.outputs.digest }}"
+	imageDigest   = "${{ needs.image.outputs.digest }}"
+	sbomFile      = "eusov.spdx.json"
+	sbomArtifact  = "sbom"
+	registryLogin = "ghcr.io"
 )
 
 var (
@@ -84,12 +90,33 @@ var (
 		with: map[string]*regexp.Regexp{"fetch-depth": exactly("0"), "persist-credentials": exactly("false")},
 	}
 
-	// testSteps are the test job's steps: the tests, and nothing else, on a
-	// runner of their own.
+	// loginStep logs in to GHCR with the job's own token.
+	loginStep = releaseStep{
+		what: "docker/login-action", uses: loginAction,
+		with: map[string]*regexp.Regexp{
+			"registry": exactly(registryLogin),
+			"username": exactly("${{ github.actor }}"),
+			"password": exactly("${{ secrets.GITHUB_TOKEN }}"),
+		},
+	}
+
+	// testSteps are the test job's steps: the whole history, the guard that
+	// the tagged commit is on main (ADR 0014) before anything runs repository
+	// code, and the tests, on a runner of their own.
 	testSteps = []releaseStep{
+		fullCheckoutStep,
 		{
-			what: "actions/checkout", uses: checkoutAction,
-			with: map[string]*regexp.Regexp{"persist-credentials": exactly("false")},
+			what: "the guard that the tagged commit is on main", name: "The tagged commit is on main",
+			run: strings.Join([]string{
+				`git rev-parse --verify --quiet refs/remotes/origin/main > /dev/null || {`,
+				`  echo "origin/main is missing from the checkout" >&2`,
+				`  exit 1`,
+				`}`,
+				`git merge-base --is-ancestor "$GITHUB_SHA" refs/remotes/origin/main || {`,
+				`  echo "$GITHUB_SHA is not on main: nothing is released" >&2`,
+				`  exit 1`,
+				`}`,
+			}, "\n"),
 		},
 		setupGoStep,
 		{what: "make test", name: "Test", run: "make test"},
@@ -112,21 +139,24 @@ var (
 	}
 
 	// imageSteps are the image job's steps: the build arguments GoReleaser
-	// stamps, read from git with the tag passed through env:; a build of two
-	// platforms from an empty BuildKit, pushed, without BuildKit's own
-	// provenance or SBOM; then a keyless signature, a provenance attestation,
-	// an SBOM and its attestation, each of the image by the digest built, and
-	// nothing uploaded anywhere else.
+	// stamps and whether the tag is the highest release tag, read from git
+	// with the tag passed through env:; a build of two platforms from an empty
+	// BuildKit, pushed, without BuildKit's own provenance or SBOM, tagged
+	// latest by the stamp's decision alone. Nothing signs or attests here.
 	imageSteps = []releaseStep{
 		fullCheckoutStep,
 		{
 			what: "the stamp of the build arguments", name: "Build arguments, as GoReleaser stamps them", id: "stamp",
 			env: []string{"TAG: ${{ github.ref_name }}"},
 			run: strings.Join([]string{
+				`highest="$(git tag -l 'v*.*.*' | sed -nE '/^v[0-9]+\.[0-9]+\.[0-9]+$/p' | sort -V | tail -n 1)"`,
+				`latest=false`,
+				`if [ "$TAG" = "$highest" ]; then latest=true; fi`,
 				`{`,
 				`  echo "version=${TAG#v}"`,
 				`  echo "commit=$(git rev-parse --short HEAD)"`,
 				`  echo "date=$(TZ=UTC git log -1 --format=%cd --date=format-local:%Y-%m-%dT%H:%M:%SZ)"`,
+				`  echo "latest=$latest"`,
 				`} >> "$GITHUB_OUTPUT"`,
 			}, "\n"),
 		},
@@ -134,19 +164,12 @@ var (
 			what: "docker/setup-buildx-action", uses: setupBuildxAction,
 			with: map[string]*regexp.Regexp{"driver-opts": buildkitImage},
 		},
-		{
-			what: "docker/login-action", uses: loginAction,
-			with: map[string]*regexp.Regexp{
-				"registry": exactly("ghcr.io"),
-				"username": exactly("${{ github.actor }}"),
-				"password": exactly("${{ secrets.GITHUB_TOKEN }}"),
-			},
-		},
+		loginStep,
 		{
 			what: "docker/metadata-action", name: "Image tags", id: "tags", uses: metadataAction,
 			with: map[string]*regexp.Regexp{
 				"images": exactly(imageName),
-				"flavor": exactly("latest=auto"),
+				"flavor": exactly("latest=${{ steps.stamp.outputs.latest }}"),
 				"tags": exactly(strings.Join([]string{
 					"type=semver,pattern={{raw}}",
 					"type=semver,pattern={{major}}.{{minor}},enable=${{ !contains(github.ref_name, '-') }}",
@@ -170,17 +193,58 @@ var (
 				}, "\n")),
 			},
 		},
+	}
+
+	// sbomSteps are the sbom job's steps: a read-only login, syft on the
+	// pushed index by digest (an exact syft, uploading nothing itself), and
+	// the SPDX document handed to the sign job as a short-lived workflow
+	// artifact.
+	sbomSteps = []releaseStep{
+		loginStep,
+		{
+			what: "anchore/sbom-action", uses: sbomAction,
+			with: map[string]*regexp.Regexp{
+				"image":                 exactly("registry:" + imageName + "@" + imageDigest),
+				"format":                exactly("spdx-json"),
+				"output-file":           exactly(sbomFile),
+				"upload-artifact":       exactly("false"),
+				"upload-release-assets": exactly("false"),
+				"syft-version":          exactRelease,
+			},
+		},
+		{
+			what: "actions/upload-artifact", uses: uploadArtifactAction,
+			with: map[string]*regexp.Regexp{
+				"name":              exactly(sbomArtifact),
+				"path":              exactly(sbomFile),
+				"if-no-files-found": exactly("error"),
+				"retention-days":    exactly("1"),
+			},
+		},
+	}
+
+	// signSteps are the sign job's steps, sigstore's and GitHub's code alone:
+	// cosign by exact release; a cosign login fed the actor and the token
+	// through env:; a keyless, recursive signature by digest; the provenance
+	// attestation; the SBOM artifact; and its attestation, both by digest,
+	// pushed to the registry and stored in no organisation API.
+	signSteps = []releaseStep{
 		{
 			what: "sigstore/cosign-installer", uses: cosignInstallerAction,
 			with: map[string]*regexp.Regexp{"cosign-release": exactRelease},
 		},
 		{
-			what: "the signature", name: "Sign the image",
-			env: []string{"DIGEST: " + imageDigest},
-			run: `cosign sign --yes "` + imageName + `@${DIGEST}"`,
+			what: "the cosign login", name: "Log in to ghcr.io",
+			env: []string{"ACTOR: ${{ github.actor }}", "GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}"},
+			run: `printf '%s' "$GITHUB_TOKEN" | cosign login ` + registryLogin + ` --username "$ACTOR" --password-stdin`,
 		},
 		{
-			what: "actions/attest-build-provenance", uses: attestProvenanceAction,
+			what: "the signature", name: "Sign the image",
+			env: []string{"DIGEST: " + imageDigest},
+			run: `cosign sign --yes --recursive "` + imageName + `@${DIGEST}"`,
+		},
+		{
+			what: "actions/attest (the build provenance)", name: "Attest the build provenance", uses: attestAction,
 			with: map[string]*regexp.Regexp{
 				"subject-name":          exactly(imageName),
 				"subject-digest":        exactly(imageDigest),
@@ -189,23 +253,17 @@ var (
 			},
 		},
 		{
-			what: "anchore/sbom-action", uses: sbomAction,
-			with: map[string]*regexp.Regexp{
-				"image":                 exactly("registry:" + imageName + "@" + imageDigest),
-				"format":                exactly("spdx-json"),
-				"output-file":           exactly("eusov.spdx.json"),
-				"upload-artifact":       exactly("false"),
-				"upload-release-assets": exactly("false"),
-				"syft-version":          exactRelease,
-			},
+			what: "actions/download-artifact", uses: downloadArtifactAction,
+			with: map[string]*regexp.Regexp{"name": exactly(sbomArtifact)},
 		},
 		{
-			what: "actions/attest-sbom", uses: attestSBOMAction,
+			what: "actions/attest (the SBOM)", name: "Attest the SBOM", uses: attestAction,
 			with: map[string]*regexp.Regexp{
-				"subject-name":     exactly(imageName),
-				"subject-digest":   exactly(imageDigest),
-				"sbom-path":        exactly("eusov.spdx.json"),
-				"push-to-registry": exactly("true"),
+				"subject-name":          exactly(imageName),
+				"subject-digest":        exactly(imageDigest),
+				"sbom-path":             exactly(sbomFile),
+				"push-to-registry":      exactly("true"),
+				"create-storage-record": exactly("false"),
 			},
 		},
 	}
@@ -214,60 +272,83 @@ var (
 // releaseJob is one job of the release workflow.
 type releaseJob struct {
 	key, name string
-	// needs is the one job it needs, "" for none.
-	needs string
+	// needs are the jobs it needs, in the order written; nil for none. One
+	// job may be written as a single name or a list of one.
+	needs []string
 	// permissions is the job's whole permissions: mapping.
 	permissions map[string]string
-	steps       []releaseStep
+	// outputs is the job's whole outputs: mapping; nil for none.
+	outputs map[string]string
+	steps   []releaseStep
 }
 
 // releaseJobs are the release workflow's jobs, in the order a message lists
 // them. The write permissions stay split: the goreleaser job alone writes the
-// repository's contents, the image job alone packages, an OIDC token and
-// attestations.
+// repository's contents; the image job pushes and nothing more; the sbom job,
+// which runs syft, can only read the registry; and the sign job alone holds
+// an OIDC token and writes attestations.
 var releaseJobs = []releaseJob{
 	{key: "test", name: "Test", permissions: map[string]string{"contents": "read"}, steps: testSteps},
 	{
-		key: "goreleaser", name: "GoReleaser", needs: "test",
+		key: "goreleaser", name: "GoReleaser", needs: []string{"test"},
 		permissions: map[string]string{"contents": "write"}, steps: goreleaserSteps,
 	},
 	{
-		key: "image", name: "Container image", needs: "test",
-		permissions: map[string]string{
-			"contents": "read", "packages": "write", "id-token": "write", "attestations": "write",
-		},
-		steps: imageSteps,
+		key: "image", name: "Container image", needs: []string{"test", "goreleaser"},
+		permissions: map[string]string{"contents": "read", "packages": "write"},
+		outputs:     map[string]string{"digest": builtDigest},
+		steps:       imageSteps,
+	},
+	{
+		key: "sbom", name: "SBOM", needs: []string{"image"},
+		permissions: map[string]string{"packages": "read"}, steps: sbomSteps,
+	},
+	{
+		key: "sign", name: "Sign and attest", needs: []string{"image", "sbom"},
+		permissions: map[string]string{"packages": "write", "id-token": "write", "attestations": "write"},
+		steps:       signSteps,
 	},
 }
 
 // ReleaseWorkflow returns a message for everything in the release workflow
-// document src that could make goreleaser build, or the image job publish,
-// something other than what the check lists. It reads the document as a
-// closed schema:
+// document src that could make goreleaser build, or the publishing jobs
+// publish, something other than what the check lists. It reads the document
+// as a closed schema:
 //
 //   - the top level holds exactly name, on (a push of v*.*.* tags),
 //     permissions ({}) and jobs, so no workflow-level env: or defaults:;
-//   - jobs holds exactly test, goreleaser and image, each with exactly name,
-//     runs-on (ubuntu-latest), permissions and steps, and goreleaser and image
-//     each needs: test, so no job-level env:, container:, if: or other key;
-//   - the permissions are exactly contents: read for test, contents: write
-//     for goreleaser, and contents: read, packages: write, id-token: write and
-//     attestations: write for image;
-//   - the test job's steps are exactly actions/checkout, actions/setup-go and
-//     make test; the goreleaser job's exactly actions/checkout,
-//     actions/setup-go and goreleaser/goreleaser-action, setup-go with
-//     cache: false in both jobs, goreleaser asked for exactly release --clean
-//     at an exact version, with an env: of exactly GITHUB_TOKEN from
-//     secrets.GITHUB_TOKEN;
+//   - jobs holds exactly test, goreleaser, image, sbom and sign, each with
+//     exactly name, runs-on (ubuntu-latest), permissions and steps, and needs
+//     for all but test (goreleaser needs test; image [test, goreleaser]; sbom
+//     image; sign [image, sbom], in that order), and image an outputs: of
+//     exactly its build's digest, so no job-level env:, container:, if: or
+//     other key;
+//   - the permissions are exactly contents: read for test; contents: write
+//     for goreleaser; contents: read and packages: write for image;
+//     packages: read for sbom; packages: write, id-token: write and
+//     attestations: write for sign;
+//   - the test job's steps are exactly actions/checkout of the whole history,
+//     the guard that the tagged commit is on main (an exact run: script),
+//     actions/setup-go and make test; the goreleaser job's exactly
+//     actions/checkout, actions/setup-go and goreleaser/goreleaser-action,
+//     setup-go with cache: false in both jobs, goreleaser asked for exactly
+//     release --clean at an exact version, with an env: of exactly
+//     GITHUB_TOKEN from secrets.GITHUB_TOKEN;
 //   - the image job's steps are exactly actions/checkout, the stamp of the
-//     build arguments (a run: script, with the tag through env:),
-//     docker/setup-buildx-action (BuildKit by exact release and index digest),
-//     docker/login-action, docker/metadata-action, docker/build-push-action
+//     build arguments and of the latest decision (a run: script, with the
+//     tag through env:), docker/setup-buildx-action (BuildKit by exact release
+//     and index digest), docker/login-action, docker/metadata-action (latest
+//     from the stamp's output alone) and docker/build-push-action
 //     (linux/amd64 and linux/arm64, pushed, no cache, no BuildKit provenance
-//     or SBOM), sigstore/cosign-installer (an exact release), cosign sign by
-//     digest, actions/attest-build-provenance, anchore/sbom-action (an exact
-//     syft, uploading nothing) and actions/attest-sbom, all by the digest
-//     built and pushed to the registry;
+//     or SBOM);
+//   - the sbom job's steps are exactly docker/login-action, anchore/sbom-action
+//     (the pushed index by digest, an exact syft, uploading nothing) and
+//     actions/upload-artifact of the SPDX document;
+//   - the sign job's steps are exactly sigstore/cosign-installer (an exact
+//     release), a cosign login with the actor and token through env:, cosign
+//     sign --recursive by digest, actions/attest of the build provenance,
+//     actions/download-artifact of the SPDX document and actions/attest of the
+//     SBOM, both by digest, pushed to the registry;
 //   - every step holds exactly the keys listed (name, id, uses, with, env,
 //     run), in that order of steps, each action pinned by commit, each with:
 //     key and value, env: line and run: command as listed. A run: command is
@@ -358,12 +439,16 @@ func (r *schemaReader) fail(format string, args ...any) {
 	r.messages = append(r.messages, fmt.Sprintf(format, args...))
 }
 
-// job checks one job against want: its name, needs, runner, permissions and
-// steps.
+// job checks one job against want: its name, needs, runner, permissions,
+// outputs and steps.
 func (r *schemaReader) job(e entry, path string, want releaseJob) {
 	keys := []string{"name", "runs-on", "permissions", "steps"}
-	if want.needs != "" {
+	if want.needs != nil {
 		keys = append(keys, "needs")
+	}
+
+	if want.outputs != nil {
+		keys = append(keys, "outputs")
 	}
 
 	job := r.exactKeys(r.block(e, path), path, keys...)
@@ -374,17 +459,14 @@ func (r *schemaReader) job(e entry, path string, want releaseJob) {
 	r.scalar(job["name"], path+": name", exactly(want.name))
 	r.scalar(job["runs-on"], path+": runs-on", exactly("ubuntu-latest"))
 
-	if want.needs != "" {
-		r.scalar(job["needs"], path+": needs", exactly(want.needs))
+	if want.needs != nil {
+		r.needs(job["needs"], path+": needs", want.needs)
 	}
 
-	permsPath := path + ": permissions"
+	r.exactMapping(job["permissions"], path+": permissions", want.permissions)
 
-	scopes := sortedKeys(want.permissions)
-	if perms := r.exactKeys(r.block(job["permissions"], permsPath), permsPath, scopes...); perms != nil {
-		for _, scope := range scopes {
-			r.scalar(perms[scope], permsPath+": "+scope, exactly(want.permissions[scope]))
-		}
+	if want.outputs != nil {
+		r.exactMapping(job["outputs"], path+": outputs", want.outputs)
 	}
 
 	stepsPath := path + ": steps"
@@ -415,6 +497,57 @@ func (r *schemaReader) job(e entry, path string, want releaseJob) {
 
 	for i, it := range items {
 		r.step(it, fmt.Sprintf("%s: step %d", stepsPath, i+1), want.steps[i])
+	}
+}
+
+// needs checks that e's value is exactly the jobs want, in that order: a flow
+// or block list, or one job name on the key's own line.
+func (r *schemaReader) needs(e entry, path string, want []string) {
+	var (
+		got []string
+		err error
+	)
+
+	if e.value == "" || strings.HasPrefix(e.value, "[") {
+		got, err = list(e)
+	} else {
+		var one string
+
+		one, err = single(e)
+		got = []string{one}
+	}
+
+	if err != nil {
+		r.fail("%s: %v", path, err)
+
+		return
+	}
+
+	if !slices.Equal(got, want) {
+		r.fail("line %d: %s is %q, want exactly %q", e.num, path, got, want)
+	}
+}
+
+// exactMapping checks that e's value is a block mapping holding exactly the
+// keys of want, each with exactly its value.
+func (r *schemaReader) exactMapping(e entry, path string, want map[string]string) {
+	keys := sortedKeys(want)
+
+	if e.value == "" && len(e.block) == 0 {
+		pairs := make([]string, 0, len(keys))
+		for _, key := range keys {
+			pairs = append(pairs, key+": "+want[key])
+		}
+
+		r.fail("line %d: %s is empty, want exactly %s", e.num, path, strings.Join(pairs, ", "))
+
+		return
+	}
+
+	if got := r.exactKeys(r.block(e, path), path, keys...); got != nil {
+		for _, key := range keys {
+			r.scalar(got[key], path+": "+key, exactly(want[key]))
+		}
 	}
 }
 
