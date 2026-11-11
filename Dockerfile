@@ -54,7 +54,8 @@ LABEL org.opencontainers.image.title="eusov" \
 
 COPY --from=build /out/eusov /eusov
 
-# Mount the inventory here: docker run -v "$PWD:/work:ro" eusov assess --inventory inventory.json ...
+# Mount the inventory here, as the README's "Run with Docker" section does (one command):
+#   docker run --rm --read-only --network none --user "$(id -u):$(id -g)" --mount type=bind,src="$PWD/inventory.json",dst=/work/inventory.json,readonly eusov assess --inventory inventory.json --target scaleway
 WORKDIR /work
 USER nonroot:nonroot
 ENTRYPOINT ["/eusov"]

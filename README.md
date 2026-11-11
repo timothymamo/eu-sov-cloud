@@ -98,44 +98,67 @@ docker buildx build --platform linux/amd64,linux/arm64 .
 ```
 
 Both tag `eusov:latest` locally, which is what `eusov` in the commands below resolves to. The entrypoint
-is `eusov` and the working directory `/work`. Mount only the inventory file there, read-only, and
-since `assess` is offline, give the container no network:
+is `eusov` and the working directory `/work`, so relative paths such as `--inventory inventory.json`
+resolve there. Mount only the inventory file, read-only, and since `assess` is offline, give the
+container no network:
 
 ```bash
-docker run --rm --read-only --network none \
-  -v "$PWD/inventory.json:/work/inventory.json:ro" \
+docker run --rm --read-only --network none --user "$(id -u):$(id -g)" \
+  --mount type=bind,src="$PWD/inventory.json",dst=/work/inventory.json,readonly \
   eusov assess --inventory inventory.json --target scaleway
 
-umask 077   # the report describes your infrastructure: keep the file private
-docker run --rm --read-only --network none \
-  -v "$PWD/inventory.json:/work/inventory.json:ro" \
-  eusov assess --inventory inventory.json --target ovhcloud > report.md
+# The report describes your infrastructure: keep the file private.
+(umask 077 && docker run --rm --read-only --network none --user "$(id -u):$(id -g)" \
+  --mount type=bind,src="$PWD/inventory.json",dst=/work/inventory.json,readonly \
+  eusov assess --inventory inventory.json --target ovhcloud > report.md)
 ```
 
-The image runs as the non-root user `nonroot` (uid 65532) and works with `--read-only`. Redirect the
-report from standard output as above. To use `--output` instead, mount a directory you own and run the
-container as your own user, so it can write there without the directory being opened up:
+The image's own user is the non-root `nonroot` (uid 65532), which cannot read a file only you may read,
+such as an inventory of mode `0600`. `--user "$(id -u):$(id -g)"` runs the container as you instead,
+still not as root, so it reads your private files without their mode being loosened; every example here
+passes it. `--mount type=bind` fails if the file is missing, where `-v` would quietly create a
+root-owned directory in its place. The image works with `--read-only`, and the subshell keeps
+`umask 077` from applying to the rest of your session.
+
+Redirect the report from standard output as above. To use `--output` instead, mount a directory you
+own; running as your own user lets the container write there without the directory being opened up:
 
 ```bash
-mkdir -p reports
+mkdir -p reports && chmod 700 reports
 docker run --rm --read-only --network none --user "$(id -u):$(id -g)" \
-  -v "$PWD/inventory.json:/work/inventory.json:ro" -v "$PWD/reports:/out" \
+  --mount type=bind,src="$PWD/inventory.json",dst=/work/inventory.json,readonly \
+  --mount type=bind,src="$PWD/reports",dst=/out \
   eusov assess --inventory inventory.json --target ovhcloud --output /out/report.md
 ```
 
 Never make the report directory world-writable (`chmod 777`) to let the container's user in.
 
-Cloud credentials, for the live sources to come, reach the container the way the providers' SDKs read
-them, through their default credential chain, at `docker run` time:
+Live sources do not exist yet. When they do, cloud credentials reach the container the way the
+providers' SDKs read them, through their default credential chain, at `docker run` time. Under
+`--user`, the container has no home directory of its own (`HOME` is `/`), so set
+`-e HOME=/home/nonroot` wherever the SDK looks for config under the home directory:
 
-- Environment variables passed **by name only**, so Docker copies the value from your shell:
-  `-e AWS_PROFILE -e AWS_REGION -e AWS_ACCESS_KEY_ID ...`. Never write `-e NAME=value`: the value ends
-  up in your shell history and in `docker inspect`.
-- Or `--env-file` with a file of mode `0600` kept outside the repository.
-- Or the provider's config directory mounted read-only into the user's home, for example
-  `-v "$HOME/.aws:/home/nonroot/.aws:ro"`. SDK flows that write a token cache there (AWS SSO's
-  `~/.aws/sso/cache`, for example) then need that path writable despite `--read-only`: add a
-  `--tmpfs` or a volume for it.
+- Preferably, the provider's config directory mounted read-only, with short-lived credentials in it
+  (AWS SSO, `aws sts`) rather than long-lived keys. Its files are usually mode `0600`, which `--user`
+  lets the container read. The AWS SSO token cache must stay writable, and must still show the token
+  you already have, so bind-mount just that directory writable on top of the read-only mount:
+
+  ```bash
+  docker run --rm --read-only --user "$(id -u):$(id -g)" -e HOME=/home/nonroot -e AWS_PROFILE \
+    --mount type=bind,src="$HOME/.aws",dst=/home/nonroot/.aws,readonly \
+    --mount type=bind,src="$HOME/.aws/sso/cache",dst=/home/nonroot/.aws/sso/cache \
+    eusov ...
+  ```
+
+  A `--tmpfs` there would hide the cached token and SSO would fail. Keep `--tmpfs` for cache paths
+  the SDK creates from scratch.
+- Or environment variables, passed by name (`-e AWS_PROFILE -e AWS_REGION`) or with `--env-file` (a
+  file of mode `0600` kept outside the repository). Never write `-e NAME=value`: the value ends up in
+  your shell history and the process list. Passing by name or by file avoids only that. Any variable
+  the container gets, however it was passed, is readable with `docker inspect` by anyone with access
+  to the Docker daemon for as long as the container exists; `--rm` shortens that window but does not
+  close it. Prefer short-lived credentials, or the read-only config mount above, to secrets in
+  variables.
 
 **Never** bake credentials into an image (no `COPY` or `ENV` of them, no build args), and never print
 or log them.
