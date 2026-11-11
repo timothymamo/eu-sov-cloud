@@ -174,4 +174,8 @@ Details, including credentials and why Lima rather than devbox:
 
 ## License
 
-To be decided.
+`eusov` is licensed under the [MIT License](LICENSE).
+
+The sources cited in `internal/adapter/target/*/SOURCES.md` keep their own licences, which each
+`SOURCES.md` states. The embedded catalog snapshots hold only facts taken from them (names, taxonomy
+terms, region codes) and brief attributed quotations, so they are not relicensed by this project.
