@@ -300,9 +300,15 @@ func checkLayers(
 
 // checkReleaseBinary lists what the release binary, check.ReleaseMain, is built
 // from for one build and fails when a package of the module breaks the source
-// rules: no package outside the main module, no package whose directory is not
-// the one its import path names, and no cgo, C or assembly source anywhere in
-// the binary.
+// rules: Sources checks every package whose import path is the module path or
+// under it and requires that it belongs to the main module, so a nested module
+// under that path is flagged, that its directory with symlinks resolved is the
+// one its import path names, and that it holds no source but Go files: no cgo,
+// C, C++, header, Fortran, Objective-C, assembly, SWIG or syso file. Imports are
+// not checked here, and the standard library and packages outside the module
+// path (third-party code) are skipped. It fails too when go list did not list
+// internal/cli or one of the three target adapters, since the checks above
+// would then read nothing of them.
 func checkReleaseBinary(t *testing.T, root string, target check.Target, cgo bool, tags []string) {
 	t.Helper()
 
