@@ -32,8 +32,10 @@ permissions: {}
 
 # One release at a time, across every tag: two tags pushed together would
 # otherwise race to move latest, and the run that finished last would win
-# whichever tag it carried. A queued run waits; none is cancelled, so no
-# release is left half published (ADR 0015).
+# whichever tag it carried. A run in progress is never cancelled, so no
+# release stops half published. GitHub keeps one pending run per group: a
+# waiting run may be replaced by a newer tag's, and must then be re-run by
+# hand (ADR 0015).
 concurrency:
   group: release
   cancel-in-progress: false
@@ -158,12 +160,18 @@ var imageSteps = []string{
       # whether the tag is the highest release tag on main, pre-releases left
       # out: only that tag moves latest, so a patch to an older line does not,
       # and a stray tag off main (one the guard refused and nobody deleted)
-      # cannot hold latest back. fetch-depth: 0 brings origin/main.
+      # cannot hold latest back. fetch-depth: 0 brings origin/main; the step
+      # fails without it, as the test job's guard does, rather than let the
+      # pipeline below (no pipefail) leave highest empty and latest false.
       - name: Build arguments, as GoReleaser stamps them
         id: stamp
         env:
           TAG: ${{ github.ref_name }}
         run: |
+          git rev-parse --verify --quiet refs/remotes/origin/main > /dev/null || {
+            echo "origin/main is missing from the checkout" >&2
+            exit 1
+          }
           highest="$(git tag -l 'v*.*.*' --merged refs/remotes/origin/main | sed -nE '/^v[0-9]+\.[0-9]+\.[0-9]+$/p' | sort -V | tail -n 1)"
           latest=false
           if [ "$TAG" = "$highest" ]; then latest=true; fi
@@ -741,6 +749,24 @@ func TestReleaseWorkflow(t *testing.T) {
 		{name: "a stamp without the latest decision", workflow: in("image", "\n          if [ \"$TAG\" = \"$highest\" ]; then latest=true; fi", ""), wantIn: "run is"},
 		{name: "a stamp with latest always", workflow: in("image", `echo "latest=$latest"`, `echo "latest=true"`), wantIn: "latest=$latest"},
 		{name: "a stamp that does not sort the tags by version", workflow: in("image", `| sed -nE '/^v[0-9]+\.[0-9]+\.[0-9]+$/p'`, ""), wantIn: "sed -nE"},
+		// The stamp refuses a checkout without origin/main, as the test job's
+		// guard does: the run shell is bash -e without pipefail, so a failing
+		// git tag --merged in the pipeline below would otherwise leave highest
+		// empty and latest false without failing the step (ADR 0015).
+		{
+			name: "a stamp without the origin/main guard",
+			workflow: in("image", `          git rev-parse --verify --quiet refs/remotes/origin/main > /dev/null || {
+            echo "origin/main is missing from the checkout" >&2
+            exit 1
+          }
+`, ""),
+			wantIn: "want the stamp of the build arguments: run is",
+		},
+		{
+			name:     "a stamp whose guard does not exit",
+			workflow: in("image", "            exit 1\n", "            exit 0\n"),
+			wantIn:   "want the stamp of the build arguments: run is",
+		},
 		// Only the tags on main count: a stray tag off main could otherwise
 		// hold latest back (ADR 0015).
 		{name: "a stamp counting every tag, not only those on main", workflow: in("image", "git tag -l 'v*.*.*' --merged refs/remotes/origin/main", "git tag -l 'v*.*.*'"), wantIn: "--merged refs/remotes/origin/main"},
