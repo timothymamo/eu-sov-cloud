@@ -13,6 +13,8 @@ import (
 	"github.com/timothymamo/eu-sov-cloud/internal/app/analysis"
 	"github.com/timothymamo/eu-sov-cloud/internal/domain/assessment"
 	"github.com/timothymamo/eu-sov-cloud/internal/domain/catalog"
+	"github.com/timothymamo/eu-sov-cloud/internal/domain/inventory"
+	"github.com/timothymamo/eu-sov-cloud/internal/domain/taxonomy"
 	"github.com/timothymamo/eu-sov-cloud/internal/domain/text"
 	"github.com/timothymamo/eu-sov-cloud/internal/testutil"
 )
@@ -62,6 +64,55 @@ func (f *fakeComparisonReporter) ReportComparison(
 	}
 
 	return writeErr
+}
+
+// comparisonInventory is the inventory the comparison tests assess: it holds a
+// resource every target blocks (the serverless function and the unclassified
+// one), a database only UpCloud blocks and resources every target maps, so a
+// shared blocker is told apart from a merely blocked resource.
+func comparisonInventory(t *testing.T) inventory.Inventory {
+	t.Helper()
+
+	inv, err := inventory.New(sourceName, []inventory.Resource{
+		{
+			ID:           "bucket-example",
+			RawType:      "AWS::S3::Bucket",
+			Category:     taxonomy.StorageObject,
+			Region:       "eu-west-1",
+			Capabilities: []taxonomy.Capability{taxonomy.ObjectVersioning},
+		},
+		{
+			ID:           "db-example",
+			RawType:      "AWS::RDS::DBInstance",
+			Category:     taxonomy.DatabasePostgreSQL,
+			Region:       "eu-west-1",
+			Capabilities: []taxonomy.Capability{taxonomy.PointInTimeRestore, taxonomy.ReadReplicas},
+		},
+		{
+			ID:       "fn-example",
+			RawType:  "AWS::Lambda::Function",
+			Category: taxonomy.ServerlessFunction,
+			Region:   "eu-west-1",
+		},
+		{
+			ID:       "misc-example",
+			RawType:  "AWS::CloudFormation::CustomResource",
+			Category: taxonomy.Unclassified,
+			Region:   "eu-west-1",
+		},
+		{
+			ID:           "partial-example",
+			RawType:      "AWS::EC2::Instance",
+			Category:     taxonomy.ComputeVM,
+			Region:       "eu-west-1",
+			Capabilities: []taxonomy.Capability{taxonomy.Snapshots},
+		},
+	})
+	if err != nil {
+		t.Fatalf("inventory.New() returned unexpected error: %v", err)
+	}
+
+	return inv
 }
 
 // comparisonCatalog returns the fixture catalog of one target key.
@@ -154,7 +205,7 @@ func catalogCalls(catalogs map[string]*fakeCatalog) int {
 func TestNewComparison(t *testing.T) {
 	t.Parallel()
 
-	inv := awsInventory(t)
+	inv := comparisonInventory(t)
 
 	tests := []struct {
 		name    string
@@ -169,21 +220,29 @@ func TestNewComparison(t *testing.T) {
 		wantKey string
 	}{
 		{
-			name:        "nil inventory source",
-			targets:     func(t *testing.T) []analysis.Target { return []analysis.Target{newTarget(t, scalewayKey)} },
+			name: "nil inventory source",
+			targets: func(t *testing.T) []analysis.Target {
+				t.Helper()
+
+				return []analysis.Target{newTarget(t, scalewayKey)}
+			},
 			rep:         &fakeComparisonReporter{body: comparisonBody},
 			wantNilPort: true,
 		},
 		{
-			name:        "nil reporter",
-			inv:         &fakeInventory{inv: inv},
-			targets:     func(t *testing.T) []analysis.Target { return []analysis.Target{newTarget(t, scalewayKey)} },
+			name: "nil reporter",
+			inv:  &fakeInventory{inv: inv},
+			targets: func(t *testing.T) []analysis.Target {
+				t.Helper()
+
+				return []analysis.Target{newTarget(t, scalewayKey)}
+			},
 			wantNilPort: true,
 		},
 		{
 			name:        "target without a catalog",
 			inv:         &fakeInventory{inv: inv},
-			targets:     func(t *testing.T) []analysis.Target { return []analysis.Target{{Key: upcloudKey}} },
+			targets:     func(_ *testing.T) []analysis.Target { return []analysis.Target{{Key: upcloudKey}} },
 			rep:         &fakeComparisonReporter{body: comparisonBody},
 			wantNilPort: true,
 			wantKey:     upcloudKey,
@@ -191,7 +250,7 @@ func TestNewComparison(t *testing.T) {
 		{
 			name:               "no targets",
 			inv:                &fakeInventory{inv: inv},
-			targets:            func(t *testing.T) []analysis.Target { return nil },
+			targets:            func(_ *testing.T) []analysis.Target { return nil },
 			rep:                &fakeComparisonReporter{body: comparisonBody},
 			wantInvalidTargets: true,
 		},
@@ -199,6 +258,8 @@ func TestNewComparison(t *testing.T) {
 			name: "empty key",
 			inv:  &fakeInventory{inv: inv},
 			targets: func(t *testing.T) []analysis.Target {
+				t.Helper()
+
 				return []analysis.Target{{Key: "", Catalog: newTarget(t, scalewayKey).Catalog}}
 			},
 			rep:                &fakeComparisonReporter{body: comparisonBody},
@@ -208,6 +269,8 @@ func TestNewComparison(t *testing.T) {
 			name: "duplicate key",
 			inv:  &fakeInventory{inv: inv},
 			targets: func(t *testing.T) []analysis.Target {
+				t.Helper()
+
 				return []analysis.Target{newTarget(t, scalewayKey), newTarget(t, scalewayKey)}
 			},
 			rep:                &fakeComparisonReporter{body: comparisonBody},
@@ -217,9 +280,15 @@ func TestNewComparison(t *testing.T) {
 		{
 			// A key is free text a report may carry: leading white space is not
 			// text.Validate's text.
-			name:               "key that is not valid free text",
-			inv:                &fakeInventory{inv: inv},
-			targets:            func(t *testing.T) []analysis.Target { return []analysis.Target{newTarget(t, " ovhcloud")} },
+			name: "key that is not valid free text",
+			inv:  &fakeInventory{inv: inv},
+			// The key is rejected before its catalog is ever looked up, so the
+			// catalog source is the fixture one of a valid key.
+			targets: func(t *testing.T) []analysis.Target {
+				t.Helper()
+
+				return []analysis.Target{{Key: " ovhcloud", Catalog: newTarget(t, ovhcloudKey).Catalog}}
+			},
 			rep:                &fakeComparisonReporter{body: comparisonBody},
 			wantInvalidTargets: true,
 			wantKey:            " ovhcloud",
@@ -228,6 +297,8 @@ func TestNewComparison(t *testing.T) {
 			name: "three distinct targets",
 			inv:  &fakeInventory{inv: inv},
 			targets: func(t *testing.T) []analysis.Target {
+				t.Helper()
+
 				return []analysis.Target{newTarget(t, upcloudKey), newTarget(t, ovhcloudKey), newTarget(t, scalewayKey)}
 			},
 			rep: &fakeComparisonReporter{body: comparisonBody},
@@ -284,7 +355,7 @@ func TestNewComparison(t *testing.T) {
 func TestComparisonRun(t *testing.T) {
 	t.Parallel()
 
-	inv := awsInventory(t)
+	inv := comparisonInventory(t)
 	meta := analysis.ReportMeta{InventoryName: inventoryName}
 
 	// The comparison's target order, whatever order the caller used.
@@ -402,7 +473,10 @@ func TestComparisonRunPortErrors(t *testing.T) {
 		wantStage string
 		// wantKey, when set, must appear in the returned error's message.
 		wantKey string
-		// wantOneLine is true when the message must be a single line.
+		// wantOneLine is true when the message must be a single line: a catalog
+		// error carries a provider's own detail, so it must not become several
+		// lines the CLI would print at once. A stage without such detail leaves
+		// it false and the line count unchecked.
 		wantOneLine bool
 		// wantCatalogCalls is the number of catalog loads; -1 leaves it unchecked
 		// because it depends on the order the catalogs are loaded in.
@@ -453,7 +527,7 @@ func TestComparisonRunPortErrors(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
-			invFake := &fakeInventory{inv: awsInventory(t), err: tt.invErr}
+			invFake := &fakeInventory{inv: comparisonInventory(t), err: tt.invErr}
 			targets, catalogs := comparisonFakes(t, upcloudKey, ovhcloudKey, scalewayKey)
 
 			if tt.failingCatalog != "" {
@@ -486,8 +560,10 @@ func TestComparisonRunPortErrors(t *testing.T) {
 				t.Errorf("Run() error = %q, want it to name the target key %q", err, tt.wantKey)
 			}
 
-			if got := strings.Contains(err.Error(), "\n"); got != tt.wantOneLine {
-				t.Errorf("Run() error is one line = %t, want %t (error: %q)", !got, tt.wantOneLine, err)
+			if tt.wantOneLine {
+				if got := !strings.Contains(err.Error(), "\n"); !got {
+					t.Errorf("Run() error is one line = %t, want true (error: %q)", got, err)
+				}
 			}
 
 			if tt.wantCatalogCalls >= 0 {
@@ -533,7 +609,7 @@ func TestComparisonRunReportMeta(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
-			invFake := &fakeInventory{inv: awsInventory(t)}
+			invFake := &fakeInventory{inv: comparisonInventory(t)}
 			targets, catalogs := comparisonFakes(t, upcloudKey, ovhcloudKey, scalewayKey)
 			repFake := &fakeComparisonReporter{body: comparisonBody}
 
@@ -599,7 +675,7 @@ func TestComparisonRunContext(t *testing.T) {
 
 	// The fakes ignore the context, so only Run can notice the cancellation, and
 	// it must notice it before the first port is called.
-	invFake := &fakeInventory{inv: awsInventory(t), ignoreContext: true}
+	invFake := &fakeInventory{inv: comparisonInventory(t), ignoreContext: true}
 	targets, _ := comparisonFakes(t, upcloudKey, ovhcloudKey, scalewayKey)
 	repFake := &fakeComparisonReporter{body: comparisonBody}
 
