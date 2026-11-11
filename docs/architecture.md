@@ -28,6 +28,7 @@ Arrows are imports. They point inwards only:
   package, and its types are translated to domain types at the boundary. They never import the CLI
   or `cmd/`.
 - **CLI** (`internal/cli`) turns user input into use-case calls and prints results. No business rules.
+  Only `cmd/eusov` imports it.
 - **`cmd/eusov`** is the only place that constructs adapters and injects them.
 
 The rule is enforced by `depguard` in `.golangci.yml`, so `make lint` fails on a violating import.

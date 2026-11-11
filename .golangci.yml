@@ -31,12 +31,13 @@ linters:
         # I/O through it unseen. So its imports are a strict allow list: the
         # domain packages and the standard packages it uses, each ending in $
         # so it covers that package only. Any other import fails lint. $gostd
-        # is not used: it makes every standard package an allow entry of its
-        # own, os, net/http and unsafe included, and an allow entry longer
-        # than a deny entry wins, so a deny of net would not cover net/http.
-        # net/netip and net/url parse values and open no connection; net
-        # itself is not allowed. Add a standard package only when the domain
-        # needs it, never one that does I/O.
+        # is not used: depguard expands it to one prefix entry per top-level
+        # directory of GOROOT/src (net, os, unsafe, ...), which allows every
+        # standard package, the ones that do I/O and the ones added in later
+        # Go releases included, so a deny list would have to keep up with
+        # every release. net/netip and net/url parse values and open no
+        # connection; net itself is not allowed. Add a standard package only
+        # when the domain needs it, never one that does I/O.
         #
         # The domain packages are named one by one as well, not by the prefix
         # internal/domain/. make lint runs on ./..., which skips testdata
@@ -191,13 +192,14 @@ linters:
             - pkg: github.com/timothymamo/eu-sov-cloud/internal/adapter
               desc: the CLI gets its adapters through cli.Deps; construct them in cmd/eusov
             # The CLI reads one file and writes one report: it resolves no
-            # name, opens no connection and starts no process. $gostd makes
-            # every standard package an allow entry of its own, and strict mode
-            # lets an import through when its allow entry is longer than the
-            # deny entry it matches, so a deny entry covers only the package it
-            # names: each net subpackage is listed, not only its parent. net$
-            # is net itself; net/url and net/netip parse values, do no I/O and
-            # stay allowed.
+            # name, opens no connection and starts no process. depguard
+            # expands $gostd to one prefix entry per top-level directory of
+            # GOROOT/src, so its allow entry for net is no longer than a deny
+            # of net, and the deny wins for every net/... package, net/url and
+            # net/netip included. Those parse values, do no I/O and stay
+            # allowed, so each package that does I/O is denied by its own
+            # name, ending in $: net$ is net itself, and each net subpackage
+            # is listed, not only its parent.
             - pkg: net$
               desc: the CLI has no network access; an adapter behind a port does
             - pkg: net/http$
@@ -266,30 +268,35 @@ linters:
           deny:
             - pkg: github.com/timothymamo/eu-sov-cloud/internal/adapter/
               desc: adapters are constructed only in cmd/eusov
-        # Dependencies point inwards only: an adapter implements a port of the
-        # application and is built by the composition root, so it never
-        # imports the driving adapter or the composition root. The glob ends
-        # in /** so it also matches the files directly in internal/adapter
-        # and in each of its directories. internal/cli$ is the CLI itself and
-        # internal/cli/ every package under it; a package whose path only
-        # starts with internal/cli, such as internal/client, is not covered.
-        # cmd$ is a library package placed directly in cmd, and cmd/ every
-        # package under cmd, a library package added there later included; Go
-        # already refuses an import of a main package such as cmd/eusov.
-        adapters-do-not-import-cli-or-cmd:
+        # Dependencies point inwards only: the composition root imports the
+        # driving adapter, and nothing imports the composition root. So no
+        # production package other than cmd/eusov and the CLI's own packages
+        # imports internal/cli or cmd. The rule covers every such package,
+        # not only the adapters: an import rule sees direct imports only, so
+        # a rule on the adapters alone would let an adapter reach the CLI
+        # through a package outside internal/adapter that imports it.
+        # internal/cli$ is the CLI itself and internal/cli/ every package
+        # under it; a package whose path only starts with internal/cli, such
+        # as internal/client, is not covered. cmd$ is a library package
+        # placed directly in cmd, and cmd/ every package under cmd, a library
+        # package added there later included; Go already refuses an import of
+        # a main package such as cmd/eusov.
+        cli-and-cmd-imported-only-by-cmd:
           list-mode: lax
           files:
-            - "**/internal/adapter/**"
+            - "$all"
             - "!$test"
+            - "!**/cmd/eusov/**"
+            - "!**/internal/cli/**"
           deny:
             - pkg: github.com/timothymamo/eu-sov-cloud/internal/cli$
-              desc: an adapter never imports the driving adapter; share what both need through the application or the domain
+              desc: only cmd/eusov imports the driving adapter; share what both need through the application or the domain
             - pkg: github.com/timothymamo/eu-sov-cloud/internal/cli/
-              desc: an adapter never imports the driving adapter; share what both need through the application or the domain
+              desc: only cmd/eusov imports the driving adapter; share what both need through the application or the domain
             - pkg: github.com/timothymamo/eu-sov-cloud/cmd$
-              desc: an adapter never imports the composition root; cmd/eusov imports the adapters
+              desc: nothing imports the composition root; cmd/eusov imports the rest
             - pkg: github.com/timothymamo/eu-sov-cloud/cmd/
-              desc: an adapter never imports the composition root; cmd/eusov imports the adapters
+              desc: nothing imports the composition root; cmd/eusov imports the rest
         # Only the packages under internal/adapter/target import the shared
         # snapshot reader (ADR 0007): the target adapters, their contract suite
         # and the reader itself. A source adapter, a reporter, internal/config
