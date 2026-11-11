@@ -157,7 +157,7 @@ docker run --rm "$IMAGE" version
 ```
 
 Inside the project's Lima VM, which has rootless nerdctl and no Docker
-([ADR 0016](docs/adr/0016-run-a-rootless-container-runtime-in-the-lima-vm.md)), resolve the digest with
+([ADR 0017](docs/adr/0017-run-a-rootless-container-runtime-in-the-lima-vm.md)), resolve the digest with
 [crane](https://github.com/google/go-containerregistry/tree/main/cmd/crane), which reads only the
 index and pulls nothing, and run with `nerdctl`; the `cosign` and `gh` commands are the same:
 

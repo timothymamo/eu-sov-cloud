@@ -10,7 +10,7 @@ LDFLAGS := -s -w \
 # The container image make image builds (docs/adr/0013-ship-eusov-as-a-distroless-container-image.md).
 IMAGE   ?= eusov
 # The container CLI make image runs: docker where it is installed, otherwise nerdctl, the rootless runtime
-# of the Lima VM (docs/adr/0016-run-a-rootless-container-runtime-in-the-lima-vm.md).
+# of the Lima VM (docs/adr/0017-run-a-rootless-container-runtime-in-the-lima-vm.md).
 DOCKER  ?= $(if $(shell command -v docker 2>/dev/null),docker,nerdctl)
 # The platforms make image builds, comma separated (linux/amd64,linux/arm64). Empty builds the host's own.
 PLATFORMS ?=

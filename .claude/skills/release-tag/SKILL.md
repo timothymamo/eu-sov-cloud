@@ -40,7 +40,7 @@ the tagged commit is on `main`: always tag a commit of `main`.
    If a pending run was cancelled, re-run it with `gh run rerun <id>`. On failure, report the failed
    step's log and stop; never delete or move a pushed tag.
 8. Check the published image yourself; do not hand this to the user. The Lima VM has cosign, a `gh`
-   with `gh attestation`, `crane` and rootless `nerdctl` (ADR 0016); this is the README's "Verify the
+   with `gh attestation`, `crane` and rootless `nerdctl` (ADR 0017); this is the README's "Verify the
    image" in its VM form, for the new tag. Run it from the repository root, with no registry login, and
    call each tool by its absolute path: `~/.local/bin` and `~/go/bin` come first on the `PATH` and the VM
    user can write there, while these binaries are root-owned:
@@ -72,4 +72,4 @@ the tagged commit is on `main`: always tag a commit of `main`.
    This is a smoke test, not the trust anchor: every agent shares the VM user, which has passwordless
    `sudo`, so any of them could tamper with these binaries or their output. An independent check on a
    GitHub-hosted runner, a post-publish job in `release.yml`, is the follow-up that would make it
-   authoritative (ADR 0016).
+   authoritative (ADR 0017).

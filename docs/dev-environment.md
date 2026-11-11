@@ -257,7 +257,7 @@ outside it.
 ## Containers and image verification
 
 The VM can verify, run and build the eusov image, as the VM user, with no root daemon
-([ADR 0016](adr/0016-run-a-rootless-container-runtime-in-the-lima-vm.md)). `dev/lima.yaml` installs,
+([ADR 0017](adr/0017-run-a-rootless-container-runtime-in-the-lima-vm.md)). `dev/lima.yaml` installs,
 each pinned under `param:`. Downloads are checked against their release's checksums, and nerdctl-full's
 `SHA256SUMS` also against its GPG signature, from a release manager pinned by fingerprint:
 

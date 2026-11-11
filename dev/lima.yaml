@@ -24,7 +24,7 @@ mounts: []
 # Lima's own containerd stays off: the provisioning below installs a rootless containerd and BuildKit
 # (nerdctl-full) at a version pinned here rather than the one the host's Lima bundles. Nothing rootful:
 # no root daemon, no docker group, no socket the VM user can use to become root
-# (docs/adr/0016-run-a-rootless-container-runtime-in-the-lima-vm.md).
+# (docs/adr/0017-run-a-rootless-container-runtime-in-the-lima-vm.md).
 containerd:
   system: false
   user: false

@@ -1,4 +1,4 @@
-# 0016. Run a rootless container runtime (nerdctl-full) and cosign in the Lima VM
+# 0017. Run a rootless container runtime (nerdctl-full) and cosign in the Lima VM
 
 - Status: Accepted
 - Date: 2026-11-11
