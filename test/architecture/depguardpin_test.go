@@ -415,6 +415,7 @@ var pinnedDepguardRules = []check.DepguardRule{
 		Files: []string{
 			"**/internal/adapter/target/ovhcloud/**",
 			"**/internal/adapter/target/scaleway/**",
+			"**/internal/adapter/target/upcloud/**",
 			"!$test",
 		},
 		Allow: []string{
