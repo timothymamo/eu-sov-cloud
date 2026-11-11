@@ -1,0 +1,80 @@
+# Migration assessment: `OVHcloud`, `Scaleway`
+
+- Inventory file: `inventory.json`
+- Source: `aws`
+- Catalog: `OVHcloud` snapshot from `https://www.ovhcloud.com/en/public-cloud/prices/`, retrieved 2026-11-08
+- Catalog: `Scaleway` snapshot from `https://www.scaleway.com/en/pricing/`, retrieved 2026-11-01
+
+## Comparison
+
+### Summary
+
+| Fit | `OVHcloud` | `Scaleway` |
+|---|---|---|
+| direct | 1 | 1 |
+| partial | 1 | 1 |
+| none | 0 | 0 |
+| total | 2 | 2 |
+
+### Resources
+
+| ID | Category | `OVHcloud` fit | `OVHcloud` best offering | `Scaleway` fit | `Scaleway` best offering |
+|---|---|---|---|---|---|
+| `bucket-example` | `storage.object` | direct | `Object Storage` | direct | `Object Storage` |
+| `partial-example` | `compute.vm` | partial | `Public Cloud Instances` | partial | `Elastic Metal` |
+
+### Blockers on every target
+
+None.
+
+## `OVHcloud`
+
+### Summary
+
+| Fit | Resources |
+|---|---|
+| direct | 1 |
+| partial | 1 |
+| none | 0 |
+| total | 2 |
+
+### Resources
+
+| ID | Raw type | Category | Fit | Best offering | Reasons |
+|---|---|---|---|---|---|
+| `bucket-example` | `AWS::S3::Bucket` | `storage.object` | direct | `Object Storage` | `Object Storage` offers every capability the resource uses |
+| `partial-example` | `AWS::EC2::Instance` | `compute.vm` | partial | `Public Cloud Instances` | `Public Cloud Instances` does not offer `node-high-availability` |
+
+### Required changes
+
+- `partial-example`: `node-high-availability` (not offered by `Public Cloud Instances`)
+
+### Blockers
+
+None.
+
+## `Scaleway`
+
+### Summary
+
+| Fit | Resources |
+|---|---|
+| direct | 1 |
+| partial | 1 |
+| none | 0 |
+| total | 2 |
+
+### Resources
+
+| ID | Raw type | Category | Fit | Best offering | Reasons |
+|---|---|---|---|---|---|
+| `bucket-example` | `AWS::S3::Bucket` | `storage.object` | direct | `Object Storage` | `Object Storage` offers every capability the resource uses |
+| `partial-example` | `AWS::EC2::Instance` | `compute.vm` | partial | `Elastic Metal` (tie: `Instances`) | `Elastic Metal` does not offer `node-high-availability`; `Elastic Metal` does not offer `snapshots` |
+
+### Required changes
+
+- `partial-example`: `node-high-availability`, `snapshots` (not offered by `Elastic Metal`)
+
+### Blockers
+
+None.
