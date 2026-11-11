@@ -145,7 +145,7 @@ func awsResources() []inventory.Resource {
 			RawType:      "AWS::EC2::Instance",
 			Category:     taxonomy.ComputeVM,
 			Region:       "eu-west-1",
-			Capabilities: []taxonomy.Capability{taxonomy.HighAvailability, taxonomy.Snapshots},
+			Capabilities: []taxonomy.Capability{taxonomy.NodeHighAvailability, taxonomy.Snapshots},
 		},
 	}
 }
@@ -199,7 +199,7 @@ func hostileResources() []inventory.Resource {
 			RawType:      "https://evil.example/%E2%80%AEmoc.elgoog",
 			Category:     taxonomy.ComputeVM,
 			Region:       "eu-west-1",
-			Capabilities: []taxonomy.Capability{taxonomy.HighAvailability},
+			Capabilities: []taxonomy.Capability{taxonomy.NodeHighAvailability},
 		},
 		{
 			ID:           "a|b",
@@ -670,13 +670,13 @@ func TestReportRequiredChanges(t *testing.T) {
 			verdicts: []assessment.Verdict{
 				verdictOf("a-direct", mapping.Direct, "Elastic Metal", nil),
 				verdictOf("b-partial", mapping.Partial, "Elastic Metal",
-					[]taxonomy.Capability{taxonomy.HighAvailability, taxonomy.Snapshots}),
+					[]taxonomy.Capability{taxonomy.NodeHighAvailability, taxonomy.Snapshots}),
 				verdictOf("c-partial", mapping.Partial, "Instances",
 					[]taxonomy.Capability{taxonomy.IPv6}),
 				verdictOf("d-none", mapping.None, "", nil),
 			},
 			want: []string{
-				"- `b-partial`: `high-availability`, `snapshots` (not offered by `Elastic Metal`)",
+				"- `b-partial`: `node-high-availability`, `snapshots` (not offered by `Elastic Metal`)",
 				"- `c-partial`: `ipv6` (not offered by `Instances`)",
 			},
 		},

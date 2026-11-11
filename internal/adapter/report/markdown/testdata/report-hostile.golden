@@ -23,14 +23,14 @@
 | `[x] done` | `:x:` | `storage.object` | direct | `` `tick` [row](x) \| Name `` | `` `tick` [row](x) \| Name `` offers every capability the resource uses |
 | `` `tick` `` | `a*b_c` | `unclassified` | none |  | not classified |
 | `a*b_c` | `AWS::X.Y <img src=x>` | `compute.vm` | direct | ``Evil \| `x` <b> [a](b) *s*`` | ``Evil \| `x` <b> [a](b) *s*`` offers every capability the resource uses |
-| ``a`b`` | `https://evil.example/%E2%80%AEmoc.elgoog` | `compute.vm` | partial | ``Evil \| `x` <b> [a](b) *s*`` | ``Evil \| `x` <b> [a](b) *s*`` does not offer `high-availability` |
+| ``a`b`` | `https://evil.example/%E2%80%AEmoc.elgoog` | `compute.vm` | partial | ``Evil \| `x` <b> [a](b) *s*`` | ``Evil \| `x` <b> [a](b) *s*`` does not offer `node-high-availability` |
 | `a\|b` | `x&#x202E;y` | `storage.object` | partial | `` `tick` [row](x) \| Name `` | `` `tick` [row](x) \| Name `` does not offer `object-versioning` |
 | `back\slash` | `# heading` | `storage.object` | direct | `` `tick` [row](x) \| Name `` | `` `tick` [row](x) \| Name `` offers every capability the resource uses |
 | `i-1 \| x` | `[l](javascript:x)` | `compute.vm` | direct | ``Evil \| `x` <b> [a](b) *s*`` | ``Evil \| `x` <b> [a](b) *s*`` offers every capability the resource uses |
 
 ## Required changes
 
-- ``a`b``: `high-availability` (not offered by ``Evil | `x` <b> [a](b) *s*``)
+- ``a`b``: `node-high-availability` (not offered by ``Evil | `x` <b> [a](b) *s*``)
 - `a|b`: `object-versioning` (not offered by `` `tick` [row](x) | Name ``)
 
 ## Blockers

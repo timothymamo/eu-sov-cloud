@@ -416,18 +416,20 @@ func TestNoServerlessSQLDatabaseOffering(t *testing.T) {
 
 // TestHighAvailabilityIsScopedAndStrictlyClaimed pins PRD 14's two data rules
 // together: no Scaleway offering lists the unscoped high-availability value any
-// more, and Object Storage claims neither level, because Scaleway documents that
-// it rebuilds the data after a whole-zone failure, which is recovery, not
-// continuity without manual failover.
+// more (retired from the vocabulary in milestone 4, so spelled as a string), and
+// Object Storage claims neither level, because Scaleway documents that it
+// rebuilds the data after a whole-zone failure, which is recovery, not continuity
+// without manual failover.
 func TestHighAvailabilityIsScopedAndStrictlyClaimed(t *testing.T) {
 	t.Parallel()
 
 	cat := catalogOf(t)
+	retired := taxonomy.Capability("high-availability")
 
 	for _, o := range cat.Offerings() {
-		if o.Has(taxonomy.HighAvailability) {
+		if o.Has(retired) {
 			t.Errorf("offering %s lists %s, want the scoped %s or %s instead",
-				text.Quote(o.Name), text.Quote(string(taxonomy.HighAvailability)),
+				text.Quote(o.Name), text.Quote(string(retired)),
 				text.Quote(string(taxonomy.NodeHighAvailability)), text.Quote(string(taxonomy.ZoneHighAvailability)))
 		}
 	}

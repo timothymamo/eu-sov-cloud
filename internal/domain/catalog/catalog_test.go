@@ -54,7 +54,7 @@ func validOfferings() []catalog.Offering {
 		{
 			Name:         "Kapsule",
 			Categories:   []taxonomy.Category{taxonomy.KubernetesManaged},
-			Capabilities: []taxonomy.Capability{taxonomy.HighAvailability, taxonomy.Autoscaling},
+			Capabilities: []taxonomy.Capability{taxonomy.NodeHighAvailability, taxonomy.Autoscaling},
 			Regions:      []string{"pl-waw", "nl-ams", "fr-par"},
 		},
 		{
@@ -246,7 +246,7 @@ func TestOfferingHas(t *testing.T) {
 	offering := catalog.Offering{
 		Name:         "Kapsule",
 		Categories:   []taxonomy.Category{taxonomy.KubernetesManaged},
-		Capabilities: []taxonomy.Capability{taxonomy.Autoscaling, taxonomy.HighAvailability},
+		Capabilities: []taxonomy.Capability{taxonomy.Autoscaling, taxonomy.NodeHighAvailability},
 		Regions:      []string{"fr-par"},
 	}
 
@@ -256,7 +256,7 @@ func TestOfferingHas(t *testing.T) {
 		want bool
 	}{
 		{name: "listed", in: taxonomy.Autoscaling, want: true},
-		{name: "listed last", in: taxonomy.HighAvailability, want: true},
+		{name: "listed last", in: taxonomy.NodeHighAvailability, want: true},
 		{name: "not listed", in: taxonomy.PointInTimeRestore, want: false},
 		{name: "empty", in: taxonomy.Capability(""), want: false},
 	}
