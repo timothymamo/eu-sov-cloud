@@ -687,6 +687,25 @@ func apiScenarios() []apiScenario {
 			wantStatus: http.StatusMethodNotAllowed,
 		},
 		{
+			// The host check comes before CORS, so a preflight for another host is
+			// 421 misdirected_request and never the 204 an allowed origin alone
+			// would earn: the document declares it too.
+			name:      "a preflight for another host",
+			operation: "OPTIONS /v1/assessments",
+			options: func() []httpapi.Option {
+				return []httpapi.Option{httpapi.WithAllowedHosts(allowedHost), httpapi.WithAllowedOrigins(allowedOrigin)}
+			},
+			request: func(t *testing.T) *http.Request {
+				t.Helper()
+
+				req := preflightRequest(t, "/v1/assessments", http.MethodPost)
+				req.Host = "other.example.com"
+
+				return req
+			},
+			wantStatus: http.StatusMisdirectedRequest,
+		},
+		{
 			name:       "the target list",
 			operation:  "GET " + targetsPath,
 			request:    func(*testing.T) *http.Request { return newRequest(http.MethodGet, targetsPath) },
@@ -722,6 +741,22 @@ func apiScenarios() []apiScenario {
 			operation:  "OPTIONS /v1/targets",
 			request:    func(*testing.T) *http.Request { return newRequest(http.MethodOptions, targetsPath) },
 			wantStatus: http.StatusMethodNotAllowed,
+		},
+		{
+			name:      "a targets preflight for another host",
+			operation: "OPTIONS /v1/targets",
+			options: func() []httpapi.Option {
+				return []httpapi.Option{httpapi.WithAllowedHosts(allowedHost), httpapi.WithAllowedOrigins(allowedOrigin)}
+			},
+			request: func(t *testing.T) *http.Request {
+				t.Helper()
+
+				req := preflightRequest(t, targetsPath, http.MethodGet)
+				req.Host = "other.example.com"
+
+				return req
+			},
+			wantStatus: http.StatusMisdirectedRequest,
 		},
 		{
 			name:       "liveness",
