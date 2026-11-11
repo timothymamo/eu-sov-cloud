@@ -37,8 +37,12 @@ type Deps struct {
 	// Targets maps every supported --target value to the constructor of its
 	// catalog source.
 	Targets map[string]func() analysis.CatalogSource
-	// NewReporter returns the reporter that renders the report.
+	// NewReporter returns the reporter that renders the report of a run with one
+	// target.
 	NewReporter func() analysis.Reporter
+	// NewComparisonReporter returns the reporter that renders the comparison
+	// report of a run with several targets (docs/adr/0016).
+	NewComparisonReporter func() analysis.ComparisonReporter
 }
 
 // errMissingAdapter is returned when Deps lacks a constructor the command
@@ -104,21 +108,24 @@ func printError(w io.Writer, err error) {
 
 // usage is the help text; %s is the list of supported targets.
 const usage = `Usage:
-  eusov assess --inventory <file> --target <target> [--output <file>]
+  eusov assess --inventory <file> --target <targets> [--output <file>]
   eusov version
   eusov help
 
 Commands:
   assess   Assess the resources of an inventory file against the catalog of a
-           target and write a Markdown report. Runs offline and needs no
-           credentials.
+           target, or compare several targets, and write a Markdown report.
+           Runs offline and needs no credentials.
   version  Print the version.
   help     Print this help.
 
 Flags of assess:
   --inventory <file>  The inventory file to assess, in the JSON format of
                       docs/adr/0006. A path: standard input is not supported.
-  --target <target>   The target to compare with: %s.
+  --target <targets>  The target to compare with, a comma-separated list of
+                      targets, or all for every target. Supported targets:
+                      %s. Several targets give one report that
+                      compares them, then each target's own report.
   --output <file>     Write the report to this file, with mode 0600, instead of
                       standard output. An existing regular file, a symbolic
                       link to one or a dangling link is replaced only once the

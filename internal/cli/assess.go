@@ -10,6 +10,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 
 	"github.com/timothymamo/eu-sov-cloud/internal/app/analysis"
@@ -20,8 +21,9 @@ import (
 type assessOptions struct {
 	// inventory is the path of the inventory file.
 	inventory string
-	// target is the key of the target in Deps.Targets.
-	target string
+	// targets are the keys of the selected targets in Deps.Targets, sorted and
+	// distinct: one key for a single-target report, several for a comparison.
+	targets []string
 	// output is the path of the report file, or empty for standard output.
 	output string
 }
@@ -58,8 +60,10 @@ func parseAssess(args []string, deps Deps) (assessOptions, error) {
 	// prints nothing: its errors reach the user through printError.
 	flags.SetOutput(io.Discard)
 	flags.Usage = func() {}
+	var target string
+
 	flags.StringVar(&opts.inventory, "inventory", "", "the inventory file")
-	flags.StringVar(&opts.target, "target", "", "the target to compare with")
+	flags.StringVar(&target, "target", "", "the targets to compare with")
 	flags.StringVar(&opts.output, "output", "", "the report file")
 
 	if err := flags.Parse(args); err != nil {
@@ -69,31 +73,122 @@ func parseAssess(args []string, deps Deps) (assessOptions, error) {
 	switch {
 	case opts.inventory == "":
 		return assessOptions{}, errors.New("assess needs --inventory")
-	case opts.target == "":
+	case target == "":
 		return assessOptions{}, errors.New("assess needs --target")
 	case flags.NArg() > 0:
 		return assessOptions{}, fmt.Errorf("unexpected argument %s", text.Quote(flags.Arg(0)))
 	}
 
-	if _, ok := deps.Targets[opts.target]; !ok {
-		return assessOptions{}, fmt.Errorf("unknown target %s; supported targets: %s",
-			text.Quote(opts.target), strings.Join(targetKeys(deps), ", "))
+	targets, err := parseTargets(target, deps)
+	if err != nil {
+		return assessOptions{}, err
 	}
+
+	opts.targets = targets
 
 	return opts, nil
 }
 
-// assess builds the adapters from deps, runs the analysis and writes the report
+// allTargets is the --target value that selects every supported target.
+const allTargets = "all"
+
+// parseTargets parses the --target value: one key of deps.Targets, a
+// comma-separated list of distinct keys, or all for every key. It returns the
+// selected keys sorted. Every error it returns is a usage error that ends with
+// the sorted list of supported targets.
+func parseTargets(value string, deps Deps) ([]string, error) {
+	supported := strings.Join(targetKeys(deps), ", ")
+
+	if value == allTargets {
+		return targetKeys(deps), nil
+	}
+
+	elements := strings.Split(value, ",")
+	selected := make([]string, 0, len(elements))
+
+	for _, key := range elements {
+		switch {
+		case key == "":
+			return nil, fmt.Errorf("--target %s has an empty target; supported targets: %s",
+				text.Quote(value), supported)
+		case key == allTargets:
+			return nil, fmt.Errorf("--target %s cannot be combined with other targets; supported targets: %s",
+				text.Quote(allTargets), supported)
+		case slices.Contains(selected, key):
+			return nil, fmt.Errorf("target %s given more than once; supported targets: %s",
+				text.Quote(key), supported)
+		}
+
+		if _, ok := deps.Targets[key]; !ok {
+			return nil, fmt.Errorf("unknown target %s; supported targets: %s", text.Quote(key), supported)
+		}
+
+		selected = append(selected, key)
+	}
+
+	slices.Sort(selected)
+
+	return selected, nil
+}
+
+// runFunc runs the use case assess built, the Run method of analysis.Analysis
+// for one target or of analysis.Comparison for several.
+type runFunc func(ctx context.Context, w io.Writer, meta analysis.ReportMeta) error
+
+// newRunner builds the adapters the selected targets need and the use case that
+// runs them: one target keeps the single-target report, several get a
+// comparison. Only the selected targets' catalog sources are built, and only
+// the reporter the use case needs.
+func newRunner(opts assessOptions, deps Deps) (runFunc, error) {
+	if deps.NewInventorySource == nil {
+		return nil, errMissingAdapter
+	}
+
+	if len(opts.targets) == 1 {
+		newCatalog := deps.Targets[opts.targets[0]]
+		if newCatalog == nil || deps.NewReporter == nil {
+			return nil, errMissingAdapter
+		}
+
+		single, err := analysis.New(deps.NewInventorySource(opts.inventory), newCatalog(), deps.NewReporter())
+		if err != nil {
+			return nil, err
+		}
+
+		return single.Run, nil
+	}
+
+	if deps.NewComparisonReporter == nil {
+		return nil, errMissingAdapter
+	}
+
+	for _, key := range opts.targets {
+		if deps.Targets[key] == nil {
+			return nil, errMissingAdapter
+		}
+	}
+
+	targets := make([]analysis.Target, 0, len(opts.targets))
+	for _, key := range opts.targets {
+		targets = append(targets, analysis.Target{Key: key, Catalog: deps.Targets[key]()})
+	}
+
+	comparison, err := analysis.NewComparison(deps.NewInventorySource(opts.inventory), targets,
+		deps.NewComparisonReporter())
+	if err != nil {
+		return nil, err
+	}
+
+	return comparison.Run, nil
+}
+
+// assess builds the adapters from deps, runs the analysis, or the comparison of
+// several targets, and writes the report
 // to stdout or to the --output file. It refuses an unsafe --output before it
 // reads anything, renders the whole report into memory, and writes nothing
 // unless the whole report was rendered.
 func assess(ctx context.Context, opts assessOptions, stdout io.Writer, deps Deps) error {
-	newCatalog := deps.Targets[opts.target]
-	if deps.NewInventorySource == nil || newCatalog == nil || deps.NewReporter == nil {
-		return errMissingAdapter
-	}
-
-	run, err := analysis.New(deps.NewInventorySource(opts.inventory), newCatalog(), deps.NewReporter())
+	run, err := newRunner(opts, deps)
 	if err != nil {
 		return err
 	}
@@ -110,7 +205,7 @@ func assess(ctx context.Context, opts assessOptions, stdout io.Writer, deps Deps
 
 	var report bytes.Buffer
 
-	if err := run.Run(ctx, &report, meta); err != nil {
+	if err := run(ctx, &report, meta); err != nil {
 		return err
 	}
 
