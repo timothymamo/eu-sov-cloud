@@ -224,6 +224,16 @@ func TestPackages(t *testing.T) {
 		Imports:    []string{"errors"},
 	}
 
+	// The auditor's L1 finding: the exemption is keyed on the third-party
+	// package alone, so once the SDK chain exempts smithy-go, an in-module
+	// package no strict rule holds imports it unreported. The inventory-file
+	// reader sits in the SDK-only rule's files: list as a negated glob, so no
+	// strict rule holds it (it is not outside every directory either, only
+	// outside that rule) and nothing replaces its allow list: its import of
+	// the SDK's closure still puts third-party code in the release binary.
+	inventoryfileImportsSDKClosure := mainPkg("internal/adapter/source/inventoryfile")
+	inventoryfileImportsSDKClosure.Imports = []string{"errors", "github.com/aws/smithy-go"}
+
 	// depguard's prefix list is sorted and strInPrefixList tests only the entry
 	// that sorts nearest before the import (depguard v2.2.1, settings.go):
 	// with the prefix a/ and the exact entry a/b$ in one list, depguard allows
@@ -419,6 +429,19 @@ func TestPackages(t *testing.T) {
 			name:  "the SDK packages an allowed import pulls in are not flagged",
 			rules: sdkRules,
 			pkgs:  []check.Package{awsImportsSDKPackage, sdkPackage, sdkDependency},
+		},
+		{
+			// The auditor's L1 finding: the exemption holds per third-party
+			// package, not per import, so an allowed chain alone must not
+			// exempt what a package no strict rule holds imports as well: the
+			// exempt set is seeded only by imports of packages the rules hold.
+			// smithy-go is flagged, as a third-party package no allowed import
+			// reaches; the package that imports it is in no directory the rules
+			// hold, so it stays placed and unflagged, as it is above.
+			name:        "a package no strict rule holds cannot pull in the SDK's closure unreported",
+			rules:       sdkRulesWithExcludes,
+			pkgs:        []check.Package{awsImportsSDKPackage, sdkPackage, sdkDependency, inventoryfileImportsSDKClosure},
+			wantFlagged: []string{"github.com/aws/smithy-go"},
 		},
 		{
 			// The guarantee the message exists for stays: a third-party
