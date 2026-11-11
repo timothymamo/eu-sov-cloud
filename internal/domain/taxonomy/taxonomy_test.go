@@ -9,6 +9,7 @@ import (
 	"github.com/google/go-cmp/cmp"
 
 	"github.com/timothymamo/eu-sov-cloud/internal/domain/taxonomy"
+	"github.com/timothymamo/eu-sov-cloud/internal/domain/text"
 )
 
 // The string values of the constants are the only names sources, targets and the
@@ -205,7 +206,6 @@ func TestCapabilityValues(t *testing.T) {
 		{name: "ipv6", got: taxonomy.IPv6, want: "ipv6"},
 		{name: "point in time restore", got: taxonomy.PointInTimeRestore, want: "point-in-time-restore"},
 		{name: "object versioning", got: taxonomy.ObjectVersioning, want: "object-versioning"},
-		{name: "high availability", got: taxonomy.HighAvailability, want: "high-availability"},
 		{name: "node high availability", got: taxonomy.NodeHighAvailability, want: "node-high-availability"},
 		{name: "zone high availability", got: taxonomy.ZoneHighAvailability, want: "zone-high-availability"},
 		{name: "read replicas", got: taxonomy.ReadReplicas, want: "read-replicas"},
@@ -237,7 +237,6 @@ func TestParseCapability(t *testing.T) {
 		{name: "ipv6", in: "ipv6", want: taxonomy.IPv6},
 		{name: "point in time restore", in: "point-in-time-restore", want: taxonomy.PointInTimeRestore},
 		{name: "object versioning", in: "object-versioning", want: taxonomy.ObjectVersioning},
-		{name: "high availability", in: "high-availability", want: taxonomy.HighAvailability},
 		{name: "node high availability", in: "node-high-availability", want: taxonomy.NodeHighAvailability},
 		{name: "zone high availability", in: "zone-high-availability", want: taxonomy.ZoneHighAvailability},
 		{name: "read replicas", in: "read-replicas", want: taxonomy.ReadReplicas},
@@ -297,6 +296,41 @@ func TestParseCapabilityRejectsUnknown(t *testing.T) {
 	}
 }
 
+// ADR 0011 retires high-availability: it is refused by name, never read as one of
+// the two levels that replace it, and the error names both replacements so a user
+// whose file was written before the split knows what to change. Every value in an
+// error is quoted with text.Quote, so each name is pinned in its quoted form.
+func TestParseCapabilityRefusesRetiredHighAvailability(t *testing.T) {
+	t.Parallel()
+
+	const retired = "high-availability"
+
+	got, err := taxonomy.ParseCapability(retired)
+	if !errors.Is(err, taxonomy.ErrUnknownCapability) {
+		t.Fatalf("ParseCapability(%q) = (%q, %v), want no capability and an error wrapping ErrUnknownCapability",
+			retired, got, err)
+	}
+
+	if got != "" {
+		t.Errorf("ParseCapability(%q) = %q, want no capability", retired, got)
+	}
+
+	// The replacements, each quoted: the retired value is a substring of
+	// "node-high-availability", so the quotes are what keep the three assertions
+	// apart.
+	for _, want := range []string{retired, "node-high-availability", "zone-high-availability"} {
+		if quoted := text.Quote(want); !strings.Contains(err.Error(), quoted) {
+			t.Errorf("ParseCapability(%q) error = %q, want it to name %s", retired, err.Error(), quoted)
+		}
+	}
+
+	for _, c := range taxonomy.Capabilities() {
+		if string(c) == retired {
+			t.Errorf("Capabilities() holds %q, want it retired from the vocabulary", retired)
+		}
+	}
+}
+
 // High availability has two scopes, and the only implication between
 // capabilities is that zone level implies node level: a target that survives the
 // loss of a whole zone survives the loss of one node too. The implication is
@@ -316,11 +350,15 @@ func TestCapabilityImplies(t *testing.T) {
 			want: []taxonomy.Capability{taxonomy.NodeHighAvailability},
 		},
 		{name: "node level implies nothing", in: taxonomy.NodeHighAvailability, want: nil},
-		// The value retired in a later milestone is an ordinary value here: it
-		// implies nothing, so it never satisfies a scoped need.
-		{name: "high availability implies nothing", in: taxonomy.HighAvailability, want: nil},
 		{name: "unrelated capability implies nothing", in: taxonomy.IPv6, want: nil},
 		{name: "capability outside the vocabulary implies nothing", in: taxonomy.Capability("x"), want: nil},
+		{
+			// A retired value is no longer a capability, so it implies no scoped
+			// level either. It is written out as a string because the constant is gone.
+			name: "retired high availability implies nothing",
+			in:   taxonomy.Capability("high-availability"),
+			want: nil,
+		},
 	}
 
 	for _, tc := range tests {
@@ -372,7 +410,6 @@ func TestCapabilities(t *testing.T) {
 		taxonomy.Autoscaling,
 		taxonomy.DeadLetterQueue,
 		taxonomy.EncryptionAtRest,
-		taxonomy.HighAvailability,
 		taxonomy.IPv6,
 		taxonomy.NodeHighAvailability,
 		taxonomy.ObjectVersioning,

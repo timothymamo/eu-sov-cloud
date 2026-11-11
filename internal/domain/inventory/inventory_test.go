@@ -303,6 +303,29 @@ func TestNewErrors(t *testing.T) {
 			wantErr: taxonomy.ErrUnknownCapability,
 			wantMsg: []string{"db-example", "pitr"},
 		},
+		{
+			// ADR 0011 retires high-availability. A file that still lists it is
+			// refused loudly, and the error names the resource, the value and both
+			// replacements, so the reader knows what to change it to. The quoted
+			// forms keep the retired value apart from the "node-high-availability"
+			// it is a substring of.
+			name:   "retired high availability capability",
+			source: "aws",
+			resources: []inventory.Resource{{
+				ID:           "db-example",
+				RawType:      "AWS::RDS::DBInstance",
+				Category:     taxonomy.DatabasePostgreSQL,
+				Region:       "eu-west-1",
+				Capabilities: []taxonomy.Capability{taxonomy.Capability("high-availability")},
+			}},
+			wantErr: taxonomy.ErrUnknownCapability,
+			wantMsg: []string{
+				"db-example",
+				`"high-availability"`,
+				`"node-high-availability"`,
+				`"zone-high-availability"`,
+			},
+		},
 	}
 
 	for _, tc := range tests {

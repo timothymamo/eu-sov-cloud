@@ -22,11 +22,11 @@
 | `fn-example` | `AWS::Lambda::Function` | `serverless.function` | none |  | no offering in the `Scaleway` catalog for `serverless.function` |
 | `i-0123456789abcdef0` | `AWS::EC2::Instance` | `compute.vm` | direct | `Elastic Metal` (tie: `Instances`) | `Elastic Metal` offers every capability the resource uses |
 | `misc-example` | `AWS::CloudFormation::CustomResource` | `unclassified` | none |  | not classified |
-| `partial-example` | `AWS::EC2::Instance` | `compute.vm` | partial | `Elastic Metal` (tie: `Instances`) | `Elastic Metal` does not offer `high-availability`; `Elastic Metal` does not offer `snapshots` |
+| `partial-example` | `AWS::EC2::Instance` | `compute.vm` | partial | `Elastic Metal` (tie: `Instances`) | `Elastic Metal` does not offer `node-high-availability`; `Elastic Metal` does not offer `snapshots` |
 
 ## Required changes
 
-- `partial-example`: `high-availability`, `snapshots` (not offered by `Elastic Metal`)
+- `partial-example`: `node-high-availability`, `snapshots` (not offered by `Elastic Metal`)
 
 ## Blockers
 

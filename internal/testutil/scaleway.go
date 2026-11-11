@@ -66,7 +66,7 @@ func ScalewayOfferings() []catalog.Offering {
 		{
 			Name:         "Kapsule",
 			Categories:   []taxonomy.Category{taxonomy.KubernetesManaged},
-			Capabilities: []taxonomy.Capability{taxonomy.Autoscaling, taxonomy.HighAvailability},
+			Capabilities: []taxonomy.Capability{taxonomy.Autoscaling, taxonomy.NodeHighAvailability},
 			Regions:      []string{"fr-par"},
 		},
 	}

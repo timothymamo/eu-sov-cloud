@@ -54,7 +54,7 @@ func validOfferings() []catalog.Offering {
 		{
 			Name:         "Kapsule",
 			Categories:   []taxonomy.Category{taxonomy.KubernetesManaged},
-			Capabilities: []taxonomy.Capability{taxonomy.HighAvailability, taxonomy.Autoscaling},
+			Capabilities: []taxonomy.Capability{taxonomy.NodeHighAvailability, taxonomy.Autoscaling},
 			Regions:      []string{"pl-waw", "nl-ams", "fr-par"},
 		},
 		{
@@ -246,7 +246,7 @@ func TestOfferingHas(t *testing.T) {
 	offering := catalog.Offering{
 		Name:         "Kapsule",
 		Categories:   []taxonomy.Category{taxonomy.KubernetesManaged},
-		Capabilities: []taxonomy.Capability{taxonomy.Autoscaling, taxonomy.HighAvailability},
+		Capabilities: []taxonomy.Capability{taxonomy.Autoscaling, taxonomy.NodeHighAvailability},
 		Regions:      []string{"fr-par"},
 	}
 
@@ -256,7 +256,7 @@ func TestOfferingHas(t *testing.T) {
 		want bool
 	}{
 		{name: "listed", in: taxonomy.Autoscaling, want: true},
-		{name: "listed last", in: taxonomy.HighAvailability, want: true},
+		{name: "listed last", in: taxonomy.NodeHighAvailability, want: true},
 		{name: "not listed", in: taxonomy.PointInTimeRestore, want: false},
 		{name: "empty", in: taxonomy.Capability(""), want: false},
 	}
@@ -992,6 +992,31 @@ func TestNewErrors(t *testing.T) {
 			}},
 			wantErr: taxonomy.ErrUnknownCapability,
 			wantMsg: []string{"Instances", "pitr"},
+		},
+		{
+			// ADR 0011 retired the unscoped value and catalog.New reads every
+			// capability through taxonomy.ParseCapability, so a snapshot still
+			// listing it is refused rather than silently read as one of the two
+			// scopes. The error names the offering and quotes the retired value and
+			// both replacements, which a file written before the split can act on.
+			name:     "offering with retired high-availability capability",
+			target:   targetName,
+			snapshot: validSnapshot(),
+			offerings: []catalog.Offering{{
+				Name:         "Instances",
+				Categories:   []taxonomy.Category{taxonomy.ComputeVM},
+				Capabilities: []taxonomy.Capability{taxonomy.Capability("high-availability")},
+				Regions:      []string{"fr-par"},
+			}},
+			wantErr: taxonomy.ErrUnknownCapability,
+			// Each value is quoted: the retired value is a substring of
+			// "node-high-availability", so the quotes keep the assertions apart.
+			wantMsg: []string{
+				text.Quote("Instances"),
+				text.Quote("high-availability"),
+				text.Quote("node-high-availability"),
+				text.Quote("zone-high-availability"),
+			},
 		},
 	}
 

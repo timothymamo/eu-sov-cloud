@@ -705,20 +705,3 @@ func TestKubernetesTierVariantIsBestOffering(t *testing.T) {
 		})
 	}
 }
-
-// TestNoOfferingListsUnscopedHighAvailability pins ADR 0011's retirement of
-// taxonomy.HighAvailability. The value stays in the vocabulary until PRD #14
-// milestone 4, but no snapshot may claim it, because it does not say whether the
-// offering survives the loss of a node or of a zone, and this snapshot's data is
-// now stated at the level the documentation supports.
-func TestNoOfferingListsUnscopedHighAvailability(t *testing.T) {
-	t.Parallel()
-
-	for _, o := range catalogOf(t).Offerings() {
-		if o.Has(taxonomy.HighAvailability) {
-			t.Errorf("offering %s lists %s, want its scope as %s or %s, the scoped capabilities ADR 0011 defines",
-				text.Quote(o.Name), text.Quote(string(taxonomy.HighAvailability)),
-				text.Quote(string(taxonomy.NodeHighAvailability)), text.Quote(string(taxonomy.ZoneHighAvailability)))
-		}
-	}
-}
