@@ -83,7 +83,7 @@ the ways code could be hidden from it, and what refuses each:
 - Turning depguard off. The pin covers the rules, not whether depguard runs: removing it from
   `linters.enable`, `linters.default: none`, `linters.disable: [depguard]`, a
   `linters.exclusions.rules` entry naming it, or `run.tests: false` would switch rules off while every
-  rule stays pinned. That is not pinned yet; issue #81 proposes it.
+  rule stays pinned. That is not pinned yet; it is proposed as an addition to issue #81.
 
 A cloud SDK is imported only in its provider's adapter package (`source/aws`, `source/azure`,
 `source/gcp`, `target/ovhcloud`, `target/scaleway`, `target/upcloud`): the depguard rule
