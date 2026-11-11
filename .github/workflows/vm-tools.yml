@@ -1,11 +1,13 @@
 name: VM tools
 
 # dev/lima.yaml pins cosign and gh by a SHA-256 per architecture, and provisioning trusts those pins:
-# no trusted cosign or GitHub token exists there yet. This job is what makes a pin authentic. For every
-# change to dev/lima.yaml it downloads each pinned asset and checks it against its publisher's signature
-# with tools that do not come from the release under test, then checks the pin equals the asset's digest
-# (ADR 0017, "Verifying gh and cosign"). The weekly run catches a release asset replaced under a tag
-# already pinned, which Renovate never reports: it fails here as a pin that no longer matches.
+# no trusted cosign or GitHub token exists there yet. This job is what makes a pin authentic. It
+# downloads each pinned asset and checks it against its publisher's signature with tools that do not
+# come from the release under test, then checks the pin equals the asset's digest (ADR 0017, "Verifying
+# gh and cosign"). It runs on every pull request, so it can be a required status check without leaving
+# other PRs waiting for it; until main's ruleset requires it, merge a change to the pins only when it is
+# green. The weekly run catches a release asset replaced under a tag already pinned, which Renovate
+# never reports: it fails here as a pin that no longer matches.
 on:
   push:
     branches: [main]
@@ -13,9 +15,6 @@ on:
       - dev/lima.yaml
       - .github/workflows/vm-tools.yml
   pull_request:
-    paths:
-      - dev/lima.yaml
-      - .github/workflows/vm-tools.yml
   schedule:
     - cron: "0 6 * * 1" # Mondays, with the Security workflow
 
@@ -48,22 +47,27 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          # Sets REPLY to the quoted value of param <name> in dev/lima.yaml, which must appear exactly
-          # once. Not called in $(...), so the error reaches the log and exit stops the step.
-          param() {
-            local values
-            values="$(sed -nE "s/^  ${1}: \"([^\"]*)\"\$/\\1/p" dev/lima.yaml)"
-            if [ -z "${values}" ] || [ "$(printf '%s\n' "${values}" | wc -l)" -ne 1 ]; then
-              echo "::error file=dev/lima.yaml::param ${1} is not set exactly once"
+          # Sets REPLY to param <name> of dev/lima.yaml, read as YAML under the top-level param: key (a line
+          # match would also take a same-named key elsewhere, which Lima ignores). The value must be a
+          # string matching <regex>. Not called in $(...), so the error reaches the log and exit stops the step.
+          param() { # <name> <regex> <what it should be>
+            if ! REPLY="$(yq -e ".param.${1} | select(tag == \"!!str\")" dev/lima.yaml 2>/dev/null)"; then
+              echo "::error file=dev/lima.yaml::param ${1} is missing or not a string"
               exit 1
             fi
-            REPLY="${values}"
+            if ! [[ "${REPLY}" =~ $2 ]]; then
+              # The value itself is not printed: it could hold a newline and a workflow command.
+              echo "::error file=dev/lima.yaml::param ${1} is not ${3}"
+              exit 1
+            fi
           }
+          sha256='^[0-9a-f]{64}$'
+          version='^v[0-9]+\.[0-9]+\.[0-9]+$'
           failed=0
           # <file> <param>: the file's SHA-256 must be the pinned one.
           check_pin() {
             local want got
-            param "$2"
+            param "$2" "${sha256}" "a SHA-256 in lowercase hex"
             want="${REPLY}"
             got="$(sha256sum "$1" | cut -d' ' -f1)"
             if [ "${got}" = "${want}" ]; then
@@ -73,12 +77,22 @@ jobs:
               failed=1
             fi
           }
-          param cosignVersion
+          param cosignVersion "${version}" "a release tag like v1.2.3"
           cosign_version="${REPLY}"
-          param ghVersion
+          param ghVersion "${version}" "a release tag like v1.2.3"
           gh_version="${REPLY}"
           cosign version
           gh --version
+          yq --version
+          # cli/cli builds a release by dispatching its deployment workflow on trunk, so the attestation's
+          # source ref is refs/heads/trunk, never the tag. What binds it to the release is the commit:
+          # the attestation's source digest must be the commit the release tag names.
+          if ! gh_commit="$(gh api "repos/cli/cli/commits/refs/tags/${gh_version}" --jq .sha)" ||
+            ! [[ "${gh_commit}" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "::error file=dev/lima.yaml::cannot resolve cli/cli tag ${gh_version} to a commit (ghVersion)"
+            exit 1
+          fi
+          echo "cli/cli ${gh_version} is commit ${gh_commit}"
           for arch in amd64 arm64; do
             Arch="${arch^}"
             dir="${RUNNER_TEMP}/${arch}"
@@ -101,10 +115,12 @@ jobs:
             curl -fsSL --retry 3 -o "${dir}/${name}" \
               "https://github.com/cli/cli/releases/download/${gh_version}/${name}"
             if gh attestation verify "${dir}/${name}" -R cli/cli \
-              --signer-workflow cli/cli/.github/workflows/deployment.yml; then
+              --signer-workflow cli/cli/.github/workflows/deployment.yml \
+              --source-ref refs/heads/trunk --source-digest "${gh_commit}" \
+              --deny-self-hosted-runners; then
               check_pin "${dir}/${name}" "ghSha256${Arch}"
             else
-              echo "::error file=dev/lima.yaml::gh ${gh_version}: ${name} has no valid build attestation from cli/cli's release workflow (ghSha256${Arch})"
+              echo "::error file=dev/lima.yaml::gh ${gh_version}: ${name} has no valid build attestation from cli/cli's release workflow at commit ${gh_commit} (ghSha256${Arch})"
               failed=1
             fi
           done

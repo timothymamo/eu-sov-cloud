@@ -89,9 +89,10 @@ against a checksum file from the same release:
   `sudo`, so any of them can tamper with the check. An independent check on a GitHub-hosted runner, a
   post-publish job in `release.yml`, is the follow-up that makes it authoritative; #95 does not change
   `release.yml`.
-- **Provisioning trusts the gh and cosign pins**, and the `vm-tools` workflow is what makes each pin
-  authentic before it is merged (see "Amendment: authenticity is checked in CI"). A nerdctl release signed by a manager not yet pinned fails
-  provisioning until their fingerprint is checked against `MAINTAINERS` and added.
+- **Provisioning trusts the gh and cosign pins**, and the `vm-tools` workflow, run on every pull
+  request, is what makes each pin authentic; it holds only if pins are merged with that check green,
+  which GitHub does not yet enforce (see "Amendment: authenticity is checked in CI"). A nerdctl release
+  signed by a manager not yet pinned fails provisioning until their fingerprint is checked against `MAINTAINERS` and added.
 - Images, BuildKit's cache and containerd's state take space on the VM's 40 GiB disk, under
   `~/.local/share`.
 - In a rootless runtime, container UID 0 is the VM user, not root. A container run with
@@ -163,16 +164,30 @@ binary that is checked runs the check, with the trust root it carries. The real 
 digest, which Renovate copies from the same release's checksum file: the weakness #100 is about. Nothing
 automated ran `gh attestation verify` either.
 
-- **`.github/workflows/vm-tools.yml` verifies every pin before it is merged.** It runs on each pull
-  request and push to `main` that changes `dev/lima.yaml` or the workflow, and weekly. It reads
-  `cosignVersion`, `ghVersion` and the four digests from `dev/lima.yaml`, and for amd64 and arm64:
+- **`.github/workflows/vm-tools.yml` verifies the pins on every pull request; merge only when it is
+  green.** It is not yet enforced as a required status (see the last bullet). It runs on every pull
+  request, whatever it changes, so it can be required without leaving other PRs waiting for a check that
+  never starts; on each push to `main` that changes `dev/lima.yaml` or the workflow; and weekly. It reads
+  `cosignVersion`, `ghVersion` and the four digests as YAML from the top-level `param:` key of
+  `dev/lima.yaml`, where Lima reads them, not by matching lines (a same-named key elsewhere in the file
+  would fool that), and rejects a missing or non-string value, a digest that is not 64 lowercase hex
+  digits and a version that is not `v<major>.<minor>.<patch>`. Then, for amd64 and arm64, it:
   verifies `cosign-linux-<arch>` against its Sigstore bundle with the cosign of
   `sigstore/cosign-installer`, which that action pins by digest in its own source, for
   `keyless@projectsigstore.iam.gserviceaccount.com` issued by `https://accounts.google.com`; verifies
   `gh_<version>_linux_<arch>.tar.gz` with the runner's preinstalled gh, `gh attestation verify -R
-  cli/cli --signer-workflow cli/cli/.github/workflows/deployment.yml`; then requires each verified
+  cli/cli --signer-workflow cli/cli/.github/workflows/deployment.yml --source-ref refs/heads/trunk
+  --source-digest <commit> --deny-self-hosted-runners`; then requires each verified
   file's SHA-256 to equal its pin, and fails naming the param otherwise. Neither verifier comes from
   the release under test. Its permissions are `contents: read` and `attestations: read`.
+- **gh's attestation is bound to the release by its commit, not its tag.** cli/cli builds a release by
+  dispatching `deployment.yml` on `trunk` (`workflow_dispatch`), so the certificate's source ref is
+  `refs/heads/trunk` for every release; `--source-ref refs/tags/<tag>` rejects them all (checked against
+  v2.103.3 and v2.103.2). What ties the attestation to the pinned version is its source digest, the
+  commit the build ran on: the job resolves the tag to its commit through the GitHub API
+  (`repos/cli/cli/commits/refs/tags/<tag>`; `v2.103.3` is `63837fb7`, the attestation's
+  `sourceRepositoryDigest`) and requires it with `--source-digest`. So an attestation for some other
+  build of cli/cli, from another commit or a self-hosted runner, does not verify a pinned asset.
 - **So the trust chain is:** the CI check proves the pinned digest is the publisher's signed asset;
   review merges it only with that check green (the Renovate PRs say so); provisioning installs only that
   digest. The self-check in provisioning stays, for integrity and bundle consistency, and claims no more.
@@ -181,7 +196,10 @@ automated ran `gh attestation verify` either.
   tag. The scheduled run then fails on the pin. A `packageRules` entry for `digest` updates of gh and
   cosign (label `security-review`, no automerge, a warning in the PR) is kept in case Renovate starts
   proposing them.
-- The check is not yet a required status: making it one is a branch protection change for the user.
+- **Not yet a required status.** `main`'s ruleset requires only Lint, Test, govulncheck and CodeQL, so
+  until it changes, a green VM tools check is a merge rule for the reviewer, not something GitHub
+  enforces. Follow-up for the user: add the status check `Verify the gh and cosign pins` (the job's
+  `name`, which is the context GitHub reports) to the required checks of `main`'s ruleset.
 
 ### Alternatives considered
 

@@ -269,12 +269,15 @@ each pinned under `param:` and authenticated before it is installed:
 
 A download that does not match its pin, or a cosign whose signature does not verify, stops provisioning
 with a message naming the file and the `param:` involved; nothing is installed and the download is
-deleted. In the VM the pin is what authenticates gh and cosign. The pins are made authentic before they
-are merged: `.github/workflows/vm-tools.yml` downloads each pinned asset, verifies it with a cosign and a
-gh that do not come from the release under test, and fails when a pin is not the verified asset's digest.
-It runs on every change to `dev/lima.yaml` and weekly, which catches an asset replaced under a pinned tag
-([ADR 0017](adr/0017-run-a-rootless-container-runtime-in-the-lima-vm.md), "Amendment: authenticity is
-checked in CI").
+deleted. In the VM the pin is what authenticates gh and cosign. CI is what makes a pin authentic:
+`.github/workflows/vm-tools.yml` reads the pins from `dev/lima.yaml`'s `param:`, downloads each pinned
+asset, verifies it with a cosign and a gh that do not come from the release under test, and fails when a
+pin is not the verified asset's digest. It runs on every pull request and weekly, which catches an asset
+replaced under a pinned tag ([ADR 0017](adr/0017-run-a-rootless-container-runtime-in-the-lima-vm.md),
+"Amendment: authenticity is checked in CI"). Merge a change to `dev/lima.yaml` only when it is green:
+the check is not yet a required status. To enforce it, add the status check
+`Verify the gh and cosign pins` to the required checks of `main`'s ruleset (a repository setting, for
+the maintainer).
 
 ### Updating gh and cosign
 
@@ -300,8 +303,11 @@ sha256sum "cosign-linux-${a}"                      # the value for cosignSha256<
 
 v=v2.103.3
 curl -fsSLO "https://github.com/cli/cli/releases/download/${v}/gh_${v#v}_linux_${a}.tar.gz"
+# cli/cli builds releases on trunk, so the attestation names trunk and the commit the tag points at.
+commit="$(gh api "repos/cli/cli/commits/refs/tags/${v}" --jq .sha)"   # needs a GitHub token, as below
 gh attestation verify "gh_${v#v}_linux_${a}.tar.gz" -R cli/cli \
-  --signer-workflow cli/cli/.github/workflows/deployment.yml   # needs a GitHub token
+  --signer-workflow cli/cli/.github/workflows/deployment.yml \
+  --source-ref refs/heads/trunk --source-digest "${commit}" --deny-self-hosted-runners
 sha256sum "gh_${v#v}_linux_${a}.tar.gz"            # the value for ghSha256<Arch>
 ```
 
@@ -312,13 +318,14 @@ recreate it to get, and verify, the pinned ones. After recreating, confirm them:
 /usr/local/bin/cosign version | grep GitVersion   # the cosignVersion in dev/lima.yaml
 /usr/local/bin/gh --version                       # the ghVersion in dev/lima.yaml
 sha256sum /usr/local/bin/cosign                   # cosignSha256<Arch> for this VM's architecture
-# The provisioning output: one of these holds it. Check which one does on your VM.
+# The provisioning output: one of these holds it. Check which one does on your VM. Not `journalctl -b`:
+# that shows only the current boot, and the self-check runs on the boot that installs cosign.
 sudo grep -E 'Verified OK|does not match|not signed' /var/log/cloud-init-output.log
-sudo journalctl -b | grep -E 'Verified OK|does not match|not signed'
+sudo journalctl | grep -E 'Verified OK|does not match|not signed'
 ```
 
-`Verified OK` is the cosign self-check, printed on the boot that installed cosign; there must be no
-`does not match` or `not signed`.
+`Verified OK` is the cosign self-check, printed on the first boot after recreating the VM, the one that
+installed cosign; there must be no `does not match` or `not signed`.
 
 containerd and BuildKit run **rootless**, as the systemd user services `containerd.service` and
 `buildkit.service`, started at boot like the deck's daemon. Check them, then run the README's
