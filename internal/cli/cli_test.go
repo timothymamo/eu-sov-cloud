@@ -684,6 +684,67 @@ func TestRunAssessFormatUsage(t *testing.T) {
 	}
 }
 
+// TestRunAssessWithoutFormats pins that a Deps wired with no report format at all
+// is a missing adapter, not a user error: --format defaults to markdown, which a
+// complete Deps supports, so a run that holds no format lacks an adapter rather
+// than naming an unknown one. The run fails with exit code 1 as a run-time error,
+// on the one error line, with nothing on stdout and no adapter built.
+func TestRunAssessWithoutFormats(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name    string
+		formats map[string]cli.Format
+	}{
+		{name: "nil formats"},
+		{name: "no formats", formats: map[string]cli.Format{}},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			h := newHarness(t)
+
+			deps := h.deps()
+			deps.Formats = tc.formats
+
+			var out, errOut bytes.Buffer
+
+			code := cli.Run(t.Context(), []string{"assess", "--inventory", inventoryPath, "--target", targetKey},
+				&out, &errOut, deps)
+
+			if code != 1 {
+				t.Errorf("Run() = %d, want 1: a Deps without a report format is a wiring mistake, not a usage error; "+
+					"stderr = %q", code, errOut.String())
+			}
+
+			if out.Len() != 0 {
+				t.Errorf("stdout = %q, want empty", out.String())
+			}
+
+			checkErrorLine(t, errOut.String())
+
+			// The line names the mistake: an adapter the command needs is missing.
+			if !strings.Contains(errOut.String(), "adapter") {
+				t.Errorf("stderr = %q, want the missing-adapter error", errOut.String())
+			}
+
+			// It is not the usage error of an unknown --format: markdown is valid,
+			// the command was just wired without it.
+			if strings.Contains(errOut.String(), "unknown format") {
+				t.Errorf("stderr = %q, want the missing-adapter error, not the unknown-format usage error",
+					errOut.String())
+			}
+
+			if len(h.paths) != 0 || h.reporter.calls != 0 || h.jsonReporter.calls != 0 {
+				t.Errorf("the failed run built adapters: inventory paths %q, markdown calls %d, json calls %d",
+					h.paths, h.reporter.calls, h.jsonReporter.calls)
+			}
+		})
+	}
+}
+
 // TestRunAssessFormatFlagHelp pins that the usage text tells the user what
 // --format accepts: the supported formats, sorted, and which one is the default.
 func TestRunAssessFormatFlagHelp(t *testing.T) {
