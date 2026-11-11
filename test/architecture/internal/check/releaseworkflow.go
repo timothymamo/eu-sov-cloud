@@ -318,8 +318,9 @@ var releaseJobs = []releaseJob{
 //   - the top level holds exactly name, on (a push of v*.*.* tags),
 //     permissions ({}), concurrency (exactly group: release and
 //     cancel-in-progress: false, so one release runs at a time across every
-//     tag and none is cancelled half published) and jobs, so no
-//     workflow-level env: or defaults:;
+//     tag and a run in progress is never cancelled half published; a waiting
+//     run may be replaced by a newer tag's and must then be re-run by hand,
+//     ADR 0015) and jobs, so no workflow-level env: or defaults:;
 //   - jobs holds exactly test, goreleaser, image, sbom and sign, each with
 //     exactly name, runs-on (ubuntu-latest), permissions and steps, and needs
 //     for all but test (goreleaser needs test; image [test, goreleaser]; sbom

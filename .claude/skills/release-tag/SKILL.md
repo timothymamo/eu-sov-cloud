@@ -19,7 +19,8 @@ the tagged commit is on `main`: always tag a commit of `main`.
    guard in `release.yml` only catches mistakes: the run uses the tagged commit's workflow file, so the
    ruleset is what keeps anyone else from publishing a signed image. From the repository root, list the
    rulesets with `gh api repos/{owner}/{repo}/rulesets`, then read each active one with `target` `tag`
-   (`gh api repos/{owner}/{repo}/rulesets/<id>`): one must include `refs/tags/v*` and restrict creation,
+   (`gh api repos/{owner}/{repo}/rulesets/<id>`): one must cover `v*` tags in
+   `conditions.ref_name.include` (`refs/tags/v*`, `refs/tags/v*.*.*` or `~ALL`) and restrict creation,
    update and deletion (rules `creation`, `update`, `deletion`) with only maintainers bypassing it. If
    none does, report that a maintainer must create it (an agent must not) and stop.
 3. Find the last tag: `git -C <repository root> describe --tags --abbrev=0` (if there is none, start at
@@ -32,9 +33,12 @@ the tagged commit is on `main`: always tag a commit of `main`.
 5. State the version and the reasoning in your report **and wait for explicit confirmation** before
    tagging. A pushed tag publishes binaries and a container image.
 6. `git -C <repository root> tag -a vX.Y.Z -m "vX.Y.Z"` and
-   `git -C <repository root> push origin vX.Y.Z`.
+   `git -C <repository root> push origin vX.Y.Z`. Push one tag at a time, and wait for its release run
+   to finish before pushing the next: GitHub keeps one pending run in the `release` concurrency group,
+   so a newer tag cancels a run still waiting (ADR 0015).
 7. Watch the run (`gh run watch`), then report the release URL (`gh release view vX.Y.Z --json url`).
-   On failure, report the failed step's log and stop; never delete or move a pushed tag.
+   If a pending run was cancelled, re-run it with `gh run rerun <id>`. On failure, report the failed
+   step's log and stop; never delete or move a pushed tag.
 8. Check the image with the README's "Verify the image" commands for the new tag (cosign v3 or later),
    by the digest the tag resolves to. After the very first
    push GHCR has created the package private: report that a maintainer must make

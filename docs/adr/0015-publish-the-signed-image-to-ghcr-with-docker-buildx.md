@@ -81,9 +81,9 @@ attestations, pushed to the registry beside the image.
   outranking every later release and freezing `latest`.
 - **One release at a time.** The workflow's `concurrency` group `release`, with
   `cancel-in-progress: false`, queues a tag's run while another runs. Two tags pushed together would
-  otherwise race on `latest`, and whichever run pushed last would win, not the highest tag. Nothing is
-  cancelled, so no release stops half published. GitHub keeps one pending run per group: a third tag
-  pushed while one run waits replaces the waiting one, which is then re-run by hand.
+  otherwise race on `latest`, and whichever run pushed last would win, not the highest tag. A run in
+  progress is never cancelled, so no release stops half published. GitHub keeps one pending run per
+  group: a third tag pushed while one run waits replaces the waiting one, which is then re-run by hand.
 - **Same stamp as the release binaries.** `VERSION` is the tag without its `v` (GoReleaser's
   `.Version`), `COMMIT` is `git rev-parse --short HEAD` on a full clone (`.ShortCommit`: git picks the
   short length from the object count, so both jobs clone the whole history), and `DATE` the commit date
@@ -119,8 +119,9 @@ attestations, pushed to the registry beside the image.
   `# renovate:` comment; the shared regex manager reads a value of the form `image=<name>:<tag>@<digest>`
   (setup-buildx's `driver-opts`) since this change.
 - **Dry run on every pull request.** CI's `image` job runs the same `latest` decision on sample tag
-  lists, standing for the tags on `main` that `git tag -l --merged` lists in the release (one where the sample release is the highest, one where it is not, one pre-release), feeds the
-  results to the same tag rules and checks the tags, builds the multi-arch image with the same settings into an OCI
+  lists, standing for the tags on `main` that `git tag -l --merged` lists in the release (one where
+  the sample release is the highest, one where it is not, one pre-release), feeds the results to the
+  same tag rules and checks the tags, builds the multi-arch image with the same settings into an OCI
   archive, and generates and checks the SBOM from it. Pushing, signing and attesting need the OIDC token
   and write access, so only a tag exercises them; the first tag, ideally a `-rc` pre-release, is verified
   by hand with the README's commands.

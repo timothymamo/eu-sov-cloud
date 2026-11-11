@@ -33,7 +33,9 @@ var tagEvents = []string{"create", "release", "workflow_run"}
 // every job, with the strict line reader, and refuses what it cannot read
 // there (a flow mapping of permissions other than {}, a key it does not
 // understand) rather than guess at it. Any other permission, a read scope or
-// security-events: write among them, and any other trigger are accepted.
+// security-events: write among them, and any other trigger are accepted:
+// workflow_dispatch too, although it can run on a tag ref, because the
+// publishing scopes are refused anyway.
 func WorkflowPrivileges(name string, src []byte) []string {
 	if name == releaseWorkflowName {
 		return nil
