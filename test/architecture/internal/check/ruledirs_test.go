@@ -153,6 +153,25 @@ func TestRuleDirs(t *testing.T) {
 			wantErrFragment: "!$all",
 		},
 		{
+			// An exclusion that no directory of the rule covers takes nothing
+			// out of the rule: a widened or mistyped directory is read as a
+			// narrowing that does not narrow, and the rule holds more than its
+			// author meant it to.
+			name:            "an exclusion under no directory of the rule is an error",
+			files:           []string{"**/a/source/**", "!**/a/target/**", "!$test"},
+			wantErr:         true,
+			wantErrFragment: "a/target",
+		},
+		{
+			// An exclusion that equals a directory takes the whole directory
+			// back out, so the rule holds nothing while its files: list says it
+			// holds one.
+			name:            "an exclusion that equals a directory is an error",
+			files:           []string{"**/a/source/**", "!**/a/source/**", "!$test"},
+			wantErr:         true,
+			wantErrFragment: "a/source",
+		},
+		{
 			// A rule whose every directory is taken out again holds nothing,
 			// which the check cannot tell from a rule that was emptied.
 			name:    "a rule that only excludes directories is an error",

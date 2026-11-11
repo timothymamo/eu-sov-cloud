@@ -194,6 +194,55 @@ func TestPackages(t *testing.T) {
 	awsImportsSDKPackage := mainPkg("internal/adapter/source/aws")
 	awsImportsSDKPackage.Imports = []string{"errors", "github.com/aws/aws-sdk-go-v2/service/ec2"}
 
+	// The packages the adapter's own SDK import pulls into the listing: the
+	// SDK package under the rule's prefix entry, and a package that SDK
+	// package imports, which no entry of the rule names at all. depguard
+	// lints no file of either, so neither is a violation of the rule; the
+	// check reports a package outside the module only to catch one the layers
+	// reach behind the rule's back.
+	sdkPackage := check.Package{
+		ImportPath: "github.com/aws/aws-sdk-go-v2/service/ec2",
+		Module:     &check.Module{Path: "github.com/aws/aws-sdk-go-v2"},
+		Imports:    []string{"errors", "github.com/aws/smithy-go"},
+	}
+
+	sdkDependency := check.Package{
+		ImportPath: "github.com/aws/smithy-go",
+		Module:     &check.Module{Path: "github.com/aws/smithy-go"},
+		Imports:    []string{"errors"},
+	}
+
+	// A third-party package no import the allow lists hold reaches: a module
+	// package outside every rule imports it, so the release binary would carry
+	// code no rule of .golangci.yml knows about.
+	outsideImportsThirdParty := mainPkg("internal/adapter/x")
+	outsideImportsThirdParty.Imports = []string{"example.org/lib"}
+
+	thirdParty := check.Package{
+		ImportPath: "example.org/lib",
+		Module:     &check.Module{Path: "example.org/lib"},
+		Imports:    []string{"errors"},
+	}
+
+	// depguard's prefix list is sorted and strInPrefixList tests only the entry
+	// that sorts nearest before the import (depguard v2.2.1, settings.go):
+	// with the prefix a/ and the exact entry a/b$ in one list, depguard allows
+	// a/a and a/b and refuses a/c, though the prefix a/ alone would allow it.
+	shadowedPrefixRules := []check.Rule{{
+		Name: "nearest-entry",
+		Dir:  "internal/domain",
+		Allow: []check.AllowEntry{
+			{Path: "a/", Prefix: true},
+			{Path: "a/b"},
+		},
+	}}
+
+	importsShadowedByTheExactEntry := mainPkg("internal/domain")
+	importsShadowedByTheExactEntry.Imports = []string{"a/c"}
+
+	importsTheNearestEntryHolds := mainPkg("internal/domain")
+	importsTheNearestEntryHolds.Imports = []string{"a/a", "a/b"}
+
 	awsImportsOutsideThePrefix := mainPkg("internal/adapter/source/aws")
 	awsImportsOutsideThePrefix.Imports = []string{"github.com/aws/aws-sdk-go-v2x"}
 
@@ -359,6 +408,41 @@ func TestPackages(t *testing.T) {
 			name:  "an import under a prefix entry passes",
 			rules: sdkRules,
 			pkgs:  []check.Package{awsImportsSDKPackage},
+		},
+		{
+			// The adapter reaches its cloud through the SDK, as the rule
+			// requires, so what its import pulls in is no violation: the SDK
+			// package the prefix entry allows, and the SDK packages that
+			// package imports, which no entry names and depguard never lints.
+			// Reporting them would make every real adapter fail the rule the
+			// day it imports its cloud's SDK.
+			name:  "the SDK packages an allowed import pulls in are not flagged",
+			rules: sdkRules,
+			pkgs:  []check.Package{awsImportsSDKPackage, sdkPackage, sdkDependency},
+		},
+		{
+			// The guarantee the message exists for stays: a third-party
+			// package no import an allow list holds reaches is still reported,
+			// with the module package that imports it.
+			name:        "a third-party package no allowed import reaches is still flagged",
+			rules:       sdkRules,
+			pkgs:        []check.Package{outsideImportsThirdParty, thirdParty},
+			wantFlagged: []string{testModule + "/internal/adapter/x", "example.org/lib"},
+		},
+		{
+			// depguard tests only the prefix entry that sorts nearest before
+			// the import, so an exact entry that sorts before it shadows the
+			// prefix: a/c is refused even though a/ alone would allow it.
+			name:          "an import the nearest preceding entry refuses is flagged",
+			rules:         shadowedPrefixRules,
+			pkgs:          []check.Package{importsShadowedByTheExactEntry},
+			wantFlagged:   []string{testModule + "/internal/domain"},
+			wantFragments: []string{"a/c"},
+		},
+		{
+			name:  "an import the nearest preceding entry holds passes",
+			rules: shadowedPrefixRules,
+			pkgs:  []check.Package{importsTheNearestEntryHolds},
 		},
 		{
 			// The prefix ends in /, so a path that only shares its leading

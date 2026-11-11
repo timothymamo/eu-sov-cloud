@@ -9,6 +9,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/google/go-cmp/cmp"
+
 	"github.com/timothymamo/eu-sov-cloud/test/architecture/internal/check"
 )
 
@@ -28,7 +30,7 @@ const (
 // rule in neither fails TestEveryStrictRuleIsChecked.
 var skippedStrictRules = map[string]string{
 	"cli-gets-adapters-from-cmd": "it allows $gostd, which depguard expands to one prefix entry per top-level directory of GOROOT/src, so no allow list of package-by-package imports can say what it means",
-	"e2e-is-black-box":           "it holds test files, and go list -deps lists no test file and no package only a test imports",
+	"e2e-is-black-box":           "test/e2e holds test files only, so go list -deps reaches no package of it: it is no layer of the production packages the check holds, and a package only a test file imports is never listed at all",
 }
 
 // sdkRule is the strict depguard rule that holds every cloud source adapter, and
@@ -37,6 +39,32 @@ var skippedStrictRules = map[string]string{
 // entry without $ as one, and its files: list takes two directories out with
 // negated globs and holds test files too (issue #79).
 const sdkRule = "cloud-adapters-reach-the-cloud-through-the-sdk"
+
+// prefixEntryRules are the strict rules whose allow list may hold a prefix
+// entry, each named on purpose: the SDK-only rule names the roots of the cloud
+// SDKs, whose every package an adapter may reach its cloud through. Every other
+// strict rule names the packages it allows one by one, where an entry that lost
+// its trailing $ is a widening the reviewer must see (os$ -> os allows
+// os/exec) rather than a prefix.
+var prefixEntryRules = []string{sdkRule}
+
+// sdkRuleExcludes are the directories the SDK-only rule's files: list takes out
+// of it with negated globs: the inventory-file reader holds a rule of its own,
+// and so does the contract suite the adapters share.
+var sdkRuleExcludes = []string{
+	"internal/adapter/source/inventoryfile",
+	"internal/adapter/source/sourcetest",
+}
+
+// sdkRulePrefixes are the rule's allow entries written as an import prefix: the
+// three SDK roots, and go-cmp's package directory, whose packages the adapters'
+// test files import. Every other entry ends in $ and allows one package alone.
+var sdkRulePrefixes = []string{
+	"cloud.google.com/go/",
+	"github.com/Azure/azure-sdk-for-go/sdk/",
+	"github.com/aws/aws-sdk-go-v2/",
+	"github.com/google/go-cmp/cmp/",
+}
 
 // TestRepositoryHasNoLineDirectives pins that no Go file of this repository
 // carries a line directive, hand-written or generated: the linter matches
@@ -357,6 +385,10 @@ func TestEveryStrictRuleIsChecked(t *testing.T) {
 // by package, on every release target. The rule covers internal/adapter/source
 // but the two directories it takes out with negated globs, holds test files,
 // and allows the three SDK roots as import prefixes.
+//
+// The directories, the exclusions and the prefix entries are compared as whole
+// sets: an exclusion or an exact entry that turned into a prefix without a
+// reviewer seeing it is how a rule widens.
 func TestCloudAdapterSDKRuleIsChecked(t *testing.T) {
 	t.Parallel()
 
@@ -380,14 +412,12 @@ func TestCloudAdapterSDKRuleIsChecked(t *testing.T) {
 		t.Fatalf("RuleDirs(.golangci.yml, %q): %v", sdkRule, err)
 	}
 
-	if !slices.Contains(files.Dirs, "internal/adapter/source") {
-		t.Errorf("RuleDirs(.golangci.yml, %q).Dirs = %v, want it to hold internal/adapter/source", sdkRule, files.Dirs)
+	if diff := cmp.Diff(sortedCopy([]string{"internal/adapter/source"}), sortedCopy(files.Dirs)); diff != "" {
+		t.Errorf("RuleDirs(.golangci.yml, %q).Dirs mismatch (-want +got):\n%s", sdkRule, diff)
 	}
 
-	for _, excluded := range []string{"internal/adapter/source/inventoryfile", "internal/adapter/source/sourcetest"} {
-		if !slices.Contains(files.Excludes, excluded) {
-			t.Errorf("RuleDirs(.golangci.yml, %q).Excludes = %v, want it to take %s out of the rule", sdkRule, files.Excludes, excluded)
-		}
+	if diff := cmp.Diff(sortedCopy(sdkRuleExcludes), sortedCopy(files.Excludes)); diff != "" {
+		t.Errorf("RuleDirs(.golangci.yml, %q).Excludes mismatch (-want +got):\n%s: the rule takes these two directories out, and no other", sdkRule, diff)
 	}
 
 	if !files.Tests {
@@ -399,20 +429,78 @@ func TestCloudAdapterSDKRuleIsChecked(t *testing.T) {
 		t.Fatalf("AllowList(.golangci.yml, %q): %v", sdkRule, err)
 	}
 
-	for _, prefix := range []string{
-		"github.com/aws/aws-sdk-go-v2/",
-		"github.com/Azure/azure-sdk-for-go/sdk/",
-		"cloud.google.com/go/",
-	} {
-		if !slices.ContainsFunc(allow, func(e check.AllowEntry) bool { return e.Prefix && e.Path == prefix }) {
-			t.Errorf("AllowList(.golangci.yml, %q) = %v, want the SDK root %s as a prefix entry", sdkRule, allow, prefix)
+	var prefixes []string
+
+	for _, entry := range allow {
+		if entry.Prefix {
+			prefixes = append(prefixes, entry.Path)
 		}
+	}
+
+	if diff := cmp.Diff(sortedCopy(sdkRulePrefixes), sortedCopy(prefixes)); diff != "" {
+		t.Errorf("AllowList(.golangci.yml, %q) prefix entries mismatch (-want +got):\n%s: the SDK roots are the entries the rule allows whole trees through", sdkRule, diff)
 	}
 
 	// The entries that end in $ stay exact: depguard allows that package alone
 	// through one.
 	if !slices.ContainsFunc(allow, func(e check.AllowEntry) bool { return !e.Prefix && e.Path == "errors" }) {
 		t.Errorf("AllowList(.golangci.yml, %q) = %v, want the exact entry errors$", sdkRule, allow)
+	}
+}
+
+// TestOnlyTheSDKRuleHoldsPrefixEntries is the second tripwire for a dropped $:
+// before issue #79 a strict allow entry without one was refused, so `os$` that
+// lost its dollar was caught twice over, and now a prefix entry is a shape the
+// check reads. Only the rules named in prefixEntryRules may hold one; in every
+// other strict rule a prefix entry is a widening, and this fails, naming the
+// rule and the entry.
+//
+// A rule the package check skips is not read here: AllowList refuses its $gostd,
+// and TestDepguardRulesArePinned pins that list entry by entry.
+func TestOnlyTheSDKRuleHoldsPrefixEntries(t *testing.T) {
+	t.Parallel()
+
+	golangci := readRepositoryFile(t, ".golangci.yml")
+
+	strict, err := check.StrictRules(golangci)
+	if err != nil {
+		t.Fatalf("StrictRules(.golangci.yml): %v", err)
+	}
+
+	checked := 0
+
+	for _, name := range strict {
+		if _, skipped := skippedStrictRules[name]; skipped {
+			continue
+		}
+
+		checked++
+
+		allow, err := check.AllowList(golangci, name)
+		if err != nil {
+			t.Errorf("AllowList(.golangci.yml, %q): %v", name, err)
+
+			continue
+		}
+
+		for _, entry := range allow {
+			if !entry.Prefix || slices.Contains(prefixEntryRules, name) {
+				continue
+			}
+
+			t.Errorf("the strict depguard rule %s allows %s by prefix, and only %s may hold a prefix entry: write the package exact (%s$) or, for a whole tree, end the entry in /",
+				name, entry.Path, strings.Join(prefixEntryRules, " and "), entry.Path)
+		}
+	}
+
+	if checked == 0 {
+		t.Fatal("no strict rule was read, so this test would check nothing")
+	}
+
+	for _, name := range prefixEntryRules {
+		if !slices.Contains(strict, name) {
+			t.Errorf("prefixEntryRules holds %s, which .golangci.yml no longer holds with list-mode: strict, so the exception is stale: remove it, or restore the rule", name)
+		}
 	}
 }
 
@@ -472,6 +560,70 @@ func TestCloudAdapterSDKRuleHoldsItsProbeForEveryReleaseTarget(t *testing.T) {
 				if !strings.Contains(messages[0], want) {
 					t.Errorf("message %q does not name %q", messages[0], want)
 				}
+			}
+		})
+	}
+}
+
+// TestCloudAdapterSDKRuleHoldsItsSDKProbeForEveryReleaseTarget pins the other
+// half of issue #79's SDK rule: an adapter that reaches its cloud through the
+// SDK, as the rule requires, must pass, because depguard lints the adapter's
+// files and never the SDK's. go list -deps lists the SDK package the adapter
+// imports and every package that package imports, so the package check sees a
+// third-party package under the rule's prefix entry and one that no entry names,
+// and must report neither: otherwise every adapter fails the rule the day it
+// imports its cloud's SDK.
+//
+// The fixture's SDK is two stand-in modules the go.mod replaces with local
+// directories, so the listing needs no network and no go.sum entry.
+func TestCloudAdapterSDKRuleHoldsItsSDKProbeForEveryReleaseTarget(t *testing.T) {
+	t.Parallel()
+
+	golangci := readRepositoryFile(t, ".golangci.yml")
+
+	targets, err := check.ReleaseTargets(readRepositoryFile(t, ".goreleaser.yaml"))
+	if err != nil {
+		t.Fatalf("ReleaseTargets(.goreleaser.yaml): %v", err)
+	}
+
+	if len(targets) == 0 {
+		t.Fatal("ReleaseTargets(.goreleaser.yaml) returned no target, so the probe below would run on nothing")
+	}
+
+	rules := rulesOf(t, golangci, sdkRule)
+
+	root, err := filepath.Abs(filepath.FromSlash("testdata/sdkprobe"))
+	if err != nil {
+		t.Fatalf("resolve the probe module: %v", err)
+	}
+
+	const (
+		probeModule = "example.com/sdkprobe"
+		probePkg    = probeModule + "/internal/adapter/source/aws"
+		sdkPkg      = "github.com/aws/aws-sdk-go-v2/service/ec2"
+		sdkDepPkg   = "github.com/aws/smithy-go"
+	)
+
+	for _, target := range targets {
+		t.Run(target.GOOS+"/"+target.GOARCH, func(t *testing.T) {
+			t.Parallel()
+
+			pkgs, err := check.ListPackages(t.Context(), root, target, false, nil, "./internal/adapter/source/...")
+			if err != nil {
+				t.Fatalf("ListPackages(sdkprobe, %v): %v", target, err)
+			}
+
+			// The probe, its SDK package and the package that one imports are
+			// all listed: a run that read nothing of them could not pass this.
+			for _, want := range []string{probePkg, sdkPkg, sdkDepPkg} {
+				if !slices.ContainsFunc(pkgs, func(pkg check.Package) bool { return pkg.ImportPath == want }) {
+					t.Fatalf("ListPackages(sdkprobe, %v) did not list %s, so the check below would read nothing of it", target, want)
+				}
+			}
+
+			if messages := check.Packages(root, probeModule, rules, pkgs); len(messages) != 0 {
+				t.Errorf("Packages(sdkprobe, %v) flagged %d package(s), want none: the probe reaches its cloud through the SDK the rule allows, and depguard lints no SDK file:\n%s",
+					target, len(messages), strings.Join(messages, "\n"))
 			}
 		})
 	}
@@ -564,6 +716,15 @@ func repositoryRoot(t *testing.T) string {
 	}
 
 	return root
+}
+
+// sortedCopy returns a sorted copy of values, so a comparison of two sets from
+// .golangci.yml does not depend on the order its lists are written in.
+func sortedCopy(values []string) []string {
+	out := slices.Clone(values)
+	slices.Sort(out)
+
+	return out
 }
 
 // readRepositoryFile reads the file name under the repository root, and fails

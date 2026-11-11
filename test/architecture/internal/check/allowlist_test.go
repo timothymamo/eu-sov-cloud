@@ -68,7 +68,8 @@ linters:
             - github.com/aws/aws-sdk-go-v2/
             - cloud.google.com/go/
             - google.golang.org/api/googleapi$
-            - github.com/google/go-cmp/cmp
+            - github.com/google/go-cmp/cmp$
+            - github.com/google/go-cmp/cmp/
         gostd-entry:
           list-mode: strict
           allow:
@@ -103,10 +104,12 @@ func oneRuleDoc(comment string) string {
 
 // TestAllowList pins the allow list the check reads back from a depguard rule:
 // its entries in file order, without their quotes, each either exact (its
-// trailing $ removed) or a prefix (no $), and an error for every rule it cannot
-// read an allow list from. An entry without $ is depguard's prefix entry: it
-// allows every import path that starts with it, so the check has to keep the
-// difference between the two, an SDK root from one package under it.
+// trailing $ removed) or a prefix (ending in /), and an error for every rule it
+// cannot read an allow list from. depguard reads an entry without $ as a plain
+// string prefix, so `os` would allow os/exec and `github.com/aws` would allow
+// github.com/awsfoo: the check reads only a prefix written with its trailing /
+// and refuses the rest, and it refuses a rule whose deny list collides with its
+// allow list, since depguard decides that import by entry length.
 func TestAllowList(t *testing.T) {
 	t.Parallel()
 
@@ -141,9 +144,9 @@ func TestAllowList(t *testing.T) {
 		{
 			// The SDK-only rule mixes the two: the standard packages and the
 			// SDK helper packages it names one by one end in $, the SDK roots
-			// it allows every package of do not. Dropping the distinction
-			// would let an exact entry through as a prefix, or refuse the
-			// rule the check has to hold.
+			// it allows every package of end in /. Dropping the distinction
+			// would let an exact entry through as a prefix, or refuse the rule
+			// the check has to hold.
 			name: "exact and prefix entries are told apart",
 			rule: "sdk-prefixes",
 			want: []check.AllowEntry{
@@ -151,15 +154,64 @@ func TestAllowList(t *testing.T) {
 				{Path: "github.com/aws/aws-sdk-go-v2/", Prefix: true},
 				{Path: "cloud.google.com/go/", Prefix: true},
 				{Path: "google.golang.org/api/googleapi"},
-				{Path: "github.com/google/go-cmp/cmp", Prefix: true},
+				{Path: "github.com/google/go-cmp/cmp"},
+				{Path: "github.com/google/go-cmp/cmp/", Prefix: true},
 			},
 		},
 		{
-			// No trailing $ is depguard's prefix entry, not a mistake: it
-			// allows the package and every package under its path.
-			name: "an entry without a trailing $ is a prefix entry",
-			rule: "bare-entry",
-			want: []check.AllowEntry{{Path: "os", Prefix: true}},
+			// A prefix entry names a whole SDK root: the trailing / is what
+			// keeps it from allowing a look-alike path as well.
+			name:     "an entry ending in / is a prefix entry",
+			golangci: golangciDoc("        r:\n          list-mode: strict\n          allow:\n            - github.com/aws/aws-sdk-go-v2/\n            - errors$\n"),
+			rule:     "r",
+			want: []check.AllowEntry{
+				{Path: "github.com/aws/aws-sdk-go-v2/", Prefix: true},
+				{Path: "errors"},
+			},
+		},
+		{
+			// depguard reads an entry without $ as a prefix, so os allows
+			// os/exec and osfoo too: an entry that lost its $ is a widening the
+			// check cannot tell from an intended prefix. Only an entry written
+			// with its trailing / is a prefix the check reads.
+			name:    "a prefix entry not ending in / is an error",
+			rule:    "bare-entry",
+			wantErr: true,
+		},
+		{
+			// github.com/aws would allow the look-alike github.com/awsfoo as
+			// well as the SDK root.
+			name:     "a prefix entry over a look-alike path is an error",
+			golangci: golangciDoc("        r:\n          list-mode: strict\n          allow:\n            - github.com/aws\n"),
+			rule:     "r",
+			wantErr:  true,
+		},
+		{
+			// depguard applies the longest match between the allow and the
+			// deny list in strict mode, so a deny entry that an allow entry
+			// also allows makes the rule mean what its entry lengths decide:
+			// fail closed rather than read a rule whose deny list depguard may
+			// never apply.
+			name:     "a deny entry an allow entry allows is an error",
+			golangci: golangciDoc("        r:\n          list-mode: strict\n          allow:\n            - errors$\n            - os$\n          deny:\n            - pkg: os\n              desc: the domain has no OS access\n"),
+			rule:     "r",
+			wantErr:  true,
+		},
+		{
+			name:     "a deny entry under a prefix allow entry is an error",
+			golangci: golangciDoc("        r:\n          list-mode: strict\n          allow:\n            - net/\n          deny:\n            - net/http\n"),
+			rule:     "r",
+			wantErr:  true,
+		},
+		{
+			// The shape domain-is-pure has: net/netip and net/url are allowed
+			// one by one and net is denied, so an import of net/netip matches
+			// both lists and the longer allow entry wins. No deny entry is
+			// itself allowed, so this rule is read, not refused.
+			name:     "a deny entry no allow entry matches is read",
+			golangci: golangciDoc("        r:\n          list-mode: strict\n          allow:\n            - net/netip$\n            - net/url$\n          deny:\n            - net\n"),
+			rule:     "r",
+			want:     []check.AllowEntry{{Path: "net/netip"}, {Path: "net/url"}},
 		},
 		{
 			name:    "a rule that is not there is an error",
