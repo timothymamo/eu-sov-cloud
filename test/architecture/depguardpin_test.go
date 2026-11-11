@@ -552,10 +552,13 @@ func TestDepguardRulesArePinned(t *testing.T) {
 // TestDepguardPinCatchesMutations proves the pin of TestDepguardRulesArePinned
 // is not vacuous: it takes the real .golangci.yml text in memory and, for every
 // rule, deletes the rule, deletes each entry of its files, allow and deny lists,
-// and drops the $ of each exact allow entry. Every mutated document must either
-// fail to parse or make PinnedRules name the rule it is about, so a weakened
-// rule cannot read as the pinned one. A mutation that leaves the document
-// unchanged fails, so no case here passes on nothing.
+// drops the $ of each exact allow entry, adds an allow entry, adds a files
+// exclusion and rewrites, deletes or adds the list-mode. A deletion and an
+// addition weaken a rule alike, and the entries added here are the ones a
+// careless edit adds. Every mutated document must make PinnedRules name the
+// rule it is about, except the one mutation that breaks the document itself,
+// which the reader must refuse rather than read as a weaker rule. A mutation
+// that leaves the document unchanged fails, so no case here passes on nothing.
 func TestDepguardPinCatchesMutations(t *testing.T) {
 	t.Parallel()
 
@@ -565,26 +568,36 @@ func TestDepguardPinCatchesMutations(t *testing.T) {
 
 	mutations := depguardMutations(t, string(readRepositoryFile(t, ".golangci.yml")))
 
+	t.Logf("%d mutations of .golangci.yml", len(mutations))
+
 	for _, mutation := range mutations {
 		t.Run(mutation.name, func(t *testing.T) {
 			t.Parallel()
 
-			requireMutationReported(t, mutation.lines, mutation.rule)
+			requireMutationReported(t, mutation)
 		})
 	}
 }
 
 // depguardMutation is one weakening of the depguard rules: the name of its case,
-// the rule it is about and the mutated lines of .golangci.yml.
+// the rule it is about, the mutated lines of .golangci.yml and whether the
+// reader is expected to refuse the mutation rather than read it as a different
+// rule.
 type depguardMutation struct {
 	name  string
 	rule  string
 	lines []string
+	// wantParseError is set on the one mutation that breaks the document
+	// itself: deleting the rule that holds the deny list its alias needs
+	// leaves the alias with no anchor, and the reader refuses the document.
+	wantParseError bool
 }
 
 // depguardMutations builds every weakening of .golangci.yml the pin must catch,
 // before any case runs: each mutation must change the document, and at least one
-// must exist, so no case can pass on nothing.
+// must exist, so no case can pass on nothing. It fails when the entry walk does
+// not find as many entries as the pin holds, so the mutations below cannot
+// quietly cover a list's first entry only.
 func depguardMutations(t *testing.T, document string) []depguardMutation {
 	t.Helper()
 
@@ -592,33 +605,70 @@ func depguardMutations(t *testing.T, document string) []depguardMutation {
 
 	var mutations []depguardMutation
 
-	add := func(rule, name string, mutated []string) {
+	// counts says how many mutations each kind of weakening made, for the
+	// log line at the end.
+	counts := map[string]int{}
+
+	add := func(m depguardMutation, kind string) {
 		t.Helper()
 
-		if strings.Join(mutated, "\n") == document {
-			t.Fatalf("%s: the mutation left .golangci.yml unchanged, so its case would pass on nothing", name)
+		if strings.Join(m.lines, "\n") == document {
+			t.Fatalf("%s: the mutation left .golangci.yml unchanged, so its case would pass on nothing", m.name)
 		}
 
-		mutations = append(mutations, depguardMutation{name: name, rule: rule, lines: mutated})
+		counts[kind]++
+		mutations = append(mutations, m)
 	}
 
 	for _, rule := range pinnedDepguardRules {
 		span := findDepguardRule(t, lines, rule.Name)
 
-		add(rule.Name, rule.Name+": rule deleted",
-			deleteDepguardLines(lines, span.key, span.end))
-
 		// The entries are read from the document, not from the pin: a rule
 		// that shares its deny list through an alias has no entry lines of
 		// its own, and the rule it shares them with is mutated on its own.
+		sections := make(map[string][]depguardEntry, 3)
+
 		for _, section := range []string{"files", "allow", "deny"} {
-			for i, entry := range depguardEntries(t, lines, span, section) {
-				add(rule.Name, fmt.Sprintf("%s: %s entry %d deleted: %s", rule.Name, section, i, entry.text),
-					deleteDepguardLines(lines, entry.from, entry.to))
+			sections[section] = depguardEntries(t, lines, span, section)
+
+			want := len(rule.Files)
+
+			switch section {
+			case "allow":
+				want = len(rule.Allow)
+			case "deny":
+				want = len(rule.Deny)
+			}
+
+			if depguardSectionAliased(t, lines, span, section) {
+				want = 0
+			}
+
+			if got := len(sections[section]); got != want {
+				t.Fatalf("%s: the document holds %d %s entries, the pin holds %d: the entry walk lost entries, so the mutations below would miss them", rule.Name, got, section, want)
 			}
 		}
 
-		for i, entry := range depguardEntries(t, lines, span, "allow") {
+		add(depguardMutation{
+			name:  rule.Name + ": rule deleted",
+			rule:  rule.Name,
+			lines: deleteDepguardLines(lines, span.key, span.end),
+			// The alias rule needs the anchor this rule holds: the reader
+			// refuses the document, which is the check failing closed.
+			wantParseError: rule.Name == "app-uses-ports-not-adapters",
+		}, "rule deleted")
+
+		for _, section := range []string{"files", "allow", "deny"} {
+			for i, entry := range sections[section] {
+				add(depguardMutation{
+					name:  fmt.Sprintf("%s: %s entry %d deleted: %s", rule.Name, section, i, entry.text),
+					rule:  rule.Name,
+					lines: deleteDepguardLines(lines, entry.from, entry.to),
+				}, section+" entry deleted")
+			}
+		}
+
+		for i, entry := range sections["allow"] {
 			if !entry.exact() {
 				continue
 			}
@@ -626,13 +676,79 @@ func depguardMutations(t *testing.T, document string) []depguardMutation {
 			mutated := slices.Clone(lines)
 			mutated[entry.from] = dropDollar(lines[entry.from])
 
-			add(rule.Name, fmt.Sprintf("%s: allow entry %d without its $: %s", rule.Name, i, entry.text), mutated)
+			add(depguardMutation{
+				name:  fmt.Sprintf("%s: allow entry %d without its $: %s", rule.Name, i, entry.text),
+				rule:  rule.Name,
+				lines: mutated,
+			}, "allow entry dropped its $")
+		}
+
+		// An addition weakens a rule as surely as a deletion: an allow
+		// entry, a files exclusion or a laxer list-mode is what a careless
+		// edit adds.
+		if at, ok := depguardInsertPoint(t, lines, span, "allow"); ok {
+			add(depguardMutation{
+				name:  rule.Name + ": allow entry added: os",
+				rule:  rule.Name,
+				lines: insertDepguardLine(lines, at, 12, "- os"),
+			}, "allow entry added")
+		}
+
+		if at, ok := depguardInsertPoint(t, lines, span, "files"); ok {
+			add(depguardMutation{
+				name:  rule.Name + `: files entry added: "!**/x/**"`,
+				rule:  rule.Name,
+				lines: insertDepguardLine(lines, at, 12, `- "!**/x/**"`),
+			}, "files entry added")
+		}
+
+		if at, mode, ok := depguardListMode(t, lines, span); ok {
+			for _, other := range []string{"original", "strict", "lax"} {
+				if other == mode {
+					continue
+				}
+
+				mutated := slices.Clone(lines)
+				mutated[at] = "          list-mode: " + other
+
+				add(depguardMutation{
+					name:  fmt.Sprintf("%s: list-mode rewritten from %s to %s", rule.Name, mode, other),
+					rule:  rule.Name,
+					lines: mutated,
+				}, "list-mode rewritten")
+			}
+
+			add(depguardMutation{
+				name:  rule.Name + ": list-mode line deleted",
+				rule:  rule.Name,
+				lines: deleteDepguardLines(lines, at, at+1),
+			}, "list-mode deleted")
+		} else {
+			add(depguardMutation{
+				name:  rule.Name + ": list-mode strict added",
+				rule:  rule.Name,
+				lines: insertDepguardLine(lines, span.key+1, 10, "list-mode: strict"),
+			}, "list-mode added")
 		}
 	}
 
 	if len(mutations) == 0 {
 		t.Fatal("no mutation was made, so this test would prove nothing")
 	}
+
+	kinds := make([]string, 0, len(counts))
+	for kind := range counts {
+		kinds = append(kinds, kind)
+	}
+
+	slices.Sort(kinds)
+
+	breakdown := make([]string, 0, len(kinds))
+	for _, kind := range kinds {
+		breakdown = append(breakdown, fmt.Sprintf("%d %s", counts[kind], kind))
+	}
+
+	t.Logf("%d mutations of .golangci.yml: %s", len(mutations), strings.Join(breakdown, ", "))
 
 	return mutations
 }
@@ -701,32 +817,61 @@ func findDepguardRule(t *testing.T, lines []string, name string) depguardRuleSpa
 	return depguardRuleSpan{}
 }
 
+// The helpers below read the mutated .golangci.yml by indentation and assume
+// its 2-space layout: the depguard rules at indent 8, their keys at 10 and the
+// entries of a list at 12. They fail, naming the rule and the section, when the
+// document no longer has that shape, rather than mutate nothing.
+
+// depguardSectionKey returns the line of the rule's section key (files, allow
+// or deny) and whether the rule has it.
+func depguardSectionKey(t *testing.T, lines []string, span depguardRuleSpan, section string) (int, bool) {
+	t.Helper()
+
+	for i := span.key + 1; i < span.end; i++ {
+		indent, text := indentOf(lines[i])
+		if indent == 10 && (text == section+":" || strings.HasPrefix(text, section+": ")) {
+			return i, true
+		}
+	}
+
+	return 0, false
+}
+
+// depguardSectionAliased reports whether the rule's section key stands for a
+// list written under another rule (deny: *app-deny): the section has no entry
+// lines of its own, and the rule whose list it is holds them.
+func depguardSectionAliased(t *testing.T, lines []string, span depguardRuleSpan, section string) bool {
+	t.Helper()
+
+	key, ok := depguardSectionKey(t, lines, span, section)
+	if !ok {
+		return false
+	}
+
+	_, text := indentOf(lines[key])
+	value := strings.TrimSpace(strings.TrimPrefix(text, section+":"))
+
+	return strings.HasPrefix(value, "*")
+}
+
 // depguardEntries returns the entry lines of the rule's section (files, allow
 // or deny), in file order. A section the rule does not have, or one whose list
 // it shares through an alias, has no entry line of its own.
 func depguardEntries(t *testing.T, lines []string, span depguardRuleSpan, section string) []depguardEntry {
 	t.Helper()
 
-	start := -1
-
-	for i := span.key + 1; i < span.end; i++ {
-		indent, text := indentOf(lines[i])
-		if indent == 10 && (text == section+":" || strings.HasPrefix(text, section+": ")) {
-			start = i + 1
-
-			break
-		}
-	}
-
-	if start < 0 {
+	key, ok := depguardSectionKey(t, lines, span, section)
+	if !ok {
 		return nil
 	}
 
 	var entries []depguardEntry
 
-	for i := start; i < span.end; i++ {
+	for i := key + 1; i < span.end; {
 		indent, text := indentOf(lines[i])
 		if !isDepguardContent(text) {
+			i++
+
 			continue
 		}
 
@@ -750,9 +895,59 @@ func depguardEntries(t *testing.T, lines []string, span depguardRuleSpan, sectio
 		}
 
 		entries = append(entries, depguardEntry{text: text[2:], from: i, to: to})
+
+		// Resume after the entry's last line: the desc of a deny entry is
+		// on the line after its pkg, and reading it as the next entry would
+		// end the walk at the first entry of the list.
+		i = to
 	}
 
 	return entries
+}
+
+// depguardInsertPoint returns the line a new entry of the rule's section
+// belongs before: after the section's last entry, or right after the key when
+// the list has none. It reports false for a section the rule does not have and
+// for one it shares through an alias, which has no entries to add to.
+func depguardInsertPoint(t *testing.T, lines []string, span depguardRuleSpan, section string) (int, bool) {
+	t.Helper()
+
+	key, ok := depguardSectionKey(t, lines, span, section)
+	if !ok || depguardSectionAliased(t, lines, span, section) {
+		return 0, false
+	}
+
+	if entries := depguardEntries(t, lines, span, section); len(entries) > 0 {
+		return entries[len(entries)-1].to, true
+	}
+
+	return key + 1, true
+}
+
+// depguardListMode returns the line of the rule's list-mode key and the mode it
+// writes, and whether the rule writes one.
+func depguardListMode(t *testing.T, lines []string, span depguardRuleSpan) (int, string, bool) {
+	t.Helper()
+
+	for i := span.key + 1; i < span.end; i++ {
+		indent, text := indentOf(lines[i])
+		if indent == 10 && strings.HasPrefix(text, "list-mode: ") {
+			return i, strings.TrimSpace(strings.TrimPrefix(text, "list-mode:")), true
+		}
+	}
+
+	return 0, "", false
+}
+
+// insertDepguardLine returns the lines with text inserted before line at,
+// indented by indent spaces.
+func insertDepguardLine(lines []string, at, indent int, text string) []string {
+	out := make([]string, 0, len(lines)+1)
+	out = append(out, lines[:at]...)
+	out = append(out, strings.Repeat(" ", indent)+text)
+	out = append(out, lines[at:]...)
+
+	return out
 }
 
 // exact reports whether the entry ends the way an exact depguard entry does.
@@ -796,22 +991,29 @@ func deleteDepguardLines(lines []string, from, to int) []string {
 	return out
 }
 
-// requireMutationReported fails unless the mutated document either fails to
-// parse or makes PinnedRules report a difference that starts with the rule's
-// name. depguardMutations has already refused a mutation that changes nothing.
-func requireMutationReported(t *testing.T, mutated []string, rule string) {
+// requireMutationReported fails unless the mutated document makes PinnedRules
+// report a difference that starts with the rule's name, or, for the mutation
+// marked as breaking the document, is refused by the reader.
+// depguardMutations has already refused a mutation that changes nothing.
+func requireMutationReported(t *testing.T, mutation depguardMutation) {
 	t.Helper()
 
-	rules, err := check.DepguardRules([]byte(strings.Join(mutated, "\n")))
+	rules, err := check.DepguardRules([]byte(strings.Join(mutation.lines, "\n")))
 	if err != nil {
-		// A mutated document the reader refuses is caught by the check: it
-		// fails rather than reads the rule as the pinned one.
+		if !mutation.wantParseError {
+			t.Fatalf("the mutated document is refused with %v, and this is not a mutation the reader may refuse: a parse error here hides the weakening rather than reporting it", err)
+		}
+
 		return
 	}
 
+	if mutation.wantParseError {
+		t.Fatalf("the mutated document reads as %v, and this mutation removes what the rule below it needs: the reader must refuse it, not read a weaker rule", rules)
+	}
+
 	if !slices.ContainsFunc(check.PinnedRules(rules, pinnedDepguardRules), func(message string) bool {
-		return strings.HasPrefix(message, rule+": ")
+		return strings.HasPrefix(message, mutation.rule+": ")
 	}) {
-		t.Errorf("the mutated document reads as the pinned rules: DepguardRules() = %v and PinnedRules() reported nothing about %s, so the pin would miss this mutation", rules, rule)
+		t.Errorf("the mutated document reads as the pinned rules: DepguardRules() = %v and PinnedRules() reported nothing about %s, so the pin would miss this mutation", rules, mutation.rule)
 	}
 }

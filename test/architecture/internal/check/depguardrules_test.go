@@ -115,6 +115,156 @@ func TestDepguardRules(t *testing.T) {
 			wantErr:  true,
 		},
 		{
+			// A key in a deny entry that the reader skipped could hide the
+			// pkg it holds: only pkg and desc belong there.
+			name: "a deny entry with a key other than pkg or desc is an error",
+			golangci: golangciDoc(`        reports-stay-offline:
+          list-mode: strict
+          files:
+            - "**/internal/adapter/report/**"
+          deny:
+            - pkg: os
+              why: the reporters open no file
+`),
+			wantErr: true,
+		},
+		{
+			// The desc of a deny entry is one scalar on its line. A reader
+			// that skipped it would accept YAML it does not read, and a later
+			// alias could resolve to an anchor it never saw.
+			name: "a desc with lines below it is an error",
+			golangci: golangciDoc(`        reporters-stay-offline:
+          list-mode: strict
+          files:
+            - "**/internal/adapter/report/**"
+          deny:
+            - pkg: os
+              desc:
+                text: the reporters open no file
+`),
+			wantErr: true,
+		},
+		{
+			name: "a desc carrying an anchor is an error",
+			golangci: golangciDoc(`        reporters-stay-offline:
+          list-mode: strict
+          files:
+            - "**/internal/adapter/report/**"
+          deny:
+            - pkg: os
+              desc: &reason the reporters open no file
+`),
+			wantErr: true,
+		},
+		{
+			name: "a desc that is an alias is an error",
+			golangci: golangciDoc(`        reporters-stay-offline:
+          list-mode: strict
+          files:
+            - "**/internal/adapter/report/**"
+          deny:
+            - pkg: os
+              desc: *reason
+`),
+			wantErr: true,
+		},
+		{
+			// The plain, single-quoted and double-quoted spellings of a
+			// one-line desc are prose the check reads and drops.
+			name: "a one-line desc in any quoting still reads its pkg",
+			golangci: golangciDoc(`        reporters-stay-offline:
+          list-mode: strict
+          files:
+            - "**/internal/adapter/report/**"
+          deny:
+            - pkg: os
+              desc: the reporters open no file
+            - pkg: net
+              desc: 'the reporters make no call'
+            - pkg: syscall
+              desc: "the reporters make no syscall"
+`),
+			want: []check.DepguardRule{
+				{
+					Name:     "reporters-stay-offline",
+					ListMode: "strict",
+					Files:    []string{"**/internal/adapter/report/**"},
+					Deny:     []string{"os", "net", "syscall"},
+				},
+			},
+		},
+		{
+			// Two rules sharing one deny list through an anchor: a repeated
+			// anchor would silently rebind the entries the first one holds.
+			name: "a repeated anchor is an error",
+			golangci: golangciDoc(`        first:
+          list-mode: lax
+          files:
+            - "$all"
+          deny: &shared
+            - pkg: os
+        second:
+          list-mode: lax
+          files:
+            - "$all"
+          deny: &shared
+            - pkg: net
+`),
+			wantErr: true,
+		},
+		{
+			// An alias stands for the list written above it; entries under it
+			// would be read as part of the anchored list it names.
+			name: "an alias with lines below it is an error",
+			golangci: golangciDoc(`        first:
+          list-mode: lax
+          files:
+            - "$all"
+          deny: &shared
+            - pkg: os
+        second:
+          list-mode: lax
+          files:
+            - "$all"
+          deny: *shared
+            - pkg: net
+`),
+			wantErr: true,
+		},
+		{
+			name: "a deny with a value that is no anchor or alias is an error",
+			golangci: golangciDoc(`        reports-stay-offline:
+          list-mode: lax
+          files:
+            - "$all"
+          deny: os net
+`),
+			wantErr: true,
+		},
+		{
+			name: "an anchor name with a character the reader refuses is an error",
+			golangci: golangciDoc(`        reports-stay-offline:
+          list-mode: lax
+          files:
+            - "$all"
+          deny: &shared&more
+            - pkg: os
+`),
+			wantErr: true,
+		},
+		{
+			// A list-mode the tool does not know reads as a rule of the wrong
+			// strength, so the reader refuses it in either spelling.
+			name:     "a list-mode in upper case is an error",
+			golangci: golangciDoc("        reports-stay-offline:\n          list-mode: Strict\n          files:\n            - \"$all\"\n"),
+			wantErr:  true,
+		},
+		{
+			name:     "a list-mode that is no mode is an error",
+			golangci: golangciDoc("        reports-stay-offline:\n          list-mode: none\n          files:\n            - \"$all\"\n"),
+			wantErr:  true,
+		},
+		{
 			// A key the reader ignored could hide a weakening: a files list
 			// moved under another key still reads as a rule the check pins.
 			name:     "a key the check does not know is an error",
@@ -261,7 +411,7 @@ func TestPinnedRules(t *testing.T) {
 		{
 			// The difference issue #80 lost: the exact entry jsondoc$ turned
 			// into the prefix jsondoc, which allows every package under it.
-			name: "an allow entry narrowed to a prefix is reported",
+			name: "an exact allow entry widened to a prefix is reported",
 			mutate: func(rules []check.DepguardRule) []check.DepguardRule {
 				rules[0].Allow[1] = strings.TrimSuffix(rules[0].Allow[1], "$")
 
