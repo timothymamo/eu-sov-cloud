@@ -262,13 +262,14 @@ linters:
         # tests may import its contract suite (contract-suites-only-in-tests).
         # Helpers shared by adapters live in internal/adapter/internal/ (the
         # JSON decoder jsondoc, ADR 0009): they build no adapter, so adapters may
-        # import them. Each helper is named by its own allow entry, ending in $
-        # so it covers that package only. An allow entry is longer than the
-        # deny entry, so it wins for that package only; Go's internal rule
-        # keeps everything outside internal/adapter from importing them. The
-        # shared target snapshot reader (ADR 0007) is such a helper too: it
-        # parses bytes and builds no adapter, so target adapters may import
-        # it. An allow entry holds for every file the rule covers, so on its
+        # import them. Each helper under internal/adapter/internal/ is named by
+        # its own allow entry, ending in $ so it covers that package only. An
+        # allow entry is longer than the deny entry, so it wins for that
+        # package only; Go's internal rule keeps everything outside
+        # internal/adapter from importing them. The shared target snapshot
+        # reader (ADR 0007), under internal/adapter/target, builds no adapter
+        # either: it parses bytes, so target adapters may import it. Its
+        # snapshot$ entry is exact too. An allow entry holds for every file the rule covers, so on its
         # own it would let any package import the reader;
         # snapshot-reader-only-in-targets keeps it to the packages under
         # internal/adapter/target.
@@ -301,7 +302,7 @@ linters:
             - github.com/timothymamo/eu-sov-cloud/internal/adapter/target/snapshot$
           deny:
             - pkg: github.com/timothymamo/eu-sov-cloud/internal/adapter/internal/
-              desc: an adapter imports only the shared helpers named in adapters-are-built-in-cmd; a helper under a testdata or _ directory is never linted
+              desc: an adapter imports only the shared helpers named in adapters-are-built-in-cmd; name a new helper there first (a helper under a testdata or _ directory is never linted) (ADR 0009)
             - pkg: github.com/timothymamo/eu-sov-cloud/internal/adapter/
               desc: adapters are constructed only in cmd/eusov
         # Dependencies point inwards only: the composition root imports the
@@ -405,10 +406,10 @@ linters:
         # adapters-are-built-in-cmd names each one an adapter may import; an
         # adapter that must stay offline also names the ones it imports in its
         # own allow list. So a helper does no I/O unless that is decided:
-        # every package there, a helper added later included,
-        # may import only what is listed under allow, the standard packages
-        # the helpers use that do no I/O and the project packages they use,
-        # each ending in $ so it covers that package only. Add a standard
+        # every package there, a helper added later included, may import only
+        # what is listed under allow, the standard packages the helpers use
+        # that do no I/O and the project packages they use, each ending in $
+        # so it covers that package only. Add a standard
         # package only when a helper needs it, never one that does I/O. A
         # helper that needs I/O is a decision of its own: it gets a strict
         # rule of its own, its directory is excluded here by name, and no
@@ -610,7 +611,7 @@ linters:
         # reads no file, no environment and no clock, and sends nothing over
         # the network: this rule covers every package under
         # internal/adapter/report, jsonreport (a doc.go stub today) and any
-        # reporter added later included. The globs end in /** so they match
+        # reporter added later included. The glob ends in /** so it matches
         # the files directly in each package.
         #
         # An import rule sees direct imports only, so the reporters' imports

@@ -36,6 +36,17 @@ serve. Never write a direct "AWS service X maps to OVH service Y" table.
 If nothing fits, add a category in `internal/domain/taxonomy` first (separate commit, with a unit test),
 then classify into it from both sides. Write an ADR (adr skill) if it changes how categories are structured.
 
+## Import rules (source and target)
+
+A new source or target adapter gets its own strict depguard rule in `.golangci.yml`, modelled on
+`embedded-snapshot-targets-stay-offline` and `reporters-stay-offline`: `list-mode: strict`, `files`
+set to the adapter's directory (`"**/internal/adapter/<kind>/<provider>/**"`) and `"!$test"`, and an
+allow list naming exactly what the adapter imports, each entry ending in `$` so it covers that package
+only (for a live source, that includes its SDK packages). Add deny entries only to say why a package is
+refused. Any new helper under `internal/adapter/internal/` must be named, ending in `$`, in the allow
+list of `adapters-are-built-in-cmd` before an adapter can import it, and `adapter-helpers-do-no-io`
+holds it to no I/O. Run `make lint` to confirm the rules hold.
+
 ## Finish
 
 Wire the adapter in `cmd/eusov`, update the provider tables in README.md, and run `make check`.

@@ -32,8 +32,9 @@ Arrows are imports. They point inwards only:
   ([ADR 0009](adr/0009-decode-adapter-json-documents-through-one-strict-decoder.md)). A helper does
   no I/O unless that is decided: lint holds every package there to an allow list of packages that
   do no I/O, and a helper that needs I/O needs a lint rule of its own. Lint names each helper an
-  adapter may import (`adapters-are-built-in-cmd`), never by prefix, so a helper under a `testdata`
-  or `_` directory, which lint never visits, cannot be imported. The adapters that must stay
+  adapter may import (`adapters-are-built-in-cmd`), never by prefix, so lint flags any adapter that
+  imports a helper it does not name, such as one under a `testdata` or `_` directory, which lint
+  never visits. The adapters that must stay
   offline (the inventory-file reader, the snapshot reader, the embedded-snapshot targets and the
   reporters) each name what they import in a strict allow list. A reporter writes only to the
   `io.Writer` it is given: it reads no file, no environment and no clock, and makes no network
