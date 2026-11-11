@@ -81,6 +81,12 @@ one. Its start looks like this:
 ```markdown
 # Migration assessment: `OVHcloud`, `Scaleway`, `UpCloud`
 
+- Inventory file: `inventory.json`
+- Source: `aws`
+- Catalog: `OVHcloud` snapshot from `https://www.ovhcloud.com/en/public-cloud/regions-availability/`, retrieved 2026-11-11
+- Catalog: `Scaleway` snapshot from `https://www.scaleway.com/en/docs/`, retrieved 2026-11-11
+- Catalog: `UpCloud` snapshot from `https://upcloud.com/docs/`, retrieved 2026-11-11
+
 ## Comparison
 
 ### Summary
