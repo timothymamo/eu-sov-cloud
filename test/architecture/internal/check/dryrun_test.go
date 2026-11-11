@@ -274,6 +274,49 @@ func TestDryRunMirrorsRelease(t *testing.T) {
 		{name: "a release that counts every tag", ci: ciDryRun, release: mutate(t, releaseDryRun, "git tag -l 'v*.*.*' --merged refs/remotes/origin/main", "git tag -l 'v*.*.*'"), wantIn: "the dry run must pick the highest tag the release picks"},
 		{name: "a release that takes another line", ci: ciDryRun, release: mutate(t, releaseDryRun, "| tail -n 1)", "| tail -n 2)"), wantIn: "the dry run must pick the highest tag the release picks"},
 
+		// The latest script opens with a comment line. The reader of the dry
+		// run's script takes such a line at exactly the block's indentation as
+		// the block's first line, and keeps it; the release's reader, which
+		// reads the stamp's script, still refuses one. A comment line at any
+		// other indentation, a rule left out or repeated behind the comment, is
+		// caught as before: the comment must not hide the rule it describes.
+		{
+			name:    "a second comment line in the latest script",
+			ci:      mutate(t, ciDryRun, "          # $1 is the pushed tag, the rest every tag merged into main.\n", "          # $1 is the pushed tag, the rest every tag merged into main.\n          # The highest release tag on main is the latest one.\n"),
+			release: releaseDryRun,
+		},
+		{
+			name:    "a comment line in the latest script indented deeper than its first line",
+			ci:      mutate(t, ciDryRun, "          # $1 is the pushed tag, the rest every tag merged into main.\n", "            # $1 is the pushed tag, the rest every tag merged into main.\n"),
+			release: releaseDryRun,
+			wantIn:  "run has a line before its first content line",
+		},
+		{
+			name:    "a comment line in the latest script indented less than its first line",
+			ci:      mutate(t, ciDryRun, "          # $1 is the pushed tag, the rest every tag merged into main.\n", "        # $1 is the pushed tag, the rest every tag merged into main.\n"),
+			release: releaseDryRun,
+			wantIn:  "run has a line before its first content line",
+		},
+		{
+			name:    "a second highest rule in the latest script after its comment",
+			ci:      mutate(t, ciDryRun, "          # $1 is the pushed tag, the rest every tag merged into main.\n", "          # $1 is the pushed tag, the rest every tag merged into main.\n          highest=\"$(printf '%s\\n' \"$@\" | sort | tail -n 1)\"\n"),
+			release: releaseDryRun,
+			wantIn:  `holds 2 lines starting highest="$(, want exactly 1`,
+		},
+		{
+			name:    "a highest rule commented out",
+			ci:      mutate(t, ciDryRun, "            highest=\"$(printf", "            # highest=\"$(printf"),
+			release: releaseDryRun,
+			wantIn:  `holds 0 lines starting highest="$(, want exactly 1`,
+		},
+		{
+			// A commented-out rule is text inside the block, not the rule the
+			// check compares: the live one beside it is still the release's.
+			name:    "a commented-out highest rule in the latest script",
+			ci:      mutate(t, ciDryRun, "          # $1 is the pushed tag, the rest every tag merged into main.\n", "          # $1 is the pushed tag, the rest every tag merged into main.\n          # highest=\"$(printf '%s\\n' \"$@\" | sort | tail -n 1)\"\n"),
+			release: releaseDryRun,
+		},
+
 		// The with: keys the build and the SBOM are compared on, and the steps
 		// themselves: a key or a step the dry run does not have is named.
 		{name: "a build step without platforms", ci: mutate(t, ciDryRun, "          platforms: linux/amd64,linux/arm64\n          push: false\n", "          push: false\n"), release: releaseDryRun, wantIn: "holds no with: platforms"},
