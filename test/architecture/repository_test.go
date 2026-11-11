@@ -27,10 +27,16 @@ const (
 // TestReleaseTargetDependencies lists the packages of its directories. A strict
 // rule in neither fails TestEveryStrictRuleIsChecked.
 var skippedStrictRules = map[string]string{
-	"cli-gets-adapters-from-cmd":                     "it allows $gostd, which depguard expands to one prefix entry per top-level directory of GOROOT/src, so no allow list of package-by-package imports can say what it means",
-	"e2e-is-black-box":                               "it holds test files, and go list -deps lists no test file and no package only a test imports",
-	"cloud-adapters-reach-the-cloud-through-the-sdk": "it covers every directory under internal/adapter/source but two it excludes, so a sibling helper package is held too, which no list of **/<dir>/** directories can say; its allow list names the cloud SDK roots as prefixes, every package of the SDK, which no package-by-package list can spell out; and it holds test files, integration tests included, which go list -deps does not list",
+	"cli-gets-adapters-from-cmd": "it allows $gostd, which depguard expands to one prefix entry per top-level directory of GOROOT/src, so no allow list of package-by-package imports can say what it means",
+	"e2e-is-black-box":           "it holds test files, and go list -deps lists no test file and no package only a test imports",
 }
+
+// sdkRule is the strict depguard rule that holds every cloud source adapter, and
+// every helper directory under internal/adapter/source, to its cloud's SDK: its
+// allow list names the SDK roots as import prefixes because depguard reads an
+// entry without $ as one, and its files: list takes two directories out with
+// negated globs and holds test files too (issue #79).
+const sdkRule = "cloud-adapters-reach-the-cloud-through-the-sdk"
 
 // TestRepositoryHasNoLineDirectives pins that no Go file of this repository
 // carries a line directive, hand-written or generated: the linter matches
@@ -145,23 +151,9 @@ func depguardRules(t *testing.T, golangci []byte) ([]check.Rule, []string) {
 			continue
 		}
 
-		dirs, err := check.RuleDirs(golangci, name)
-		if err != nil {
-			t.Fatalf("RuleDirs(.golangci.yml, %q): %v", name, err)
-		}
-
-		allow, err := check.AllowList(golangci, name)
-		if err != nil {
-			t.Fatalf("AllowList(.golangci.yml, %q): %v", name, err)
-		}
-
-		if len(allow) == 0 {
-			t.Fatalf("AllowList(.golangci.yml, %q) returned no entry, so its directories would be held to nothing", name)
-		}
-
-		for _, dir := range dirs {
-			rules = append(rules, check.Rule{Name: name, Dir: dir, Allow: allow})
-			patterns = append(patterns, "./"+dir+"/...")
+		for _, rule := range rulesOf(t, golangci, name) {
+			rules = append(rules, rule)
+			patterns = append(patterns, "./"+rule.Dir+"/...")
 		}
 	}
 
@@ -170,6 +162,44 @@ func depguardRules(t *testing.T, golangci []byte) ([]check.Rule, []string) {
 	}
 
 	return rules, patterns
+}
+
+// rulesOf returns what the package check holds for one strict depguard rule: one
+// check.Rule per directory its files: list names, with the directories its
+// negated globs take out of the rule, whether it holds test files, and that
+// rule's allow list. Nothing is copied by hand, so a directory, an exclusion, a
+// prefix allow entry or a rule added to .golangci.yml is checked without an edit
+// here.
+func rulesOf(t *testing.T, golangci []byte, name string) []check.Rule {
+	t.Helper()
+
+	files, err := check.RuleDirs(golangci, name)
+	if err != nil {
+		t.Fatalf("RuleDirs(.golangci.yml, %q): %v", name, err)
+	}
+
+	allow, err := check.AllowList(golangci, name)
+	if err != nil {
+		t.Fatalf("AllowList(.golangci.yml, %q): %v", name, err)
+	}
+
+	if len(allow) == 0 {
+		t.Fatalf("AllowList(.golangci.yml, %q) returned no entry, so its directories would be held to nothing", name)
+	}
+
+	rules := make([]check.Rule, 0, len(files.Dirs))
+
+	for _, dir := range files.Dirs {
+		rules = append(rules, check.Rule{
+			Name:     name,
+			Dir:      dir,
+			Excludes: files.Excludes,
+			Tests:    files.Tests,
+			Allow:    allow,
+		})
+	}
+
+	return rules
 }
 
 // checkLayers lists the layer patterns for one build and fails when the check
@@ -302,9 +332,9 @@ func TestEveryStrictRuleIsChecked(t *testing.T) {
 			continue
 		}
 
-		if dirs, err := check.RuleDirs(golangci, name); err != nil {
+		if files, err := check.RuleDirs(golangci, name); err != nil {
 			t.Errorf("the strict depguard rule %s is not one the package check can hold: %v; give its files: list the shape RuleDirs reads, or add it to skippedStrictRules with the reason the check cannot hold it", name, err)
-		} else if len(dirs) == 0 {
+		} else if len(files.Dirs) == 0 {
 			t.Errorf("RuleDirs(.golangci.yml, %s) returned no directory, so the rule holds no layer", name)
 		}
 
@@ -317,6 +347,133 @@ func TestEveryStrictRuleIsChecked(t *testing.T) {
 		if !slices.Contains(strict, name) {
 			t.Errorf("skippedStrictRules holds %s, which .golangci.yml no longer holds with list-mode: strict, so the skip is stale: remove it, or restore the rule", name)
 		}
+	}
+}
+
+// TestCloudAdapterSDKRuleIsChecked pins that the SDK-only rule is no longer a
+// skip (issue #79): the package check reads its files: list, its exclusions and
+// its allow list, so TestEveryStrictRuleIsChecked and
+// TestReleaseTargetDependencies hold every cloud source adapter to it, package
+// by package, on every release target. The rule covers internal/adapter/source
+// but the two directories it takes out with negated globs, holds test files,
+// and allows the three SDK roots as import prefixes.
+func TestCloudAdapterSDKRuleIsChecked(t *testing.T) {
+	t.Parallel()
+
+	golangci := readRepositoryFile(t, ".golangci.yml")
+
+	if reason, skipped := skippedStrictRules[sdkRule]; skipped {
+		t.Errorf("%s is still skipped (%s); the package check reads prefix allow entries, negated files globs and test-file imports now: remove the skip", sdkRule, reason)
+	}
+
+	strict, err := check.StrictRules(golangci)
+	if err != nil {
+		t.Fatalf("StrictRules(.golangci.yml): %v", err)
+	}
+
+	if !slices.Contains(strict, sdkRule) {
+		t.Fatalf("StrictRules(.golangci.yml) = %v, want it to hold %s", strict, sdkRule)
+	}
+
+	files, err := check.RuleDirs(golangci, sdkRule)
+	if err != nil {
+		t.Fatalf("RuleDirs(.golangci.yml, %q): %v", sdkRule, err)
+	}
+
+	if !slices.Contains(files.Dirs, "internal/adapter/source") {
+		t.Errorf("RuleDirs(.golangci.yml, %q).Dirs = %v, want it to hold internal/adapter/source", sdkRule, files.Dirs)
+	}
+
+	for _, excluded := range []string{"internal/adapter/source/inventoryfile", "internal/adapter/source/sourcetest"} {
+		if !slices.Contains(files.Excludes, excluded) {
+			t.Errorf("RuleDirs(.golangci.yml, %q).Excludes = %v, want it to take %s out of the rule", sdkRule, files.Excludes, excluded)
+		}
+	}
+
+	if !files.Tests {
+		t.Errorf("RuleDirs(.golangci.yml, %q).Tests = false, want true: the rule names no !$test, so it holds test files, the integration ones included", sdkRule)
+	}
+
+	allow, err := check.AllowList(golangci, sdkRule)
+	if err != nil {
+		t.Fatalf("AllowList(.golangci.yml, %q): %v", sdkRule, err)
+	}
+
+	for _, prefix := range []string{
+		"github.com/aws/aws-sdk-go-v2/",
+		"github.com/Azure/azure-sdk-for-go/sdk/",
+		"cloud.google.com/go/",
+	} {
+		if !slices.ContainsFunc(allow, func(e check.AllowEntry) bool { return e.Prefix && e.Path == prefix }) {
+			t.Errorf("AllowList(.golangci.yml, %q) = %v, want the SDK root %s as a prefix entry", sdkRule, allow, prefix)
+		}
+	}
+
+	// The entries that end in $ stay exact: depguard allows that package alone
+	// through one.
+	if !slices.ContainsFunc(allow, func(e check.AllowEntry) bool { return !e.Prefix && e.Path == "errors" }) {
+		t.Errorf("AllowList(.golangci.yml, %q) = %v, want the exact entry errors$", sdkRule, allow)
+	}
+}
+
+// TestCloudAdapterSDKRuleHoldsItsProbeForEveryReleaseTarget is the issue's probe
+// (issue #79), one per platform the release builds: a fixture adapter under
+// internal/adapter/source that imports net/http directly fails the package check
+// with the rule read from .golangci.yml, on every GOOS/GOARCH the release
+// targets list, exactly as depguard refuses it. The adapter package is listed
+// for the platform first, so a run that read nothing of it cannot pass.
+func TestCloudAdapterSDKRuleHoldsItsProbeForEveryReleaseTarget(t *testing.T) {
+	t.Parallel()
+
+	golangci := readRepositoryFile(t, ".golangci.yml")
+
+	targets, err := check.ReleaseTargets(readRepositoryFile(t, ".goreleaser.yaml"))
+	if err != nil {
+		t.Fatalf("ReleaseTargets(.goreleaser.yaml): %v", err)
+	}
+
+	if len(targets) == 0 {
+		t.Fatal("ReleaseTargets(.goreleaser.yaml) returned no target, so the probe below would run on nothing")
+	}
+
+	rules := rulesOf(t, golangci, sdkRule)
+
+	root, err := filepath.Abs(filepath.FromSlash("testdata/adapterprobe"))
+	if err != nil {
+		t.Fatalf("resolve the probe module: %v", err)
+	}
+
+	const (
+		probeModule = "example.com/adapterprobe"
+		probePkg    = probeModule + "/internal/adapter/source/probe"
+	)
+
+	for _, target := range targets {
+		t.Run(target.GOOS+"/"+target.GOARCH, func(t *testing.T) {
+			t.Parallel()
+
+			pkgs, err := check.ListPackages(t.Context(), root, target, false, nil, "./internal/adapter/source/...")
+			if err != nil {
+				t.Fatalf("ListPackages(adapterprobe, %v): %v", target, err)
+			}
+
+			if !slices.ContainsFunc(pkgs, func(pkg check.Package) bool { return pkg.ImportPath == probePkg }) {
+				t.Fatalf("ListPackages(adapterprobe, %v) did not list %s, so the check below would read nothing of the probe", target, probePkg)
+			}
+
+			messages := check.Packages(root, probeModule, rules, pkgs)
+
+			if len(messages) != 1 {
+				t.Fatalf("Packages(adapterprobe, %v) flagged %d package(s), want exactly the probe's net/http import:\n%s",
+					target, len(messages), strings.Join(messages, "\n"))
+			}
+
+			for _, want := range []string{probePkg + ": ", "net/http", sdkRule} {
+				if !strings.Contains(messages[0], want) {
+					t.Errorf("message %q does not name %q", messages[0], want)
+				}
+			}
+		})
 	}
 }
 
