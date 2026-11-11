@@ -42,8 +42,15 @@
 // HidingSettings reads .golangci.yml for the settings that hide issues from
 // make lint without touching a rule, and the ways of turning depguard or
 // forbidigo off, and returns one message per setting found, naming it by its
-// dotted key (issue #81). An issues or linters.exclusions key it does not know
-// fails closed.
+// dotted key (issue #81). The document's shape is an allow list that fails
+// closed: version must be "2", and a top-level, run, linters,
+// linters.exclusions or issues key, a linters.default or a
+// linters.exclusions.presets entry it does not know is refused. It wants
+// linters.exclusions.generated: disable, which golangci-lint reads as lax when
+// it is absent, and refuses run.issues-exit-code: 0. StrayLintConfigs refuses
+// a .golangci.json, .golangci.toml or .golangci.yaml at the root that git
+// could commit, any of which golangci-lint would read in place of
+// .golangci.yml.
 //
 // The package is internal to test/architecture: it is not an API of the module.
 package check

@@ -178,7 +178,12 @@ workflow change.
   `&app-deny` anchor.
 - So is whether they run (issue #81): `TestGolangciSettingsHideNoIssue` reads `.golangci.yml` with the
   same reader and fails, naming the setting, on every setting that hides issues without touching a
-  rule: exclusion paths, `issues` caps and filters, `linters.default: none`, `run.tests` not true,
-  depguard or forbidigo not enabled or disabled, and an exclusion rule naming depguard, or forbidigo
-  without a text. An `issues` or `linters.exclusions` key it does not know fails closed.
+  rule: exclusion paths, a `linters.exclusions.generated` other than `disable` (absent means `lax`),
+  `issues` caps and filters, `run.issues-exit-code: 0`, `linters.default` other than `standard` or
+  `all`, `run.tests` not true, depguard or forbidigo not enabled or disabled, and an exclusion rule
+  naming depguard, or forbidigo without a text or with an empty one. The document's shape is an allow
+  list that fails closed: `version` must be `"2"`, and a key or preset it does not know is refused.
+  `TestRepositoryReadsOnlyGolangciYML` refuses a `.golangci.json`, `.golangci.toml` or
+  `.golangci.yaml` that git could commit, which golangci-lint would read before `.golangci.yml`; the
+  lint command lines, in the Makefile and the CI step, are pinned already by `test/architecture`.
 - Lint and this check now say the same thing twice: a violation that lint catches also fails here.

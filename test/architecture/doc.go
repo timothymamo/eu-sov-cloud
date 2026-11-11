@@ -41,11 +41,20 @@
 //
 // TestGolangciSettingsHideNoIssue covers what the pin does not: whether the
 // rules run and what lint reports (issue #81). It fails, naming the setting, on
-// linters.exclusions.paths or paths-except, an issues cap or filter, an issues
-// or linters.exclusions key the check does not know, linters.default: none,
-// run.tests not true, depguard or forbidigo missing from linters.enable or in
-// linters.disable, and a linters.exclusions.rules entry naming depguard, naming
-// forbidigo without a text, or naming no linter.
+// linters.exclusions.paths or paths-except, a linters.exclusions.generated that
+// is missing or not disable, an issues cap or filter, run.issues-exit-code: 0,
+// linters.default other than standard or all, run.tests not true, depguard or
+// forbidigo missing from linters.enable or in linters.disable, and a
+// linters.exclusions.rules entry naming depguard, naming forbidigo without a
+// text or with an empty one, or naming no linter. The document's shape is an
+// allow list that fails closed: version must be "2", and a key, a default or a
+// preset the check does not know is refused. TestRepositoryReadsOnlyGolangciYML
+// refuses a .golangci.json, .golangci.toml or .golangci.yaml at the root that
+// git could commit, which golangci-lint would read in place of .golangci.yml.
+// The golangci-lint command lines are pinned already, so neither can point
+// lint at another config: TestMakeLintRunsEveryReleaseTarget wants exactly
+// run --allow-serial-runners, and TestCILintMatrixCoversEveryReleaseTarget
+// wants only version and skip-cache in the golangci-lint step's with: block.
 //
 // The checks are tests: they run in make test, make check and CI's make cover,
 // with no workflow of their own. They need no network and no credentials.
