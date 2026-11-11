@@ -159,12 +159,17 @@ the one source of truth for the report.
 - Allowed hosts. `WithAllowedHosts` names the `Host` values the server answers to, compared ignoring case; any other `Host`
   gets **421 `misdirected_request`**, before anything else is checked. `/healthz` and `/readyz` are
   exempt, as probes address the server by its pod or container address. Without it every `Host` is
-  served. It stops DNS rebinding: a page on an attacker's domain that resolves to `127.0.0.1` reaches a
+  served. Each entry is a name, an IPv4 address or a bracketed IPv6 address, with an optional numeric
+  port; the option with no entry, an empty entry, an unbracketed IPv6 address (`::1`) and an empty or
+  non-numeric port are configuration errors from `New`, never an allow list that serves another host
+  or every host. It stops DNS rebinding: a page on an attacker's domain that resolves to `127.0.0.1` reaches a
   server on loopback as same-origin, past CORS, but sends the attacker's `Host`.
 - CORS is off unless an allow-list of origins is configured. `WithAllowedOrigins` validates each entry
-  and refuses, as a configuration error from `New`, `null`, `*`, an entry with a path, query, fragment
-  or user info, and any scheme but `http` and `https`. An `Origin` is compared with the list by scheme
-  and host ignoring case, and port exactly. Only an origin in the list gets
+  and refuses, as a configuration error from `New`, the option with no entry, `null`, `*`, an entry
+  with a path, query, fragment, user info or an empty port, and any scheme but `http` and `https`. An
+  `Origin` is compared with the list by scheme and host ignoring case, and port exactly, once the
+  scheme's default port (443 for `https`, 80 for `http`) is dropped from both the entry and the
+  `Origin`: `https://app.example.com:443` and `https://app.example.com` are the same origin. Only an origin in the list gets
   `Access-Control-Allow-Origin` with that origin (never `*`, never credentials),
   `Access-Control-Expose-Headers: Retry-After, WWW-Authenticate`, so a browser client can read the
   back-off and the auth challenge, and a 204 preflight on `/v1/` routes. When CORS is configured, every

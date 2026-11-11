@@ -168,14 +168,23 @@ func isToken68(s string) bool {
 // WithAllowedHosts serves only requests whose Host is one of hosts, compared
 // ignoring case; any other Host is 421 misdirected_request, before any other
 // check. An entry without a port matches its host on any port; an entry with
-// one ("localhost:8080") matches that port only. An IPv6 host keeps its
-// brackets ("[2001:db8::1]"). /healthz and /readyz are exempt. Without it, or
-// with no hosts, every Host is served. An empty entry is a configuration error
-// from New.
+// one ("localhost:8080") matches that port only. /healthz and /readyz are
+// exempt. Without it every Host is served. Each entry is a name, an IPv4
+// address or a bracketed IPv6 address ("[2001:db8::1]"), with an optional
+// port that is a number: no entry at all, an empty entry, an unbracketed IPv6
+// address, an empty port or one that is not a number is a configuration error
+// from New, never an allow list that serves another host.
 func WithAllowedHosts(hosts ...string) Option {
 	return func(c *config) {
+		if len(hosts) == 0 {
+			c.fail(errors.New(errInvalidOption.Error() + ": the allowed host list is empty"))
+
+			return
+		}
+
 		for _, host := range hosts {
-			if strings.TrimSpace(host) == "" || strings.ContainsAny(host, " /\t") {
+			key, ok := allowedHostKey(host)
+			if !ok {
 				c.fail(errors.New(errInvalidOption.Error() + ": an allowed host is empty or not a host"))
 
 				return
@@ -185,19 +194,132 @@ func WithAllowedHosts(hosts ...string) Option {
 				c.hosts = make(map[string]bool)
 			}
 
-			c.hosts[strings.ToLower(host)] = true
+			c.hosts[key] = true
 		}
 	}
 }
 
-// WithAllowedOrigins turns CORS on for exactly these origins. Without it, or
-// with no origins, CORS is off. Each origin is a scheme, http or https, and a
-// host with an optional port, nothing else: an empty entry, null, *, or one
-// with a path (a trailing slash included), a query, a fragment or user info is
-// a configuration error from New. An Origin matches an entry by scheme and host
-// ignoring case and by port exactly.
+// allowedHostKey returns host, an entry of WithAllowedHosts, in lower case as
+// the allow list holds it, and false when it is not a host with an optional
+// numeric port: a name or IPv4 address, or an IPv6 address in brackets.
+func allowedHostKey(host string) (string, bool) {
+	host = strings.ToLower(host)
+
+	port, hasPort := "", false
+
+	if strings.HasPrefix(host, "[") {
+		end := strings.IndexByte(host, ']')
+		if end < 0 {
+			return "", false
+		}
+
+		if !validIPv6Text(host[1:end]) {
+			return "", false
+		}
+
+		rest := host[end+1:]
+
+		if rest != "" {
+			if !strings.HasPrefix(rest, ":") {
+				return "", false
+			}
+
+			port, hasPort = rest[1:], true
+		}
+	} else {
+		name := host
+
+		switch strings.Count(host, ":") {
+		case 0:
+		case 1:
+			i := strings.IndexByte(host, ':')
+			name, port, hasPort = host[:i], host[i+1:], true
+		default:
+			return "", false // An IPv6 address without brackets.
+		}
+
+		if !validHostName(name) {
+			return "", false
+		}
+	}
+
+	if hasPort && !validPort(port) {
+		return "", false
+	}
+
+	return host, true
+}
+
+// validIPv6Text reports whether addr, the text between the brackets of a
+// host, has the shape of an IPv6 address: hexadecimal digits and at least two
+// colons, with dots for an embedded IPv4 address. A malformed address of that
+// shape matches no request's Host, so it allows nothing it should not.
+func validIPv6Text(addr string) bool {
+	if strings.Count(addr, ":") < 2 {
+		return false
+	}
+
+	for _, r := range addr {
+		switch {
+		case r >= '0' && r <= '9', r >= 'a' && r <= 'f', r == ':', r == '.':
+		default:
+			return false
+		}
+	}
+
+	return true
+}
+
+// validHostName reports whether name, in lower case, is a DNS name or an IPv4
+// address: letters, digits, dots, hyphens and underscores, and not empty.
+func validHostName(name string) bool {
+	if name == "" {
+		return false
+	}
+
+	for _, r := range name {
+		switch {
+		case r >= 'a' && r <= 'z', r >= '0' && r <= '9', r == '.', r == '-', r == '_':
+		default:
+			return false
+		}
+	}
+
+	return true
+}
+
+// validPort reports whether port is a decimal TCP port, 0 to 65535.
+func validPort(port string) bool {
+	if port == "" || len(port) > 5 {
+		return false
+	}
+
+	for _, r := range port {
+		if r < '0' || r > '9' {
+			return false
+		}
+	}
+
+	n, err := strconv.Atoi(port)
+
+	return err == nil && n <= 65535
+}
+
+// WithAllowedOrigins turns CORS on for exactly these origins. Without it CORS
+// is off. Each origin is a scheme, http or https, and a host with an optional
+// port, nothing else: no origin at all, an empty entry, null, *, an empty
+// port, or one with a path (a trailing slash included), a query, a fragment
+// or user info is a configuration error from New. An Origin matches an entry
+// by scheme and host ignoring case and by port exactly, once the scheme's
+// default port (443 for https, 80 for http) is dropped on both sides.
 func WithAllowedOrigins(origins ...string) Option {
 	return func(c *config) {
+		if len(origins) == 0 {
+			c.fail(errors.New(errInvalidOption.Error() + ": the allowed origin list is empty"))
+
+			return
+		}
+
 		for _, origin := range origins {
 			key, ok := originKey(origin)
 			if !ok {
@@ -212,13 +334,14 @@ func WithAllowedOrigins(origins ...string) Option {
 }
 
 // originKey returns origin as the allowed origins hold it, the scheme and the
-// host in lower case and the port as given, and false when origin is not an
-// http or https origin with nothing but a scheme, a host and a port.
+// host in lower case and the port as given unless it is the scheme's default,
+// which is dropped, and false when origin is not an http or https origin with
+// nothing but a scheme, a host and a port that is not empty.
 func originKey(origin string) (string, bool) {
 	u, err := url.Parse(origin)
 	if err != nil || u.Opaque != "" || u.User != nil || u.Host == "" || u.Hostname() == "" ||
 		u.Path != "" || u.RawPath != "" || u.RawQuery != "" || u.ForceQuery ||
-		u.Fragment != "" || strings.ContainsAny(origin, "?#") {
+		u.Fragment != "" || strings.ContainsAny(origin, "?#") || strings.HasSuffix(u.Host, ":") {
 		return "", false
 	}
 
@@ -227,7 +350,12 @@ func originKey(origin string) (string, bool) {
 		return "", false
 	}
 
-	return scheme + "://" + strings.ToLower(u.Host), true
+	host := strings.ToLower(u.Host)
+	if port := u.Port(); (scheme == "https" && port == "443") || (scheme == "http" && port == "80") {
+		host = strings.TrimSuffix(host, ":"+port)
+	}
+
+	return scheme + "://" + host, true
 }
 
 // WithReadiness sets the check GET /readyz runs: nil from it is ready, an

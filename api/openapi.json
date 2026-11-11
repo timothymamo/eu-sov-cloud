@@ -361,7 +361,7 @@
         }
       },
       "Access-Control-Allow-Origin": {
-        "description": "The request's Origin, only when it matches the configured allow-list (scheme and host ignoring case, port exactly); never *.",
+        "description": "The request's Origin, only when it matches the configured allow-list (scheme and host ignoring case, port exactly once the scheme's default port, 443 for https and 80 for http, is dropped on both sides); never *.",
         "schema": {
           "type": "string"
         }

@@ -79,11 +79,15 @@
 //     port that port only); any other Host is 421 misdirected_request, before
 //     any other check. The Host is read from the request, never from a
 //     forwarded header. /healthz and /readyz are exempt. It defends a server on
-//     loopback against DNS rebinding.
-//   - CORS is off unless WithAllowedOrigins names origins. New refuses an entry
-//     that is null or *, has a path, query, fragment or user info, or a scheme
-//     other than http or https. An Origin matches an entry by scheme and host
-//     ignoring case and by port exactly. A matching origin gets
+//     loopback against DNS rebinding. New refuses the option with no entry, an
+//     empty entry, an unbracketed IPv6 address, or an empty or non-numeric
+//     port.
+//   - CORS is off unless WithAllowedOrigins names origins. New refuses the
+//     option with no entry, and an entry that is null or *, has a path, query,
+//     fragment, user info or an empty port, or a scheme other than http or
+//     https. An Origin matches an entry by scheme and host ignoring case and
+//     by port exactly, once the scheme's default port (443 for https, 80 for
+//     http) is dropped on both sides. A matching origin gets
 //     Access-Control-Allow-Origin with that origin and
 //     Access-Control-Expose-Headers: Retry-After, WWW-Authenticate, and its
 //     preflight OPTIONS on a /v1/ route gets 204 with the allowed methods, the
