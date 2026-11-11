@@ -20,9 +20,9 @@ bin
 dist
 coverage.out
 coverage.*
-.env
-.env.*
-.envrc
+**/.env
+**/.env.*
+**/.envrc
 **/*.pem
 **/*.key
 **/*credentials*.json
