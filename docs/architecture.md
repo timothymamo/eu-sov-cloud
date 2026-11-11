@@ -29,7 +29,11 @@ Arrows are imports. They point inwards only:
   or `cmd/`. Helpers that adapters share live in `internal/adapter/internal/`: every adapter that
   reads a JSON document (the inventory file, the target catalog snapshots) decodes it through the
   strict decoder `adapter/internal/jsondoc`
-  ([ADR 0009](adr/0009-decode-adapter-json-documents-through-one-strict-decoder.md)).
+  ([ADR 0009](adr/0009-decode-adapter-json-documents-through-one-strict-decoder.md)). A helper does
+  no I/O unless that is decided: lint holds every package there to an allow list of packages that
+  do no I/O, and a helper that needs I/O needs a lint rule of its own. The adapters that must stay
+  offline (the inventory-file reader, the snapshot reader and the embedded-snapshot targets) each
+  name the helpers they import in a strict allow list.
 - **CLI** (`internal/cli`) turns user input into use-case calls and prints results. No business rules.
   Only `cmd/eusov` imports it.
 - **`cmd/eusov`** is the only place that constructs adapters and injects them.

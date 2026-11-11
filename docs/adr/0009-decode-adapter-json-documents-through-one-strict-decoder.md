@@ -121,9 +121,12 @@ is no fault of the document.
   reader decoding through jsondoc, no non-test file under `internal/adapter/target` imports
   `encoding/json`.
 - `adapters-are-built-in-cmd` allows every package under `internal/adapter/internal/` and says
-  nothing about what such a helper imports. Every helper package added there needs a strict
-  allow-list rule of its own, as jsondoc has (`jsondoc-parses-bytes`); the comment beside
-  `adapters-are-built-in-cmd` says so.
+  nothing about what such a helper imports. `adapter-helpers-do-no-io` (issue #42) holds every
+  helper there, jsondoc and a helper added later included, to a strict allow list of packages that
+  do no I/O, so a helper that needs I/O needs a rule of its own and is excluded from that one by
+  name. Because a helper under a `testdata` or `_` directory is never linted, each adapter that must
+  stay offline also names the helpers it imports, each ending in `$`, in a strict rule of its own;
+  the comment beside `adapters-are-built-in-cmd` says so.
 
 **Declared region codes.** The snapshot format adds a rule for the values of its top-level `regions`
 list: each is a region code, ASCII letters and digits in groups joined by single hyphens
