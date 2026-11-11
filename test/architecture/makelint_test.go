@@ -1,0 +1,582 @@
+package architecture_test
+
+import (
+	"fmt"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"runtime"
+	"slices"
+	"strings"
+	"testing"
+
+	"github.com/google/go-cmp/cmp"
+
+	"github.com/timothymamo/eu-sov-cloud/test/architecture/internal/check"
+)
+
+// fakeLinter is the golangci-lint make lint finds on PATH. It records the
+// environment and the arguments of every call it gets, one tab-separated line
+// per call, and fails only for the run a case names: a run of one target can
+// then be made to fail without stopping the runs before or after it, which is
+// what tells a lint that tries every target from one that gives up on the first.
+// EUSOV_FAKE_LINT_FAIL names a goos/goarch pair or, for the one run with cgo
+// on, `native`.
+const fakeLinter = `#!/bin/sh
+printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' "${GOOS}" "${GOARCH}" "${CGO_ENABLED}" "${GOLANGCI_LINT_CACHE}" "${GOFLAGS}" "${GOEXPERIMENT}" "${GOAMD64}" "${GOARM64}" "${GOWORK}" "$*" >> "${EUSOV_FAKE_LINT_RECORD}"
+if [ "${EUSOV_FAKE_LINT_FAIL}" = "native" ] && [ "${CGO_ENABLED}" != "0" ]; then
+	exit 3
+fi
+if [ "${GOOS}/${GOARCH}" = "${EUSOV_FAKE_LINT_FAIL}" ]; then
+	exit 3
+fi
+exit 0
+`
+
+// fakeGo is the go make lint finds on PATH. A go test call, the test/lint step
+// make lint ends with, is recorded in the same record as the linter runs, as a
+// line "#go\t<GOOS>\t<GOARCH>\t<CGO_ENABLED>\t<arguments>", so the record
+// tells whether it ran and whether it ran after them; it fails when
+// EUSOV_FAKE_LINT_FAIL is test/lint. Every other call is handed to the real go
+// command, whose path replaces %s, single-quoted.
+const fakeGo = `#!/bin/sh
+if [ "$1" = test ]; then
+	printf '#go\t%%s\t%%s\t%%s\t%%s\n' "${GOOS}" "${GOARCH}" "${CGO_ENABLED}" "$*" >> "${EUSOV_FAKE_LINT_RECORD}"
+	if [ "${EUSOV_FAKE_LINT_FAIL}" = "test/lint" ]; then
+		exit 3
+	fi
+	exit 0
+fi
+exec %s "$@"
+`
+
+// wantLintTestArgs is the whole argument list of the go call make lint ends
+// with: the test/lint tests, uncached.
+const wantLintTestArgs = "test -count=1 ./test/lint/"
+
+// The two ways a case sets GOLANGCI_LINT_CACHE for make.
+const (
+	// cacheSet hands make a directory of the test's own, so every run's cache
+	// directory must sit directly under it.
+	cacheSet = "set"
+	// cacheUnset leaves the variable out of make's environment, so make falls
+	// back to whatever the host offers and the runs only have to keep apart.
+	cacheUnset = "unset"
+)
+
+// What every run of golangci-lint make lint makes must be called with and must
+// see. Neither may come from the host: make lint runs seven times in a row and
+// several worktrees lint at once on one machine, and a developer's own build
+// settings would otherwise decide which files a run type-checks.
+const (
+	// wantArgs is the whole argument list of a run. golangci-lint takes a
+	// global lock and, by default, exits with an error when another
+	// golangci-lint holds it, so a run must wait for the lock instead of
+	// failing; no other flag may override the build tags .golangci.yml sets.
+	wantArgs = "run --allow-serial-runners"
+	// wantGOFLAGS is the whole GOFLAGS of a run: a developer's GOFLAGS,
+	// exported or in the go env file, could add a build tag and take files
+	// out of lint.
+	wantGOFLAGS = "-mod=readonly"
+)
+
+// goTestRun is one go test call make lint made, as the fake go recorded it.
+type goTestRun struct {
+	// After is how many golangci-lint runs the record held before it.
+	After      int
+	GOOS       string
+	GOARCH     string
+	CGOEnabled string
+	Args       string
+}
+
+// lintRun is one call of golangci-lint make lint made, as the fake recorded it.
+type lintRun struct {
+	GOOS         string
+	GOARCH       string
+	CGOEnabled   string
+	Cache        string
+	GOFLAGS      string
+	GOExperiment string
+	GOAMD64      string
+	GOARM64      string
+	GOWORK       string
+	Args         string
+}
+
+// TestMakeLintRunsEveryReleaseTarget pins make lint against the release: one
+// golangci-lint run per goos/goarch pair .goreleaser.yaml builds with cgo off,
+// plus one native run with cgo at the host's default, each with a cache
+// directory of its own, each waiting for golangci-lint's lock and each seeing
+// only the build settings make lint sets. A file behind another GOOS, another
+// GOARCH or `//go:build !cgo` is only type-checked, and so only linted, by the
+// run for the platform it builds on; without these runs such a file ships with
+// every depguard rule unseen (issue #39).
+func TestMakeLintRunsEveryReleaseTarget(t *testing.T) {
+	t.Parallel()
+
+	root, err := filepath.Abs(repoRoot)
+	if err != nil {
+		t.Fatalf("resolve %q: %v", repoRoot, err)
+	}
+
+	goreleaser, err := os.ReadFile(filepath.Join(root, ".goreleaser.yaml"))
+	if err != nil {
+		t.Fatalf("read .goreleaser.yaml: %v", err)
+	}
+
+	// .goreleaser.yaml is the one source of the release platforms: the test
+	// reads the list from it rather than pinning a copy here, so a target added
+	// to the release is a target make lint must gain without this test changing.
+	targets, err := check.ReleaseTargets(goreleaser)
+	if err != nil {
+		t.Fatalf("ReleaseTargets(.goreleaser.yaml): %v", err)
+	}
+
+	if len(targets) == 0 {
+		t.Fatal("ReleaseTargets(.goreleaser.yaml) returned no target, so this test would pin nothing")
+	}
+
+	// The native run lints with cgo at the host's default. With cgo off, it
+	// is a CGO_ENABLED=0 run, which this test would count as a release run and
+	// report as a confusing target diff, so say what is wrong instead.
+	if cgo := hostCGO(t, root); cgo != "1" {
+		t.Fatalf("cgo is off on this host (go env CGO_ENABLED = %q, as make lint sees it), so make lint's native run cannot lint the cgo build make test's -race compiles: install a C compiler, or set CC to one", cgo)
+	}
+
+	// wantRelease is the goos/goarch of every release target, sorted: what the
+	// runs with CGO_ENABLED=0 must be, once each.
+	wantRelease := make([]string, 0, len(targets))
+	for _, target := range targets {
+		wantRelease = append(wantRelease, target.GOOS+"/"+target.GOARCH)
+	}
+
+	slices.Sort(wantRelease)
+
+	tests := []struct {
+		name string
+		// cache is cacheSet or cacheUnset: how the case gives make a
+		// GOLANGCI_LINT_CACHE.
+		cache string
+		// fail is the goos/goarch the fake linter fails on, `native` for the
+		// one run with cgo on, empty for none.
+		fail string
+		// env holds further variables to hand make on top of the ones the
+		// test sets itself, exported as they would be from a developer's
+		// shell: make lint must not let any of them change a run.
+		env map[string]string
+		// wantExit is whether make lint must succeed.
+		wantExit bool
+	}{
+		{
+			name:     "every release target and one native run",
+			cache:    cacheSet,
+			wantExit: true,
+		},
+		{
+			name:     "the cache directories are distinct without GOLANGCI_LINT_CACHE",
+			cache:    cacheUnset,
+			wantExit: true,
+		},
+		{
+			name:     "a failing target fails make lint after every run",
+			cache:    cacheSet,
+			fail:     "windows/amd64",
+			wantExit: false,
+		},
+		{
+			name:     "a failing native run fails make lint after every run",
+			cache:    cacheSet,
+			fail:     "native",
+			wantExit: false,
+		},
+		{
+			name:     "a failing test/lint fails make lint",
+			cache:    cacheSet,
+			fail:     "test/lint",
+			wantExit: false,
+		},
+		{
+			name:     "an exported platform and build settings change nothing",
+			cache:    cacheSet,
+			wantExit: true,
+			env: map[string]string{
+				"GOOS":            "windows",
+				"GOARCH":          "386",
+				"CGO_ENABLED":     "0",
+				"GOFLAGS":         "-tags=sneaky",
+				"GOAMD64":         "v3",
+				"GOEXPERIMENT":    "fieldtrack",
+				"GOWORK":          "/elsewhere/go.work",
+				"RELEASE_TARGETS": "linux/amd64",
+			},
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			// The record the fake appends to, and the directory it sits in,
+			// are the test's own: the fake is on PATH for this make run only.
+			record := filepath.Join(t.TempDir(), "record")
+			fakeDir := t.TempDir()
+
+			writeFakeLinter(t, fakeDir)
+			writeFakeGo(t, fakeDir)
+
+			env := map[string]string{
+				"PATH":                   fakeDir + string(os.PathListSeparator) + os.Getenv("PATH"),
+				"EUSOV_FAKE_LINT_RECORD": record,
+			}
+
+			for name, value := range tc.env {
+				env[name] = value
+			}
+
+			// cacheRoot is the directory make's environment names, or empty
+			// when the case leaves the variable unset.
+			var cacheRoot string
+
+			switch tc.cache {
+			case cacheSet:
+				cacheRoot = t.TempDir()
+				env["GOLANGCI_LINT_CACHE"] = cacheRoot
+			case cacheUnset:
+				// Nothing real may be written: whatever directory
+				// golangci-lint falls back to must be one of these.
+				env["HOME"] = t.TempDir()
+				env["XDG_CACHE_HOME"] = t.TempDir()
+			}
+
+			if tc.fail != "" {
+				env["EUSOV_FAKE_LINT_FAIL"] = tc.fail
+			}
+
+			out, err := runMakeLint(t, root, env)
+
+			switch {
+			case tc.wantExit && err != nil:
+				t.Fatalf("make lint: %v, want it to succeed\n%s", err, out)
+			case !tc.wantExit && err == nil:
+				t.Fatalf("make lint succeeded, want it to fail on %s, so one make lint reports every target's issues\n%s",
+					tc.fail, out)
+			}
+
+			runs, goTests := readLintRecord(t, record)
+
+			// test/lint holds the rules golangci-lint cannot (nolint
+			// directives that would hide a depguard issue), so make lint must
+			// run it once, after every linter run, for the host's platform.
+			if len(goTests) != 1 {
+				t.Errorf("make lint made %d go test calls, want exactly one, %q, after the linter runs: %+v",
+					len(goTests), wantLintTestArgs, goTests)
+			} else if run := goTests[0]; run.Args != wantLintTestArgs || run.After != len(runs) {
+				t.Errorf("make lint called go %q after %d of %d linter runs, want go %q after all of them",
+					run.Args, run.After, len(runs), wantLintTestArgs)
+			} else if run.GOOS != "" || run.GOARCH != "" || run.CGOEnabled != "" {
+				t.Errorf("make lint ran test/lint with GOOS=%q GOARCH=%q CGO_ENABLED=%q, want all three unset, so it runs for the host",
+					run.GOOS, run.GOARCH, run.CGOEnabled)
+			}
+
+			// Every release target plus the native run, so a make lint that
+			// stops at the first failure leaves a run out and says so here
+			// as well as through the lists below.
+			if len(runs) != len(wantRelease)+1 {
+				t.Errorf("make lint recorded %d runs of golangci-lint, want %d: one per release target plus the native run\n%s",
+					len(runs), len(wantRelease)+1, formatRuns(runs))
+			}
+
+			// A run's CGO_ENABLED=0 places it on a release target and any
+			// other value, the host's default included, places it on the
+			// native one; together the two lists must account for every run.
+			var release []string
+
+			var native []lintRun
+
+			for _, run := range runs {
+				if run.Args != wantArgs {
+					t.Errorf("the %q/%q run with CGO_ENABLED=%q was called with %q, want exactly %q: a run must wait for golangci-lint's lock, and no flag may override the e2e and integration build tags .golangci.yml sets",
+						run.GOOS, run.GOARCH, run.CGOEnabled, run.Args, wantArgs)
+				}
+
+				if run.GOFLAGS != wantGOFLAGS {
+					t.Errorf("the %q/%q run with CGO_ENABLED=%q has GOFLAGS=%q, want exactly %q: a GOFLAGS of the developer's, exported or in the go env file, could add a build tag and take files out of lint",
+						run.GOOS, run.GOARCH, run.CGOEnabled, run.GOFLAGS, wantGOFLAGS)
+				}
+
+				if run.GOExperiment != "" {
+					t.Errorf("the %q/%q run with CGO_ENABLED=%q has GOEXPERIMENT=%q, want it empty: the release builds no experiment, and an experiment decides which files the run type-checks",
+						run.GOOS, run.GOARCH, run.CGOEnabled, run.GOExperiment)
+				}
+
+				if run.GOWORK != "off" {
+					t.Errorf("the %q/%q run with CGO_ENABLED=%q has GOWORK=%q, want %q: a go.work in a parent directory, or one GOWORK names, would switch the run into workspace mode and lint other modules' view of this one",
+						run.GOOS, run.GOARCH, run.CGOEnabled, run.GOWORK, "off")
+				}
+
+				if run.GOAMD64 != "" && run.GOAMD64 != "v1" {
+					t.Errorf("the %q/%q run with CGO_ENABLED=%q has GOAMD64=%q, want empty or %q, the level the release builds at",
+						run.GOOS, run.GOARCH, run.CGOEnabled, run.GOAMD64, "v1")
+				}
+
+				if run.GOARM64 != "" && run.GOARM64 != "v8.0" {
+					t.Errorf("the %q/%q run with CGO_ENABLED=%q has GOARM64=%q, want empty or %q, the level the release builds at",
+						run.GOOS, run.GOARCH, run.CGOEnabled, run.GOARM64, "v8.0")
+				}
+
+				if run.CGOEnabled == "0" {
+					release = append(release, run.GOOS+"/"+run.GOARCH)
+
+					continue
+				}
+
+				native = append(native, run)
+			}
+
+			slices.Sort(release)
+
+			if diff := cmp.Diff(wantRelease, release); diff != "" {
+				t.Errorf("runs with CGO_ENABLED=0 (-want +got):\n%s\nrecorded runs:\n%s",
+					diff, formatRuns(runs))
+			}
+
+			if len(native) != 1 {
+				t.Errorf("%d runs without CGO_ENABLED=0, want exactly one native run with cgo at the host's default:\n%s",
+					len(native), formatRuns(runs))
+			} else if run := native[0]; run.GOOS != runtime.GOOS || run.GOARCH != runtime.GOARCH {
+				// The native run is the one make test's -race build compiles, so
+				// it takes the host's platform: a run that left GOOS or GOARCH
+				// empty would lint whatever platform it happens to be on, and
+				// one that named another platform is a release run. A native run
+				// with CGO_ENABLED=0 is a release run to this test, so it lands
+				// in the release list, which then holds a platform twice or
+				// misses one, and fails the diff above.
+				t.Errorf("the native run has GOOS=%q GOARCH=%q, want the host's %q/%q:\n%s",
+					run.GOOS, run.GOARCH, runtime.GOOS, runtime.GOARCH, formatRuns(runs))
+			}
+
+			// An earlier probe saw an entry of a GOOS=windows run hide the
+			// darwin result, so each run gets a cache directory of its own.
+			seen := make(map[string]bool, len(runs))
+
+			for _, run := range runs {
+				if run.Cache == "" {
+					t.Errorf("the %q/%q run recorded no GOLANGCI_LINT_CACHE, so it may share a cache with another target:\n%s",
+						run.GOOS, run.GOARCH, formatRuns(runs))
+
+					continue
+				}
+
+				if seen[run.Cache] {
+					t.Errorf("two runs share GOLANGCI_LINT_CACHE %q:\n%s", run.Cache, formatRuns(runs))
+				}
+
+				seen[run.Cache] = true
+
+				if cacheRoot != "" && filepath.Dir(run.Cache) != cacheRoot {
+					t.Errorf("the %q/%q run used GOLANGCI_LINT_CACHE %q, which is not a direct child of %q",
+						run.GOOS, run.GOARCH, run.Cache, cacheRoot)
+				}
+			}
+		})
+	}
+}
+
+// writeFakeLinter writes the fake golangci-lint into dir, executable, so make
+// lint finds it on the PATH the test builds.
+func writeFakeLinter(t *testing.T, dir string) {
+	t.Helper()
+
+	path := filepath.Join(dir, "golangci-lint")
+
+	//nolint:gosec // the fake linter must be executable
+	if err := os.WriteFile(path, []byte(fakeLinter), 0o700); err != nil {
+		t.Fatalf("write the fake golangci-lint: %v", err)
+	}
+}
+
+// writeFakeGo writes the fake go into dir, executable, delegating every call
+// but go test to the go command the test finds on PATH.
+func writeFakeGo(t *testing.T, dir string) {
+	t.Helper()
+
+	realGo, err := exec.LookPath("go")
+	if err != nil {
+		t.Fatalf("find go on PATH: %v", err)
+	}
+
+	realGo, err = filepath.Abs(realGo)
+	if err != nil {
+		t.Fatalf("resolve the go command: %v", err)
+	}
+
+	if strings.Contains(realGo, "'") {
+		t.Fatalf("the go command's path %q holds a single quote, which the fake go cannot quote", realGo)
+	}
+
+	//nolint:gosec // the fake go must be executable
+	if err := os.WriteFile(filepath.Join(dir, "go"), []byte(fmt.Sprintf(fakeGo, "'"+realGo+"'")), 0o700); err != nil {
+		t.Fatalf("write the fake go: %v", err)
+	}
+}
+
+// runMakeLint runs make lint in root and returns its combined output and error.
+// Its environment is the test's own minus what would decide the platform, the
+// linter cache or the build flags of every run, with env set on top.
+func runMakeLint(t *testing.T, root string, env map[string]string) ([]byte, error) {
+	t.Helper()
+
+	makePath, err := exec.LookPath("make")
+	if err != nil {
+		t.Fatalf("find make on PATH: %v; CI runs this test through make cover, so make is installed there", err)
+	}
+
+	cmd := exec.CommandContext(t.Context(), makePath, "-s", "-C", root, "lint")
+	cmd.Env = makeEnv(env)
+
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		return out, fmt.Errorf("make -s -C %s lint: %w", root, err)
+	}
+
+	return out, nil
+}
+
+// makeEnv returns make's environment: the inherited one without the variables
+// that would pick a platform, a linter cache, build flags or the linter's own
+// configuration for the runs, with env set on top.
+func makeEnv(env map[string]string) []string {
+	drop := map[string]bool{
+		"MAKEFLAGS": true,
+		"MFLAGS":    true,
+		"MAKELEVEL": true,
+		// GNU make reads both: make ignores its own environment
+		// assignment only in this file, and -e would let an exported
+		// RELEASE_TARGETS replace the Makefile's list.
+		"GNUMAKEFLAGS":        true,
+		"MAKEFILES":           true,
+		"GOOS":                true,
+		"GOARCH":              true,
+		"CGO_ENABLED":         true,
+		"GOLANGCI_LINT_CACHE": true,
+		"GOFLAGS":             true,
+		"GOEXPERIMENT":        true,
+		"GOAMD64":             true,
+		"GOARM64":             true,
+		"GOWORK":              true,
+		// The fake linter's own knobs: what this test sets for its case
+		// is the only thing that may decide which run it fails.
+		"EUSOV_FAKE_LINT_FAIL":   true,
+		"EUSOV_FAKE_LINT_RECORD": true,
+	}
+
+	out := make([]string, 0, len(os.Environ())+len(env))
+
+	for _, entry := range os.Environ() {
+		name, _, _ := strings.Cut(entry, "=")
+		if drop[name] {
+			continue
+		}
+
+		if _, ok := env[name]; ok {
+			continue
+		}
+
+		out = append(out, entry)
+	}
+
+	for name, value := range env {
+		out = append(out, name+"="+value)
+	}
+
+	return out
+}
+
+// readLintRecord reads the lines the fake linter and the fake go appended: the
+// linter runs in the order make made them, and every go test call with how
+// many linter runs came before it.
+func readLintRecord(t *testing.T, path string) ([]lintRun, []goTestRun) {
+	t.Helper()
+
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read the fake linter's record: %v", err)
+	}
+
+	trimmed := strings.TrimSuffix(string(data), "\n")
+	if trimmed == "" {
+		t.Fatal("make lint recorded no call of golangci-lint, so its lint target did not run the linter")
+	}
+
+	lines := strings.Split(trimmed, "\n")
+
+	runs := make([]lintRun, 0, len(lines))
+
+	var goTests []goTestRun
+
+	for i, line := range lines {
+		if rest, ok := strings.CutPrefix(line, "#go\t"); ok {
+			fields := strings.SplitN(rest, "\t", 4)
+			if len(fields) != 4 {
+				t.Fatalf("record line %d = %q, want #go and 4 tab-separated fields: GOOS, GOARCH, CGO_ENABLED and the arguments", i+1, line)
+			}
+
+			goTests = append(goTests, goTestRun{
+				After: len(runs), GOOS: fields[0], GOARCH: fields[1], CGOEnabled: fields[2], Args: fields[3],
+			})
+
+			continue
+		}
+
+		fields := strings.Split(line, "\t")
+		if len(fields) != 10 {
+			t.Fatalf("record line %d = %q, want 10 tab-separated fields: GOOS, GOARCH, CGO_ENABLED, GOLANGCI_LINT_CACHE, GOFLAGS, GOEXPERIMENT, GOAMD64, GOARM64, GOWORK and the arguments",
+				i+1, line)
+		}
+
+		runs = append(runs, lintRun{
+			GOOS:         fields[0],
+			GOARCH:       fields[1],
+			CGOEnabled:   fields[2],
+			Cache:        fields[3],
+			GOFLAGS:      fields[4],
+			GOExperiment: fields[5],
+			GOAMD64:      fields[6],
+			GOARM64:      fields[7],
+			GOWORK:       fields[8],
+			Args:         fields[9],
+		})
+	}
+
+	return runs, goTests
+}
+
+// formatRuns renders the recorded runs, one per line, for an assertion message.
+func formatRuns(runs []lintRun) string {
+	lines := make([]string, 0, len(runs))
+
+	for _, run := range runs {
+		lines = append(lines, fmt.Sprintf("GOOS=%q GOARCH=%q CGO_ENABLED=%q GOLANGCI_LINT_CACHE=%q GOFLAGS=%q GOEXPERIMENT=%q GOAMD64=%q GOARM64=%q GOWORK=%q args=%q",
+			run.GOOS, run.GOARCH, run.CGOEnabled, run.Cache, run.GOFLAGS, run.GOExperiment, run.GOAMD64, run.GOARM64, run.GOWORK, run.Args))
+	}
+
+	return strings.Join(lines, "\n")
+}
+
+// hostCGO returns go env CGO_ENABLED in root, in the environment make lint
+// runs in: the host's default, with no CGO_ENABLED of the test's.
+func hostCGO(t *testing.T, root string) string {
+	t.Helper()
+
+	cmd := exec.CommandContext(t.Context(), "go", "env", "CGO_ENABLED")
+	cmd.Dir = root
+	cmd.Env = makeEnv(nil)
+
+	out, err := cmd.Output()
+	if err != nil {
+		t.Fatalf("go env CGO_ENABLED: %v", err)
+	}
+
+	return strings.TrimSpace(string(out))
+}

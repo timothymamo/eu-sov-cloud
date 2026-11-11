@@ -1,7 +1,8 @@
 version: "2"
 
 # The files behind these build tags are loaded, so every lint run (make lint,
-# make check, CI) lints the e2e tests in test/e2e and the integration tests,
+# make check, CI, each of which lints every release target with cgo off and the
+# host natively) lints the e2e tests in test/e2e and the integration tests,
 # which run with real read-only cloud credentials. What applies to them:
 #   - gosec runs on every _test.go file except for G204 and G304, which tests
 #     trip by design (see the exclusion rules at the end of this file).
@@ -71,6 +72,11 @@ linters:
         # reads the TZ environment variable and /etc/localtime: time.Parse of
         # a value with a zone offset, time.ParseInLocation(..., time.Local)
         # or Time.Local(). Review holds that line.
+        #
+        # test/architecture reads every strict rule's files: and allow: lists
+        # and checks the rule package by package (ADR 0011): write a strict
+        # rule's directories as "**/<dir>/**" with "!$test", or give it a
+        # reasoned skip there.
         domain-is-pure:
           list-mode: strict
           files:

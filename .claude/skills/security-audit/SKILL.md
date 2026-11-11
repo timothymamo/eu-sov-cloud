@@ -15,7 +15,8 @@ as `git -C <path> ...`, never `cd <path> && git ...`. Write the worktree path ou
 in a shell variable. After `git -C <path> fetch origin`:
 
 - `govulncheck ./...` (reachable vulnerabilities in code and dependencies)
-- `golangci-lint run --enable-only gosec`
+- `make lint`: gosec runs with the other enabled linters natively and for every release target, so a
+  file only one platform builds is checked too; gosec's issues end in `(gosec)`
 - `git -C <path> diff origin/main...HEAD -- go.mod go.sum` for every new or bumped dependency
 
 ## Checklist

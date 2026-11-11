@@ -107,6 +107,7 @@ internal/
   testutil/                   Test-only helpers (golden files, fixtures)
 test/e2e/                     Black-box tests of the built binary
 test/lint/                    Source rules golangci-lint cannot express
+test/architecture/            Layer dependencies checked package by package, per release target
 testdata/                     Shared, sanitised fixtures
 docs/                         Architecture, ADRs, dev environment
 prds/                         Product requirements, one per feature
@@ -173,4 +174,8 @@ Details, including credentials and why Lima rather than devbox:
 
 ## License
 
-To be decided.
+`eusov` is licensed under the [MIT License](LICENSE).
+
+The sources cited in `internal/adapter/target/*/SOURCES.md` keep their own licences, which each
+`SOURCES.md` states. The embedded catalog snapshots hold only facts taken from them (names, taxonomy
+terms, region codes) and brief attributed quotations, so they are not relicensed by this project.

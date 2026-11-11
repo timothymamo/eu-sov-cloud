@@ -43,10 +43,18 @@ Arrows are imports. They point inwards only:
   Only `cmd/eusov` imports it.
 - **`cmd/eusov`** is the only place that constructs adapters and injects them.
 
-The rule is enforced by `depguard` in `.golangci.yml`, so `make lint` fails on a violating import.
+The rule is enforced by `depguard` in `.golangci.yml`, so `make lint`, which lints the host natively and
+then every GOOS/GOARCH `.goreleaser.yaml` builds with cgo off, fails on a violating import.
 A comment cannot switch it off: every file is linted, also one that looks generated, and `test/lint`
 fails on any nolint directive that would hide a depguard issue (one naming `depguard`, `all` or no
-linter).
+linter). Nor can a file name: `test/architecture` checks every directory a strict depguard rule names
+(the domain, the application layer, the snapshot reader, the adapter helpers, the inventory file
+reader and the targets that embed a snapshot) package by package, for every platform
+`.goreleaser.yaml` builds. It reads those directories from `.golangci.yml`, lists them with `go list`
+and holds each package to the allow list of every rule that covers it, and it holds every package of the module in the
+release binary to Go sources in their own directory, so assembly, cgo, line directives and symlinked
+directories cannot get past the file-name-based rules
+([ADR 0011](adr/0011-check-layer-dependencies-by-package-for-every-release-target.md)).
 
 ## Domain model
 
@@ -92,7 +100,7 @@ its expectations itself: its display name, its EU regions and the categories its
 | Golden | Report and CLI output | `testdata/*.golden` | yes |
 | Integration | Real provider APIs, read-only | `//go:build integration` | no (manual, credentials) |
 | E2E | The built binary against fixtures | `test/e2e`, `//go:build e2e` | yes |
-| Source rules | Rules on the Go source that golangci-lint cannot express | `test/lint` | yes |
+| Source rules | Rules on the Go source and its packages that golangci-lint cannot express | `test/lint`, `test/architecture` | yes |
 
 Most tests sit in the domain, where they are fast and need no fakes. Adapters are tested against
 recorded, sanitised API responses through the contract suites, so adding a provider means passing an
