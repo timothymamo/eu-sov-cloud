@@ -49,7 +49,7 @@ var ErrUnknownCapability = errors.New("unknown capability")
 // retired maps a value that ADR 0011 removed from the vocabulary to the
 // capabilities that replace it, so the error for it can say what to write
 // instead. It is read-only.
-var retired = map[string][]Capability{
+var retired = map[Capability][]Capability{
 	"high-availability": {NodeHighAvailability, ZoneHighAvailability},
 }
 
@@ -79,7 +79,7 @@ var implications = map[Capability][]Capability{
 // retired value is refused too, and its error names the capabilities that
 // replace it.
 func ParseCapability(s string) (Capability, error) {
-	if replacements, ok := retired[s]; ok {
+	if replacements, ok := retired[Capability(s)]; ok {
 		quoted := make([]string, len(replacements))
 		for i, r := range replacements {
 			quoted[i] = text.Quote(string(r))
