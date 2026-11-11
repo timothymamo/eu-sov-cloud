@@ -632,13 +632,20 @@ func TestJSONSchemaValidatorRefusesUnsupportedSchema(t *testing.T) {
 	}
 }
 
+// e2eGoldenDir is where the binary's end-to-end goldens live, relative to this
+// package's directory: they are documents of the same format, written by the same
+// reporters through the CLI, so the schemas must accept them too.
+const e2eGoldenDir = "../../../../test/e2e/testdata"
+
 // TestGoldenDocumentsMatchSchema validates every golden document against the
 // schema of its kind: the goldens are the specification of the format, so a
-// document the schema refuses is not the format the repository ships.
+// document the schema refuses is not the format the repository ships. The
+// binary's end-to-end goldens are validated too, through the relative path from
+// this package, so the format the CLI writes is the format the schema describes.
 func TestGoldenDocumentsMatchSchema(t *testing.T) {
 	t.Parallel()
 
-	tests := []struct {
+	patterns := []struct {
 		name       string
 		pattern    string
 		schemaFile string
@@ -647,11 +654,34 @@ func TestGoldenDocumentsMatchSchema(t *testing.T) {
 		{name: "comparison documents", pattern: "comparison*.golden", schemaFile: "comparison-v1.schema.json"},
 	}
 
-	for _, test := range tests {
+	// The end-to-end goldens, which the CLI wrote: the fixtures' documents of both
+	// kinds, and the hostile inventory's assessment, whose values the format has to
+	// write as JSON strings.
+	e2eGoldens := []struct {
+		name       string
+		golden     string
+		schemaFile string
+	}{
+		{
+			name:       "an end-to-end assessment",
+			golden:     "assess-ovhcloud-json.golden",
+			schemaFile: "assessment-v1.schema.json",
+		},
+		{
+			name:       "an end-to-end comparison",
+			golden:     "assess-all-json.golden",
+			schemaFile: "comparison-v1.schema.json",
+		},
+		{
+			name:       "an end-to-end assessment of hostile values",
+			golden:     "assess-hostile-json.golden",
+			schemaFile: "assessment-v1.schema.json",
+		},
+	}
+
+	for _, test := range patterns {
 		t.Run(test.name, func(t *testing.T) {
 			t.Parallel()
-
-			s := readSchema(t, filepath.Join("schema", test.schemaFile))
 
 			goldens, err := filepath.Glob(filepath.Join("testdata", test.pattern))
 			if err != nil {
@@ -667,22 +697,40 @@ func TestGoldenDocumentsMatchSchema(t *testing.T) {
 				t.Run(filepath.Base(path), func(t *testing.T) {
 					t.Parallel()
 
-					data, err := os.ReadFile(path)
-					if err != nil {
-						t.Fatalf("read the golden file %s: %v", path, err)
-					}
-
-					var document any
-					if err := json.Unmarshal(data, &document); err != nil {
-						t.Fatalf("%s is not valid JSON: %v", path, err)
-					}
-
-					for _, problem := range s.validate(document, "$") {
-						t.Errorf("%s does not match schema/%s: %s", path, test.schemaFile, problem)
-					}
+					checkGoldenAgainstSchema(t, path, test.schemaFile)
 				})
 			}
 		})
+	}
+
+	for _, test := range e2eGoldens {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+
+			checkGoldenAgainstSchema(t, filepath.Join(e2eGoldenDir, test.golden), test.schemaFile)
+		})
+	}
+}
+
+// checkGoldenAgainstSchema fails the test when the golden document at path does
+// not match the named schema of this package.
+func checkGoldenAgainstSchema(t *testing.T, path, schemaFile string) {
+	t.Helper()
+
+	s := readSchema(t, filepath.Join("schema", schemaFile))
+
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read the golden file %s: %v", path, err)
+	}
+
+	var document any
+	if err := json.Unmarshal(data, &document); err != nil {
+		t.Fatalf("%s is not valid JSON: %v", path, err)
+	}
+
+	for _, problem := range s.validate(document, "$") {
+		t.Errorf("%s does not match schema/%s: %s", path, schemaFile, problem)
 	}
 }
 
