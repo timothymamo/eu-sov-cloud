@@ -54,8 +54,13 @@
 //     memory at once; WithBodyReadTimeout (default 30 seconds) bounds how long
 //     reading one body may hold its slot. A body that cannot be read in full
 //     in time, or at all, is 400 invalid_request with Connection: close, and
-//     the server closes the connection after the answer. The composition root
-//     must still set the server's ReadHeaderTimeout and ReadTimeout.
+//     the server closes the connection after the answer. The handler sets the
+//     connection's read deadline for the body and clears it once the body is
+//     read, so for POST /v1/assessments the body's bound is
+//     WithBodyReadTimeout, measured from when the slot is taken, and replaces
+//     the server's ReadTimeout. The composition root must still set the
+//     server's ReadHeaderTimeout and ReadTimeout, and pass a
+//     WithBodyReadTimeout no greater than its ReadTimeout.
 //   - The body is read through http.MaxBytesReader, capped at the limit
 //     WithMaxBodyBytes sets (the composition root passes
 //     assessmentrequest.MaxBodySize, the inventory reader's cap plus 64 KiB);

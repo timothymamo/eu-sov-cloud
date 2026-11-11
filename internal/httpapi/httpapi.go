@@ -113,7 +113,9 @@ func WithMaxConcurrent(n int) Option {
 
 // WithBodyReadTimeout bounds how long reading the body of one POST
 // /v1/assessments may hold its slot, from the moment the slot is taken; past
-// it the read fails and the slot is freed. A value below or equal to 0 keeps
+// it the read fails and the slot is freed. It replaces the connection's read
+// deadline, and so the server's ReadTimeout, for that body: a caller passes a
+// value no greater than its ReadTimeout. A value below or equal to 0 keeps
 // the default, 30 seconds.
 func WithBodyReadTimeout(d time.Duration) Option {
 	return func(c *config) {

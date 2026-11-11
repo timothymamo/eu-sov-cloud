@@ -138,7 +138,10 @@ the one source of truth for the report.
   once, whatever the clients send. The trade-off: a slow upload holds a slot while it trickles in, and N
   slow clients can keep everyone else at 503. `WithBodyReadTimeout` (default 30 s) bounds how long
   reading one body may hold its slot; past it the request is 400 `invalid_request` with
-  `Connection: close`, the server closes the connection and the slot is freed. Taking the slot
+  `Connection: close`, the server closes the connection and the slot is freed. The handler sets the
+  connection's read deadline for the body through `http.ResponseController` and clears it once the
+  body is read, which replaces the server's `ReadTimeout`: for `POST /v1/assessments` the body's bound
+  is `WithBodyReadTimeout`, measured from when the slot is taken, not `ReadTimeout`. Taking the slot
   after the body would free slots from slow clients but put no bound on memory, which the cap exists
   for. The body is read through `http.MaxBytesReader` up to `MaxBodySize` (413 over it) and decoded
   strictly (400 for an unknown key, a duplicate key or trailing data).
@@ -188,11 +191,15 @@ handler with no listener of its own. Milestone 3 **must** also:
 
 - set `http.Server.ReadHeaderTimeout` and `ReadTimeout`: `WithBodyReadTimeout` bounds a body only once
   the handler runs, and a client that is slow to send its headers holds a connection, not a slot;
+- pass a `WithBodyReadTimeout` no greater than its `ReadTimeout`: the body deadline replaces the
+  server's for `POST /v1/assessments`, so a greater one would let an assessment body take longer than
+  the server allows any other request;
 - treat a token source that is configured but empty (an empty variable, an empty file) as a startup
   error, and trim the white space around a token read from a file, which ends with a line feed as
   editors write it;
 - set `WithAllowedHosts` (to `localhost` and the loopback addresses with the port) whenever it listens
-  on loopback without a token, the case DNS rebinding attacks;
+  on loopback without a token, the case DNS rebinding attacks, and treat an empty resolved host list in
+  that case as a startup error, never as "any host";
 - size the concurrency default against memory and `GOMEMLIMIT`, not only the number of CPUs, using the
   benchmark `BenchmarkMaximalAllComparison` in `test/apiparity` for one request's peak;
 - check end to end that the built `eusov` and `eusov-server` binaries give the same bytes for the same
