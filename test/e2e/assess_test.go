@@ -20,10 +20,11 @@ import (
 )
 
 const (
-	// ovhcloudKey and scalewayKey are the --target keys the composition root
-	// wires: the targets the binary offers.
+	// ovhcloudKey, scalewayKey and upcloudKey are the --target keys the
+	// composition root wires: the targets the binary offers.
 	ovhcloudKey = "ovhcloud"
 	scalewayKey = "scaleway"
+	upcloudKey  = "upcloud"
 	// errPrefix is how the binary writes an error to stderr.
 	errPrefix = "eusov: "
 	// maxErrorLine is the longest error line the binary may write: the cap on
@@ -74,6 +75,13 @@ func targets() []targetCase {
 			sourceURL:   "https://www.scaleway.com/en/docs/",
 			retrievedOn: "2026-11-11",
 			golden:      "assess-scaleway.golden",
+		},
+		{
+			key:         upcloudKey,
+			name:        "UpCloud",
+			sourceURL:   "https://upcloud.com/docs/",
+			retrievedOn: "2026-11-11",
+			golden:      "assess-upcloud.golden",
 		},
 	}
 }
@@ -263,80 +271,103 @@ func TestAssessOutput(t *testing.T) {
 }
 
 // TestAssessFitCoverage pins that the shared fixture exercises every fit against
-// OVHcloud: a direct match, a partial match, a fit of none because OVHcloud
-// serves no offering in the resource's category, and the unclassified resource.
-// Without it a fixture edit could quietly stop exercising a fit and every other
-// test here would still pass.
+// the targets that serve no offering in a category it holds: a direct match, a
+// partial match, a fit of none because the target serves no offering in the
+// resource's category, and the unclassified resource. Without it a fixture edit
+// could quietly stop exercising a fit and every other test here would still
+// pass.
+//
+// Scaleway is left out: its catalog serves every category the fixture holds, so
+// the fit of none from a category has nothing to pin there.
 func TestAssessFitCoverage(t *testing.T) {
 	t.Parallel()
 
-	got := assess(t, ovhcloudKey, filepath.Join("testdata", "inventory.json"))
-
-	if got.code != 0 {
-		t.Fatalf("exit code = %d, want 0; stderr = %q", got.code, got.stderr)
+	cases := []struct {
+		key  string
+		name string
+		// unserved is a category the target serves no offering in: neither
+		// OVHcloud (PRD #11) nor UpCloud (PRD #77) serves a category for AWS
+		// Lambda functions.
+		unserved string
+	}{
+		{key: ovhcloudKey, name: "OVHcloud", unserved: "serverless.function"},
+		{key: upcloudKey, name: "UpCloud", unserved: "serverless.function"},
 	}
 
-	rows := resourceRows(t, got.stdout)
+	for _, tc := range cases {
+		t.Run(tc.key, func(t *testing.T) {
+			t.Parallel()
 
-	// The fits the report counts, as the summary table writes them.
-	fits := make(map[string]int, len(rows))
-	for _, row := range rows {
-		fits[row.fit]++
-	}
+			got := assess(t, tc.key, filepath.Join("testdata", "inventory.json"))
 
-	for _, want := range []string{"direct", "partial", "none"} {
-		if fits[want] == 0 {
-			t.Errorf("no resource has fit %q; the fixture must exercise every fit:\n%s", want, got.stdout)
-		}
-	}
-
-	var (
-		// unserved is a row in a category OVHcloud serves no offering in: the
-		// fixture's serverless.function resource (PRD #11).
-		unserved bool
-		// unclassified is the fixture's resource outside the taxonomy.
-		unclassified bool
-	)
-
-	for _, row := range rows {
-		switch row.category {
-		case "serverless.function":
-			unserved = true
-
-			if row.fit != "none" {
-				t.Errorf("the %s row has fit %q, want %q: OVHcloud serves no such category",
-					row.id, row.fit, "none")
+			if got.code != 0 {
+				t.Fatalf("exit code = %d, want 0; stderr = %q", got.code, got.stderr)
 			}
 
-			// The reason says what is missing, never that the resource is
-			// unclassified, and it names the target's own catalog.
-			for _, want := range []string{"no offering in the", "OVHcloud", "serverless.function"} {
-				if !strings.Contains(row.reason, want) {
-					t.Errorf("the %s reason %q, want it to name %q", row.id, row.reason, want)
+			rows := resourceRows(t, got.stdout)
+
+			// The fits the report counts, as the summary table writes them.
+			fits := make(map[string]int, len(rows))
+			for _, row := range rows {
+				fits[row.fit]++
+			}
+
+			for _, want := range []string{"direct", "partial", "none"} {
+				if fits[want] == 0 {
+					t.Errorf("no resource has fit %q against %s; the fixture must exercise every fit:\n%s",
+						want, tc.name, got.stdout)
 				}
 			}
-		case "unclassified":
-			unclassified = true
 
-			if row.fit != "none" {
-				t.Errorf("the %s row has fit %q, want %q: it is not classified",
-					row.id, row.fit, "none")
+			var (
+				// unserved is a row in a category the target serves no offering
+				// in: the fixture's serverless.function resources.
+				unserved bool
+				// unclassified is the fixture's resource outside the taxonomy.
+				unclassified bool
+			)
+
+			for _, row := range rows {
+				switch row.category {
+				case tc.unserved:
+					unserved = true
+
+					if row.fit != "none" {
+						t.Errorf("the %s row has fit %q, want %q: %s serves no such category",
+							row.id, row.fit, "none", tc.name)
+					}
+
+					// The reason says what is missing, never that the resource is
+					// unclassified, and it names the target's own catalog.
+					for _, want := range []string{"no offering in the", tc.name, tc.unserved} {
+						if !strings.Contains(row.reason, want) {
+							t.Errorf("the %s reason %q, want it to name %q", row.id, row.reason, want)
+						}
+					}
+				case "unclassified":
+					unclassified = true
+
+					if row.fit != "none" {
+						t.Errorf("the %s row has fit %q, want %q: it is not classified",
+							row.id, row.fit, "none")
+					}
+
+					if !strings.Contains(row.reason, "not classified") {
+						t.Errorf("the %s reason %q, want it to say the resource is not classified",
+							row.id, row.reason)
+					}
+				}
 			}
 
-			if !strings.Contains(row.reason, "not classified") {
-				t.Errorf("the %s reason %q, want it to say the resource is not classified",
-					row.id, row.reason)
+			if !unserved {
+				t.Errorf("no %s row; the fixture must hold one for the none-from-category fit:\n%s",
+					tc.unserved, got.stdout)
 			}
-		}
-	}
 
-	if !unserved {
-		t.Errorf("no serverless.function row; the fixture must hold one for the none-from-category fit:\n%s",
-			got.stdout)
-	}
-
-	if !unclassified {
-		t.Errorf("no unclassified row; the fixture must hold one:\n%s", got.stdout)
+			if !unclassified {
+				t.Errorf("no unclassified row; the fixture must hold one:\n%s", got.stdout)
+			}
+		})
 	}
 }
 
@@ -387,9 +418,9 @@ func TestAssessReportShape(t *testing.T) {
 }
 
 // TestAssessReportsDoNotCrossName pins that a report names only its own target:
-// the OVHcloud report never says "Scaleway" and the Scaleway report never says
-// "OVHcloud", in any case. An adapter serving the wrong snapshot, or a sentence
-// built from the wrong catalog, shows up here.
+// no target's report says the name of another target, in any case. An adapter
+// serving the wrong snapshot, or a sentence built from the wrong catalog, shows
+// up here.
 func TestAssessReportsDoNotCrossName(t *testing.T) {
 	t.Parallel()
 
@@ -465,8 +496,9 @@ func hostileValues() []string {
 // assessed, so they are the same for every target; each case runs against all
 // of them. Input errors are raised before a catalog is loaded, so they name no
 // target; the one error that names a target, a catalog load failure, is pinned
-// per adapter in internal/adapter/target/ovhcloud/ovhcloud_test.go and
-// internal/adapter/target/scaleway/scaleway_test.go.
+// per adapter in internal/adapter/target/ovhcloud/ovhcloud_test.go,
+// internal/adapter/target/scaleway/scaleway_test.go and
+// internal/adapter/target/upcloud/upcloud_test.go.
 func TestAssessErrors(t *testing.T) {
 	t.Parallel()
 
@@ -557,8 +589,9 @@ func TestAssessErrors(t *testing.T) {
 				// no target at all and this loop cannot fail today: it is a cheap
 				// guard, not a pin on a message that mentions a target. The one
 				// error that names a target, a catalog load failure, is pinned per
-				// adapter in internal/adapter/target/ovhcloud/ovhcloud_test.go and
-				// internal/adapter/target/scaleway/scaleway_test.go.
+				// adapter in internal/adapter/target/ovhcloud/ovhcloud_test.go,
+				// internal/adapter/target/scaleway/scaleway_test.go and
+				// internal/adapter/target/upcloud/upcloud_test.go.
 				for _, other := range targets() {
 					if other.key == target.key {
 						continue
@@ -581,8 +614,8 @@ func TestAssessErrors(t *testing.T) {
 
 // TestAssessUsage pins the usage errors of the binary: exit code 2, usage text on
 // stderr, nothing on stdout, and every supported target named, sorted, for an
-// unknown one. The usage text lists `ovhcloud, scaleway` as valid values by
-// design; that is a list of choices, not one target naming another.
+// unknown one. The usage text lists `ovhcloud, scaleway, upcloud` as valid values
+// by design; that is a list of choices, not one target naming another.
 func TestAssessUsage(t *testing.T) {
 	t.Parallel()
 
@@ -606,8 +639,8 @@ func TestAssessUsage(t *testing.T) {
 				"assess", "--inventory", filepath.Join("testdata", "inventory.json"),
 				"--target", "nope",
 			},
-			wantStderr:    []string{ovhcloudKey, scalewayKey},
-			wantFirstLine: []string{ovhcloudKey + ", " + scalewayKey},
+			wantStderr:    []string{ovhcloudKey, scalewayKey, upcloudKey},
+			wantFirstLine: []string{ovhcloudKey + ", " + scalewayKey + ", " + upcloudKey},
 		},
 		{
 			name: "unknown flag",
@@ -942,7 +975,7 @@ func codeSpanText(cell string) string {
 	return cell
 }
 
-// reportShape is what the reports of one inventory for two targets must share:
+// reportShape is what the reports of one inventory for every target must share:
 // the labels of the preamble that names the inventory, the source and the
 // catalog, the headings in order, the header row of every table, the labels of
 // the Summary rows in order, and the resource IDs of the Resources table in
