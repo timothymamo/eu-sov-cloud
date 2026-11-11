@@ -46,9 +46,22 @@ param:
   # gh from its release, not Ubuntu's package: `gh attestation verify` needs gh 2.49 or later.
   # renovate: datasource=github-releases depName=cli/cli
   ghVersion: "v2.103.3"
+  # SHA-256 of gh_<version>_linux_<arch>.tar.gz, per architecture: what authenticates gh (ADR 0017).
+  # Renovate moves each digestVersion and digest together with ghVersion, in one PR; a digest left
+  # behind fails provisioning.
+  # renovate: datasource=github-release-attachments depName=cli/cli digestVersion=v2.103.3
+  ghSha256Amd64: "4c806978ffce1cec70853302a56d70ac6da4f19bae7adca4e1a8ab00633dd91d"
+  # renovate: datasource=github-release-attachments depName=cli/cli digestVersion=v2.103.3
+  ghSha256Arm64: "ee32df2323c8847f5fac6cb6b4b69ca75828e9329a8f22f677021f7b3306ce63"
   # cosign v3 or later reads the release's signature bundles (README, "Verify the image").
   # renovate: datasource=github-releases depName=sigstore/cosign
   cosignVersion: "v3.1.4"
+  # SHA-256 of cosign-linux-<arch>, per architecture: the first cosign has no trusted cosign to verify
+  # it, so it is pinned here, then checks its own keyless signature. Updated like the gh digests.
+  # renovate: datasource=github-release-attachments depName=sigstore/cosign digestVersion=v3.1.4
+  cosignSha256Amd64: "424e2c97d0b45fd7a6b608a87f090f35633f4c23ece5f092d48bba11aaf4bbfa"
+  # renovate: datasource=github-release-attachments depName=sigstore/cosign digestVersion=v3.1.4
+  cosignSha256Arm64: "ade83b7aac62e131cacfe96d958948b2150cc9efec46a570a2649b8e27dedad2"
   # nerdctl-full: nerdctl, containerd, BuildKit, RootlessKit, runc and CNI plugins, run rootless.
   # renovate: datasource=github-releases depName=containerd/nerdctl
   nerdctlVersion: "v2.4.1"
@@ -75,6 +88,20 @@ provision:
       fi
 
       arch="$(dpkg --print-architecture)" # amd64 | arm64, matching Go's naming
+
+      # Stops provisioning unless <file> has the SHA-256 pinned in dev/lima.yaml as param <name><Arch>
+      # (ghSha256Amd64, ...). A version bump whose digests were not updated with it stops here too.
+      check_pinned_sha256() { # <file> <param name without the architecture>
+        local param="PARAM_${2}${arch^}" actual
+        local expected="${!param:-}"
+        actual="$(sha256sum "$1" | cut -d' ' -f1)"
+        if [ -z "${expected}" ] || [ "${actual}" != "${expected}" ]; then
+          echo >&2 "$(basename "$1"): SHA-256 ${actual} does not match ${2}${arch^} (${expected:-not set})" \
+            "in dev/lima.yaml. Not installed. If the version was just bumped and the digest was not, take the" \
+            "new digest from the release only after verifying the asset (docs/dev-environment.md, Updating gh and cosign)."
+          exit 1
+        fi
+      }
       # Go, verified against the published checksum.
       if ! /usr/local/go/bin/go version 2>/dev/null | grep -q "go${PARAM_goVersion} "; then
         tarball="go${PARAM_goVersion}.linux-${arch}.tar.gz"
@@ -103,28 +130,38 @@ provision:
           | sh -s -- -b /usr/local/bin "${PARAM_golangciLintVersion}"
       fi
 
-      # gh release binary, verified against the release checksums.
-      if ! /usr/local/bin/gh --version 2>/dev/null | grep -q "^gh version ${PARAM_ghVersion#v} "; then
-        name="gh_${PARAM_ghVersion#v}_linux_${arch}"
-        base="https://github.com/cli/cli/releases/download/${PARAM_ghVersion}"
-        tmp="$(mktemp -d)"
-        curl -fsSL -o "${tmp}/${name}.tar.gz" "${base}/${name}.tar.gz"
-        curl -fsSL -o "${tmp}/checksums.txt" "${base}/gh_${PARAM_ghVersion#v}_checksums.txt"
-        (cd "${tmp}" && grep " ${name}.tar.gz\$" checksums.txt | sha256sum --check --strict)
-        tar -C "${tmp}" --no-same-owner -xzf "${tmp}/${name}.tar.gz"
-        install -m 0755 "${tmp}/${name}/bin/gh" /usr/local/bin/gh
-        rm -rf "${tmp}"
-      fi
-
-      # cosign release binary, verified against the release checksums.
+      # cosign release binary, pinned by its SHA-256 above and then checked against its own keyless
+      # signature: the release's Sigstore bundle must be signed by the identity sigstore/cosign's release
+      # process signs with (cosign's installation docs), and logged in Rekor. Before gh, so it is trusted
+      # first. Network to Sigstore's TUF repository and Rekor is needed only while this runs.
       if ! /usr/local/bin/cosign version 2>&1 | grep -qE "^GitVersion:[[:space:]]+${PARAM_cosignVersion}\$"; then
         asset="cosign-linux-${arch}"
         base="https://github.com/sigstore/cosign/releases/download/${PARAM_cosignVersion}"
         tmp="$(mktemp -d)"
         curl -fsSL -o "${tmp}/${asset}" "${base}/${asset}"
-        curl -fsSL -o "${tmp}/cosign_checksums.txt" "${base}/cosign_checksums.txt"
-        (cd "${tmp}" && grep " ${asset}\$" cosign_checksums.txt | sha256sum --check --strict)
+        curl -fsSL -o "${tmp}/${asset}.sigstore.json" "${base}/${asset}.sigstore.json"
+        check_pinned_sha256 "${tmp}/${asset}" cosignSha256
+        chmod 0755 "${tmp}/${asset}"
+        if ! "${tmp}/${asset}" verify-blob --bundle "${tmp}/${asset}.sigstore.json" \
+          --certificate-identity keyless@projectsigstore.iam.gserviceaccount.com \
+          --certificate-oidc-issuer https://accounts.google.com "${tmp}/${asset}"; then
+          echo >&2 "cosign ${PARAM_cosignVersion}: ${asset} is not signed by sigstore/cosign's release identity. Not installed."
+          exit 1
+        fi
         install -m 0755 "${tmp}/${asset}" /usr/local/bin/cosign
+        rm -rf "${tmp}"
+      fi
+
+      # gh release binary, pinned by its SHA-256 above. Its attestation cannot be checked here: `gh
+      # attestation verify` needs a trusted gh and a GitHub token (ADR 0017).
+      if ! /usr/local/bin/gh --version 2>/dev/null | grep -q "^gh version ${PARAM_ghVersion#v} "; then
+        name="gh_${PARAM_ghVersion#v}_linux_${arch}"
+        base="https://github.com/cli/cli/releases/download/${PARAM_ghVersion}"
+        tmp="$(mktemp -d)"
+        curl -fsSL -o "${tmp}/${name}.tar.gz" "${base}/${name}.tar.gz"
+        check_pinned_sha256 "${tmp}/${name}.tar.gz" ghSha256
+        tar -C "${tmp}" --no-same-owner -xzf "${tmp}/${name}.tar.gz"
+        install -m 0755 "${tmp}/${name}/bin/gh" /usr/local/bin/gh
         rm -rf "${tmp}"
       fi
 

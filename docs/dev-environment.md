@@ -258,15 +258,53 @@ outside it.
 
 The VM can verify, run and build the eusov image, as the VM user, with no root daemon
 ([ADR 0017](adr/0017-run-a-rootless-container-runtime-in-the-lima-vm.md)). `dev/lima.yaml` installs,
-each pinned under `param:`. Downloads are checked against their release's checksums, and nerdctl-full's
-`SHA256SUMS` also against its GPG signature, from a release manager pinned by fingerprint:
+each pinned under `param:` and authenticated before it is installed:
 
-| Tool | For | Where |
-|---|---|---|
-| nerdctl-full: `nerdctl`, containerd, BuildKit, RootlessKit | pulling, running and building images | `/usr/local/nerdctl` |
-| `cosign` (v3 or later) | the image's signature | `/usr/local/bin` |
-| `gh` from its release | `gh attestation verify`, which Ubuntu's older `gh` lacks | `/usr/local/bin` |
-| `crane` (`go install`, Go checksum database) | resolving a tag to its digest without pulling the image | `/usr/local/bin` |
+| Tool | For | Where | Verified by |
+|---|---|---|---|
+| nerdctl-full: `nerdctl`, containerd, BuildKit, RootlessKit | pulling, running and building images | `/usr/local/nerdctl` | `SHA256SUMS` signed by a release manager pinned by GPG fingerprint |
+| `cosign` (v3 or later) | the image's signature | `/usr/local/bin` | SHA-256 pinned per architecture, then its own keyless signature (Sigstore bundle, sigstore/cosign's release identity) |
+| `gh` from its release | `gh attestation verify`, which Ubuntu's older `gh` lacks | `/usr/local/bin` | SHA-256 pinned per architecture |
+| `crane` | resolving a tag to its digest without pulling the image | `/usr/local/bin` | `go install`, against the Go checksum database |
+
+A download that does not match its pin, or a cosign whose signature does not verify, stops provisioning
+with a message naming the file and the `param:` involved; nothing is installed.
+
+### Updating gh and cosign
+
+Renovate bumps `ghVersion` and `cosignVersion` together with their pinned digests (`ghSha256Amd64`,
+`ghSha256Arm64`, `cosignSha256Amd64`, `cosignSha256Arm64`), in one PR per tool: each digest has a
+`# renovate: datasource=github-release-attachments ... digestVersion=<tag>` comment, and Renovate takes
+the new digest from the new release's checksum file. Check, in the PR, that every `digestVersion`
+equals the new version. If Renovate could not map a digest, it leaves the old one, and the next
+provisioning fails with `does not match ... in dev/lima.yaml`: the bump cannot install an unpinned
+binary. To update a digest by hand, download the asset and check it before pinning it, on a machine
+with a trusted cosign and gh (the Mac, or this VM):
+
+```bash
+v=v3.1.4; a=arm64   # the new version, and amd64 or arm64
+curl -fsSLO "https://github.com/sigstore/cosign/releases/download/${v}/cosign-linux-${a}"
+curl -fsSLO "https://github.com/sigstore/cosign/releases/download/${v}/cosign-linux-${a}.sigstore.json"
+cosign verify-blob --bundle "cosign-linux-${a}.sigstore.json" \
+  --certificate-identity keyless@projectsigstore.iam.gserviceaccount.com \
+  --certificate-oidc-issuer https://accounts.google.com "cosign-linux-${a}"
+sha256sum "cosign-linux-${a}"                      # the value for cosignSha256<Arch>
+
+v=v2.103.3
+curl -fsSLO "https://github.com/cli/cli/releases/download/${v}/gh_${v#v}_linux_${a}.tar.gz"
+gh attestation verify "gh_${v#v}_linux_${a}.tar.gz" -R cli/cli   # needs a GitHub token
+sha256sum "gh_${v#v}_linux_${a}.tar.gz"            # the value for ghSha256<Arch>
+```
+
+A VM installs a tool only when its version changes, so an existing VM keeps the binaries it has:
+recreate it to get, and verify, the pinned ones. After recreating, confirm them:
+
+```bash
+/usr/local/bin/cosign version | grep GitVersion   # the cosignVersion in dev/lima.yaml
+/usr/local/bin/gh --version                       # the ghVersion in dev/lima.yaml
+sha256sum /usr/local/bin/cosign                   # cosignSha256<Arch> for this VM's architecture
+grep -E 'Verified OK|does not match|not signed' /var/log/cloud-init-output.log
+```
 
 containerd and BuildKit run **rootless**, as the systemd user services `containerd.service` and
 `buildkit.service`, started at boot like the deck's daemon. Check them, then run the README's

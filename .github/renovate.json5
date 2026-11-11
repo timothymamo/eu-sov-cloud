@@ -50,8 +50,32 @@
       matchDepNames: ['golang.org/x/vuln'],
       groupName: 'govulncheck',
     },
+    {
+      // dev/lima.yaml pins gh and cosign by version and by a SHA-256 per architecture, each a dependency
+      // of its own: bump them in one PR, so the version never moves without its digests.
+      description: 'gh: dev/lima.yaml version and per-architecture digests together',
+      matchDepNames: ['cli/cli'],
+      groupName: 'gh',
+    },
+    {
+      description: 'cosign: release.yml, and dev/lima.yaml version and per-architecture digests, together',
+      matchDepNames: ['sigstore/cosign'],
+      groupName: 'cosign',
+    },
   ],
   customManagers: [
+    {
+      // "# renovate: datasource=github-release-attachments depName=<owner/repo> digestVersion=<tag>" above
+      // a quoted SHA-256 of one release asset. Renovate finds the asset whose digest it is in the
+      // <tag> release (through the release's checksum file), takes the same asset's digest from the
+      // new release, and updates digestVersion and the digest together.
+      description: 'SHA-256 digests of GitHub release assets in dev/lima.yaml',
+      customType: 'regex',
+      managerFilePatterns: ['/^dev/lima\\.yaml$/'],
+      matchStrings: [
+        '# renovate: datasource=(?<datasource>github-release-attachments) depName=(?<depName>\\S+) digestVersion=(?<currentValue>\\S+)\\s+\\S+:\\s*"(?<currentDigest>[a-f0-9]{64})"',
+      ],
+    },
     {
       // An optional "@sha256:..." after the value is the digest (docker datasource): Renovate then
       // updates the tag and the digest together. A value of the form "image=<name>:<tag>", as in

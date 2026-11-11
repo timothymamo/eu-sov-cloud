@@ -2,6 +2,7 @@
 
 - Status: Accepted
 - Date: 2026-11-11
+- Amended: 2026-11-11, how gh and cosign are verified (#100; see "Verifying gh and cosign")
 
 ## Context
 
@@ -25,10 +26,15 @@ Install **nerdctl-full** (nerdctl, containerd, BuildKit, RootlessKit, runc, CNI 
 GitHub release into `/usr/local/nerdctl`, and run containerd and BuildKit **rootless**, as systemd user
 services of the VM user, set up by `containerd-rootless-setuptool.sh`. Install **cosign**, a release
 **gh** and **crane** beside it, root-owned in `/usr/local/bin`. Every version is a `param:` in
-`dev/lima.yaml` with a `# renovate:` comment, and every download is checked against its release's
-checksums (crane, through `go install`, against the Go checksum database, as govulncheck is).
-nerdctl-full's `SHA256SUMS` must also carry a valid GPG signature by a release manager pinned by full
-fingerprint in `dev/lima.yaml`, as nerdctl's `MAINTAINERS` lists them (Akihiro Suda, Chengyu Zhu).
+`dev/lima.yaml` with a `# renovate:` comment, and every download is authenticated, not only checked
+against a checksum file from the same release:
+
+- **nerdctl-full**: its `SHA256SUMS` must carry a valid GPG signature by a release manager pinned by
+  full fingerprint in `dev/lima.yaml`, as nerdctl's `MAINTAINERS` lists them (Akihiro Suda, Chengyu Zhu).
+- **cosign**: pinned by a SHA-256 per architecture in `dev/lima.yaml`, then checked against its own
+  keyless signature (see below).
+- **gh**: pinned by a SHA-256 per architecture in `dev/lima.yaml` (see below).
+- **crane**: through `go install`, against the Go checksum database, as govulncheck is.
 
 - **No rootful anything.** No root daemon, no `docker` group, no socket a VM process could use to
   become root. This adds nothing only because the VM user already has passwordless `sudo`. Lima's own
@@ -82,11 +88,9 @@ fingerprint in `dev/lima.yaml`, as nerdctl's `MAINTAINERS` lists them (Akihiro S
   `sudo`, so any of them can tamper with the check. An independent check on a GitHub-hosted runner, a
   post-publish job in `release.yml`, is the follow-up that makes it authoritative; #95 does not change
   `release.yml`.
-- **Integrity, not authenticity, for gh and cosign.** Their checksum files come from the same release
-  as the binaries, so they catch a corrupt download, not a replaced release. Only nerdctl-full's are
-  signed by a key pinned here. Follow-ups: pin per-architecture digests that Renovate updates, and verify
-  `cosign_checksums.txt` keylessly with cosign's own signature. A nerdctl release signed by a manager not
-  yet pinned fails provisioning until their fingerprint is checked against `MAINTAINERS` and added.
+- **Authenticity for gh and cosign comes from the pins** (see "Verifying gh and cosign"), and for
+  cosign also from its signature. A nerdctl release signed by a manager not yet pinned fails
+  provisioning until their fingerprint is checked against `MAINTAINERS` and added.
 - Images, BuildKit's cache and containerd's state take space on the VM's 40 GiB disk, under
   `~/.local/share`.
 - In a rootless runtime, container UID 0 is the VM user, not root. A container run with
@@ -94,3 +98,54 @@ fingerprint in `dev/lima.yaml`, as nerdctl's `MAINTAINERS` lists them (Akihiro S
   `--user 0:0` there. The README says so.
 - An existing VM keeps the template it was created with: it has to be recreated to get any of this.
 - Renovate bumps nerdctl, cosign, gh and crane like the other `param:` versions.
+
+## Verifying gh and cosign
+
+The first version of this decision checked gh and cosign only against the checksum file published in
+the same release. That proves the download is intact, not that it is authentic: whoever can replace the
+binary can replace the checksum file too (#100, raised by the audit of #96).
+
+- **cosign: pinned digest, then its own signature.** `dev/lima.yaml` pins the SHA-256 of
+  `cosign-linux-amd64` and `cosign-linux-arm64` (`cosignSha256Amd64`, `cosignSha256Arm64`). There is no
+  trusted cosign to verify the first one with, so the pin is what lets the downloaded binary run at all.
+  It then verifies itself: `cosign verify-blob` with the release's Sigstore bundle
+  (`cosign-linux-<arch>.sigstore.json`), which must hold a Fulcio certificate for the identity
+  sigstore/cosign signs its releases with, `keyless@projectsigstore.iam.gserviceaccount.com` issued by
+  `https://accounts.google.com` (cosign's installation docs), and a Rekor inclusion proof. The
+  certificate in the v3 bundles carries that identity, not a GitHub Actions workflow identity, so
+  `https://token.actions.githubusercontent.com` would reject every release. The signature adds what the
+  pin alone cannot: a digest Renovate copied from a replaced release, and approved in review, still
+  fails, because the replacement is not signed by sigstore/cosign.
+- **gh: pinned digest.** `dev/lima.yaml` pins the SHA-256 of `gh_<version>_linux_<arch>.tar.gz`
+  (`ghSha256Amd64`, `ghSha256Arm64`). gh publishes no Sigstore bundle with its release; its build
+  provenance is a GitHub artifact attestation, fetched from the GitHub API. `gh attestation verify`
+  needs a gh that is already trusted and a GitHub token, and system provisioning has neither (the token
+  arrives later, through `make vm-env`, and only for the VM user). Fetching the attestation
+  anonymously and checking it with `cosign verify-blob-attestation` was tried: cosign v3.1.4 crashes on
+  that bundle, and the anonymous API allows 60 requests an hour. The pins are simple and need nothing
+  but the download. After provisioning, `gh attestation verify` can confirm the release by hand
+  (`docs/dev-environment.md`).
+- **Fail closed, with a clear message.** A digest that differs, or is not set for the VM's
+  architecture, stops provisioning (`exit 1` under `set -e`) with the file, both digests and the param to
+  fix, before anything is installed; so does a cosign that fails its signature check.
+- **Renovate moves the pins with the version.** Each digest has its own
+  `# renovate: datasource=github-release-attachments depName=<repo> digestVersion=<tag>` comment, read
+  by a second regex custom manager in `.github/renovate.json5`. Renovate finds the pinned asset through
+  the `digestVersion` release's checksum file, reads the same asset's digest from the new release's
+  checksum file, and rewrites `digestVersion` and the digest; a `packageRules` group puts the version and
+  both digests in one PR (`renovate/gh`, `renovate/cosign`). A dry run from v2.103.2 and v3.1.3 proposed
+  exactly the digests pinned here. The new digest still comes from the new release's checksum file, so a
+  Renovate PR adds review, not authenticity, for gh; for cosign the signature check supplies it. If
+  Renovate cannot map a digest, it leaves it unchanged while the version moves, and provisioning then
+  fails with the message above: a bump never installs an unpinned binary.
+- **Only on install.** As every step does, these run when the installed version differs from the pinned
+  one. An existing VM keeps the binaries it has; recreate it to have them verified.
+
+### Alternatives considered
+
+- **Keep the checksum files.** Integrity only. Rejected (#100).
+- **Verify `cosign_checksums.txt` with its bundle instead of the binary.** Equivalent, one step longer;
+  the binary's own bundle verifies what is installed.
+- **gh by `gh attestation verify` in provisioning.** Needs a trusted gh and a token; see above.
+- **gh by `cosign verify-blob-attestation` of the API's attestation.** Fails on cosign v3.1.4 and is
+  rate limited; revisit if gh starts publishing a Sigstore bundle with its release assets.
