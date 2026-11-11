@@ -364,13 +364,26 @@ func TestReportComparisonShape(t *testing.T) {
 		t.Parallel()
 
 		// The format writes every target's reasons for a shared blocker; the
-		// reason object is the single document's reason object.
-		wantShared := map[string]string{
-			"fn-example":   "no offering in the " + testutil.OVHcloudCatalog(t).Target() + " catalog for serverless.function",
-			"misc-example": "not classified",
+		// reason object is the single document's reason object, so its text names
+		// the catalog of the target it belongs to, not one catalog for them all,
+		// as the Markdown comparison's comparison-three.golden shows.
+		keys := threeTargetKeys()
+
+		wantText := func(resourceID, key string) string {
+			if resourceID == "misc-example" {
+				return "not classified"
+			}
+
+			return "no offering in the " + comparisonFixtureCatalog(t, key).Target() +
+				" catalog for serverless.function"
 		}
 
-		for i := range arrayAt(t, document, "sharedBlockers") {
+		shared := arrayAt(t, document, "sharedBlockers")
+		if len(shared) != 2 {
+			t.Fatalf("the document has %d shared blockers, want 2", len(shared))
+		}
+
+		for i := range shared {
 			at := []any{"sharedBlockers", i}
 
 			resourceID, ok := valueAt(t, document, extend(at, "resourceId")...).(string)
@@ -378,13 +391,24 @@ func TestReportComparisonShape(t *testing.T) {
 				t.Fatalf("sharedBlockers[%d].resourceId is not a string", i)
 			}
 
-			for j := range arrayAt(t, document, extend(at, "targets")...) {
-				if got := valueAt(t, document, extend(at, "targets", j, "reasons", 0, "code")...); got == "" {
-					t.Errorf("%q shared blocker reason for target %d has no code", resourceID, j)
+			targets := arrayAt(t, document, extend(at, "targets")...)
+			if len(targets) != len(keys) {
+				t.Fatalf("%q shared blocker holds %d targets, want %d", resourceID, len(targets), len(keys))
+			}
+
+			for j, key := range keys {
+				if got := valueAt(t, document, extend(at, "targets", j, "key")...); got != key {
+					t.Errorf("%q shared blocker targets[%d].key = %v, want %q", resourceID, j, got, key)
 				}
 
-				if got := valueAt(t, document, extend(at, "targets", j, "reasons", 0, "text")...); got != wantShared[resourceID] {
-					t.Errorf("%q shared blocker reason text = %v, want %q", resourceID, got, wantShared[resourceID])
+				if got := valueAt(t, document, extend(at, "targets", j, "reasons", 0, "code")...); got == "" {
+					t.Errorf("%q shared blocker reason for target %q has no code", resourceID, key)
+				}
+
+				want := wantText(resourceID, key)
+				if got := valueAt(t, document, extend(at, "targets", j, "reasons", 0, "text")...); got != want {
+					t.Errorf("%q shared blocker reason text for target %q = %v, want %q",
+						resourceID, key, got, want)
 				}
 			}
 		}

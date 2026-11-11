@@ -344,7 +344,10 @@ func TestReportDocumentShape(t *testing.T) {
 		t.Parallel()
 
 		// The expected content of the fixture's resources, in resource ID order,
-		// as the Markdown report's report.golden shows it.
+		// as the Markdown report's report.golden shows it. ties and
+		// requiredChanges are always set, to an empty slice where the resource has
+		// none, because the format writes [] and never null: arrayAt above fails a
+		// document that writes null for either.
 		tests := []struct {
 			id              string
 			fit             string
@@ -355,39 +358,47 @@ func TestReportDocumentShape(t *testing.T) {
 			reasonTexts     []string
 		}{
 			{
-				id:           "bucket-example",
-				fit:          "direct",
-				bestOffering: "Object Storage",
-				reasonCodes:  []string{"all-capabilities"},
-				reasonTexts:  []string{"Object Storage offers every capability the resource uses"},
+				id:              "bucket-example",
+				fit:             "direct",
+				bestOffering:    "Object Storage",
+				ties:            []string{},
+				requiredChanges: []string{},
+				reasonCodes:     []string{"all-capabilities"},
+				reasonTexts:     []string{"Object Storage offers every capability the resource uses"},
 			},
 			{
-				id:           "db-example",
-				fit:          "direct",
-				bestOffering: "Managed Database for PostgreSQL",
-				ties:         []string{"Managed Database for PostgreSQL and MySQL"},
-				reasonCodes:  []string{"all-capabilities"},
-				reasonTexts:  []string{"Managed Database for PostgreSQL offers every capability the resource uses"},
+				id:              "db-example",
+				fit:             "direct",
+				bestOffering:    "Managed Database for PostgreSQL",
+				ties:            []string{"Managed Database for PostgreSQL and MySQL"},
+				requiredChanges: []string{},
+				reasonCodes:     []string{"all-capabilities"},
+				reasonTexts:     []string{"Managed Database for PostgreSQL offers every capability the resource uses"},
 			},
 			{
-				id:          "fn-example",
-				fit:         "none",
-				reasonCodes: []string{"no-offering"},
-				reasonTexts: []string{"no offering in the Scaleway catalog for serverless.function"},
+				id:              "fn-example",
+				fit:             "none",
+				ties:            []string{},
+				requiredChanges: []string{},
+				reasonCodes:     []string{"no-offering"},
+				reasonTexts:     []string{"no offering in the Scaleway catalog for serverless.function"},
 			},
 			{
-				id:           "i-0123456789abcdef0",
-				fit:          "direct",
-				bestOffering: "Elastic Metal",
-				ties:         []string{"Instances"},
-				reasonCodes:  []string{"all-capabilities"},
-				reasonTexts:  []string{"Elastic Metal offers every capability the resource uses"},
+				id:              "i-0123456789abcdef0",
+				fit:             "direct",
+				bestOffering:    "Elastic Metal",
+				ties:            []string{"Instances"},
+				requiredChanges: []string{},
+				reasonCodes:     []string{"all-capabilities"},
+				reasonTexts:     []string{"Elastic Metal offers every capability the resource uses"},
 			},
 			{
-				id:          "misc-example",
-				fit:         "none",
-				reasonCodes: []string{"not-classified"},
-				reasonTexts: []string{"not classified"},
+				id:              "misc-example",
+				fit:             "none",
+				ties:            []string{},
+				requiredChanges: []string{},
+				reasonCodes:     []string{"not-classified"},
+				reasonTexts:     []string{"not classified"},
 			},
 			{
 				id:              "partial-example",
@@ -569,6 +580,8 @@ func TestReportDocumentShape(t *testing.T) {
 func TestReportWritesEmptyValues(t *testing.T) {
 	t.Parallel()
 
+	// The verdict holds no reasons, so the resources[0].reasons array the loop
+	// below checks really is empty; the blocker still carries the reason.
 	reason := mapping.Reason{Code: mapping.NotClassified}
 	a := assessment.Assessment{
 		Target:   scalewayTarget,
@@ -579,8 +592,7 @@ func TestReportWritesEmptyValues(t *testing.T) {
 				ID:       "global-example",
 				Category: taxonomy.StorageObject,
 			},
-			Fit:     mapping.None,
-			Reasons: []mapping.Reason{reason},
+			Fit: mapping.None,
 		}},
 		Blockers: []assessment.Blocker{{ResourceID: "global-example", Reason: reason}},
 		Summary:  assessment.Summary{Total: 1, None: 1},
