@@ -152,20 +152,40 @@ provision:
         curl -fsSL -o "${tmp}/SHA256SUMS.asc" "${base}/SHA256SUMS.asc"
         # GitHub ID and fingerprint: AkihiroSuda, ChengyuZhu6.
         signers="C020EA876CE4E06C7AB95AEF49524C6F9F638F1A 521B0CBA0657089B2B8141FDE14F08B8908ED6E8"
-        export GNUPGHOME="${tmp}/gnupg"
-        mkdir -m 0700 "${GNUPGHOME}"
-        for user in AkihiroSuda ChengyuZhu6; do
-          curl -fsSL "https://github.com/${user}.gpg" | gpg --batch --quiet --import
-        done
-        # The primary key fingerprint of the good signature, whichever key it was fetched from.
-        signer="$(gpg --batch --status-fd 1 --verify "${tmp}/SHA256SUMS.asc" "${tmp}/SHA256SUMS" 2>/dev/null \
-          | awk '$2 == "VALIDSIG" { print $NF }')"
-        gpgconf --kill all
-        unset GNUPGHOME
-        if [ -z "${signer}" ] || [[ " ${signers} " != *" ${signer} "* ]]; then
-          echo >&2 "nerdctl ${PARAM_nerdctlVersion}: SHA256SUMS is not signed by a pinned release manager (${signer:-no valid signature})"
-          exit 1
-        fi
+        # In a subshell, so GNUPGHOME stays local and the EXIT trap stops gpg-agent on every path. Either
+        # key may fail to import: the pin below decides whose signature counts, so one key is enough.
+        (
+          export GNUPGHOME="${tmp}/gnupg"
+          mkdir -m 0700 "${GNUPGHOME}"
+          trap 'gpgconf --kill all' EXIT
+          imported=0
+          for user in AkihiroSuda ChengyuZhu6; do
+            if curl -fsSL "https://github.com/${user}.gpg" | gpg --batch --quiet --import; then
+              imported=$((imported + 1))
+            else
+              echo >&2 "nerdctl ${PARAM_nerdctlVersion}: could not import the key of ${user} from GitHub"
+            fi
+          done
+          if [ "${imported}" -eq 0 ]; then
+            echo >&2 "nerdctl ${PARAM_nerdctlVersion}: no release manager key could be imported"
+            exit 1
+          fi
+          # gpg's exit status alone accepts a signature by a revoked or expired key, so the status lines
+          # decide: exactly one good signature, nothing revoked, expired, bad or unverifiable, and then the
+          # primary key fingerprint of that signature (VALIDSIG's last field) must be pinned.
+          gpg --batch --status-file "${tmp}/gpg-status" --verify "${tmp}/SHA256SUMS.asc" "${tmp}/SHA256SUMS" 2>/dev/null || true
+          signer="$(awk '
+            $1 != "[GNUPG:]" { next }
+            $2 == "GOODSIG" { good++ }
+            $2 == "VALIDSIG" { valid++; fpr = $NF }
+            $2 ~ /^(REVKEYSIG|EXPKEYSIG|EXPSIG|BADSIG|ERRSIG)$/ { bad++ }
+            END { if (good == 1 && valid == 1 && bad == 0) print fpr }
+          ' "${tmp}/gpg-status")"
+          if [ -z "${signer}" ] || [[ " ${signers} " != *" ${signer} "* ]]; then
+            echo >&2 "nerdctl ${PARAM_nerdctlVersion}: SHA256SUMS is not signed by a pinned release manager (${signer:-no single good signature})"
+            exit 1
+          fi
+        )
         (cd "${tmp}" && grep " ${tarball}\$" SHA256SUMS | sha256sum --check --strict)
         rm -rf /usr/local/nerdctl && mkdir -p /usr/local/nerdctl
         tar -C /usr/local/nerdctl --no-same-owner -xzf "${tmp}/${tarball}"
