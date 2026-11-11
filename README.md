@@ -45,7 +45,7 @@ on either side does not mean writing a mapping for every pair. See
 ## Usage
 
 ```text
-eusov assess --inventory <file> --target <targets> [--output <file>]
+eusov assess --inventory <file> --target <targets> [--format <format>] [--output <file>]
 ```
 
 `<targets>` is one of `ovhcloud`, `scaleway` or `upcloud`, a comma-separated list of them, or `all` for
@@ -58,6 +58,7 @@ make build
 ./bin/eusov assess --inventory inventory.json --target upcloud
 ./bin/eusov assess --inventory inventory.json --target ovhcloud,upcloud
 ./bin/eusov assess --inventory inventory.json --target all --output comparison.md
+./bin/eusov assess --inventory inventory.json --target scaleway --format json --output report.json
 ```
 
 `assess` reads an inventory file, compares every resource with the target's catalog and writes a
@@ -70,6 +71,12 @@ was. A symbolic link to a regular file, or a dangling link, at that path is repl
 one of them, such as `/dev/stdout`) or the inventory file itself (the same path, a hard link or a
 symbolic link to it) is refused with exit code 1 before the inventory is read; leave out `--output` to
 write to standard output.
+
+`--format` chooses the report format: `markdown` (the default) or `json`. The JSON report holds the same
+content as the Markdown one, as a versioned document (`"schemaVersion": 1`, `"kind": "assessment"`, or
+`"comparison"` for several targets) for scripts and other tools. Its format, its JSON Schemas
+(`internal/adapter/report/jsonreport/schema/`) and its versioning rules are in
+[ADR 0018](docs/adr/0018-version-the-json-report-format-for-the-cli-and-the-api.md).
 
 With two or more targets, `assess` reads the inventory once and writes one comparison report. The
 targets are compared in sorted key order, whatever order they are given in. The report starts with a
