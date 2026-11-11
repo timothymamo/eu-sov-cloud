@@ -6,8 +6,9 @@ description: Cut a semantic-version release of eu-sov-cloud by tagging main, whi
 # Cut a release
 
 Releases are built by `.github/workflows/release.yml` when a `vX.Y.Z` tag is pushed: GoReleaser
-publishes the binaries, and the `image` job the signed container image to `ghcr.io/timothymamo/eusov`
-(ADR 0014).
+publishes the binaries, then the `image`, `sbom` and `sign` jobs the signed container image to
+`ghcr.io/timothymamo/eusov` (ADR 0014). The run's first check fails, and nothing is published, unless
+the tagged commit is on `main`: always tag a commit of `main`.
 
 1. In the repository root, which always stays on `main` (check
    `git -C <repository root> branch --show-current`, and stop if it is not), run
@@ -27,7 +28,8 @@ publishes the binaries, and the `image` job the signed container image to `ghcr.
    `git -C <repository root> push origin vX.Y.Z`.
 6. Watch the run (`gh run watch`), then report the release URL (`gh release view vX.Y.Z --json url`).
    On failure, report the failed step's log and stop; never delete or move a pushed tag.
-7. Check the image with the README's "Verify the image" commands for the new tag. After the very first
+7. Check the image with the README's "Verify the image" commands for the new tag (cosign v3 or later),
+   by the digest the tag resolves to. After the very first
    push GHCR has created the package private: report that a maintainer must make
    `ghcr.io/timothymamo/eusov` public once in the package settings (an agent cannot), and that
    `docker pull` fails anonymously until then.

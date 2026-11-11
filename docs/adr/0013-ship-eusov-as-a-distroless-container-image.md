@@ -57,7 +57,7 @@ and smoke-tests it on every pull request; publishing it to a registry is a follo
 - **Distribution: not yet.** This change builds the image in CI without pushing it. Publishing to GHCR
   from `release.yml`, signing (cosign) and SBOM or provenance attestations are a follow-up issue: they
   need `packages: write`, an identity for signing and a review of the release workflow's closed step
-  list (`check.ReleaseWorkflow`). Amended: issue #72 publishes it, from a release job of its own with
+  list (`check.ReleaseWorkflow`). Amended: issue #72 publishes it, from release jobs of their own with
   docker buildx rather than GoReleaser `dockers` or `ko`; see
   [ADR 0014](0014-publish-the-signed-image-to-ghcr-with-docker-buildx.md).
 

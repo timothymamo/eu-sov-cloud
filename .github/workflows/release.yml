@@ -7,7 +7,7 @@ on:
 # No permission by default; each job asks for its own.
 permissions: {}
 
-# The steps of all three jobs are a closed list that test/architecture holds
+# The steps of all five jobs are a closed list that test/architecture holds
 # (check.ReleaseWorkflow): add no step, run: or env: here without changing it.
 jobs:
   test:
@@ -16,9 +16,23 @@ jobs:
     permissions:
       contents: read
     steps:
+      # The whole history, with every branch: the guard below needs origin/main.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          fetch-depth: 0
           persist-credentials: false
+      # Only a commit on main is released (ADR 0014). Every other job needs
+      # this one, so a tag on any other commit publishes nothing.
+      - name: The tagged commit is on main
+        run: |
+          git rev-parse --verify --quiet refs/remotes/origin/main > /dev/null || {
+            echo "origin/main is missing from the checkout" >&2
+            exit 1
+          }
+          git merge-base --is-ancestor "$GITHUB_SHA" refs/remotes/origin/main || {
+            echo "$GITHUB_SHA is not on main: nothing is released" >&2
+            exit 1
+          }
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: go.mod
@@ -53,38 +67,44 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-  # Publishes the container image to GHCR, signed, with provenance and an SBOM
-  # (ADR 0014). A job of its own, so the write permissions it needs never meet
-  # the goreleaser job's contents: write. It builds from the Dockerfile with
+  # Builds and pushes the container image to GHCR (ADR 0014), after the GitHub
+  # release: a failed GoReleaser publishes no image. It can push, nothing more:
+  # no OIDC token, so nothing in it can sign. It builds from the Dockerfile with
   # the build arguments GoReleaser stamps into the release binaries, and
   # carries no build cache in: BuildKit starts empty on a fresh runner.
   image:
     name: Container image
-    needs: test
+    needs: [test, goreleaser]
     runs-on: ubuntu-latest
     permissions:
       contents: read # check out the repository
-      packages: write # push the image, its signature and attestations to ghcr.io
-      id-token: write # GitHub OIDC token for keyless cosign and attestation signing
-      attestations: write # store the provenance and SBOM attestations in the repository
+      packages: write # push the image to ghcr.io
+    outputs:
+      digest: ${{ steps.build.outputs.digest }}
     steps:
-      # The whole history, as GoReleaser checks it out: git picks the length of
-      # a short commit from the number of objects it holds.
+      # The whole history and every tag, as GoReleaser checks it out: git picks
+      # the length of a short commit from the number of objects it holds.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
           persist-credentials: false
       # The values GoReleaser stamps into the release binaries: .Version (the
-      # tag without its v), .ShortCommit and .CommitDate (RFC 3339, UTC).
+      # tag without its v), .ShortCommit and .CommitDate (RFC 3339, UTC). And
+      # whether the tag is the highest release tag, pre-releases left out:
+      # only that tag moves latest, so a patch to an older line does not.
       - name: Build arguments, as GoReleaser stamps them
         id: stamp
         env:
           TAG: ${{ github.ref_name }}
         run: |
+          highest="$(git tag -l 'v*.*.*' | sed -nE '/^v[0-9]+\.[0-9]+\.[0-9]+$/p' | sort -V | tail -n 1)"
+          latest=false
+          if [ "$TAG" = "$highest" ]; then latest=true; fi
           {
             echo "version=${TAG#v}"
             echo "commit=$(git rev-parse --short HEAD)"
             echo "date=$(TZ=UTC git log -1 --format=%cd --date=format-local:%Y-%m-%dT%H:%M:%SZ)"
+            echo "latest=$latest"
           } >> "$GITHUB_OUTPUT"
       # No QEMU: the builder stage cross-compiles and the final stage runs
       # nothing, so linux/arm64 builds without emulation (ADR 0013).
@@ -98,19 +118,19 @@ jobs:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
-      # vX.Y.Z (the git tag) and X.Y, plus latest; a pre-release such as
-      # v0.1.0-rc.1 gets its own tag only. The first entry decides latest.
+      # vX.Y.Z (the git tag) and X.Y, plus latest for the highest release tag;
+      # a pre-release such as v0.1.0-rc.1 gets its own tag only.
       - name: Image tags
         id: tags
         uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6.2.0
         with:
           images: ghcr.io/timothymamo/eusov
-          flavor: latest=auto
+          flavor: latest=${{ steps.stamp.outputs.latest }}
           tags: |
             type=semver,pattern={{raw}}
             type=semver,pattern={{major}}.{{minor}},enable=${{ !contains(github.ref_name, '-') }}
       # Labels come from the Dockerfile alone. BuildKit's own provenance and
-      # SBOM are off: the attestations below replace them, signed (ADR 0014).
+      # SBOM are off: the sign job's attestations replace them (ADR 0014).
       - name: Build and push linux/amd64 and linux/arm64
         id: build
         uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
@@ -126,35 +146,83 @@ jobs:
             VERSION=${{ steps.stamp.outputs.version }}
             COMMIT=${{ steps.stamp.outputs.commit }}
             DATE=${{ steps.stamp.outputs.date }}
-      - uses: sigstore/cosign-installer@756fe2d284c7292c4e9b62c8a28f1e5629c59532 # v4.1.3
+
+  # The SBOM of the pushed index, read from the registry by digest. syft is
+  # third-party code it downloads, so this job can only read the registry:
+  # it cannot push, and has no OIDC token to sign with. The SBOM leaves the job
+  # as a workflow artifact for the sign job to attest.
+  sbom:
+    name: SBOM
+    needs: image
+    runs-on: ubuntu-latest
+    permissions:
+      packages: read # pull the image from ghcr.io, private until made public
+    steps:
+      - uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550 # v4.8.0
         with:
-          # renovate: datasource=github-releases depName=sigstore/cosign
-          cosign-release: v3.1.4
-      # Keyless, through the job's OIDC identity; by digest, never by tag.
-      - name: Sign the image
-        env:
-          DIGEST: ${{ steps.build.outputs.digest }}
-        run: cosign sign --yes "ghcr.io/timothymamo/eusov@${DIGEST}"
-      - uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
-        with:
-          subject-name: ghcr.io/timothymamo/eusov
-          subject-digest: ${{ steps.build.outputs.digest }}
-          push-to-registry: true
-          create-storage-record: false # an organisation API; needs artifact-metadata: write
-      # The SBOM of the pushed index, read from the registry. Nothing is
-      # uploaded to the run or the release: the attestation carries it.
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
       - uses: anchore/sbom-action@66cbf4bc1f1c0d2edc94016e65bc221b6bb0ad6c # v0.24.3
         with:
-          image: registry:ghcr.io/timothymamo/eusov@${{ steps.build.outputs.digest }}
+          image: registry:ghcr.io/timothymamo/eusov@${{ needs.image.outputs.digest }}
           format: spdx-json
           output-file: eusov.spdx.json
           upload-artifact: false
           upload-release-assets: false
           # renovate: datasource=github-releases depName=anchore/syft
           syft-version: v1.57.1
-      - uses: actions/attest-sbom@c604332985a26aa8cf1bdc465b92731239ec6b9e # v4.1.0
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: sbom
+          path: eusov.spdx.json
+          if-no-files-found: error
+          retention-days: 1
+
+  # The only job holding the signing identity (id-token: write). It runs
+  # sigstore's cosign and GitHub's own actions only: no checkout, no docker/*
+  # or anchore action. Everything is signed and attested by digest.
+  sign:
+    name: Sign and attest
+    needs: [image, sbom]
+    runs-on: ubuntu-latest
+    permissions:
+      packages: write # push the signatures and attestations to ghcr.io
+      id-token: write # GitHub OIDC token for keyless cosign and attestation signing
+      attestations: write # store the provenance and SBOM attestations in the repository
+    steps:
+      - uses: sigstore/cosign-installer@756fe2d284c7292c4e9b62c8a28f1e5629c59532 # v4.1.3
+        with:
+          # renovate: datasource=github-releases depName=sigstore/cosign
+          cosign-release: v3.1.4
+      # cosign writes the registry credential where actions/attest reads it.
+      - name: Log in to ghcr.io
+        env:
+          ACTOR: ${{ github.actor }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: printf '%s' "$GITHUB_TOKEN" | cosign login ghcr.io --username "$ACTOR" --password-stdin
+      # Keyless, through the job's OIDC identity; the index and, recursively,
+      # each platform's image, so a per-platform digest verifies too.
+      - name: Sign the image
+        env:
+          DIGEST: ${{ needs.image.outputs.digest }}
+        run: cosign sign --yes --recursive "ghcr.io/timothymamo/eusov@${DIGEST}"
+      # SLSA build provenance: actions/attest's default without sbom-path.
+      - name: Attest the build provenance
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
         with:
           subject-name: ghcr.io/timothymamo/eusov
-          subject-digest: ${{ steps.build.outputs.digest }}
+          subject-digest: ${{ needs.image.outputs.digest }}
+          push-to-registry: true
+          create-storage-record: false # an organisation API; needs artifact-metadata: write
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: sbom
+      - name: Attest the SBOM
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        with:
+          subject-name: ghcr.io/timothymamo/eusov
+          subject-digest: ${{ needs.image.outputs.digest }}
           sbom-path: eusov.spdx.json
           push-to-registry: true
+          create-storage-record: false

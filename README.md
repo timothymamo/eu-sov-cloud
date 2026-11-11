@@ -90,9 +90,10 @@ Each release publishes a minimal image to `ghcr.io/timothymamo/eusov`: the stati
 non-root user, no shell or package manager), for `linux/amd64` and `linux/arm64`
 ([ADR 0013](docs/adr/0013-ship-eusov-as-a-distroless-container-image.md),
 [ADR 0014](docs/adr/0014-publish-the-signed-image-to-ghcr-with-docker-buildx.md)). It is tagged with
-the release tag (`vX.Y.Z`), `X.Y` and, for the newest release that is not a pre-release, `latest`.
-Pin a release tag; `docker run ghcr.io/timothymamo/eusov:<version> version` reports that version. The commands
-below use `v0.1.0`; put the release you want in its place:
+the release tag (`vX.Y.Z`), `X.Y` and, for the highest release version that is not a pre-release,
+`latest`: a patch to an older line does not move it. Pin a release tag, or better its digest (see
+below); `docker run ghcr.io/timothymamo/eusov:v0.1.0 version` reports that version without its `v`
+(`0.1.0`). The commands below use `v0.1.0`; put the release you want in its place:
 
 ```bash
 docker pull ghcr.io/timothymamo/eusov:v0.1.0
@@ -120,25 +121,40 @@ To build the image yourself from a clone instead, `make image` tags `eusov:<vers
 ### Verify the image
 
 Every published image is signed with [cosign](https://github.com/sigstore/cosign), keyless, by the
-release workflow's GitHub identity, and carries build provenance and an SPDX SBOM as GitHub
-attestations. Check them before you run a release:
+release workflow's GitHub identity for that tag, and carries build provenance and an SPDX SBOM as
+GitHub attestations. You need cosign v3 or later, which reads the signature from the registry in the
+bundle format the release writes, and the [GitHub CLI](https://cli.github.com/).
+
+A tag can be moved; a digest cannot. Resolve the release tag to its digest once, then verify and run
+that digest:
 
 ```bash
-# The signature: made by release.yml, run for a v* tag of this repository.
-cosign verify ghcr.io/timothymamo/eusov:v0.1.0 \
-  --certificate-identity-regexp '^https://github\.com/timothymamo/eu-sov-cloud/\.github/workflows/release\.yml@refs/tags/v' \
-  --certificate-oidc-issuer https://token.actions.githubusercontent.com
+TAG=v0.1.0
+DIGEST="$(docker buildx imagetools inspect "ghcr.io/timothymamo/eusov:$TAG" --format '{{.Manifest.Digest}}')"
+IMAGE="ghcr.io/timothymamo/eusov@$DIGEST"
 
-# The build provenance (SLSA), then the SBOM.
-gh attestation verify oci://ghcr.io/timothymamo/eusov:v0.1.0 --repo timothymamo/eu-sov-cloud \
-  --signer-workflow timothymamo/eu-sov-cloud/.github/workflows/release.yml
-gh attestation verify oci://ghcr.io/timothymamo/eusov:v0.1.0 --repo timothymamo/eu-sov-cloud \
+# The signature: made by release.yml, run on a push of exactly this tag.
+cosign verify "$IMAGE" \
+  --certificate-identity "https://github.com/timothymamo/eu-sov-cloud/.github/workflows/release.yml@refs/tags/$TAG" \
+  --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+  --certificate-github-workflow-trigger push
+
+# The build provenance (SLSA), then the SBOM: from release.yml, for this tag, on GitHub's runners.
+gh attestation verify "oci://$IMAGE" --repo timothymamo/eu-sov-cloud \
   --signer-workflow timothymamo/eu-sov-cloud/.github/workflows/release.yml \
+  --source-ref "refs/tags/$TAG" --deny-self-hosted-runners
+gh attestation verify "oci://$IMAGE" --repo timothymamo/eu-sov-cloud \
+  --signer-workflow timothymamo/eu-sov-cloud/.github/workflows/release.yml \
+  --source-ref "refs/tags/$TAG" --deny-self-hosted-runners \
   --predicate-type https://spdx.dev/Document/v2.3
+
+docker run --rm "$IMAGE" version
 ```
 
-`gh attestation verify ... --format json` prints the attested statements, the SBOM's packages among
-them. The image's labels name the source repository (`org.opencontainers.image.source`) and the commit
+Each platform's image is signed too, so `cosign verify` also accepts the `linux/amd64` or
+`linux/arm64` digest that `docker buildx imagetools inspect` lists. `gh attestation verify ...
+--format json` prints the attested statements, the SBOM's packages among them. The image's labels
+name the source repository (`org.opencontainers.image.source`) and the commit
 (`org.opencontainers.image.revision`).
 
 ### Mounts, users and reports
