@@ -42,6 +42,11 @@ import (
 //     forbidigo is refused when it has no text, which drops every forbidigo
 //     issue in its path; with a text it only narrows, and test/lint pins the
 //     texts of the forbidigo group rules (TestForbidigoExclusionsDropOneGroup).
+//     An entry that names no linter drops every linter's issues on its path and
+//     is refused, and so is one that holds a key the check does not know: a key
+//     a later golangci-lint adds may select files the entry then hides issues
+//     in. linters.default may be standard, all or fast; a value the check does
+//     not know fails closed like an unknown issues key does.
 //   - issues.fix and issues.uniq-by-line: false hide nothing and are allowed.
 func TestHidingSettings(t *testing.T) {
 	t.Parallel()
@@ -76,6 +81,15 @@ func TestHidingSettings(t *testing.T) {
 			name:   "linters.exclusions.paths-except hides every issue elsewhere",
 			mutate: insertsUnderLintersExclusions("    paths-except:\n      - internal/"),
 			want:   []string{"linters.exclusions.paths-except"},
+		},
+		{
+			// The check knows every linters.exclusions key golangci-lint v2
+			// reads, so a key it does not know is one a later version added or
+			// one v1 had: either way it may leave out files, and refusing it is
+			// the only way to be sure it hides nothing.
+			name:   "a linters.exclusions key the check does not know fails closed",
+			mutate: insertsUnderLintersExclusions("    exclude-dirs:\n      - internal/"),
+			want:   []string{"linters.exclusions.exclude-dirs"},
 		},
 
 		// The issues caps and filters: 0 is unlimited, which is the default,
@@ -162,6 +176,14 @@ func TestHidingSettings(t *testing.T) {
 			want:   []string{"linters.default", "none"},
 		},
 		{
+			// standard, all and fast report every issue of every linter they
+			// turn on. A default the check does not know may leave a linter out,
+			// so it fails closed rather than pass.
+			name:   "a linters.default the check does not know fails closed",
+			mutate: replacesLine("  default: standard", "  default: everything"),
+			want:   []string{"linters.default", "everything"},
+		},
+		{
 			name:   "an exclusion rule naming depguard drops its issues on a path",
 			mutate: insertsAfter("    rules:", "      - path: internal/domain/\n        linters:\n          - depguard"),
 			want:   []string{"linters.exclusions.rules", "depguard"},
@@ -170,6 +192,23 @@ func TestHidingSettings(t *testing.T) {
 			name:   "an exclusion rule naming forbidigo with no text drops all of its issues",
 			mutate: insertsAfter("    rules:", "      - path: internal/domain/\n        linters:\n          - forbidigo"),
 			want:   []string{"linters.exclusions.rules", "forbidigo"},
+		},
+		{
+			// An entry with no linters: key, and one with an empty list, drops
+			// the issues of every linter on its path, depguard's and
+			// forbidigo's included; naming the linters it is for is the only
+			// form the check can read as one group's exclusion.
+			name:   "an exclusion rule naming no linter drops every linter's issues",
+			mutate: insertsAfter("    rules:", "      - path: internal/domain/"),
+			want:   []string{"linters.exclusions.rules", "names no linter"},
+		},
+		{
+			// The check knows path, path-except, text, source and linters. A key
+			// a later version adds may select files the entry then drops every
+			// issue in, so it fails closed.
+			name:   "an exclusion rule with a key the check does not know fails closed",
+			mutate: insertsAfter("    rules:", "      - path: internal/domain/\n        linters:\n          - gosec\n        severity: warning"),
+			want:   []string{"linters.exclusions.rules", "severity"},
 		},
 		{
 			// run.tests: false stops every linter seeing _test.go files, and
