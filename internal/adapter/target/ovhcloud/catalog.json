@@ -12,9 +12,9 @@
       "regions": ["GRA", "LIM", "RBX", "SBG", "WAW"]
     },
     {
-      "name": "Block Storage 3-AZ",
+      "name": "Block Storage 3-AZ Regional Classic",
       "categories": ["storage.block"],
-      "capabilities": ["high-availability"],
+      "capabilities": ["zone-high-availability"],
       "regions": ["MIL", "PAR"]
     },
     {
@@ -44,32 +44,44 @@
     {
       "name": "Managed Kubernetes Service 3-AZ",
       "categories": ["kubernetes.managed"],
-      "capabilities": ["autoscaling", "high-availability"],
+      "capabilities": ["autoscaling", "zone-high-availability"],
       "regions": ["MIL", "PAR"]
     },
     {
       "name": "Managed MySQL",
       "categories": ["database.mysql"],
-      "capabilities": ["encryption-at-rest", "high-availability", "point-in-time-restore", "read-replicas"],
+      "capabilities": ["encryption-at-rest", "point-in-time-restore"],
       "regions": ["GRA", "LIM", "RBX", "SBG", "WAW"]
     },
     {
-      "name": "Managed MySQL 3-AZ",
+      "name": "Managed MySQL 3-AZ Multi-node",
       "categories": ["database.mysql"],
-      "capabilities": ["encryption-at-rest", "high-availability", "point-in-time-restore", "read-replicas"],
+      "capabilities": ["encryption-at-rest", "point-in-time-restore", "read-replicas", "zone-high-availability"],
       "regions": ["MIL", "PAR"]
+    },
+    {
+      "name": "Managed MySQL Multi-node",
+      "categories": ["database.mysql"],
+      "capabilities": ["encryption-at-rest", "node-high-availability", "point-in-time-restore", "read-replicas"],
+      "regions": ["GRA", "LIM", "RBX", "SBG", "WAW"]
     },
     {
       "name": "Managed PostgreSQL",
       "categories": ["database.postgresql"],
-      "capabilities": ["encryption-at-rest", "high-availability", "point-in-time-restore", "read-replicas"],
+      "capabilities": ["encryption-at-rest", "point-in-time-restore"],
       "regions": ["GRA", "LIM", "RBX", "SBG", "WAW"]
     },
     {
-      "name": "Managed PostgreSQL 3-AZ",
+      "name": "Managed PostgreSQL 3-AZ Multi-node",
       "categories": ["database.postgresql"],
-      "capabilities": ["encryption-at-rest", "high-availability", "point-in-time-restore", "read-replicas"],
+      "capabilities": ["encryption-at-rest", "point-in-time-restore", "read-replicas", "zone-high-availability"],
       "regions": ["MIL", "PAR"]
+    },
+    {
+      "name": "Managed PostgreSQL Multi-node",
+      "categories": ["database.postgresql"],
+      "capabilities": ["encryption-at-rest", "node-high-availability", "point-in-time-restore", "read-replicas"],
+      "regions": ["GRA", "LIM", "RBX", "SBG", "WAW"]
     },
     {
       "name": "Metal Instances",
@@ -80,13 +92,13 @@
     {
       "name": "Object Storage",
       "categories": ["storage.object"],
-      "capabilities": ["encryption-at-rest", "object-versioning"],
+      "capabilities": ["encryption-at-rest", "node-high-availability", "object-versioning"],
       "regions": ["GRA", "LIM", "RBX", "SBG", "WAW"]
     },
     {
       "name": "Object Storage 3-AZ",
       "categories": ["storage.object"],
-      "capabilities": ["encryption-at-rest", "high-availability", "object-versioning"],
+      "capabilities": ["encryption-at-rest", "object-versioning", "zone-high-availability"],
       "regions": ["MIL", "PAR"]
     }
   ]

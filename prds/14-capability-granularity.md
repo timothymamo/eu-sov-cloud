@@ -353,7 +353,7 @@ Each milestone ships as one PR. Milestones 2 and 3 depend only on 1, and can run
    - update the Scaleway catalog golden and its e2e golden.
 
    The reviewer checks each claim against Scaleway's documentation. Depends on 1.
-3. [ ] **OVHcloud snapshot.** In this milestone:
+3. [x] **OVHcloud snapshot.** In this milestone:
    - set the 1-AZ databases to node level, and the 3-AZ variants (databases, Managed Kubernetes, Object
      Storage, Block Storage) to zone level;
    - add multi-node plan variants for MySQL and PostgreSQL, carrying high availability and read replicas;
