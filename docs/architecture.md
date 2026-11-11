@@ -88,8 +88,9 @@ the ways code could be hidden from it, and what refuses each:
   forbidigo's included, in a file with a "code generated" comment); any `issues` setting but a value
   that reports every issue (`max-issues-per-linter` and `max-same-issues` absent or 0, where
   golangci-lint's defaults are 50 and 3 and 0 means unlimited; `new`, `whole-files` and `fix` false;
-  `uniq-by-line` either value; no `new-from-*`); `run.issues-exit-code: 0`, with which lint exits 0
-  while it prints issues; `run.tests` other than true; `linters.default` other than `standard` or
+  `uniq-by-line` either value; no `new-from-*`); `run.issues-exit-code` outside 1..125, Go's
+  portable exit range (`os.Exit` truncates the code to 8 bits, so 0, 256 or -256 lets lint exit 0
+  while it prints issues); `run.tests` other than true; `linters.default` other than `standard` or
   `all`; depguard or forbidigo missing from `linters.enable` or listed in `linters.disable`; and a
   `linters.exclusions.rules` entry that names depguard, names forbidigo without a `text` or with an
   empty one, or names no linter at all. The document's shape is an allow list that fails closed:

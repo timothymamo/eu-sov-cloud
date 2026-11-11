@@ -19,8 +19,14 @@ var topKeys = []string{"version", "run", "linters", "formatters", "issues", "out
 
 // runKeys are the run keys that hide no issue: tests and issues-exit-code,
 // whose values the check reads, and keys that only bound how lint runs.
-// build-tags is accepted unread, because test/lint pins its value. A key not in
-// the list fails closed.
+// build-tags is accepted unread, because test/lint pins its value.
+// relative-path-mode is accepted unread too: it changes only the base that
+// linters.exclusions.rules path regexes match against, and that base is the
+// same directory while the config, the working directory and the git root
+// are all the repository root, as they are for make lint and CI. depguard's
+// files: globs match absolute paths, and the exclusion rules that could hide a
+// depguard or forbidigo issue are refused or pinned whatever their path
+// matches. A key not in the list fails closed.
 var runKeys = []string{
 	"tests", "build-tags", "issues-exit-code", "timeout", "concurrency", "go",
 	"modules-download-mode", "allow-parallel-runners", "allow-serial-runners", "relative-path-mode",
@@ -83,8 +89,9 @@ var exclusionsPresets = []string{"comments", "std-error-handling", "common-false
 // common-false-positives and legacy are refused. version must be "2".
 //
 // Of the keys it knows, it refuses: run.tests set to anything but true;
-// run.issues-exit-code set to 0, with which lint exits 0 while it prints
-// issues; linters.default set to anything but standard or all; depguard or
+// run.issues-exit-code outside 1..125, Go's portable os.Exit range, since
+// os.Exit truncates the code to 8 bits and 0, 256 or -256 lets lint exit 0
+// while it prints issues; linters.default set to anything but standard or all; depguard or
 // forbidigo missing from linters.enable or listed in linters.disable; a
 // linters.exclusions.generated that is missing or not disable (golangci-lint
 // reads it as lax when it is absent, which drops every issue, depguard's and
@@ -193,7 +200,7 @@ func topSettings(top []entry) ([]string, error) {
 
 // runSettings refuses a run key the check does not know, a run.tests that is
 // not true, which keeps every linter, depguard and forbidigo among them, from
-// every _test.go file, and a run.issues-exit-code of 0.
+// every _test.go file, and a run.issues-exit-code outside 1..125.
 func runSettings(top []entry) ([]string, error) {
 	run, ok, err := childMapping(top, "run", "run")
 	if err != nil || !ok {
@@ -219,8 +226,8 @@ func runSettings(top []entry) ([]string, error) {
 			return nil, fmt.Errorf("read run.issues-exit-code: %w", err)
 		}
 
-		if code, err := strconv.Atoi(value); err != nil || code == 0 {
-			messages = append(messages, fmt.Sprintf("line %d: run.issues-exit-code is %s, so lint may exit 0 while it prints issues: remove it or set it to 1", e.num, value))
+		if code, err := strconv.Atoi(value); err != nil || code < 1 || code > 125 {
+			messages = append(messages, fmt.Sprintf("line %d: run.issues-exit-code is %s, outside Go's portable exit range 1..125, and a value that wraps to 0 lets lint exit 0 while it prints issues: remove it or set it to 1", e.num, value))
 		}
 	}
 

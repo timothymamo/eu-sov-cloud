@@ -47,7 +47,9 @@
 // linters.exclusions or issues key, a linters.default or a
 // linters.exclusions.presets entry it does not know is refused. It wants
 // linters.exclusions.generated: disable, which golangci-lint reads as lax when
-// it is absent, and refuses run.issues-exit-code: 0. StrayLintConfigs refuses
+// it is absent, and refuses a run.issues-exit-code outside 1..125, Go's
+// portable exit range: os.Exit truncates the code to 8 bits, so 256 exits 0
+// while lint prints issues. StrayLintConfigs refuses
 // a .golangci.json, .golangci.toml or .golangci.yaml at the root that git
 // could commit, any of which golangci-lint would read in place of
 // .golangci.yml.

@@ -42,7 +42,8 @@
 // TestGolangciSettingsHideNoIssue covers what the pin does not: whether the
 // rules run and what lint reports (issue #81). It fails, naming the setting, on
 // linters.exclusions.paths or paths-except, a linters.exclusions.generated that
-// is missing or not disable, an issues cap or filter, run.issues-exit-code: 0,
+// is missing or not disable, an issues cap or filter, a run.issues-exit-code
+// outside 1..125 (os.Exit truncates it to 8 bits, so 0, 256 or -256 exits 0),
 // linters.default other than standard or all, run.tests not true, depguard or
 // forbidigo missing from linters.enable or in linters.disable, and a
 // linters.exclusions.rules entry naming depguard, naming forbidigo without a
