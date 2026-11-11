@@ -23,7 +23,9 @@ main checkout as before, or the dispatch worktree of a dispatched unit.
 - Run from inside a pull request's worktree (a linked worktree directly under a `.worktrees/`), it uses
   the checkout that holds that worktree, so pull request worktrees are never nested in each other.
 - A branch that already has a worktree gets that worktree's path, wherever it is (`git worktree list`),
-  so resuming works from the main checkout and from any dispatch worktree.
+  so resuming works from the main checkout and from any dispatch worktree. The one exception is the
+  main checkout itself: a branch it is on is refused, never printed, because the main checkout stays on
+  `main` and is never a pull request's worktree (CLAUDE.md rule 4).
 - `.worktrees/` is git-ignored, so the dispatch worktree's `git status` stays clean, and the VM mounts
   the workspace (ADR 0008), which holds the dispatch worktree and everything in it.
 - A pull request's worktree is removed before the unit whose dispatch worktree holds it is closed.
@@ -46,12 +48,19 @@ main checkout as before, or the dispatch worktree of a dispatched unit.
   directory, so they do not stop at a permission prompt.
 - Pull request worktrees live in more than one `.worktrees/`: the main checkout's and each dispatch
   worktree's. `git worktree list` shows them all.
-- Closing a unit deletes the pull request worktrees inside it. `dot-agent-deck close` (0.49.7) keeps a
+- Closing a unit deletes the pull request worktrees inside it. `dot-agent-deck close` (0.49.7), and
+  closing the unit's card or tab in the TUI or the desktop app, which run the same removal, keep a
   dispatch worktree only when `git status --porcelain` in it reports changes, which the git-ignored
-  `.worktrees/` never does, and then runs `git worktree remove` on it. Git deletes the whole directory,
-  nested worktrees and their uncommitted changes included, and leaves their entries `prunable`. Their
-  branches and commits survive. So each pull request's worktree is removed first
-  (`git -C <main checkout> worktree remove <path>`, the pr-create skill's merge step), and the unit is
-  closed after.
+  `.worktrees/` never does, and otherwise run `git worktree remove` on it. Git deletes the whole
+  directory, nested worktrees and their uncommitted changes included, locked worktrees too, and leaves
+  their entries behind, `prunable`, or `locked` for a locked one. Their branches and commits survive.
+  So each pull request's worktree is removed first (`git -C <main checkout> worktree remove <path>`, the
+  pr-create skill's merge step), and the unit is closed after. Only documentation guards that order.
 - When a unit was closed first anyway, `git worktree remove <path>` still clears the missing worktree's
-  entry. Until it or `git worktree prune` has, `make worktree` refuses to resume the branch and says so.
+  entry, unless the entry is locked. Until it or `git worktree prune` has, `make worktree` refuses to
+  resume the branch and says so. Neither clears a locked entry, such as one left locked `initializing` by
+  a `git worktree add` that was killed, so for a locked entry `make worktree` says so and to run
+  `git worktree unlock <path>` before `git worktree prune`.
+- Follow-up: ask dot-agent-deck upstream to keep a dispatch worktree that contains other registered
+  worktrees, as it keeps one with uncommitted changes. That would make closing a unit too early safe
+  rather than only documented. The request has not been filed.

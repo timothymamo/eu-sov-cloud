@@ -114,13 +114,17 @@ start work on an issue or PRD.
   git-ignored, so the dispatch worktree stays clean. Its `agent/dispatch-*` branch never gets commits or
   a PR.
 - **Cleaning up, in this order.** First remove each PR worktree inside the unit, which the `pr-create`
-  merge step does: `git -C <main checkout> worktree remove <path>`. Then close the unit:
-  `dot-agent-deck close <unit>` removes the unit's worktree, or keeps it when `git status` there shows
-  uncommitted changes. That check does not see the git-ignored `.worktrees/`, so a unit closed with a PR
-  worktree still inside it loses that worktree, uncommitted changes included. The branch and its
-  commits survive: `git worktree prune` clears the stale entry and `make worktree` brings the worktree
-  back. `dot-agent-deck worktree list` shows what is left. The `agent/dispatch-*` branches stay; delete
-  them with `git branch -d`.
+  merge step does: `git -C <main checkout> worktree remove <path>`. Then close the unit, with
+  `dot-agent-deck close <unit>` or by closing its card or tab in the deck (in the TUI `Ctrl+W`, the
+  card's `[Close]` or the tab's `[×]`; in the desktop app **Close agent** or **Close all N roles**). All
+  of them run the same removal: they remove the unit's worktree, or keep it when `git status` there
+  shows uncommitted changes. That check does not see the git-ignored `.worktrees/`, so a unit closed
+  with a PR worktree still inside it loses that worktree, uncommitted changes included, even when the
+  worktree is locked. The branch and its commits survive: `git worktree prune` clears the stale entry
+  and `make worktree` brings the worktree back. `prune` never clears a locked entry, so `make worktree`
+  says when the entry is locked; run `git worktree unlock <path>` before `prune` then.
+  `dot-agent-deck worktree list` shows what is left. The `agent/dispatch-*` branches stay; delete them
+  with `git branch -d`.
 
 ### Moving an existing checkout into a workspace
 
