@@ -55,9 +55,11 @@ and smoke-tests it on every pull request; publishing it to a registry is a follo
   `testdata` and any inventory or report file, with `.git`, `.worktrees`, `bin`, coverage and credential
   files also named explicitly. The final stage copies `/eusov` and nothing else.
 - **Distribution: not yet.** This change builds the image in CI without pushing it. Publishing to GHCR
-  from `release.yml` (GoReleaser `dockers` or `ko`), signing (cosign) and SBOM or provenance
-  attestations are a follow-up issue: they need `packages: write`, an identity for signing and a review
-  of the release workflow's closed step list (`check.ReleaseWorkflow`).
+  from `release.yml`, signing (cosign) and SBOM or provenance attestations are a follow-up issue: they
+  need `packages: write`, an identity for signing and a review of the release workflow's closed step
+  list (`check.ReleaseWorkflow`). Amended: issue #72 publishes it, from a release job of its own with
+  docker buildx rather than GoReleaser `dockers` or `ko`; see
+  [ADR 0014](0014-publish-the-signed-image-to-ghcr-with-docker-buildx.md).
 
 ## Alternatives considered
 
@@ -92,6 +94,7 @@ and smoke-tests it on every pull request; publishing it to a registry is a follo
 - A new directory the build needs at the root must be added to the `.dockerignore` allow list.
 - Live sources will read credentials through the SDK default chain from `-e` variables or a read-only
   mount at `docker run` time; the image never contains them.
-- Follow-up: publish to GHCR from the release, signed, with an SBOM.
+- Follow-up: publish to GHCR from the release, signed, with an SBOM. Done in issue #72:
+  [ADR 0014](0014-publish-the-signed-image-to-ghcr-with-docker-buildx.md).
 - Follow-up: move the final stage to `gcr.io/distroless/static-debian13`. Renovate updates the
   `static-debian12` digest but never changes the Debian suite in the image name.

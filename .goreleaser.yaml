@@ -18,7 +18,7 @@ builds:
       - -s -w
       - -X github.com/timothymamo/eu-sov-cloud/internal/version.version={{ .Version }}
       - -X github.com/timothymamo/eu-sov-cloud/internal/version.commit={{ .ShortCommit }}
-      - -X github.com/timothymamo/eu-sov-cloud/internal/version.date={{ .Date }}
+      - -X github.com/timothymamo/eu-sov-cloud/internal/version.date={{ .CommitDate }}
     goos: [linux, darwin, windows]
     goarch: [amd64, arm64]
 

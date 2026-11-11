@@ -85,33 +85,63 @@ every goroutine to standard error and exits with code 2.
 
 ## Run with Docker
 
-The `Dockerfile` builds a minimal image: the static `eusov` binary on
+Each release publishes a minimal image to `ghcr.io/timothymamo/eusov`: the static `eusov` binary on
 [distroless static](https://github.com/GoogleContainerTools/distroless) (CA certificates and a
 non-root user, no shell or package manager), for `linux/amd64` and `linux/arm64`
-([ADR 0013](docs/adr/0013-ship-eusov-as-a-distroless-container-image.md)). No image is published to a
-registry yet, so build it yourself:
+([ADR 0013](docs/adr/0013-ship-eusov-as-a-distroless-container-image.md),
+[ADR 0014](docs/adr/0014-publish-the-signed-image-to-ghcr-with-docker-buildx.md)). It is tagged with
+the release tag (`vX.Y.Z`), `X.Y` and, for the newest release that is not a pre-release, `latest`.
+Pin a release tag; `docker run ghcr.io/timothymamo/eusov:<version> version` reports that version. The commands
+below use `v0.1.0`; put the release you want in its place:
 
 ```bash
-make image                       # eusov:<version>, eusov:dev and eusov:latest, stamped from git
-docker build -t eusov .          # eusov:latest without the version stamp
-docker buildx build --platform linux/amd64,linux/arm64 .
+docker pull ghcr.io/timothymamo/eusov:v0.1.0
 ```
 
-Both tag `eusov:latest` locally, which is what `eusov` in the commands below resolves to. The entrypoint
-is `eusov` and the working directory `/work`, so relative paths such as `--inventory inventory.json`
-resolve there. Mount only the inventory file, read-only, and since `assess` is offline, give the
-container no network:
+The entrypoint is `eusov` and the working directory `/work`, so relative paths such as
+`--inventory inventory.json` resolve there. Mount only the inventory file, read-only, and since
+`assess` is offline, give the container no network:
 
 ```bash
 docker run --rm --read-only --network none --user "$(id -u):$(id -g)" \
   --mount type=bind,src="$PWD/inventory.json",dst=/work/inventory.json,readonly \
-  eusov assess --inventory inventory.json --target scaleway
+  ghcr.io/timothymamo/eusov:v0.1.0 assess --inventory inventory.json --target scaleway
 
 # The report describes your infrastructure: keep the file private.
 (umask 077 && docker run --rm --read-only --network none --user "$(id -u):$(id -g)" \
   --mount type=bind,src="$PWD/inventory.json",dst=/work/inventory.json,readonly \
-  eusov assess --inventory inventory.json --target ovhcloud > report.md)
+  ghcr.io/timothymamo/eusov:v0.1.0 assess --inventory inventory.json --target ovhcloud > report.md)
 ```
+
+To build the image yourself from a clone instead, `make image` tags `eusov:<version>`, `eusov:dev` and
+`eusov:latest`, stamped from git (`docker build -t eusov .` builds it without the version stamp); use
+`eusov` in place of `ghcr.io/timothymamo/eusov:v0.1.0` in the commands here.
+
+### Verify the image
+
+Every published image is signed with [cosign](https://github.com/sigstore/cosign), keyless, by the
+release workflow's GitHub identity, and carries build provenance and an SPDX SBOM as GitHub
+attestations. Check them before you run a release:
+
+```bash
+# The signature: made by release.yml, run for a v* tag of this repository.
+cosign verify ghcr.io/timothymamo/eusov:v0.1.0 \
+  --certificate-identity-regexp '^https://github\.com/timothymamo/eu-sov-cloud/\.github/workflows/release\.yml@refs/tags/v' \
+  --certificate-oidc-issuer https://token.actions.githubusercontent.com
+
+# The build provenance (SLSA), then the SBOM.
+gh attestation verify oci://ghcr.io/timothymamo/eusov:v0.1.0 --repo timothymamo/eu-sov-cloud \
+  --signer-workflow timothymamo/eu-sov-cloud/.github/workflows/release.yml
+gh attestation verify oci://ghcr.io/timothymamo/eusov:v0.1.0 --repo timothymamo/eu-sov-cloud \
+  --signer-workflow timothymamo/eu-sov-cloud/.github/workflows/release.yml \
+  --predicate-type https://spdx.dev/Document/v2.3
+```
+
+`gh attestation verify ... --format json` prints the attested statements, the SBOM's packages among
+them. The image's labels name the source repository (`org.opencontainers.image.source`) and the commit
+(`org.opencontainers.image.revision`).
+
+### Mounts, users and reports
 
 The image's own user is the non-root `nonroot` (uid 65532), which cannot read a file only you may read,
 such as an inventory of mode `0600`. `--user "$(id -u):$(id -g)"` runs the container as you instead,
@@ -128,7 +158,7 @@ mkdir -p reports && chmod 700 reports
 docker run --rm --read-only --network none --user "$(id -u):$(id -g)" \
   --mount type=bind,src="$PWD/inventory.json",dst=/work/inventory.json,readonly \
   --mount type=bind,src="$PWD/reports",dst=/out \
-  eusov assess --inventory inventory.json --target ovhcloud --output /out/report.md
+  ghcr.io/timothymamo/eusov:v0.1.0 assess --inventory inventory.json --target ovhcloud --output /out/report.md
 ```
 
 Never make the report directory world-writable (`chmod 777`) to let the container's user in.
@@ -147,7 +177,7 @@ providers' SDKs read them, through their default credential chain, at `docker ru
   docker run --rm --read-only --user "$(id -u):$(id -g)" -e HOME=/home/nonroot -e AWS_PROFILE \
     --mount type=bind,src="$HOME/.aws",dst=/home/nonroot/.aws,readonly \
     --mount type=bind,src="$HOME/.aws/sso/cache",dst=/home/nonroot/.aws/sso/cache \
-    eusov ...
+    ghcr.io/timothymamo/eusov:v0.1.0 ...
   ```
 
   A `--tmpfs` there would hide the cached token and SSO would fail. Keep `--tmpfs` for cache paths

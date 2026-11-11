@@ -54,7 +54,8 @@
   customManagers: [
     {
       // An optional "@sha256:..." after the value is the digest (docker datasource): Renovate then
-      // updates the tag and the digest together.
+      // updates the tag and the digest together. A value of the form "image=<name>:<tag>", as in
+      // setup-buildx-action's driver-opts, is read from its tag.
       description: 'Versions annotated with "# renovate: datasource=... depName=..." on the line above',
       customType: 'regex',
       managerFilePatterns: [
@@ -62,7 +63,7 @@
         '/^\\.github/workflows/[^/]+\\.ya?ml$/',
       ],
       matchStrings: [
-        '# renovate: datasource=(?<datasource>\\S+) depName=(?<depName>\\S+)(?: versioning=(?<versioning>\\S+))?\\s+\\S+:\\s*"?(?<currentValue>[^"\\s@]+)(?:@(?<currentDigest>sha256:[a-f0-9]{64}))?"?',
+        '# renovate: datasource=(?<datasource>\\S+) depName=(?<depName>\\S+)(?: versioning=(?<versioning>\\S+))?\\s+\\S+:\\s*(?:image=[^\\s:]+:)?"?(?<currentValue>[^"\\s@]+)(?:@(?<currentDigest>sha256:[a-f0-9]{64}))?"?',
       ],
     },
   ],

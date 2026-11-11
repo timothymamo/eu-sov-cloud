@@ -98,7 +98,10 @@ jobs:
         run: make test-e2e
 
   # Builds the container image for both release platforms without pushing it, then
-  # smoke-tests the amd64 image: a broken Dockerfile fails the pull request.
+  # smoke-tests the amd64 image: a broken Dockerfile fails the pull request. It is
+  # also the dry run of release.yml's image job (ADR 0014): the same tag rules for
+  # sample tags, the same build settings, and the SBOM of the built image. Signing
+  # and the attestations need an OIDC token and write access, so only a tag runs them.
   image:
     name: Container image
     runs-on: ubuntu-latest
@@ -124,16 +127,78 @@ jobs:
       - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
         with:
           driver-opts: image=moby/buildkit:${{ env.BUILDKIT_VERSION }}
+      # release.yml's tag rules, each given a sample tag in place of the pushed one: a release
+      # gets vX.Y.Z, X.Y and latest, a pre-release its own tag only.
+      - name: Image tags for a sample release tag
+        id: tags-release
+        uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6.2.0
+        with:
+          images: ghcr.io/timothymamo/eusov
+          flavor: latest=auto
+          tags: |
+            type=semver,pattern={{raw}},value=v1.2.3
+            type=semver,pattern={{major}}.{{minor}},value=v1.2.3,enable=${{ !contains('v1.2.3', '-') }}
+      - name: Image tags for a sample pre-release tag
+        id: tags-prerelease
+        uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6.2.0
+        with:
+          images: ghcr.io/timothymamo/eusov
+          flavor: latest=auto
+          tags: |
+            type=semver,pattern={{raw}},value=v1.2.3-rc.1
+            type=semver,pattern={{major}}.{{minor}},value=v1.2.3-rc.1,enable=${{ !contains('v1.2.3-rc.1', '-') }}
+      - name: The tags a release and a pre-release get
+        env:
+          RELEASE: ${{ steps.tags-release.outputs.tags }}
+          PRERELEASE: ${{ steps.tags-prerelease.outputs.tags }}
+        run: |
+          check() {
+            got="$(printf '%s\n' "$2" | sed '/^$/d' | sort)"
+            want="$(printf '%s\n' "$3" | sort)"
+            echo "$1: $(echo $got)"
+            if [ "$got" != "$want" ]; then
+              echo "$1: want $(echo $want)" >&2
+              exit 1
+            fi
+          }
+          image=ghcr.io/timothymamo/eusov
+          check release "$RELEASE" "$image:v1.2.3
+          $image:1.2
+          $image:latest"
+          check pre-release "$PRERELEASE" "$image:v1.2.3-rc.1"
+      # The settings of release.yml's push, written to an OCI archive instead of a registry.
       - name: Build linux/amd64 and linux/arm64
         uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
         with:
           context: .
           platforms: linux/amd64,linux/arm64
           push: false
+          outputs: type=oci,dest=${{ runner.temp }}/eusov.oci.tar
+          tags: ${{ steps.tags-release.outputs.tags }}
+          annotations: index:org.opencontainers.image.source=https://github.com/timothymamo/eu-sov-cloud
+          provenance: false
+          sbom: false
           build-args: |
             VERSION=${{ steps.meta.outputs.version }}
             COMMIT=${{ steps.meta.outputs.commit }}
             DATE=${{ steps.meta.outputs.date }}
+      - name: SBOM of the built image
+        uses: anchore/sbom-action@66cbf4bc1f1c0d2edc94016e65bc221b6bb0ad6c # v0.24.3
+        with:
+          image: oci-archive:${{ runner.temp }}/eusov.oci.tar
+          format: spdx-json
+          output-file: ${{ runner.temp }}/eusov.spdx.json
+          upload-artifact: false
+          upload-release-assets: false
+          # renovate: datasource=github-releases depName=anchore/syft
+          syft-version: v1.57.1
+      - name: The SBOM is SPDX and lists eusov
+        env:
+          SBOM: ${{ runner.temp }}/eusov.spdx.json
+        run: |
+          jq -r '.spdxVersion, (.packages | length | "\(.) packages")' "$SBOM"
+          jq -e '.spdxVersion == "SPDX-2.3"' "$SBOM" > /dev/null
+          jq -e 'any(.packages[]; .name == "github.com/timothymamo/eu-sov-cloud")' "$SBOM" > /dev/null
       - name: Load linux/amd64 for the smoke test
         uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
         with:
