@@ -23,6 +23,9 @@ Write the worktree path out in full; do not store it in a shell variable.
    | Integration | `//go:build integration` | Real cloud APIs, read-only credentials, never in default CI |
    | E2E | `test/e2e`, `//go:build e2e` | Build the binary, run it against `testdata/` fixtures |
 
+   `e2e` and `integration` are the only custom build tags. Never negate them (`!e2e`, `!integration`):
+   lint always sets both, so a file behind a negated tag is never linted.
+
 3. Write the test, run only it (`go test ./internal/... -run 'TestName/case'`) and confirm it fails
    **for the right reason** (an assertion on the missing behaviour, not a compile error in an unrelated
    file). A compile failure because the new function does not exist yet is acceptable RED.

@@ -15,6 +15,7 @@ import (
 
 	"github.com/timothymamo/eu-sov-cloud/internal/adapter/report/markdown"
 	"github.com/timothymamo/eu-sov-cloud/internal/adapter/source/inventoryfile"
+	"github.com/timothymamo/eu-sov-cloud/internal/adapter/target/ovhcloud"
 	"github.com/timothymamo/eu-sov-cloud/internal/adapter/target/scaleway"
 	"github.com/timothymamo/eu-sov-cloud/internal/app/analysis"
 	"github.com/timothymamo/eu-sov-cloud/internal/cli"
@@ -37,14 +38,15 @@ func main() {
 }
 
 // deps wires the adapters of the assess path: the inventory file, the embedded
-// Scaleway catalog and the Markdown reporter. None of them uses the network or
-// credentials.
+// OVHcloud and Scaleway catalogs and the Markdown reporter. None of them uses
+// the network or credentials.
 func deps() cli.Deps {
 	return cli.Deps{
 		NewInventorySource: func(path string) analysis.InventorySource {
 			return inventoryfile.New(path)
 		},
 		Targets: map[string]func() analysis.CatalogSource{
+			"ovhcloud": func() analysis.CatalogSource { return ovhcloud.New() },
 			"scaleway": func() analysis.CatalogSource { return scaleway.New() },
 		},
 		NewReporter: func() analysis.Reporter { return markdown.New() },

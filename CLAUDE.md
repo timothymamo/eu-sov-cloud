@@ -9,8 +9,9 @@ reports what can be moved to an EU cloud provider (**OVHcloud, Scaleway, UpCloud
 have a direct equivalent, which a partial one, which have none, and what blocks the move.
 
 **Status:** walking skeleton. `eusov assess` works offline: it reads an inventory file and assesses it
-against an embedded Scaleway catalog snapshot, through every layer (PRD #2, `prds/done/`). Live source
-adapters and the other targets do not exist yet. Work is planned as PRDs in `prds/`.
+against an embedded OVHcloud or Scaleway catalog snapshot, through every layer (PRD #2, and OVHcloud
+from PRD #11, both in `prds/done/`). Live source adapters and the UpCloud target do not exist yet. Work
+is planned as PRDs in `prds/`.
 
 ## Ubiquitous language
 
@@ -36,7 +37,7 @@ Hexagonal (ports and adapters). Dependencies point inwards only. See `docs/archi
 |---|---|---|
 | Domain | `internal/domain/{taxonomy,inventory,catalog,mapping,assessment,text}` | Other domain packages and an allow list of pure standard packages (no `os`, `net/http`, `unsafe`, ...) |
 | Application | `internal/app/analysis` | Domain. Declares the ports (interfaces) it consumes |
-| Adapters | `internal/adapter/source/{inventoryfile,aws,azure,gcp}`, `internal/adapter/target/{ovhcloud,scaleway,upcloud}`, `internal/adapter/report/{markdown,jsonreport}` | Domain, the ports they implement, SDKs. Never `internal/cli` or `cmd/` |
+| Adapters | `internal/adapter/source/{inventoryfile,aws,azure,gcp}`, `internal/adapter/target/{ovhcloud,scaleway,upcloud}`, `internal/adapter/report/{markdown,jsonreport}`, and `internal/adapter/internal/jsondoc`, the JSON decoder they share | Domain, the ports they implement, SDKs. Never `internal/cli` or `cmd/` |
 | Driving adapter | `internal/cli` | Application, domain, `internal/version` |
 | Composition root | `cmd/eusov` | Everything; the only place adapters are constructed |
 

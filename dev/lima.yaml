@@ -38,7 +38,7 @@ param:
   # renovate: datasource=node-version depName=node versioning=node
   nodeVersion: "26.13.0"
   # renovate: datasource=npm depName=@earendil-works/pi-coding-agent
-  piVersion: "1.5.0"
+  piVersion: "1.5.2"
 
 provision:
   - mode: system

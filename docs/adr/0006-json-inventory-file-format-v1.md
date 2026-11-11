@@ -1,6 +1,9 @@
 # 0006. Use a strictly decoded, versioned JSON inventory file as the interchange format between discover and assess
 
-- Status: Accepted
+- Status: Accepted; the reader's implementation (it decodes through one strict decoder shared with
+  the snapshot reader) and the quoting of the path in errors (`text.QuotePath`, which keeps the base
+  name of a long path) are amended by
+  [0009](0009-decode-adapter-json-documents-through-one-strict-decoder.md)
 - Date: 2026-11-10
 
 ## Context

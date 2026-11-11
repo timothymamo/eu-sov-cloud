@@ -325,6 +325,23 @@ func TestSnapshotSourceURL(t *testing.T) {
 		{name: "parentheses", url: "https://example.com/a(b)"},
 		{name: "escaped space", url: "https://example.com/a%20b"},
 		{name: "sub domain", url: "https://sub-domain.example.com/x"},
+		// Hardening against an HTML or Markdown renderer must not refuse what is
+		// a plain URL: an ampersand between query parameters is not an entity,
+		// and a percent escape that decodes to text is part of the URL.
+		{name: "bare ampersands between query parameters", url: "https://example.com/?a=1&b=2"},
+		{name: "ampersand and equals before a semicolon", url: "https://example.com/?a=1&b=2;c=3"},
+		// An ampersand that starts no reference shape is a query parameter: a
+		// named reference without its semicolon (&amp, &copy=2) is accepted on
+		// purpose, because refusing it by prefix would refuse ordinary parameters
+		// such as &region= and &section=.
+		{name: "ampersand before a parameter called region", url: "https://example.com/?a=1&region=eu"},
+		// An at sign is user info only in the authority, before the path or the
+		// query starts.
+		{name: "at sign in the path", url: "https://example.com/a@b"},
+		{name: "at sign in the query", url: "https://example.com/?q=a@b"},
+		{name: "percent encoded non ascii", url: "https://example.com/caf%C3%A9"},
+		{name: "percent encoded ampersand", url: "https://example.com/?q=AT%26T"},
+		{name: "percent encoded percent sign", url: "https://example.com/100%25"},
 
 		// Invalid free text: rejected before the URL is even parsed.
 		{
@@ -362,6 +379,20 @@ func TestSnapshotSourceURL(t *testing.T) {
 		// are the syntax of a link in Markdown.
 		{name: "ipv6 literal host", url: "https://[2001:db8::1]/", wantErrs: []error{catalog.ErrInvalidCatalog}},
 		{name: "ipv4 literal host", url: "https://192.0.2.1/", wantErrs: []error{catalog.ErrInvalidCatalog}},
+		// A browser resolves a host whose last label is a number as an IPv4
+		// address: one label of decimal digits, or of 0x and hexadecimal digits.
+		// 0x7f.1 and 2130706433 are both 127.0.0.1.
+		{name: "short hexadecimal ipv4 host", url: "https://0x7f.1/", wantErrs: []error{catalog.ErrInvalidCatalog}},
+		{name: "decimal integer ipv4 host", url: "https://2130706433/", wantErrs: []error{catalog.ErrInvalidCatalog}},
+		{name: "decimal last label", url: "https://example.123/", wantErrs: []error{catalog.ErrInvalidCatalog}},
+		{name: "hexadecimal last label with a lower x", url: "https://example.0x1f/", wantErrs: []error{catalog.ErrInvalidCatalog}},
+		{name: "hexadecimal last label with an upper X", url: "https://example.0X1F/", wantErrs: []error{catalog.ErrInvalidCatalog}},
+		// A number anywhere but the last label is a name a browser keeps: the
+		// first label may start with one, and a letter later makes the label text.
+		{name: "host name starting with a digit", url: "https://1password.com/"},
+		{name: "sub domain starting with a digit", url: "https://123.example.com/"},
+		{name: "last label with letters and a digit", url: "https://example.co1/"},
+		{name: "www sub domain", url: "https://www.example.com/"},
 		{
 			name:     "markdown image in path",
 			url:      "https://example.com/a)![i](https://evil.example/x.png)",
@@ -380,6 +411,39 @@ func TestSnapshotSourceURL(t *testing.T) {
 		{name: "backslash", url: "https://example.com/a\\b", wantErrs: []error{catalog.ErrInvalidCatalog}},
 		{name: "caret", url: "https://example.com/a^b", wantErrs: []error{catalog.ErrInvalidCatalog}},
 		{name: "braces", url: "https://example.com/a{b}", wantErrs: []error{catalog.ErrInvalidCatalog}},
+
+		// Defence in depth: a report shows the source URL as a code span, and an
+		// HTML or Markdown renderer would turn an entity reference into the
+		// character it names, so the URL a reader sees would not be the URL the
+		// catalog holds. Entity shapes are refused rather than rendered.
+		{name: "named entity reference", url: "https://example.com/?q=&amp;", wantErrs: []error{catalog.ErrInvalidCatalog}},
+		// A named entity followed by a digit is the shape some parsers accept and
+		// others do not (&lt without its semicolon), so it is refused: the URL a
+		// reader sees would depend on the renderer.
+		{name: "named entity with digits", url: "https://example.com/a&lt1;b", wantErrs: []error{catalog.ErrInvalidCatalog}},
+		{name: "decimal numeric entity", url: "https://example.com/?q=&#38;", wantErrs: []error{catalog.ErrInvalidCatalog}},
+		// HTML decodes a numeric reference without its semicolon too, so a bare
+		// &#38 or &#x26 is a reference shape as well.
+		{name: "decimal numeric reference without a semicolon", url: "https://example.com/?x&#38", wantErrs: []error{catalog.ErrInvalidCatalog}},
+		{name: "decimal numeric reference without a semicolon before a letter", url: "https://example.com/?x&#38x", wantErrs: []error{catalog.ErrInvalidCatalog}},
+		{name: "hex numeric entity with a lower x", url: "https://example.com/?q=&#x26;", wantErrs: []error{catalog.ErrInvalidCatalog}},
+		{name: "hex numeric entity with an upper X", url: "https://example.com/?q=&#X26;", wantErrs: []error{catalog.ErrInvalidCatalog}},
+		{name: "hex numeric reference with a lower x and no semicolon", url: "https://example.com/?x&#x26", wantErrs: []error{catalog.ErrInvalidCatalog}},
+		{name: "hex numeric reference with an upper X and no semicolon", url: "https://example.com/?x&#X26", wantErrs: []error{catalog.ErrInvalidCatalog}},
+		// An ampersand and a hash that start no numeric reference are plain text:
+		// &# then a letter that is not x, or &#x then a letter that is not hex.
+		{name: "ampersand and hash before a letter", url: "https://example.com/?a=1&#frag"},
+		{name: "ampersand and hash and x before a non hex letter", url: "https://example.com/?a=1&#xyz"},
+
+		// A percent escape decodes to a byte, and a byte that is not valid text
+		// has nothing a report can show: %0A is a line break, %00 a NUL,
+		// %E2%80%AE a bidi override and %FF no UTF-8 at all.
+		{name: "escape decoding to a line feed", url: "https://example.com/a%0Ab", wantErrs: []error{catalog.ErrInvalidCatalog}},
+		{name: "escape decoding to NUL", url: "https://example.com/a%00b", wantErrs: []error{catalog.ErrInvalidCatalog}},
+		{name: "escape decoding to a right to left override", url: "https://example.com/a%E2%80%AEb", wantErrs: []error{catalog.ErrInvalidCatalog}},
+		{name: "escape decoding to a right to left override in lower case hex", url: "https://example.com/a%e2%80%aeb", wantErrs: []error{catalog.ErrInvalidCatalog}},
+		{name: "escape decoding to a byte that is not UTF-8", url: "https://example.com/a%FFb", wantErrs: []error{catalog.ErrInvalidCatalog}},
+		{name: "right to left override escape in the query", url: "https://example.com/?q=%E2%80%AE", wantErrs: []error{catalog.ErrInvalidCatalog}},
 	}
 
 	for _, tc := range tests {
@@ -462,6 +526,54 @@ func TestSnapshotSourceURLErrorDoesNotEchoUserInfo(t *testing.T) {
 			url:     "https://user:pa^ss@example.com/",
 			secrets: []string{"pa^ss", "pa", "U+005E"},
 		},
+		// A browser's URL parser reads the user info after a single slash, or with
+		// none at all, as user info too, so the reader must find it there before it
+		// names a character of the password.
+		{
+			name:    "single slash user info with a character an rfc 3986 url does not allow",
+			url:     "https:/user:p^ss@example.com/",
+			secrets: []string{"p^ss", "U+005E"},
+		},
+		{
+			name:    "single slash user info with a non ascii password",
+			url:     "https:/user:pässword@example.com/",
+			secrets: []string{"pässword", "U+00E4"},
+		},
+		{
+			name:    "no slash user info with a character an rfc 3986 url does not allow",
+			url:     "https:user:p^ss@example.com/",
+			secrets: []string{"p^ss", "U+005E"},
+		},
+		// A browser strips leading spaces and C0 controls before it parses a URL,
+		// so what follows them is user info the reader must find before it names a
+		// character of the password.
+		{
+			name:    "leading space and a zero width space in the password",
+			url:     " https://user:p\u200bss@example.com/",
+			secrets: []string{"U+200B"},
+		},
+		{
+			name:    "leading space and a c0 control in the password",
+			url:     " https://user:p\x01ss@example.com/",
+			secrets: []string{"U+0001"},
+		},
+		{
+			name:    "leading space and a soft hyphen in the password",
+			url:     " https://user:p\u00adss@example.com/",
+			secrets: []string{"U+00AD"},
+		},
+		// Some parsers do not treat a backslash as a separator, so this is user
+		// info with a backslash password rather than a path.
+		{
+			name:    "backslash in the password",
+			url:     "https://user:p\\ss@example.com/",
+			secrets: []string{"U+005C"},
+		},
+		{
+			name:    "zero width space then a backslash in the password",
+			url:     "https://user:p\u200b\\ss@example.com/",
+			secrets: []string{"U+200B"},
+		},
 	}
 
 	for _, tc := range tests {
@@ -477,6 +589,70 @@ func TestSnapshotSourceURLErrorDoesNotEchoUserInfo(t *testing.T) {
 			for _, secret := range tc.secrets {
 				if strings.Contains(msg, secret) {
 					t.Errorf("New() error = %q, want it not to echo %q", msg, secret)
+				}
+			}
+
+			if strings.Contains(msg, tc.url) {
+				t.Errorf("New() error = %q, want it not to echo the source URL", msg)
+			}
+		})
+	}
+}
+
+// An '@' that is outside the authority is not user info, but the reader cannot
+// know that before url.Parse has spoken: the check that runs before the parse
+// gives the bare message for any URL holding an '@', and the checks that run
+// after it keep their detail. ADR 0009 records the trade-off; this pins both
+// sides of it, so a reordering of the checks cannot silently flip either.
+func TestSnapshotSourceURLErrorDetailAroundUserInfoGuard(t *testing.T) {
+	t.Parallel()
+
+	baseline := sourceURLError(t, "https://user:pass@example.com/").Error()
+
+	tests := []struct {
+		name string
+		url  string
+		// bare is true when the message must be exactly the one for a URL
+		// with user info: the failing check runs before url.Parse.
+		bare bool
+		// detail is what the message must keep when bare is false: the check
+		// runs after url.Parse confirmed there is no user info.
+		detail []string
+	}{
+		{
+			name: "at sign in the path and an incomplete escape",
+			url:  "https://example.com/a@b/%ZZ",
+			bare: true,
+		},
+		{
+			name:   "at sign in the path and an escape that is not UTF-8",
+			url:    "https://example.com/a@b/%FF",
+			detail: []string{"byte 24"},
+		},
+		{
+			name:   "at sign in the query and an escape that decodes to a line feed",
+			url:    "https://example.com/?q=a@b%0A",
+			detail: []string{"U+000A"},
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			msg := sourceURLError(t, tc.url).Error()
+
+			if tc.bare {
+				if msg != baseline {
+					t.Errorf("New() error = %q, want the same message as for a rejected URL with other user info (%q)", msg, baseline)
+				}
+			} else if msg == baseline {
+				t.Errorf("New() error = %q, want it to keep the detail of the check, not the bare message for user info", msg)
+			}
+
+			for _, part := range tc.detail {
+				if !strings.Contains(msg, part) {
+					t.Errorf("New() error = %q, want it to contain %q", msg, part)
 				}
 			}
 

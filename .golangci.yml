@@ -1,5 +1,20 @@
 version: "2"
 
+# The files behind these build tags are loaded, so every lint run (make lint,
+# make check, CI) lints the e2e tests in test/e2e and the integration tests,
+# which run with real read-only cloud credentials. What applies to them:
+#   - gosec runs on every _test.go file except for G204 and G304, which tests
+#     trip by design (see the exclusion rules at the end of this file).
+#   - test/e2e has a depguard rule of its own, e2e-is-black-box. Every other
+#     depguard rule but app-tests-use-fakes-not-adapters leaves _test.go files
+#     out, so an integration test gets no depguard rule.
+# e2e and integration are the only custom build tags. Never negate them: lint
+# always sets both, so a file behind !e2e or !integration is never linted.
+run:
+  build-tags:
+    - e2e
+    - integration
+
 linters:
   default: standard
   enable:
@@ -246,7 +261,7 @@ linters:
         # CLI get adapters only through what cmd/eusov passes in. An adapter's
         # tests may import its contract suite (contract-suites-only-in-tests).
         # Helpers shared by adapters live in internal/adapter/internal/ (the
-        # JSON decoder of issue #13): they build no adapter, so adapters may
+        # JSON decoder jsondoc, ADR 0009): they build no adapter, so adapters may
         # import them. The allow entry is longer than the deny entry, so it
         # wins for those packages only; Go's internal rule keeps everything
         # outside internal/adapter from importing them. The shared target
@@ -256,6 +271,13 @@ linters:
         # file the rule covers, so on its own it would let any package import
         # the reader; snapshot-reader-only-in-targets keeps it to the packages
         # under internal/adapter/target.
+        #
+        # The allow entry for internal/adapter/internal/ admits every helper
+        # package added there, and this rule says nothing about what a helper
+        # imports. So every helper package added under internal/adapter/internal/
+        # needs a strict allow-list rule of its own, as jsondoc has
+        # (jsondoc-parses-bytes), or an adapter that must stay offline could
+        # reach I/O through it.
         adapters-are-built-in-cmd:
           list-mode: lax
           files:
@@ -319,8 +341,10 @@ linters:
         # it stays offline. It may import only what is listed under allow.
         # The glob ends in /** so it also matches the files directly in the
         # package directory. Add a standard package only when parsing needs
-        # it, never one that does I/O. The domain packages are named one by
-        # one, each ending in $, so the reader gets only the domain packages
+        # it, never one that does I/O. It decodes JSON only through jsondoc
+        # (ADR 0009), which jsondoc-parses-bytes holds to parsing packages, so
+        # encoding/json is not listed. The project packages are named one by
+        # one, each ending in $, so the reader gets only the project packages
         # it uses. domain-is-pure keeps I/O out of every domain package.
         #
         # An allowed package can still hold a function that does I/O, which an
@@ -335,18 +359,12 @@ linters:
             - "**/internal/adapter/target/snapshot/**"
             - "!$test"
           allow:
-            - bytes$
-            - encoding/json$
             - errors$
             - fmt$
-            - io$
-            - slices$
             - strconv$
             - strings$
             - time$
-            - unicode$
-            - unicode/utf16$
-            - unicode/utf8$
+            - github.com/timothymamo/eu-sov-cloud/internal/adapter/internal/jsondoc$
             - github.com/timothymamo/eu-sov-cloud/internal/domain/catalog$
             - github.com/timothymamo/eu-sov-cloud/internal/domain/taxonomy$
             - github.com/timothymamo/eu-sov-cloud/internal/domain/text$
@@ -356,19 +374,92 @@ linters:
         # missing field as empty and has no size cap. The deny entry has no $,
         # so it also covers encoding/json/v2 and encoding/json/jsontext. The
         # globs cover every file under internal/adapter/target that is not a
-        # _test.go file, except the reader's own: every target adapter, a
-        # target added later included, and the contract suite targettest. A
-        # JSON decode in targettest would be the second snapshot reader ADR
-        # 0007 rules out. Only _test.go files may decode JSON.
+        # _test.go file: every target adapter, a target added later included,
+        # the contract suite targettest, and the reader itself, which decodes
+        # through jsondoc (ADR 0009). A JSON decode in targettest would be the
+        # second snapshot reader ADR 0007 rules out. Only _test.go files may
+        # decode JSON.
         target-adapters-read-snapshots-through-the-reader:
           list-mode: lax
           files:
             - "**/internal/adapter/target/**"
-            - "!**/internal/adapter/target/snapshot/**"
             - "!$test"
           deny:
             - pkg: encoding/json
-              desc: read the snapshot through internal/adapter/target/snapshot (ADR 0007)
+              desc: read the snapshot through internal/adapter/target/snapshot, which decodes through jsondoc (ADR 0007, ADR 0009)
+        # The strict JSON decoder adapters share (ADR 0009) parses the bytes it
+        # is given: it opens no file, makes no network call and imports no
+        # adapter, so a reader that decodes through it stays as offline as its
+        # own imports allow. It may import only what is listed under allow: the
+        # standard packages that parse JSON and text, and the domain's text
+        # package, through which every document value reaches an error. The
+        # glob ends in /** so it also matches the files directly in the
+        # package directory. Add a standard package only when parsing needs
+        # it, never one that does I/O; text is named with $ for the reason
+        # target-snapshot-reader-parses-bytes gives. fmt$ is allowed for
+        # fmt.Errorf and fmt.Sprintf: the decoder must not call fmt.Print*,
+        # which an import rule cannot see, so review holds that line.
+        jsondoc-parses-bytes:
+          list-mode: strict
+          files:
+            - "**/internal/adapter/internal/jsondoc/**"
+            - "!$test"
+          allow:
+            - bytes$
+            - encoding/json$
+            - errors$
+            - fmt$
+            - io$
+            - slices$
+            - strconv$
+            - strings$
+            - unicode$
+            - unicode/utf16$
+            - unicode/utf8$
+            - github.com/timothymamo/eu-sov-cloud/internal/domain/text$
+        # The inventory-file reader reads one local file and decodes it (ADR
+        # 0006): it makes no network call, starts no process and imports no
+        # adapter, so the source it reads from stays offline by rule. It may
+        # import only what is listed under allow: os, io and io/fs to open and
+        # read the file, context to stop when asked, errors and fmt for its
+        # errors, jsondoc to decode, and the domain packages it builds the
+        # inventory with. The glob ends in /** so it also matches the files
+        # directly in the package directory. Add a standard package only when
+        # reading or parsing the file needs it, never one that reaches the
+        # network; the project packages are named one by one, each ending in $,
+        # for the reason target-snapshot-reader-parses-bytes gives.
+        #
+        # It decodes the file only through jsondoc (ADR 0009), never with
+        # encoding/json of its own, which matches keys ignoring case, keeps the
+        # last of a repeated key and reads an escaped lone surrogate as U+FFFD.
+        # The allow list already refuses encoding/json; the deny entry, which
+        # has no $ and so also covers encoding/json/v2 and
+        # encoding/json/jsontext, only says why. Only the _test.go files may
+        # decode JSON.
+        #
+        # An allowed package can still hold a function that reaches further
+        # than the rule means, which an import rule cannot see: os is allowed
+        # for os.Open, and the reader must not call os.Getenv, os.StartProcess
+        # or fmt.Print*. Review holds that line.
+        inventory-file-reader-reads-one-file:
+          list-mode: strict
+          files:
+            - "**/internal/adapter/source/inventoryfile/**"
+            - "!$test"
+          allow:
+            - context$
+            - errors$
+            - fmt$
+            - io$
+            - io/fs$
+            - os$
+            - github.com/timothymamo/eu-sov-cloud/internal/adapter/internal/jsondoc$
+            - github.com/timothymamo/eu-sov-cloud/internal/domain/inventory$
+            - github.com/timothymamo/eu-sov-cloud/internal/domain/taxonomy$
+            - github.com/timothymamo/eu-sov-cloud/internal/domain/text$
+          deny:
+            - pkg: encoding/json
+              desc: decode the inventory file through internal/adapter/internal/jsondoc (ADR 0009)
         # A target that serves an embedded snapshot (ADR 0007) reads only the
         # bytes it embeds with //go:embed: it opens no file, reads no
         # environment, makes no network or system call and loads no code. The
@@ -430,6 +521,32 @@ linters:
           deny:
             - pkg: github.com/google/go-cmp
               desc: go-cmp is a test-only dependency
+        # The e2e tier builds the binary and runs it as a black box, offline,
+        # against the fixtures in test/e2e/testdata. It imports only the
+        # standard library, go-cmp and internal/testutil: no adapter,
+        # application, domain or CLI package and no cloud SDK. The glob covers
+        # _test.go files too; it is the only depguard rule that does outside
+        # internal/app. The allow entry for testutil ends in $ and is longer
+        # than the module-wide deny entry, so it wins for that package only.
+        e2e-is-black-box:
+          list-mode: strict
+          files:
+            - "**/test/e2e/**"
+          allow:
+            - $gostd
+            - github.com/google/go-cmp
+            - github.com/timothymamo/eu-sov-cloud/internal/testutil$
+          deny:
+            - pkg: github.com/timothymamo/eu-sov-cloud/
+              desc: the e2e tier runs the built binary as a black box; it imports no adapter, application, domain or CLI package
+            - pkg: github.com/aws/aws-sdk-go-v2
+              desc: the e2e tier runs offline and calls no cloud SDK
+            - pkg: github.com/Azure/azure-sdk-for-go
+              desc: the e2e tier runs offline and calls no cloud SDK
+            - pkg: cloud.google.com/go
+              desc: the e2e tier runs offline and calls no cloud SDK
+            - pkg: google.golang.org/api
+              desc: the e2e tier runs offline and calls no cloud SDK
     exhaustive:
       default-signifies-exhaustive: true
     gosec:
@@ -452,8 +569,25 @@ linters:
     rules:
       - path: _test\.go
         linters:
-          - gosec
           - unparam
+      # Tests get gosec too, the e2e and integration tests included, apart
+      # from two rules they trip by design: G204 (a subprocess launched with a
+      # variable), because test/e2e runs the built binary, and G304 (a file
+      # opened from a variable path), because tests open fixture and golden
+      # files. gosec's message starts with its rule ID, so text matches it.
+      - path: _test\.go
+        linters:
+          - gosec
+        text: "^G(204|304):"
+      # The URL-rejection tests feed sanitised userinfo placeholders such as
+      # https://user:pass@example.com/ to the catalog to prove it refuses
+      # them, and G101 (hard-coded credentials) reads them as secrets. They
+      # are none. The rule covers G101 in this one file only, so a hard-coded
+      # credential in any other file is still reported.
+      - path: internal/domain/catalog/catalog_test\.go
+        linters:
+          - gosec
+        text: "^G101:"
 
 formatters:
   enable:

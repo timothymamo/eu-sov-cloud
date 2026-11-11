@@ -15,7 +15,8 @@
 // such as Cyrillic а for Latin a) and Unicode normalisation (NFC and NFD
 // spellings of the same text) are not detected. Quote turns any
 // string, valid or not, into a short, escaped form that is safe to echo in an
-// error message.
+// error message, and QuotePath does the same for a file path, keeping both ends
+// of a long one so its base name survives.
 //
 // Escaping for an output format, such as a Markdown table cell, is not done here:
 // that belongs to the reporter for that format.

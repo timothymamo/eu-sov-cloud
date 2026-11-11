@@ -45,12 +45,19 @@ const (
 	// scalewayTarget is the display name of the fixture catalog, as the test cases
 	// that build their own catalog spell it.
 	scalewayTarget = "Scaleway"
-	// hostileSourceURL is a catalog source URL with parentheses, a stored newline
-	// escape, a stored right-to-left override escape and a character reference.
-	// Renderers decode all three, so a report that showed the URL as an autolink
-	// would end its line and display a right-to-left override the provider never
-	// sent; the stored bytes are shown in a code span instead.
-	hostileSourceURL = "https://example.com/a(b)%0A%E2%80%AE&#8238;x"
+	// hostileSourceURL is a catalog source URL with the Markdown metacharacters
+	// the hardened domain still accepts: parentheses, emphasis markers, a bare
+	// ampersand between query parameters, and percent escapes that decode to
+	// ordinary text (a backtick and a square bracket). A report that showed the
+	// URL as running text or an autolink would let a renderer read those as
+	// syntax, so the stored bytes are shown in a code span instead.
+	//
+	// The URL changed with issue #13: catalog.New now refuses an HTML character
+	// reference (&#8238;) and percent escapes that decode to invalid text (%0A,
+	// %E2%80%AE), and it already refused a pipe. Those cases are pinned in
+	// internal/domain/catalog TestSnapshotSourceURL, and the Markdown reporter's
+	// verbatim rendering of them in TestReportSourceURLIsVerbatimCodeSpan below.
+	hostileSourceURL = "https://example.com/a(b)*c*_d_~e~f?x=1&y=2%60%5B"
 )
 
 // hostileValues returns every fixture value a report must show verbatim, each

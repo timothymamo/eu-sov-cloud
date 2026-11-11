@@ -1,0 +1,34 @@
+# Migration assessment: `OVHcloud`
+
+- Inventory file: `inventory.json`
+- Source: `aws`
+- Catalog: `OVHcloud` snapshot from `https://www.ovhcloud.com/en/public-cloud/regions-availability/`, retrieved 2026-11-10
+
+## Summary
+
+| Fit | Resources |
+|---|---|
+| direct | 3 |
+| partial | 1 |
+| none | 2 |
+| total | 6 |
+
+## Resources
+
+| ID | Raw type | Category | Fit | Best offering | Reasons |
+|---|---|---|---|---|---|
+| `bucket-example` | `AWS::S3::Bucket` | `storage.object` | direct | `Object Storage` (tie: `Object Storage 3-AZ`) | `Object Storage` offers every capability the resource uses |
+| `db-example` | `AWS::RDS::DBInstance` | `database.postgresql` | direct | `Managed PostgreSQL` (tie: `Managed PostgreSQL 3-AZ`) | `Managed PostgreSQL` offers every capability the resource uses |
+| `fn-example` | `AWS::Lambda::Function` | `serverless.function` | none |  | no offering in the `OVHcloud` catalog for `serverless.function` |
+| `i-0123456789abcdef0` | `AWS::EC2::Instance` | `compute.vm` | direct | `Instances` (tie: `Metal Instances`) | `Instances` offers every capability the resource uses |
+| `misc-example` | `AWS::CloudFormation::CustomResource` | `unclassified` | none |  | not classified |
+| `partial-example` | `AWS::EC2::Instance` | `compute.vm` | partial | `Instances` (tie: `Metal Instances`) | `Instances` does not offer `high-availability` |
+
+## Required changes
+
+- `partial-example`: `high-availability` (not offered by `Instances`)
+
+## Blockers
+
+- `fn-example`: no offering in the `OVHcloud` catalog for `serverless.function`
+- `misc-example`: not classified
