@@ -83,6 +83,86 @@ every goroutine to standard error and exits with code 2.
 
 `eusov version` prints the version, `eusov help` the usage.
 
+## Run with Docker
+
+The `Dockerfile` builds a minimal image: the static `eusov` binary on
+[distroless static](https://github.com/GoogleContainerTools/distroless) (CA certificates and a
+non-root user, no shell or package manager), for `linux/amd64` and `linux/arm64`
+([ADR 0013](docs/adr/0013-ship-eusov-as-a-distroless-container-image.md)). No image is published to a
+registry yet, so build it yourself:
+
+```bash
+make image                       # eusov:<version>, eusov:dev and eusov:latest, stamped from git
+docker build -t eusov .          # eusov:latest without the version stamp
+docker buildx build --platform linux/amd64,linux/arm64 .
+```
+
+Both tag `eusov:latest` locally, which is what `eusov` in the commands below resolves to. The entrypoint
+is `eusov` and the working directory `/work`, so relative paths such as `--inventory inventory.json`
+resolve there. Mount only the inventory file, read-only, and since `assess` is offline, give the
+container no network:
+
+```bash
+docker run --rm --read-only --network none --user "$(id -u):$(id -g)" \
+  --mount type=bind,src="$PWD/inventory.json",dst=/work/inventory.json,readonly \
+  eusov assess --inventory inventory.json --target scaleway
+
+# The report describes your infrastructure: keep the file private.
+(umask 077 && docker run --rm --read-only --network none --user "$(id -u):$(id -g)" \
+  --mount type=bind,src="$PWD/inventory.json",dst=/work/inventory.json,readonly \
+  eusov assess --inventory inventory.json --target ovhcloud > report.md)
+```
+
+The image's own user is the non-root `nonroot` (uid 65532), which cannot read a file only you may read,
+such as an inventory of mode `0600`. `--user "$(id -u):$(id -g)"` runs the container as you instead,
+still not as root, so it reads your private files without their mode being loosened; every example here
+passes it. `--mount type=bind` fails if the file is missing, where `-v` would quietly create a
+root-owned directory in its place. The image works with `--read-only`, and the subshell keeps
+`umask 077` from applying to the rest of your session.
+
+Redirect the report from standard output as above. To use `--output` instead, mount a directory you
+own; running as your own user lets the container write there without the directory being opened up:
+
+```bash
+mkdir -p reports && chmod 700 reports
+docker run --rm --read-only --network none --user "$(id -u):$(id -g)" \
+  --mount type=bind,src="$PWD/inventory.json",dst=/work/inventory.json,readonly \
+  --mount type=bind,src="$PWD/reports",dst=/out \
+  eusov assess --inventory inventory.json --target ovhcloud --output /out/report.md
+```
+
+Never make the report directory world-writable (`chmod 777`) to let the container's user in.
+
+Live sources do not exist yet. When they do, cloud credentials reach the container the way the
+providers' SDKs read them, through their default credential chain, at `docker run` time. Under
+`--user`, the container has no home directory of its own (`HOME` is `/`), so set
+`-e HOME=/home/nonroot` wherever the SDK looks for config under the home directory:
+
+- Preferably, the provider's config directory mounted read-only, with short-lived credentials in it
+  (AWS SSO, `aws sts`) rather than long-lived keys. Its files are usually mode `0600`, which `--user`
+  lets the container read. The AWS SSO token cache must stay writable, and must still show the token
+  you already have, so bind-mount just that directory writable on top of the read-only mount:
+
+  ```bash
+  docker run --rm --read-only --user "$(id -u):$(id -g)" -e HOME=/home/nonroot -e AWS_PROFILE \
+    --mount type=bind,src="$HOME/.aws",dst=/home/nonroot/.aws,readonly \
+    --mount type=bind,src="$HOME/.aws/sso/cache",dst=/home/nonroot/.aws/sso/cache \
+    eusov ...
+  ```
+
+  A `--tmpfs` there would hide the cached token and SSO would fail. Keep `--tmpfs` for cache paths
+  the SDK creates from scratch.
+- Or environment variables, passed by name (`-e AWS_PROFILE -e AWS_REGION`) or with `--env-file` (a
+  file of mode `0600` kept outside the repository). Never write `-e NAME=value`: the value ends up in
+  your shell history and the process list. Passing by name or by file avoids only that. Any variable
+  the container gets, however it was passed, is readable with `docker inspect` by anyone with access
+  to the Docker daemon for as long as the container exists; `--rm` shortens that window but does not
+  close it. Prefer short-lived credentials, or the read-only config mount above, to secrets in
+  variables.
+
+**Never** bake credentials into an image (no `COPY` or `ENV` of them, no build args), and never print
+or log them.
+
 ## Repository layout
 
 ```
@@ -108,9 +188,11 @@ internal/
 test/e2e/                     Black-box tests of the built binary
 test/lint/                    Source rules golangci-lint cannot express
 test/architecture/            Layer dependencies checked package by package, per release target
+test/container/               The Dockerfile pinned to go.mod and .goreleaser.yaml
 testdata/                     Shared, sanitised fixtures
 docs/                         Architecture, ADRs, dev environment
 prds/                         Product requirements, one per feature
+Dockerfile, .dockerignore     The container image (make image)
 dev/lima.yaml                 Isolated VM for running the agents
 dev/worktree.sh               Creates the worktree for a branch (make worktree)
 .githooks/                    Refuse commits and pushes to main (make git-hooks)

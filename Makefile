@@ -7,6 +7,8 @@ LDFLAGS := -s -w \
 	-X $(PKG)/internal/version.version=$(VERSION) \
 	-X $(PKG)/internal/version.commit=$(COMMIT) \
 	-X $(PKG)/internal/version.date=$(DATE)
+# The container image make image builds (docs/adr/0013-ship-eusov-as-a-distroless-container-image.md).
+IMAGE   ?= eusov
 
 # The GOOS/GOARCH pairs the release builds, all with CGO_ENABLED=0. Must match the goos and goarch lists in
 # .goreleaser.yaml: test/architecture checks this by running make lint with a fake golangci-lint.
@@ -35,6 +37,17 @@ help: ## Show this help
 .PHONY: build
 build: ## Build the eusov binary into ./bin
 	go build -trimpath -ldflags "$(LDFLAGS)" -o bin/$(BINARY) ./cmd/$(BINARY)
+
+.PHONY: image
+image: ## Build the local container image eusov:<version>, eusov:dev and eusov:latest from git, as make build (needs Docker; tags are local, nothing is pushed)
+	docker build \
+		--build-arg VERSION="$(VERSION)" \
+		--build-arg COMMIT="$(COMMIT)" \
+		--build-arg DATE="$(DATE)" \
+		--tag "$(IMAGE):$(VERSION)" \
+		--tag "$(IMAGE):dev" \
+		--tag "$(IMAGE):latest" \
+		.
 
 .PHONY: fmt
 fmt: ## Format code (gofumpt + goimports via golangci-lint)
