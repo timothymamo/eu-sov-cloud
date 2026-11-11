@@ -61,6 +61,8 @@ main checkout as before, or the dispatch worktree of a dispatched unit.
   resume the branch and says so. Neither clears a locked entry, such as one left locked `initializing` by
   a `git worktree add` that was killed, so for a locked entry `make worktree` says so and to run
   `git worktree unlock <path>` before `git worktree prune`.
-- Follow-up: ask dot-agent-deck upstream to keep a dispatch worktree that contains other registered
-  worktrees, as it keeps one with uncommitted changes. That would make closing a unit too early safe
-  rather than only documented. The request has not been filed.
+- Follow-up: dot-agent-deck upstream is asked to keep a dispatch worktree that contains other
+  registered worktrees, as it keeps one with uncommitted changes
+  ([vfarcic/dot-agent-deck#2285](https://github.com/vfarcic/dot-agent-deck/issues/2285)). That would
+  make closing a unit too early safe rather than only documented. Until it ships, the cleanup order
+  above is the only guard.
