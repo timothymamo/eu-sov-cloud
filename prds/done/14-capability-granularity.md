@@ -1,6 +1,6 @@
 # PRD #14: Capability granularity: node versus zone high availability, tier-dependent capabilities
 
-**Status:** Draft. On 2026-11-11 the user accepted the recommended options, A + E plus F (see
+**Status:** Complete. On 2026-11-11 the user accepted the recommended options, A + E plus F (see
 *Decisions and open questions*).
 **Issue:** #14
 
@@ -271,64 +271,64 @@ under `make test` or `make test-e2e`, unless marked *review*.
 
 **Vocabulary**
 
-- [ ] Given a resource that uses `node-high-availability`, and an offering in its category that lists
+- [x] Given a resource that uses `node-high-availability`, and an offering in its category that lists
   `zone-high-availability` and every other capability the resource uses, then the fit is `direct`.
-- [ ] Given a resource that uses `zone-high-availability`, and only offerings with
+- [x] Given a resource that uses `zone-high-availability`, and only offerings with
   `node-high-availability`, then the fit is `partial`, and Required changes lists
   `zone-high-availability` (not offered by the best offering).
-- [ ] The parsed catalog of every target lists `node-high-availability` on every offering that lists
+- [x] The parsed catalog of every target lists `node-high-availability` on every offering that lists
   `zone-high-availability`, whether or not its snapshot does (catalog goldens).
-- [ ] Given an inventory file that lists `high-availability`, `eusov assess` exits 1 with one error line.
+- [x] Given an inventory file that lists `high-availability`, `eusov assess` exits 1 with one error line.
   The line names the resource, the value, and both `node-high-availability` and
   `zone-high-availability`. The value is never read as either of them.
-- [ ] *Review:* the doc comments of `node-high-availability`, `zone-high-availability` and `ipv6` state
+- [x] *Review:* the doc comments of `node-high-availability`, `zone-high-availability` and `ipv6` state
   the definitions recorded in the ADR. `ipv6` means both directions.
 
 **Catalogs**
 
-- [ ] Given a `database.postgresql` resource that uses `zone-high-availability` (an RDS Multi-AZ instance):
+- [x] Given a `database.postgresql` resource that uses `zone-high-availability` (an RDS Multi-AZ instance):
   - with `--target scaleway`, the fit is `partial`, and Required changes names `zone-high-availability`;
   - with `--target ovhcloud`, the fit is `direct`, the best offering is a 3-AZ variant, and no 1-AZ
     offering ties with it.
-- [ ] Given the same resource using `node-high-availability`, both targets report `direct`. The best
+- [x] Given the same resource using `node-high-availability`, both targets report `direct`. The best
   Scaleway offering is the Managed Database variant named after the High Availability option.
-- [ ] Given a resource that uses a capability only one tier of a product provides (for example a
+- [x] Given a resource that uses a capability only one tier of a product provides (for example a
   `kubernetes.managed` resource with high availability on Scaleway), then the best offering is the
   variant for that tier, and its name says the tier. Given a resource of the same category that uses
   none of the tier's capabilities, then the base offering is reported first.
-- [ ] Given a `serverless.function` resource that uses `ipv6`, then with `--target scaleway` its fit is
+- [x] Given a `serverless.function` resource that uses `ipv6`, then with `--target scaleway` its fit is
   `partial`.
-- [ ] Given a `database.postgresql` resource whose only capability is `autoscaling`, then with
+- [x] Given a `database.postgresql` resource whose only capability is `autoscaling`, then with
   `--target scaleway` no candidate is named Serverless SQL Database. (Today it is the best offering,
   with fit `direct`.)
-- [ ] *Review:*
+- [x] *Review:*
   - every high-availability capability in both snapshots matches its section's **Scope:** line, checked
     against the provider's documentation;
   - every **Needs:** line names the tier its offering is named after, or the product's default tier;
   - no `SOURCES.md` still defers a decision to issue #14;
   - Serverless Functions' `ipv6` and Serverless SQL Database are listed under *Left out on purpose*,
     with the reason.
-- [ ] Both adapters pass `targettest` as it stands. A test pins each adapter's declared regions, and
+- [x] Both adapters pass `targettest` as it stands. A test pins each adapter's declared regions, and
   those tests are unchanged.
 
 **Report and architecture**
 
-- [ ] The report's sections, columns and resource order are unchanged. In the goldens, only offering
+- [x] The report's sections, columns and resource order are unchanged. In the goldens, only offering
   names, fits, ties and capability names differ.
-- [ ] *Review:*
+- [x] *Review:*
   - no production code changes under `internal/domain/mapping`, `internal/domain/assessment`,
     `internal/app`, `internal/adapter/report`, `internal/adapter/source/inventoryfile` or
     `internal/adapter/target/snapshot`;
   - their tests and goldens change only where they name a retired capability;
   - neither format's `schemaVersion` changes.
-- [ ] `make check` passes, including depguard.
+- [x] `make check` passes, including depguard.
 
 ## Milestones
 
 Each milestone ships as one PR. Milestones 2 and 3 depend only on 1, and can run in parallel.
 
 1. [x] **ADR and the scoped high-availability vocabulary.** The ADR
-   ([0011](../docs/adr/0011-scope-capabilities-and-one-offering-per-tier.md)) records:
+   ([0011](../../docs/adr/0011-scope-capabilities-and-one-offering-per-tier.md)) records:
    - the chosen options and the definitions of each capability they change;
    - the implication, zone level implies node level, which lives in the taxonomy and which `catalog.New`
      applies to offerings only;
@@ -365,7 +365,7 @@ Each milestone ships as one PR. Milestones 2 and 3 depend only on 1, and can run
    - update the catalog golden and the e2e golden.
 
    The reviewer checks each claim against OVHcloud's documentation. Depends on 1.
-4. [ ] **Retire `high-availability`, e2e and docs.** In this milestone:
+4. [x] **Retire `high-availability`, e2e and docs.** In this milestone:
    - remove the value from the vocabulary;
    - make its parse error name the two replacements, through `text.Quote`;
    - give the e2e fixture a database with `zone-high-availability`, one with `node-high-availability`, a
@@ -385,7 +385,7 @@ Each milestone ships as one PR. Milestones 2 and 3 depend only on 1, and can run
   accepted the recommendation (*Options*, *Recommendation*). B is the fallback if a later need cannot
   be expressed with these three. C and D are deferred until a source adapter shows a gap that needs
   them. Milestone 1's ADR,
-  [0011](../docs/adr/0011-scope-capabilities-and-one-offering-per-tier.md), records the decision.
+  [0011](../../docs/adr/0011-scope-capabilities-and-one-offering-per-tier.md), records the decision.
 - **Decided with A: the names `node-high-availability` and `zone-high-availability`.** These are the
   names option A was accepted with. The alternatives were `high-availability-node` and
   `high-availability-zone`, which group together in sorted lists, and `multi-zone-high-availability`,
