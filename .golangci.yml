@@ -262,25 +262,35 @@ linters:
         # tests may import its contract suite (contract-suites-only-in-tests).
         # Helpers shared by adapters live in internal/adapter/internal/ (the
         # JSON decoder jsondoc, ADR 0009): they build no adapter, so adapters may
-        # import them. The allow entry is longer than the deny entry, so it
-        # wins for those packages only; Go's internal rule keeps everything
-        # outside internal/adapter from importing them. The shared target
-        # snapshot reader (ADR 0007) is such a helper too: it parses bytes and
-        # builds no adapter, so target adapters may import it. Its entry ends
-        # in $, so it covers that package only. An allow entry holds for every
-        # file the rule covers, so on its own it would let any package import
-        # the reader; snapshot-reader-only-in-targets keeps it to the packages
-        # under internal/adapter/target.
+        # import them. Each helper under internal/adapter/internal/ is named by
+        # its own allow entry, ending in $ so it covers that package only. An
+        # allow entry is longer than the deny entry, so it wins for that
+        # package only; Go's internal rule keeps everything outside
+        # internal/adapter from importing them. The shared target snapshot
+        # reader (ADR 0007), under internal/adapter/target, builds no adapter
+        # either: it parses bytes, so target adapters may import it. Its
+        # snapshot$ entry is exact too. An allow entry holds for every file the rule covers, so on its
+        # own it would let any package import the reader;
+        # snapshot-reader-only-in-targets keeps it to the packages under
+        # internal/adapter/target.
         #
-        # The allow entry for internal/adapter/internal/ admits every helper
-        # package added there, and this rule says nothing about what a helper
-        # imports. adapter-helpers-do-no-io holds every helper there to no I/O,
-        # unless the helper is excluded from it by name. A helper under a
-        # testdata or _ directory is never linted, and the entry admits it too,
-        # so every adapter that must stay offline names the helpers it imports,
-        # each ending in $, in a strict rule of its own:
-        # inventory-file-reader-reads-one-file, target-snapshot-reader-parses-bytes
-        # and embedded-snapshot-targets-stay-offline.
+        # A new helper under internal/adapter/internal/ must be named here
+        # before any adapter can import it, and adapter-helpers-do-no-io holds
+        # it to no I/O unless it is excluded from that rule by name. No prefix
+        # entry: make lint runs on ./..., which skips testdata directories and
+        # directories whose name starts with _, so a helper placed there is
+        # never linted, and a prefix entry would let every adapter import it
+        # (issues #49 and #50). The deny entry for internal/adapter/internal/
+        # is longer than the one for internal/adapter/, so it gives the
+        # reason for a helper not named here. Every adapter that must stay
+        # offline also names the helpers it imports, each ending in $, in a
+        # strict rule of its own: inventory-file-reader-reads-one-file,
+        # target-snapshot-reader-parses-bytes,
+        # embedded-snapshot-targets-stay-offline and reporters-stay-offline.
+        # The live sources (aws, azure, gcp; doc.go stubs today) need the
+        # network through their SDK, so each gets its strict allow list in
+        # the PR that adds it (the add-cloud-provider skill); until then the
+        # exact helper entries here already keep them from any unnamed helper.
         adapters-are-built-in-cmd:
           list-mode: lax
           files:
@@ -288,9 +298,11 @@ linters:
             - "!$test"
             - "!**/cmd/eusov/**"
           allow:
-            - github.com/timothymamo/eu-sov-cloud/internal/adapter/internal/
+            - github.com/timothymamo/eu-sov-cloud/internal/adapter/internal/jsondoc$
             - github.com/timothymamo/eu-sov-cloud/internal/adapter/target/snapshot$
           deny:
+            - pkg: github.com/timothymamo/eu-sov-cloud/internal/adapter/internal/
+              desc: an adapter imports only the shared helpers named in adapters-are-built-in-cmd; name a new helper there first (a helper under a testdata or _ directory is never linted) (ADR 0009)
             - pkg: github.com/timothymamo/eu-sov-cloud/internal/adapter/
               desc: adapters are constructed only in cmd/eusov
         # Dependencies point inwards only: the composition root imports the
@@ -390,13 +402,14 @@ linters:
           deny:
             - pkg: encoding/json
               desc: read the snapshot through internal/adapter/target/snapshot, which decodes through jsondoc (ADR 0007, ADR 0009)
-        # The helpers adapters share live in internal/adapter/internal/
-        # (adapters-are-built-in-cmd), and an adapter that must stay offline
-        # may name one in its own allow list. So a helper does no I/O unless
-        # that is decided: every package there, a helper added later included,
-        # may import only what is listed under allow, the standard packages
-        # the helpers use that do no I/O and the project packages they use,
-        # each ending in $ so it covers that package only. Add a standard
+        # The helpers adapters share live in internal/adapter/internal/, and
+        # adapters-are-built-in-cmd names each one an adapter may import; an
+        # adapter that must stay offline also names the ones it imports in its
+        # own allow list. So a helper does no I/O unless that is decided:
+        # every package there, a helper added later included, may import only
+        # what is listed under allow, the standard packages the helpers use
+        # that do no I/O and the project packages they use, each ending in $
+        # so it covers that package only. Add a standard
         # package only when a helper needs it, never one that does I/O. A
         # helper that needs I/O is a decision of its own: it gets a strict
         # rule of its own, its directory is excluded here by name, and no
@@ -408,8 +421,9 @@ linters:
         #
         # make lint runs on ./..., which skips testdata directories and
         # directories whose name starts with _, so a helper placed there is
-        # never linted, by this rule or any other. That is why an adapter that
-        # must stay offline names each helper it imports, ending in $, in a
+        # never linted, by this rule or any other. That is why
+        # adapters-are-built-in-cmd names each helper, ending in $, and an
+        # adapter that must stay offline names each helper it imports in a
         # strict rule of its own, rather than relying on this rule alone.
         #
         # An allowed package can still hold a function that does I/O, which an
@@ -546,12 +560,13 @@ linters:
         # own keeps it offline: target-snapshot-reader-parses-bytes holds the
         # reader, which reaches jsondoc, held by jsondoc-parses-bytes and
         # adapter-helpers-do-no-io, and domain-is-pure holds the domain
-        # packages. adapters-are-built-in-cmd allows every helper under
-        # internal/adapter/internal/, but this rule admits only the helpers it
-        # names. A prefix entry would not do, here or there: make lint runs on
-        # ./..., which skips testdata directories and directories whose name
-        # starts with _, so a helper placed there is never linted, and a
-        # prefix would let the target import it.
+        # packages. adapters-are-built-in-cmd names each helper under
+        # internal/adapter/internal/ an adapter may import, and this rule
+        # admits only the helpers this target imports. A prefix entry would
+        # not do, here or there: make lint runs on ./..., which skips
+        # testdata directories and directories whose name starts with _, so a
+        # helper placed there is never linted, and a prefix would let the
+        # target import it.
         #
         # context$ is for the context Catalog takes, embed$ for //go:embed and
         # fmt$ for fmt.Errorf. An allowed package can still hold a function
@@ -590,6 +605,69 @@ linters:
               desc: an embedded-snapshot target makes no system call
             - pkg: unsafe
               desc: an embedded-snapshot target needs no unsafe code
+        # A reporter renders an assessment to the io.Writer it is given, and
+        # the report's bytes depend only on the assessment and the report
+        # metadata (internal/adapter/report/markdown/doc.go). So a reporter
+        # reads no file, no environment and no clock, and sends nothing over
+        # the network: this rule covers every package under
+        # internal/adapter/report, jsonreport (a doc.go stub today) and any
+        # reporter added later included. The glob ends in /** so it matches
+        # the files directly in each package.
+        #
+        # An import rule sees direct imports only, so the reporters' imports
+        # are a strict allow list: the standard packages they use, each
+        # ending in $ so it covers that package only, and the project
+        # packages they import, also ending in $, each held by a strict rule
+        # of its own (app-uses-ports-not-adapters and domain-is-pure). A
+        # reporter that imports a shared helper under internal/adapter/internal/
+        # names it here, ending in $, never by prefix: make lint runs on
+        # ./..., which skips testdata directories and directories whose name
+        # starts with _, so a helper placed there is never linted. The list
+        # is what markdown imports today; jsonreport adds what it needs when
+        # it gets code (encoding/json$, say, which does no I/O).
+        #
+        # context$ is for the context Report takes, fmt$ for fmt.Fprintf to
+        # the given writer, and io$ for io.Writer. An allowed package can
+        # still hold a function that does I/O, which an import rule cannot
+        # see: a reporter must not call fmt.Print* (which writes to stdout).
+        # Review holds that line; a forbidigo rule (issue #43) could.
+        #
+        # The allow list already refuses every package below; these entries
+        # only say why. They have no $, so each also covers its subpackages:
+        # os covers os/exec, os/signal and os/user, and net covers net/http.
+        reporters-stay-offline:
+          list-mode: strict
+          files:
+            - "**/internal/adapter/report/**"
+            - "!$test"
+          allow:
+            - context$
+            - fmt$
+            - io$
+            - strconv$
+            - strings$
+            - github.com/timothymamo/eu-sov-cloud/internal/app/analysis$
+            - github.com/timothymamo/eu-sov-cloud/internal/domain/assessment$
+            - github.com/timothymamo/eu-sov-cloud/internal/domain/mapping$
+          deny:
+            - pkg: io/fs
+              desc: a reporter writes only to the io.Writer it is given
+            - pkg: io/ioutil
+              desc: a reporter writes only to the io.Writer it is given
+            - pkg: net
+              desc: a reporter sends nothing over the network; it writes only to the io.Writer it is given
+            - pkg: os/exec
+              desc: a reporter runs no program; it writes only to the io.Writer it is given
+            - pkg: os
+              desc: a reporter reads no file and no environment; it writes only to the io.Writer it is given
+            - pkg: plugin
+              desc: a reporter loads no code
+            - pkg: runtime/cgo
+              desc: a reporter calls no C code
+            - pkg: syscall
+              desc: a reporter makes no system call
+            - pkg: unsafe
+              desc: a reporter needs no unsafe code
         testutil-only-in-tests:
           list-mode: lax
           files:
