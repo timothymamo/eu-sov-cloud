@@ -5,7 +5,9 @@ import (
 	"context"
 	"errors"
 	"io"
+	"slices"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
@@ -141,22 +143,71 @@ func newTarget(t *testing.T, key string) analysis.Target {
 	return analysis.Target{Key: key, Catalog: &fakeCatalog{cat: comparisonCatalog(t, key)}}
 }
 
+// callLog is a shared log of the target keys whose catalogs the use case loaded,
+// in the order it loaded them. The catalog sources of one comparison append to
+// the same log, so a test pins which catalogs were loaded, how often and in what
+// order, not merely that some load happened.
+//
+// It is mutex-guarded because the sources it serves are separate objects the use
+// case calls in turn: nothing stops that from happening on more than one
+// goroutine later, and a race in the test itself would hide a race in the code.
+type callLog struct {
+	mu   sync.Mutex
+	keys []string
+}
+
+// add appends key to the log.
+func (l *callLog) add(key string) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+
+	l.keys = append(l.keys, key)
+}
+
+// all returns a copy of the logged keys, in the order they were logged.
+func (l *callLog) all() []string {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+
+	return slices.Clone(l.keys)
+}
+
+// loggingCatalog returns a fake catalog source over the fixture catalog of key
+// that logs key on every load and then runs onCall, which a test uses to cancel
+// the context or to fail the load. onCall may be nil.
+func loggingCatalog(t *testing.T, key string, log *callLog, onCall func()) *fakeCatalog {
+	t.Helper()
+
+	return &fakeCatalog{
+		cat: comparisonCatalog(t, key),
+		onCall: func() {
+			log.add(key)
+
+			if onCall != nil {
+				onCall()
+			}
+		},
+	}
+}
+
 // comparisonFakes returns the targets to compare in the given order, each with
-// its own fake catalog source, plus those fakes by key so a test can count their
-// loads and make one of them fail.
-func comparisonFakes(t *testing.T, keys ...string) ([]analysis.Target, map[string]*fakeCatalog) {
+// its own fake catalog source, those fakes by key so a test can count their
+// loads and make one of them fail, and the log they share, so a test can pin the
+// order the catalogs were loaded in.
+func comparisonFakes(t *testing.T, keys ...string) ([]analysis.Target, map[string]*fakeCatalog, *callLog) {
 	t.Helper()
 
 	targets := make([]analysis.Target, 0, len(keys))
 	catalogs := make(map[string]*fakeCatalog, len(keys))
+	log := &callLog{}
 
 	for _, key := range keys {
-		fake := &fakeCatalog{cat: comparisonCatalog(t, key)}
+		fake := loggingCatalog(t, key, log, nil)
 		targets = append(targets, analysis.Target{Key: key, Catalog: fake})
 		catalogs[key] = fake
 	}
 
-	return targets, catalogs
+	return targets, catalogs, log
 }
 
 // comparisonKeys returns the keys of a comparison's targets, in the order they
@@ -375,7 +426,7 @@ func TestComparisonRun(t *testing.T) {
 			t.Parallel()
 
 			invFake := &fakeInventory{inv: inv}
-			targets, catalogs := comparisonFakes(t, tt.gave...)
+			targets, _, log := comparisonFakes(t, tt.gave...)
 			repFake := &fakeComparisonReporter{body: comparisonBody}
 
 			useCase, err := analysis.NewComparison(invFake, targets, repFake)
@@ -389,16 +440,17 @@ func TestComparisonRun(t *testing.T) {
 				t.Fatalf("Run() returned unexpected error: %v", err)
 			}
 
-			// One read of the inventory serves every target, and each target's
-			// catalog is loaded once.
+			// One read of the inventory serves every target.
 			if invFake.calls != 1 {
 				t.Errorf("Inventory() called %d times, want 1 for a run of %d targets", invFake.calls, len(targets))
 			}
 
-			for _, key := range tt.gave {
-				if calls := catalogs[key].calls; calls != 1 {
-					t.Errorf("Catalog() for %s called %d times, want 1", key, calls)
-				}
+			// Each target's catalog is loaded exactly once, and the catalogs are
+			// loaded in key order whatever order the targets were given in: two
+			// failures in a row report as "target <key>: load catalog", so the
+			// order decides which target the run blames.
+			if diff := cmp.Diff(sortedKeys, log.all()); diff != "" {
+				t.Errorf("catalog load order mismatch (-want +got):\n%s", diff)
 			}
 
 			if repFake.calls != 1 {
@@ -478,11 +530,15 @@ func TestComparisonRunPortErrors(t *testing.T) {
 		// lines the CLI would print at once. A stage without such detail leaves
 		// it false and the line count unchecked.
 		wantOneLine bool
-		// wantCatalogCalls is the number of catalog loads; -1 leaves it unchecked
-		// because it depends on the order the catalogs are loaded in.
+		// wantCatalogCalls is the exact number of catalog loads. The catalogs are
+		// loaded in key order and a failing one stops the run, so the count is
+		// fixed: a failure on the first target leaves the later ones unloaded.
 		wantCatalogCalls int
-		wantReportCalls  int
-		wantWritten      bool
+		// wantCatalogLog is the exact list of loaded catalogs, in load order: it
+		// names which targets were loaded, not merely how many.
+		wantCatalogLog  []string
+		wantReportCalls int
+		wantWritten     bool
 	}{
 		{
 			name:             "inventory error",
@@ -499,7 +555,8 @@ func TestComparisonRunPortErrors(t *testing.T) {
 			wantStage:        "load catalog",
 			wantKey:          ovhcloudKey,
 			wantOneLine:      true,
-			wantCatalogCalls: -1,
+			wantCatalogCalls: 1,
+			wantCatalogLog:   []string{ovhcloudKey},
 			wantReportCalls:  0,
 		},
 		{
@@ -509,7 +566,8 @@ func TestComparisonRunPortErrors(t *testing.T) {
 			wantStage:        "load catalog",
 			wantKey:          scalewayKey,
 			wantOneLine:      true,
-			wantCatalogCalls: -1,
+			wantCatalogCalls: 2,
+			wantCatalogLog:   []string{ovhcloudKey, scalewayKey},
 			wantReportCalls:  0,
 		},
 		{
@@ -518,6 +576,7 @@ func TestComparisonRunPortErrors(t *testing.T) {
 			wantErr:          errReport,
 			wantStage:        "render report",
 			wantCatalogCalls: 3,
+			wantCatalogLog:   []string{ovhcloudKey, scalewayKey, upcloudKey},
 			wantReportCalls:  1,
 			wantWritten:      true,
 		},
@@ -528,7 +587,7 @@ func TestComparisonRunPortErrors(t *testing.T) {
 			t.Parallel()
 
 			invFake := &fakeInventory{inv: comparisonInventory(t), err: tt.invErr}
-			targets, catalogs := comparisonFakes(t, upcloudKey, ovhcloudKey, scalewayKey)
+			targets, catalogs, log := comparisonFakes(t, upcloudKey, ovhcloudKey, scalewayKey)
 
 			if tt.failingCatalog != "" {
 				catalogs[tt.failingCatalog].err = errCatalog
@@ -566,10 +625,12 @@ func TestComparisonRunPortErrors(t *testing.T) {
 				}
 			}
 
-			if tt.wantCatalogCalls >= 0 {
-				if calls := catalogCalls(catalogs); calls != tt.wantCatalogCalls {
-					t.Errorf("Catalog() called %d times, want %d", calls, tt.wantCatalogCalls)
-				}
+			if gotLog := log.all(); len(gotLog) != tt.wantCatalogCalls {
+				t.Errorf("Catalog() called %d times, want %d (loaded: %v)", len(gotLog), tt.wantCatalogCalls, gotLog)
+			}
+
+			if diff := cmp.Diff(tt.wantCatalogLog, log.all()); diff != "" {
+				t.Errorf("catalog loads mismatch (-want +got):\n%s", diff)
 			}
 
 			if repFake.calls != tt.wantReportCalls {
@@ -610,7 +671,7 @@ func TestComparisonRunReportMeta(t *testing.T) {
 			t.Parallel()
 
 			invFake := &fakeInventory{inv: comparisonInventory(t)}
-			targets, catalogs := comparisonFakes(t, upcloudKey, ovhcloudKey, scalewayKey)
+			targets, catalogs, _ := comparisonFakes(t, upcloudKey, ovhcloudKey, scalewayKey)
 			repFake := &fakeComparisonReporter{body: comparisonBody}
 
 			useCase, err := analysis.NewComparison(invFake, targets, repFake)
@@ -665,41 +726,145 @@ func TestComparisonRunReportMeta(t *testing.T) {
 	}
 }
 
-// TestComparisonRunContext pins that a cancelled run never reads an inventory it
-// will not report.
+// TestComparisonRunContext pins when a cancelled run notices the cancellation:
+// before the inventory it would not report, and between two targets, where a
+// catalog that loaded while the context was cancelled must not let the run read
+// the next one.
 func TestComparisonRunContext(t *testing.T) {
 	t.Parallel()
 
-	ctx, cancel := context.WithCancel(context.Background())
-	cancel()
+	t.Run("cancelled before the run", func(t *testing.T) {
+		t.Parallel()
 
-	// The fakes ignore the context, so only Run can notice the cancellation, and
-	// it must notice it before the first port is called.
-	invFake := &fakeInventory{inv: comparisonInventory(t), ignoreContext: true}
-	targets, _ := comparisonFakes(t, upcloudKey, ovhcloudKey, scalewayKey)
-	repFake := &fakeComparisonReporter{body: comparisonBody}
+		ctx, cancel := context.WithCancel(context.Background())
+		cancel()
 
-	useCase, err := analysis.NewComparison(invFake, targets, repFake)
-	if err != nil {
-		t.Fatalf("NewComparison() returned unexpected error: %v", err)
-	}
+		// The fakes ignore the context, so only Run can notice the cancellation, and
+		// it must notice it before the first port is called.
+		invFake := &fakeInventory{inv: comparisonInventory(t), ignoreContext: true}
+		targets, _, log := comparisonFakes(t, upcloudKey, ovhcloudKey, scalewayKey)
+		repFake := &fakeComparisonReporter{body: comparisonBody}
 
-	var buf bytes.Buffer
+		useCase, err := analysis.NewComparison(invFake, targets, repFake)
+		if err != nil {
+			t.Fatalf("NewComparison() returned unexpected error: %v", err)
+		}
 
-	err = useCase.Run(ctx, &buf, analysis.ReportMeta{InventoryName: inventoryName})
-	if !errors.Is(err, context.Canceled) {
-		t.Fatalf("Run() error = %v, want it to wrap context.Canceled", err)
-	}
+		var buf bytes.Buffer
 
-	if invFake.calls != 0 {
-		t.Errorf("Inventory() called %d times, want 0 for a run cancelled before it started", invFake.calls)
-	}
+		err = useCase.Run(ctx, &buf, analysis.ReportMeta{InventoryName: inventoryName})
+		if !errors.Is(err, context.Canceled) {
+			t.Fatalf("Run() error = %v, want it to wrap context.Canceled", err)
+		}
 
-	if repFake.calls != 0 {
-		t.Errorf("ReportComparison() called %d times, want 0 for a cancelled run", repFake.calls)
-	}
+		if invFake.calls != 0 {
+			t.Errorf("Inventory() called %d times, want 0 for a run cancelled before it started", invFake.calls)
+		}
 
-	if buf.Len() != 0 {
-		t.Errorf("Run() wrote %q, want nothing for a cancelled run", buf.String())
-	}
+		if diff := cmp.Diff([]string(nil), log.all()); diff != "" {
+			t.Errorf("catalog loads mismatch (-want +got):\n%s", diff)
+		}
+
+		if repFake.calls != 0 {
+			t.Errorf("ReportComparison() called %d times, want 0 for a cancelled run", repFake.calls)
+		}
+
+		if buf.Len() != 0 {
+			t.Errorf("Run() wrote %q, want nothing for a cancelled run", buf.String())
+		}
+	})
+
+	t.Run("cancelled while loading the first target's catalog", func(t *testing.T) {
+		t.Parallel()
+
+		ctx, cancel := context.WithCancel(context.Background())
+		t.Cleanup(cancel)
+
+		// The first catalog in key order, ovhcloud's, returns its catalog normally
+		// and cancels the context on the way out. The fakes ignore the context, like
+		// an adapter that only discovers the cancellation through a slow call, so
+		// only Run itself can refuse to load the catalogs that follow.
+		log := &callLog{}
+
+		ovhFake := loggingCatalog(t, ovhcloudKey, log, cancel)
+		scalewayFake := loggingCatalog(t, scalewayKey, log, nil)
+		upcloudFake := loggingCatalog(t, upcloudKey, log, nil)
+
+		invFake := &fakeInventory{inv: comparisonInventory(t), ignoreContext: true}
+
+		fakes := []*fakeCatalog{ovhFake, scalewayFake, upcloudFake}
+		for _, fake := range fakes {
+			fake.ignoreContext = true
+		}
+
+		targets := []analysis.Target{
+			{Key: ovhcloudKey, Catalog: ovhFake},
+			{Key: scalewayKey, Catalog: scalewayFake},
+			{Key: upcloudKey, Catalog: upcloudFake},
+		}
+
+		repFake := &fakeComparisonReporter{body: comparisonBody}
+
+		useCase, err := analysis.NewComparison(invFake, targets, repFake)
+		if err != nil {
+			t.Fatalf("NewComparison() returned unexpected error: %v", err)
+		}
+
+		var buf bytes.Buffer
+
+		err = useCase.Run(ctx, &buf, analysis.ReportMeta{InventoryName: inventoryName})
+		if err == nil {
+			t.Fatal("Run() returned nil, want an error for a context cancelled between two targets")
+		}
+
+		// The cancellation must be found before the next catalog is loaded, as a
+		// wrapped context.Canceled the caller can test for.
+		if !errors.Is(err, context.Canceled) {
+			t.Errorf("Run() error = %v, want it to wrap context.Canceled", err)
+		}
+
+		if strings.Contains(err.Error(), "\n") {
+			t.Errorf("Run() error is one line = false, want true (error: %q)", err)
+		}
+
+		// The error names the target the run stopped before, through text.Quote as
+		// every target key a message carries is, and says what it did not do. That
+		// tells this cancellation apart from the one before rendering, which blames
+		// no target.
+		for _, want := range []string{
+			"cancelled before loading the catalog",
+			text.Quote(scalewayKey),
+		} {
+			if !strings.Contains(err.Error(), want) {
+				t.Errorf("Run() error = %q, want it to contain %q", err, want)
+			}
+		}
+
+		// Only the first catalog was loaded: the run stopped before the others, so
+		// neither their load nor their assessment could run.
+		if diff := cmp.Diff([]string{ovhcloudKey}, log.all()); diff != "" {
+			t.Errorf("catalog loads mismatch (-want +got):\n%s", diff)
+		}
+
+		for _, tt := range []struct {
+			key  string
+			fake *fakeCatalog
+		}{
+			{key: scalewayKey, fake: scalewayFake},
+			{key: upcloudKey, fake: upcloudFake},
+		} {
+			if tt.fake.calls != 0 {
+				t.Errorf("Catalog() for %s called %d times, want 0 for a run cancelled after the first target",
+					tt.key, tt.fake.calls)
+			}
+		}
+
+		if repFake.calls != 0 {
+			t.Errorf("ReportComparison() called %d times, want 0 for a cancelled run", repFake.calls)
+		}
+
+		if buf.Len() != 0 {
+			t.Errorf("Run() wrote %q, want nothing for a cancelled run", buf.String())
+		}
+	})
 }
