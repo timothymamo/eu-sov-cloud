@@ -9,6 +9,11 @@ LDFLAGS := -s -w \
 	-X $(PKG)/internal/version.date=$(DATE)
 # The container image make image builds (docs/adr/0013-ship-eusov-as-a-distroless-container-image.md).
 IMAGE   ?= eusov
+# The container CLI make image runs: docker where it is installed, otherwise nerdctl, the rootless runtime
+# of the Lima VM (docs/adr/0017-run-a-rootless-container-runtime-in-the-lima-vm.md).
+DOCKER  ?= $(if $(shell command -v docker 2>/dev/null),docker,nerdctl)
+# The platforms make image builds, comma separated (linux/amd64,linux/arm64). Empty builds the host's own.
+PLATFORMS ?=
 
 # The GOOS/GOARCH pairs the release builds, all with CGO_ENABLED=0. Must match the goos and goarch lists in
 # .goreleaser.yaml: test/architecture checks this by running make lint with a fake golangci-lint.
@@ -39,8 +44,9 @@ build: ## Build the eusov binary into ./bin
 	go build -trimpath -ldflags "$(LDFLAGS)" -o bin/$(BINARY) ./cmd/$(BINARY)
 
 .PHONY: image
-image: ## Build the local container image eusov:<version>, eusov:dev and eusov:latest from git, as make build (needs Docker; tags are local, nothing is pushed)
-	docker build \
+image: ## Build the local container image eusov:<version>, eusov:dev and eusov:latest from git, as make build (docker or nerdctl; PLATFORMS=linux/amd64,linux/arm64 for both; tags are local, nothing is pushed)
+	$(DOCKER) build \
+		$(if $(PLATFORMS),--platform "$(PLATFORMS)") \
 		--build-arg VERSION="$(VERSION)" \
 		--build-arg COMMIT="$(COMMIT)" \
 		--build-arg DATE="$(DATE)" \
