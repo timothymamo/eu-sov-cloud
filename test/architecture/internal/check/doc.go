@@ -14,9 +14,11 @@
 // would add under a root, and every symlink among those files.
 // StrayReleaseFiles and ReleaseWorkflow pin that the release builds what the
 // check lists: no other goreleaser document, go.work or vendor at the root that
-// git could commit, and a release workflow read as a closed schema, whose
-// goreleaser job runs no repository code and sets no environment for the go
-// command.
+// git could commit, and a release workflow read as a closed schema of three
+// jobs: the tests, a goreleaser job that runs no repository code and sets no
+// environment for the go command, and an image job that publishes only the
+// signed image, its provenance and its SBOM, by digest, with the write
+// permissions split between the two.
 //
 // Nothing is copied: the release platforms are read from .goreleaser.yaml
 // (ReleaseTargets), and the strict rules and their allow lists from
