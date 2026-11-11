@@ -38,7 +38,9 @@ Forces:
 
 A second, package-level enforcement of the dependency rule lives in the test package
 `test/architecture`, beside depguard; its code is in `test/architecture/internal/check`, which no
-other package can import. For every platform the release builds, with cgo off and on, and with no
+other package can import. (Issue #82 moved the release-target reader to `test/internal/releasetarget`
+and the YAML line reader to `test/internal/yamlread`, so `test/lint` can read the same list with the
+same reader; `test` alone can import them.) For every platform the release builds, with cgo off and on, and with no
 build tag, `e2e`, `integration` and both, it runs `go list -deps` twice:
 
 - **The layers with a strict depguard rule**: every directory the `files:` list of a strict rule
@@ -193,7 +195,7 @@ workflow change.
   fails `TestEveryStrictRuleIsChecked` until it has a layer or a reasoned skip, and a change to the
   platform list in `.goreleaser.yaml` is picked up without editing the check.
 - A new key, hook, env entry or flag in `.goreleaser.yaml`, or a YAML feature or character the reader
-  does not follow, fails the test until `test/architecture/internal/check` is taught it. That is the
+  does not follow, fails the test until `test/internal/releasetarget` or `test/internal/yamlread` is taught it. That is the
   point: whoever changes how the release is built decides whether the check still holds.
 - What stays outside the check:
   - **The runner and the actions the release workflow uses.** The goreleaser job runs no repository

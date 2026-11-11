@@ -9,6 +9,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/timothymamo/eu-sov-cloud/test/internal/releasetarget"
+
 	"github.com/google/go-cmp/cmp"
 
 	"github.com/timothymamo/eu-sov-cloud/test/architecture/internal/check"
@@ -102,17 +104,17 @@ func TestReleaseTargetDependencies(t *testing.T) {
 
 	// .goreleaser.yaml is the one source of the release platforms: the check
 	// reads the list from it rather than pinning a copy here.
-	targets, err := check.ReleaseTargets(goreleaser)
+	targets, err := releasetarget.Read(goreleaser)
 	if err != nil {
-		t.Fatalf("ReleaseTargets(.goreleaser.yaml): %v", err)
+		t.Fatalf("releasetarget.Read(.goreleaser.yaml): %v", err)
 	}
 
 	if len(targets) == 0 {
-		t.Fatal("ReleaseTargets(.goreleaser.yaml) returned no target, so the check below would run on nothing")
+		t.Fatal("releasetarget.Read(.goreleaser.yaml) returned no target, so the check below would run on nothing")
 	}
 
-	if !slices.Contains(targets, check.Target{GOOS: "linux", GOARCH: "amd64"}) {
-		t.Errorf("ReleaseTargets(.goreleaser.yaml) = %v, want it to include linux/amd64", targets)
+	if !slices.Contains(targets, releasetarget.Target{GOOS: "linux", GOARCH: "amd64"}) {
+		t.Errorf("releasetarget.Read(.goreleaser.yaml) = %v, want it to include linux/amd64", targets)
 	}
 
 	rules, patterns := depguardRules(t, golangci)
@@ -236,7 +238,7 @@ func rulesOf(t *testing.T, golangci []byte, name string) []check.Rule {
 func checkLayers(
 	t *testing.T,
 	root string,
-	target check.Target,
+	target releasetarget.Target,
 	cgo bool,
 	tags []string,
 	rules []check.Rule,
@@ -298,7 +300,7 @@ func checkLayers(
 	}
 }
 
-// checkReleaseBinary lists what the release binary, check.ReleaseMain, is built
+// checkReleaseBinary lists what the release binary, releasetarget.Main, is built
 // from for one build and fails when a package of the module breaks the source
 // rules: Sources checks every package whose import path is the module path or
 // under it and requires that it belongs to the main module, so a nested module
@@ -309,17 +311,17 @@ func checkLayers(
 // path (third-party code) are skipped. It fails too when go list did not list
 // internal/cli or one of the three target adapters, since the checks above
 // would then read nothing of them.
-func checkReleaseBinary(t *testing.T, root string, target check.Target, cgo bool, tags []string) {
+func checkReleaseBinary(t *testing.T, root string, target releasetarget.Target, cgo bool, tags []string) {
 	t.Helper()
 
-	pkgs, err := check.ListPackages(t.Context(), root, target, cgo, tags, check.ReleaseMain)
+	pkgs, err := check.ListPackages(t.Context(), root, target, cgo, tags, releasetarget.Main)
 	if err != nil {
-		t.Fatalf("ListPackages(%s, %v, cgo=%t, tags=%v): %v", check.ReleaseMain, target, cgo, tags, err)
+		t.Fatalf("ListPackages(%s, %v, cgo=%t, tags=%v): %v", releasetarget.Main, target, cgo, tags, err)
 	}
 
 	if messages := check.Sources(root, modulePath, pkgs); len(messages) != 0 {
 		t.Errorf("Sources(%s, %v, cgo=%t, tags=%v) flagged %d package(s):\n%s",
-			check.ReleaseMain, target, cgo, tags, len(messages), strings.Join(messages, "\n"))
+			releasetarget.Main, target, cgo, tags, len(messages), strings.Join(messages, "\n"))
 	}
 
 	// Without them the listing would pass over a binary that carries none of
@@ -521,13 +523,13 @@ func TestCloudAdapterSDKRuleHoldsItsProbeForEveryReleaseTarget(t *testing.T) {
 
 	golangci := readRepositoryFile(t, ".golangci.yml")
 
-	targets, err := check.ReleaseTargets(readRepositoryFile(t, ".goreleaser.yaml"))
+	targets, err := releasetarget.Read(readRepositoryFile(t, ".goreleaser.yaml"))
 	if err != nil {
-		t.Fatalf("ReleaseTargets(.goreleaser.yaml): %v", err)
+		t.Fatalf("releasetarget.Read(.goreleaser.yaml): %v", err)
 	}
 
 	if len(targets) == 0 {
-		t.Fatal("ReleaseTargets(.goreleaser.yaml) returned no target, so the probe below would run on nothing")
+		t.Fatal("releasetarget.Read(.goreleaser.yaml) returned no target, so the probe below would run on nothing")
 	}
 
 	rules := rulesOf(t, golangci, sdkRule)
@@ -587,13 +589,13 @@ func TestCloudAdapterSDKRuleHoldsItsSDKProbeForEveryReleaseTarget(t *testing.T) 
 
 	golangci := readRepositoryFile(t, ".golangci.yml")
 
-	targets, err := check.ReleaseTargets(readRepositoryFile(t, ".goreleaser.yaml"))
+	targets, err := releasetarget.Read(readRepositoryFile(t, ".goreleaser.yaml"))
 	if err != nil {
-		t.Fatalf("ReleaseTargets(.goreleaser.yaml): %v", err)
+		t.Fatalf("releasetarget.Read(.goreleaser.yaml): %v", err)
 	}
 
 	if len(targets) == 0 {
-		t.Fatal("ReleaseTargets(.goreleaser.yaml) returned no target, so the probe below would run on nothing")
+		t.Fatal("releasetarget.Read(.goreleaser.yaml) returned no target, so the probe below would run on nothing")
 	}
 
 	rules := rulesOf(t, golangci, sdkRule)

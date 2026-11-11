@@ -6,6 +6,8 @@ import (
 	"regexp"
 	"slices"
 	"strings"
+
+	"github.com/timothymamo/eu-sov-cloud/test/internal/yamlread"
 )
 
 // The release workflow is read as a closed schema: every key, job and step it
@@ -390,7 +392,7 @@ func ReleaseWorkflow(src []byte) []string {
 		messages = append(messages, forbiddenNames(strings.TrimSpace(raw[i]))...)
 	}
 
-	lines, err := splitLines(src)
+	lines, err := yamlread.SplitLines(src)
 	if err != nil {
 		return append(messages, fmt.Sprintf("read the release workflow: %v", err))
 	}
@@ -401,7 +403,7 @@ func ReleaseWorkflow(src []byte) []string {
 // releaseSchema returns a message for every way lines, the content lines of
 // the release workflow whose every line is raw, departs from the schema
 // ReleaseWorkflow describes.
-func releaseSchema(raw []string, lines []line) []string {
+func releaseSchema(raw []string, lines []yamlread.Line) []string {
 	r := &schemaReader{raw: raw}
 
 	if len(lines) == 0 {
@@ -458,7 +460,7 @@ func (r *schemaReader) fail(format string, args ...any) {
 
 // job checks one job against want: its name, needs, runner, permissions,
 // outputs and steps.
-func (r *schemaReader) job(e entry, path string, want releaseJob) {
+func (r *schemaReader) job(e yamlread.Entry, path string, want releaseJob) {
 	keys := []string{"name", "runs-on", "permissions", "steps"}
 	if want.needs != nil {
 		keys = append(keys, "needs")
@@ -493,7 +495,7 @@ func (r *schemaReader) job(e entry, path string, want releaseJob) {
 		return
 	}
 
-	items, err := sequence(block)
+	items, err := yamlread.Sequence(block)
 	if err != nil {
 		r.fail("%s: %v", stepsPath, err)
 
@@ -519,18 +521,18 @@ func (r *schemaReader) job(e entry, path string, want releaseJob) {
 
 // needs checks that e's value is exactly the jobs want, in that order: a flow
 // or block list, or one job name on the key's own line.
-func (r *schemaReader) needs(e entry, path string, want []string) {
+func (r *schemaReader) needs(e yamlread.Entry, path string, want []string) {
 	var (
 		got []string
 		err error
 	)
 
-	if e.value == "" || strings.HasPrefix(e.value, "[") {
-		got, err = list(e)
+	if e.Value == "" || strings.HasPrefix(e.Value, "[") {
+		got, err = yamlread.List(e)
 	} else {
 		var one string
 
-		one, err = single(e)
+		one, err = yamlread.Single(e)
 		got = []string{one}
 	}
 
@@ -541,22 +543,22 @@ func (r *schemaReader) needs(e entry, path string, want []string) {
 	}
 
 	if !slices.Equal(got, want) {
-		r.fail("line %d: %s is %q, want exactly %q", e.num, path, got, want)
+		r.fail("line %d: %s is %q, want exactly %q", e.Num, path, got, want)
 	}
 }
 
 // exactMapping checks that e's value is a block mapping holding exactly the
 // keys of want, each with exactly its value.
-func (r *schemaReader) exactMapping(e entry, path string, want map[string]string) {
+func (r *schemaReader) exactMapping(e yamlread.Entry, path string, want map[string]string) {
 	keys := sortedKeys(want)
 
-	if e.value == "" && len(e.block) == 0 {
+	if e.Value == "" && len(e.Block) == 0 {
 		pairs := make([]string, 0, len(keys))
 		for _, key := range keys {
 			pairs = append(pairs, key+": "+want[key])
 		}
 
-		r.fail("line %d: %s is empty, want exactly %s", e.num, path, strings.Join(pairs, ", "))
+		r.fail("line %d: %s is empty, want exactly %s", e.Num, path, strings.Join(pairs, ", "))
 
 		return
 	}
@@ -569,8 +571,8 @@ func (r *schemaReader) exactMapping(e entry, path string, want map[string]string
 }
 
 // step checks one step against want.
-func (r *schemaReader) step(it item, path string, want releaseStep) {
-	path = fmt.Sprintf("%s (line %d), want %s", path, it.num, want.what)
+func (r *schemaReader) step(it yamlread.Item, path string, want releaseStep) {
+	path = fmt.Sprintf("%s (line %d), want %s", path, it.Num, want.what)
 
 	var keys []string
 
@@ -590,7 +592,7 @@ func (r *schemaReader) step(it item, path string, want releaseStep) {
 		}
 	}
 
-	step := r.exactKeys(it.lines, path, keys...)
+	step := r.exactKeys(it.Lines, path, keys...)
 	if step == nil {
 		return
 	}
@@ -627,7 +629,7 @@ func (r *schemaReader) step(it item, path string, want releaseStep) {
 
 // env checks that e's value is exactly the env: mapping want, line by line:
 // its keys are upper case, which the mapping reader refuses.
-func (r *schemaReader) env(e entry, path string, want []string) {
+func (r *schemaReader) env(e yamlread.Entry, path string, want []string) {
 	env := r.block(e, path)
 	if env == nil {
 		return
@@ -635,7 +637,7 @@ func (r *schemaReader) env(e entry, path string, want []string) {
 
 	got := make([]string, 0, len(env))
 	for _, l := range env {
-		got = append(got, l.text)
+		got = append(got, l.Text)
 	}
 
 	if !slices.Equal(got, want) {
@@ -646,7 +648,7 @@ func (r *schemaReader) env(e entry, path string, want []string) {
 // run checks that e's value is exactly the command want, and refuses a ${{ }}
 // expression in it: the runner pastes the expression's value into the script
 // before the shell reads it, so a tag or a branch name could run as a command.
-func (r *schemaReader) run(e entry, path, want string) {
+func (r *schemaReader) run(e yamlread.Entry, path, want string) {
 	value, err := r.value(e)
 	if err != nil {
 		r.fail("%s: %v", path, err)
@@ -655,11 +657,11 @@ func (r *schemaReader) run(e entry, path, want string) {
 	}
 
 	if strings.Contains(value, "${{") {
-		r.fail("line %d: %s holds a ${{ }} expression, whose value the runner pastes into the script as code; pass it through env: instead", e.num, path)
+		r.fail("line %d: %s holds a ${{ }} expression, whose value the runner pastes into the script as code; pass it through env: instead", e.Num, path)
 	}
 
 	if value != want {
-		r.fail("line %d: %s is %q, want exactly %q", e.num, path, value, want)
+		r.fail("line %d: %s is %q, want exactly %q", e.Num, path, value, want)
 	}
 }
 
@@ -677,27 +679,27 @@ func sortedKeys[V any](m map[string]V) []string {
 
 // exactKeys reads lines as a block mapping holding exactly want, and returns
 // its entries by key; nil when it cannot, with the reasons in the messages.
-func (r *schemaReader) exactKeys(lines []line, path string, want ...string) map[string]entry {
+func (r *schemaReader) exactKeys(lines []yamlread.Line, path string, want ...string) map[string]yamlread.Entry {
 	// A nil block was reported by block already.
 	if lines == nil {
 		return nil
 	}
 
-	entries, err := mapping(lines)
+	entries, err := yamlread.Mapping(lines)
 	if err != nil {
 		r.fail("%s: %v", path, err)
 
 		return nil
 	}
 
-	got := make(map[string]entry, len(entries))
+	got := make(map[string]yamlread.Entry, len(entries))
 	ok := true
 
 	for _, e := range entries {
-		got[e.key] = e
+		got[e.Key] = e
 
-		if !slices.Contains(want, e.key) {
-			r.fail("%s holds the key %q (line %d), want only %s", path, e.key, e.num, strings.Join(want, ", "))
+		if !slices.Contains(want, e.Key) {
+			r.fail("%s holds the key %q (line %d), want only %s", path, e.Key, e.Num, strings.Join(want, ", "))
 
 			ok = false
 		}
@@ -720,8 +722,8 @@ func (r *schemaReader) exactKeys(lines []line, path string, want ...string) map[
 
 // block returns the lines of e's value, a block below its key; nil when it is
 // not one, with the reason in the messages.
-func (r *schemaReader) block(e entry, path string) []line {
-	lines, err := blockValue(e, path)
+func (r *schemaReader) block(e yamlread.Entry, path string) []yamlread.Line {
+	lines, err := yamlread.BlockValue(e, path)
 	if err != nil {
 		r.fail("%v", err)
 
@@ -733,7 +735,7 @@ func (r *schemaReader) block(e entry, path string) []line {
 
 // scalar checks that e's value, one scalar or a literal block, is one that
 // want matches.
-func (r *schemaReader) scalar(e entry, path string, want *regexp.Regexp) {
+func (r *schemaReader) scalar(e yamlread.Entry, path string, want *regexp.Regexp) {
 	value, err := r.value(e)
 	if err != nil {
 		r.fail("%s: %v", path, err)
@@ -742,30 +744,30 @@ func (r *schemaReader) scalar(e entry, path string, want *regexp.Regexp) {
 	}
 
 	if !want.MatchString(value) {
-		r.fail("line %d: %s is %q, want one matching %s", e.num, path, value, want)
+		r.fail("line %d: %s is %q, want one matching %s", e.Num, path, value, want)
 	}
 }
 
 // value reads e's value: a literal block (|) as its lines joined by newlines,
 // anything else as one scalar on the key's own line.
-func (r *schemaReader) value(e entry) (string, error) {
-	if e.value == "|" {
-		return literalBlock(r.raw, e)
+func (r *schemaReader) value(e yamlread.Entry) (string, error) {
+	if e.Value == "|" {
+		return yamlread.LiteralBlock(r.raw, e)
 	}
 
-	return single(e)
+	return yamlread.Single(e)
 }
 
 // rawValue checks that e's value is exactly want, as written on its line.
-func (r *schemaReader) rawValue(e entry, path, want string) {
-	if e.value != want || len(e.block) != 0 {
-		r.fail("line %d: %s is %q, want exactly %q", e.num, path, e.value, want)
+func (r *schemaReader) rawValue(e yamlread.Entry, path, want string) {
+	if e.Value != want || len(e.Block) != 0 {
+		r.fail("line %d: %s is %q, want exactly %q", e.Num, path, e.Value, want)
 	}
 }
 
 // list checks that e's value is exactly the list want.
-func (r *schemaReader) list(e entry, path string, want []string) {
-	got, err := list(e)
+func (r *schemaReader) list(e yamlread.Entry, path string, want []string) {
+	got, err := yamlread.List(e)
 	if err != nil {
 		r.fail("%s: %v", path, err)
 
@@ -773,7 +775,7 @@ func (r *schemaReader) list(e entry, path string, want []string) {
 	}
 
 	if !slices.Equal(got, want) {
-		r.fail("line %d: %s is %q, want exactly %q", e.num, path, got, want)
+		r.fail("line %d: %s is %q, want exactly %q", e.Num, path, got, want)
 	}
 }
 

@@ -52,7 +52,9 @@
 // exclusion rule that drops forbidigo issues: it names forbidigo alone, its
 // text matches only one group's quoted msg, and the rules of each group are
 // exactly those it states: none for cloud-read-only, and for domain-is-pure
-// one path and one path-except.
+// one path and one path-except. It reads linters.exclusions.rules with
+// test/internal/yamlread, the strict line reader test/architecture reads
+// .golangci.yml with, so a rule written in a way it does not follow fails.
 //
 // TestLintLoadsEveryGoFile and TestLintVisitsEveryImportedPackage keep every
 // Go file within lint's reach. Lint loads, for the host and every release

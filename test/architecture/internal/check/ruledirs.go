@@ -6,6 +6,8 @@ import (
 	"path"
 	"slices"
 	"strings"
+
+	"github.com/timothymamo/eu-sov-cloud/test/internal/yamlread"
 )
 
 // testFiles is the files: entry that takes test files out of a depguard rule.
@@ -48,12 +50,12 @@ type RuleFiles struct {
 // that repeats a directory below another, such as
 // internal/adapter/target/x/internal/adapter/source/y.
 func RuleDirs(golangci []byte, rule string) (RuleFiles, error) {
-	lines, err := splitLines(golangci)
+	lines, err := yamlread.SplitLines(golangci)
 	if err != nil {
 		return RuleFiles{}, fmt.Errorf("read .golangci.yml: %w", err)
 	}
 
-	body, err := walk(lines, "linters", "settings", "depguard", "rules", rule)
+	body, err := yamlread.Walk(lines, "linters", "settings", "depguard", "rules", rule)
 	if err != nil {
 		return RuleFiles{}, fmt.Errorf("read depguard rule %s: %w", rule, err)
 	}
@@ -67,16 +69,16 @@ func RuleDirs(golangci []byte, rule string) (RuleFiles, error) {
 }
 
 // readFiles reads a rule body's files: list.
-func readFiles(body []line) (RuleFiles, error) {
-	entries, err := mapping(body)
+func readFiles(body []yamlread.Line) (RuleFiles, error) {
+	entries, err := yamlread.Mapping(body)
 	if err != nil {
 		return RuleFiles{}, err
 	}
 
-	var files *entry
+	var files *yamlread.Entry
 
 	for i := range entries {
-		if entries[i].key == "files" {
+		if entries[i].Key == "files" {
 			files = &entries[i]
 		}
 	}
@@ -85,7 +87,7 @@ func readFiles(body []line) (RuleFiles, error) {
 		return RuleFiles{}, errors.New("no files list")
 	}
 
-	values, err := list(*files)
+	values, err := yamlread.List(*files)
 	if err != nil {
 		return RuleFiles{}, err
 	}
@@ -102,7 +104,7 @@ func readFiles(body []line) (RuleFiles, error) {
 		if negated, ok := strings.CutPrefix(value, "!"); ok {
 			dir, ok := globDir(negated)
 			if !ok {
-				return RuleFiles{}, fmt.Errorf("line %d: files entry %s is not %s or a directory taken out written !**/<dir>/**, the negated shapes the package check holds", files.num, value, testFiles)
+				return RuleFiles{}, fmt.Errorf("line %d: files entry %s is not %s or a directory taken out written !**/<dir>/**, the negated shapes the package check holds", files.Num, value, testFiles)
 			}
 
 			out.Excludes = append(out.Excludes, dir)
@@ -112,23 +114,23 @@ func readFiles(body []line) (RuleFiles, error) {
 
 		dir, ok := globDir(value)
 		if !ok {
-			return RuleFiles{}, fmt.Errorf("line %d: files entry %s is not a directory written **/<dir>/**, the shape the package check holds", files.num, value)
+			return RuleFiles{}, fmt.Errorf("line %d: files entry %s is not a directory written **/<dir>/**, the shape the package check holds", files.Num, value)
 		}
 
 		out.Dirs = append(out.Dirs, dir)
 	}
 
 	if len(out.Dirs) == 0 {
-		return RuleFiles{}, fmt.Errorf("line %d: the files list names no directory", files.num)
+		return RuleFiles{}, fmt.Errorf("line %d: the files list names no directory", files.Num)
 	}
 
 	for _, ex := range out.Excludes {
 		if slices.Contains(out.Dirs, ex) {
-			return RuleFiles{}, fmt.Errorf("line %d: the files list takes out %s, which it also names as a directory, so it holds nothing there", files.num, ex)
+			return RuleFiles{}, fmt.Errorf("line %d: the files list takes out %s, which it also names as a directory, so it holds nothing there", files.Num, ex)
 		}
 
 		if !slices.ContainsFunc(out.Dirs, func(dir string) bool { return strings.HasPrefix(ex, dir+"/") }) {
-			return RuleFiles{}, fmt.Errorf("line %d: the files list takes out %s, which lies under none of its directories, so it narrows nothing", files.num, ex)
+			return RuleFiles{}, fmt.Errorf("line %d: the files list takes out %s, which lies under none of its directories, so it narrows nothing", files.Num, ex)
 		}
 	}
 

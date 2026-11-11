@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"slices"
 	"strings"
+
+	"github.com/timothymamo/eu-sov-cloud/test/internal/yamlread"
 )
 
 // The actions the dry run and the release share, which must run at the same
@@ -51,11 +53,11 @@ type workflowStep struct {
 	// commit is what follows the @ of uses:.
 	commit string
 	// with are the step's with: entries by key.
-	with map[string]entry
+	with map[string]yamlread.Entry
 	// id is the step's id:, "" for none.
 	id string
 	// run is the step's run: entry, read only when hasRun.
-	run    entry
+	run    yamlread.Entry
 	hasRun bool
 }
 
@@ -144,21 +146,21 @@ func rawLines(doc []byte) []string {
 
 // readJob reads the job key of the workflow doc, called file in a message.
 func (r *schemaReader) readJob(doc []byte, file, key string) (workflowJob, bool) {
-	lines, err := splitLines(doc)
+	lines, err := yamlread.SplitLines(doc)
 	if err != nil {
 		r.fail("%s: %v", file, err)
 
 		return workflowJob{}, false
 	}
 
-	block, err := walk(lines, "jobs", key)
+	block, err := yamlread.Walk(lines, "jobs", key)
 	if err != nil {
 		r.fail("%s: %v", file, err)
 
 		return workflowJob{}, false
 	}
 
-	entries, err := mapping(block)
+	entries, err := yamlread.Mapping(block)
 	if err != nil {
 		r.fail("%s: jobs: %s: %v", file, key, err)
 
@@ -169,7 +171,7 @@ func (r *schemaReader) readJob(doc []byte, file, key string) (workflowJob, bool)
 	path := file + ": jobs: " + key
 
 	for _, e := range entries {
-		switch e.key {
+		switch e.Key {
 		case "env":
 			env, ok := r.jobEnv(e, path+": env")
 			if !ok {
@@ -192,7 +194,7 @@ func (r *schemaReader) readJob(doc []byte, file, key string) (workflowJob, bool)
 
 // jobEnv reads e, a job's env:, as one line per variable: an upper-case name
 // and a scalar.
-func (r *schemaReader) jobEnv(e entry, path string) (map[string]string, bool) {
+func (r *schemaReader) jobEnv(e yamlread.Entry, path string) (map[string]string, bool) {
 	lines := r.block(e, path)
 	if lines == nil {
 		return nil, false
@@ -201,22 +203,22 @@ func (r *schemaReader) jobEnv(e entry, path string) (map[string]string, bool) {
 	env := map[string]string{}
 
 	for _, l := range lines {
-		name, rest, found := strings.Cut(l.text, ": ")
-		if l.indent != lines[0].indent || !found || name == "" || strings.Trim(name, "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_") != "" {
-			r.fail("line %d: %s: %q is not one variable this reader understands", l.num, path, l.text)
+		name, rest, found := strings.Cut(l.Text, ": ")
+		if l.Indent != lines[0].Indent || !found || name == "" || strings.Trim(name, "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_") != "" {
+			r.fail("line %d: %s: %q is not one variable this reader understands", l.Num, path, l.Text)
 
 			return nil, false
 		}
 
-		value, err := scalar(strings.TrimSpace(rest))
+		value, err := yamlread.Scalar(strings.TrimSpace(rest))
 		if err != nil {
-			r.fail("line %d: %s: %s: %v", l.num, path, name, err)
+			r.fail("line %d: %s: %s: %v", l.Num, path, name, err)
 
 			return nil, false
 		}
 
 		if _, repeated := env[name]; repeated {
-			r.fail("line %d: %s: %s is repeated", l.num, path, name)
+			r.fail("line %d: %s: %s is repeated", l.Num, path, name)
 
 			return nil, false
 		}
@@ -229,13 +231,13 @@ func (r *schemaReader) jobEnv(e entry, path string) (map[string]string, bool) {
 
 // workflowSteps reads e, a job's steps:, keeping each step's id:, uses:,
 // with: and run:.
-func (r *schemaReader) workflowSteps(e entry, path string) ([]workflowStep, bool) {
+func (r *schemaReader) workflowSteps(e yamlread.Entry, path string) ([]workflowStep, bool) {
 	block := r.block(e, path)
 	if block == nil {
 		return nil, false
 	}
 
-	items, err := sequence(block)
+	items, err := yamlread.Sequence(block)
 	if err != nil {
 		r.fail("%s: %v", path, err)
 
@@ -245,21 +247,21 @@ func (r *schemaReader) workflowSteps(e entry, path string) ([]workflowStep, bool
 	steps := make([]workflowStep, 0, len(items))
 
 	for i, it := range items {
-		stepPath := fmt.Sprintf("%s: step %d (line %d)", path, i+1, it.num)
+		stepPath := fmt.Sprintf("%s: step %d (line %d)", path, i+1, it.Num)
 
-		entries, err := mapping(it.lines)
+		entries, err := yamlread.Mapping(it.Lines)
 		if err != nil {
 			r.fail("%s: %v", stepPath, err)
 
 			return nil, false
 		}
 
-		step := workflowStep{num: it.num, with: map[string]entry{}}
+		step := workflowStep{num: it.Num, with: map[string]yamlread.Entry{}}
 
 		for _, se := range entries {
-			switch se.key {
+			switch se.Key {
 			case "id":
-				id, err := single(se)
+				id, err := yamlread.Single(se)
 				if err != nil {
 					r.fail("%s: %v", stepPath, err)
 
@@ -270,7 +272,7 @@ func (r *schemaReader) workflowSteps(e entry, path string) ([]workflowStep, bool
 			case "run":
 				step.run, step.hasRun = se, true
 			case "uses":
-				uses, err := single(se)
+				uses, err := yamlread.Single(se)
 				if err != nil {
 					r.fail("%s: %v", stepPath, err)
 
@@ -279,7 +281,7 @@ func (r *schemaReader) workflowSteps(e entry, path string) ([]workflowStep, bool
 
 				step.action, step.commit, _ = strings.Cut(uses, "@")
 			case "with":
-				with, err := mapping(r.block(se, stepPath+": with"))
+				with, err := yamlread.Mapping(r.block(se, stepPath+": with"))
 				if err != nil {
 					r.fail("%s: with: %v", stepPath, err)
 
@@ -287,7 +289,7 @@ func (r *schemaReader) workflowSteps(e entry, path string) ([]workflowStep, bool
 				}
 
 				for _, w := range with {
-					step.with[w.key] = w
+					step.with[w.Key] = w
 				}
 			}
 		}
@@ -441,7 +443,7 @@ func (d dryRun) build(ci, release []workflowStep) {
 	for _, s := range stepsOf(ci, buildPushName) {
 		load, found := s.with["load"]
 		if found {
-			if value, err := single(load); err == nil && value == "true" {
+			if value, err := yamlread.Single(load); err == nil && value == "true" {
 				continue
 			}
 		}
@@ -644,7 +646,7 @@ func (d dryRun) highestLine(raw []string, steps []workflowStep, file, id string)
 	s := found[0]
 
 	// The dry run's script opens with a comment line inside its block.
-	script, err := literalBlockLeadingHashes(raw, s.run)
+	script, err := yamlread.LiteralBlockLeadingHashes(raw, s.run)
 	if err != nil {
 		d.r.fail("%s: step id: %s (line %d): run: %v", file, id, s.num, err)
 

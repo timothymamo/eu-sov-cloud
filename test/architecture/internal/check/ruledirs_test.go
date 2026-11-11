@@ -5,6 +5,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/timothymamo/eu-sov-cloud/test/internal/releasetarget"
+
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
 
@@ -285,7 +287,7 @@ func TestRuleDirsHoldEveryPackageOfTheTestdataTree(t *testing.T) {
 
 	root := fixtureDir(t, sourceProbeModule)
 
-	pkgs, err := check.ListPackages(t.Context(), root, check.Target{GOOS: "linux", GOARCH: "amd64"}, false, nil, "./a/source/...")
+	pkgs, err := check.ListPackages(t.Context(), root, releasetarget.Target{GOOS: "linux", GOARCH: "amd64"}, false, nil, "./a/source/...")
 	if err != nil {
 		t.Fatalf("ListPackages(%s, ./a/source/...): %v", sourceProbeModule, err)
 	}

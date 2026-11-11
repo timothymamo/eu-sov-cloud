@@ -1,4 +1,4 @@
-package check_test
+package releasetarget_test
 
 import (
 	"strings"
@@ -6,11 +6,11 @@ import (
 
 	"github.com/google/go-cmp/cmp"
 
-	"github.com/timothymamo/eu-sov-cloud/test/architecture/internal/check"
+	"github.com/timothymamo/eu-sov-cloud/test/internal/releasetarget"
 )
 
 // The .goreleaser.yaml documents below are hand-written copies of this
-// repository's build, cut down to the keys ReleaseTargets reads. The build has
+// repository's build, cut down to the keys Read reads. The build has
 // one build, CGO_ENABLED=0, and three goos by two goarch: six platforms, which
 // is the list every case below compares against or breaks.
 const (
@@ -357,15 +357,15 @@ func buildWithComment(comment string) string {
 	return strings.Replace(buildReal, "project_name: eusov", comment+"\nproject_name: eusov", 1)
 }
 
-// TestReleaseTargets pins the platform list the release builds: every goos x
+// TestRead pins the platform list the release builds: every goos x
 // goarch pair of this repository's one build, sorted by GOOS then GOARCH, and
 // an error for every document the check cannot read the whole list from.
-func TestReleaseTargets(t *testing.T) {
+func TestRead(t *testing.T) {
 	t.Parallel()
 
 	// allSix is the goos x goarch product of buildFlow and buildBlock, sorted
 	// by GOOS then GOARCH.
-	allSix := []check.Target{
+	allSix := []releasetarget.Target{
 		{GOOS: "darwin", GOARCH: "amd64"},
 		{GOOS: "darwin", GOARCH: "arm64"},
 		{GOOS: "linux", GOARCH: "amd64"},
@@ -377,7 +377,7 @@ func TestReleaseTargets(t *testing.T) {
 	tests := []struct {
 		name       string
 		goreleaser string
-		want       []check.Target
+		want       []releasetarget.Target
 		wantErr    bool
 	}{
 		{
@@ -619,22 +619,22 @@ func TestReleaseTargets(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 
-			got, err := check.ReleaseTargets([]byte(tc.goreleaser))
+			got, err := releasetarget.Read([]byte(tc.goreleaser))
 
 			if tc.wantErr {
 				if err == nil {
-					t.Fatalf("ReleaseTargets() = %v, nil; want an error", got)
+					t.Fatalf("Read() = %v, nil; want an error", got)
 				}
 
 				return
 			}
 
 			if err != nil {
-				t.Fatalf("ReleaseTargets(): %v", err)
+				t.Fatalf("Read(): %v", err)
 			}
 
 			if diff := cmp.Diff(tc.want, got); diff != "" {
-				t.Errorf("ReleaseTargets() mismatch (-want +got):\n%s", diff)
+				t.Errorf("Read() mismatch (-want +got):\n%s", diff)
 			}
 		})
 	}

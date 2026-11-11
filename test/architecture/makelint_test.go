@@ -12,7 +12,7 @@ import (
 
 	"github.com/google/go-cmp/cmp"
 
-	"github.com/timothymamo/eu-sov-cloud/test/architecture/internal/check"
+	"github.com/timothymamo/eu-sov-cloud/test/internal/releasetarget"
 )
 
 // fakeLinter is the golangci-lint make lint finds on PATH. It records the
@@ -129,13 +129,13 @@ func TestMakeLintRunsEveryReleaseTarget(t *testing.T) {
 	// .goreleaser.yaml is the one source of the release platforms: the test
 	// reads the list from it rather than pinning a copy here, so a target added
 	// to the release is a target make lint must gain without this test changing.
-	targets, err := check.ReleaseTargets(goreleaser)
+	targets, err := releasetarget.Read(goreleaser)
 	if err != nil {
-		t.Fatalf("ReleaseTargets(.goreleaser.yaml): %v", err)
+		t.Fatalf("releasetarget.Read(.goreleaser.yaml): %v", err)
 	}
 
 	if len(targets) == 0 {
-		t.Fatal("ReleaseTargets(.goreleaser.yaml) returned no target, so this test would pin nothing")
+		t.Fatal("releasetarget.Read(.goreleaser.yaml) returned no target, so this test would pin nothing")
 	}
 
 	// The native run lints with cgo at the host's default. With cgo off, it

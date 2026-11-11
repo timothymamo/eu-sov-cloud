@@ -59,10 +59,12 @@
 // latest release (issue #92).
 //
 // Nothing is copied: the release platforms are read from .goreleaser.yaml
-// (ReleaseTargets), and the strict rules and their allow lists from
-// .golangci.yml (StrictRules, RuleDirs, AllowList). These files and the
-// workflows are read with the standard library, by a strict line reader keyed
-// on indentation that refuses what it does not expect, and the characters YAML
+// (releasetarget.Read, in test/internal/releasetarget, which test/lint reads
+// them with too; ListPackages takes a releasetarget.Target), and the strict
+// rules and their allow lists from .golangci.yml (StrictRules, RuleDirs,
+// AllowList). These files and the workflows are read with the standard
+// library, by the strict line reader of test/internal/yamlread, keyed on
+// indentation, that refuses what it does not expect, and the characters YAML
 // readers do not agree on, rather than guess at them.
 //
 // DepguardRules reads every depguard rule of .golangci.yml whole, and

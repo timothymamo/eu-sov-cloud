@@ -1,4 +1,4 @@
-package check
+package yamlread
 
 import (
 	"errors"
@@ -8,62 +8,50 @@ import (
 	"unicode/utf8"
 )
 
-// This file reads the small part of YAML that .goreleaser.yaml, .golangci.yml
-// and the workflows in .github/workflows use on the paths the checks follow,
-// with the standard library only. It reads by indentation, line by line: a key's value is the text on its
-// own line and the lines below it indented further. Along the path it walks and
-// in the values it reads, it refuses everything else (anchors, aliases, merge
-// keys, quoted or upper-case keys, tags, escapes, multi-line flow lists, folded
-// or chomped block scalars, a repeated key) rather than guess at it; a literal
-// block scalar (|) it reads only where a check asks for one (literalBlock). The values of the keys it steps over
-// are kept whole, by indentation, and never read. Anywhere in the document,
-// comments included, it refuses the characters YAML readers do not agree on
-// (checkLine).
-
-// line is one line of a YAML document that holds content: neither blank nor
+// Line is one line of a YAML document that holds content: neither blank nor
 // only a comment.
-type line struct {
-	// num is the line number, counted from 1.
-	num int
-	// indent is the number of spaces before text.
-	indent int
-	// text is the rest of the line, trailing white space removed.
-	text string
+type Line struct {
+	// Num is the line number, counted from 1.
+	Num int
+	// Indent is the number of spaces before text.
+	Indent int
+	// Text is the rest of the line, trailing white space removed.
+	Text string
 }
 
-// entry is one key of a block mapping.
-type entry struct {
-	key string
-	// num is the line number of the key.
-	num int
-	// value is the text after the key on its own line, empty when there is
+// Entry is one key of a block mapping.
+type Entry struct {
+	Key string
+	// Num is the line number of the key.
+	Num int
+	// Value is the text after the key on its own line, empty when there is
 	// none or only a comment.
-	value string
-	// block are the lines below the key that belong to it.
-	block []line
+	Value string
+	// Block are the lines below the key that belong to it.
+	Block []Line
 }
 
-// item is one entry of a block sequence.
-type item struct {
-	// num is the line number of the entry's dash.
-	num int
-	// lines are the entry's value: the text after the dash, as a line indented
+// Item is one entry of a block sequence.
+type Item struct {
+	// Num is the line number of the entry's dash.
+	Num int
+	// Lines are the entry's value: the text after the dash, as a line indented
 	// to the column it starts in, then the lines below that belong to it.
-	lines []line
+	Lines []Line
 }
 
-// splitLines returns the content lines of a YAML document. Lines end in LF or
+// SplitLines returns the content lines of a YAML document. Lines end in LF or
 // CRLF. It refuses a character checkLine refuses, anywhere in the document,
 // comments included, and a directive or document marker at the start of a
 // line, which could start a second document.
-func splitLines(doc []byte) ([]line, error) {
-	var out []line
+func SplitLines(doc []byte) ([]Line, error) {
+	var out []Line
 
 	for i, raw := range strings.Split(string(doc), "\n") {
 		num := i + 1
 		raw = strings.TrimSuffix(raw, "\r")
 
-		if err := checkLine(raw); err != nil {
+		if err := CheckLine(raw); err != nil {
 			return nil, fmt.Errorf("line %d: %w", num, err)
 		}
 
@@ -79,13 +67,13 @@ func splitLines(doc []byte) ([]line, error) {
 			return nil, fmt.Errorf("line %d: a directive or document marker, which this reader does not follow", num)
 		}
 
-		out = append(out, line{num: num, indent: indent, text: text})
+		out = append(out, Line{Num: num, Indent: indent, Text: text})
 	}
 
 	return out, nil
 }
 
-// checkLine refuses invalid UTF-8 and every character that YAML readers do not
+// CheckLine refuses invalid UTF-8 and every character that YAML readers do not
 // agree on, wherever it sits on the line: a control character (a tab, a CR not
 // followed by LF, any other C0 control, DEL and the C1 controls, NEL among
 // them), the line and paragraph separators U+2028 and U+2029, and the
@@ -94,7 +82,7 @@ func splitLines(doc []byte) ([]line, error) {
 // them inside a comment: a list entry after one would be hidden from the
 // check, not from the tool. Other printable text, non-ASCII included, is
 // accepted.
-func checkLine(raw string) error {
+func CheckLine(raw string) error {
 	if !utf8.ValidString(raw) {
 		return errors.New("invalid UTF-8")
 	}
@@ -112,77 +100,77 @@ func checkLine(raw string) error {
 	return nil
 }
 
-// mapping reads lines as one block mapping: every line at the indentation of
+// Mapping reads lines as one block mapping: every line at the indentation of
 // the first is a key, and the lines after a key that are indented further, or
 // that are sequence entries at its own indentation when the key has no value on
 // its line, belong to it. It refuses a line indented less than the first, a
 // line at the mapping's indentation that is not a plain key, and a key the
 // mapping already has.
-func mapping(lines []line) ([]entry, error) {
+func Mapping(lines []Line) ([]Entry, error) {
 	if len(lines) == 0 {
 		return nil, nil
 	}
 
-	indent := lines[0].indent
+	indent := lines[0].Indent
 
-	var entries []entry
+	var entries []Entry
 
 	for _, l := range lines {
-		if l.indent < indent {
-			return nil, fmt.Errorf("line %d: indented less than the mapping it is in", l.num)
+		if l.Indent < indent {
+			return nil, fmt.Errorf("line %d: indented less than the mapping it is in", l.Num)
 		}
 
 		if len(entries) > 0 {
 			last := &entries[len(entries)-1]
-			if l.indent > indent || (isSequenceEntry(l.text) && last.value == "") {
-				last.block = append(last.block, l)
+			if l.Indent > indent || (IsSequenceEntry(l.Text) && last.Value == "") {
+				last.Block = append(last.Block, l)
 
 				continue
 			}
 		}
 
-		key, value, ok := keyValue(l.text)
+		key, value, ok := KeyValue(l.Text)
 		if !ok {
-			return nil, fmt.Errorf("line %d: %q is not a plain key this reader understands", l.num, l.text)
+			return nil, fmt.Errorf("line %d: %q is not a plain key this reader understands", l.Num, l.Text)
 		}
 
 		for _, e := range entries {
-			if e.key == key {
-				return nil, fmt.Errorf("line %d: key %s is repeated from line %d", l.num, key, e.num)
+			if e.Key == key {
+				return nil, fmt.Errorf("line %d: key %s is repeated from line %d", l.Num, key, e.Num)
 			}
 		}
 
-		entries = append(entries, entry{key: key, num: l.num, value: value})
+		entries = append(entries, Entry{Key: key, Num: l.Num, Value: value})
 	}
 
 	return entries, nil
 }
 
-// sequence reads lines as one block sequence: every line at the indentation of
+// Sequence reads lines as one block sequence: every line at the indentation of
 // the first starts an entry with a dash, and the lines indented further belong
 // to the entry above them. It refuses any other line.
-func sequence(lines []line) ([]item, error) {
+func Sequence(lines []Line) ([]Item, error) {
 	if len(lines) == 0 {
 		return nil, nil
 	}
 
-	indent := lines[0].indent
+	indent := lines[0].Indent
 
-	var items []item
+	var items []Item
 
 	for _, l := range lines {
 		switch {
-		case l.indent < indent:
-			return nil, fmt.Errorf("line %d: indented less than the sequence it is in", l.num)
-		case l.indent > indent:
+		case l.Indent < indent:
+			return nil, fmt.Errorf("line %d: indented less than the sequence it is in", l.Num)
+		case l.Indent > indent:
 			last := &items[len(items)-1]
-			last.lines = append(last.lines, l)
-		case !isSequenceEntry(l.text):
-			return nil, fmt.Errorf("line %d: %q is not a sequence entry", l.num, l.text)
+			last.Lines = append(last.Lines, l)
+		case !IsSequenceEntry(l.Text):
+			return nil, fmt.Errorf("line %d: %q is not a sequence entry", l.Num, l.Text)
 		default:
-			it := item{num: l.num}
-			if rest := strings.TrimLeft(l.text[1:], " "); rest != "" {
-				it.lines = []line{{num: l.num, indent: l.indent + len(l.text) - len(rest), text: rest}}
+			it := Item{Num: l.Num}
+			if rest := strings.TrimLeft(l.Text[1:], " "); rest != "" {
+				it.Lines = []Line{{Num: l.Num, Indent: l.Indent + len(l.Text) - len(rest), Text: rest}}
 			}
 
 			items = append(items, it)
@@ -192,13 +180,13 @@ func sequence(lines []line) ([]item, error) {
 	return items, nil
 }
 
-// walk follows keys from the top-level mapping of lines, each key's value a
+// Walk follows keys from the top-level mapping of lines, each key's value a
 // block mapping below it, and returns the lines of the last key's value.
-func walk(lines []line, keys ...string) ([]line, error) {
+func Walk(lines []Line, keys ...string) ([]Line, error) {
 	for i, key := range keys {
 		path := strings.Join(keys[:i+1], ": ")
 
-		entries, err := mapping(lines)
+		entries, err := Mapping(lines)
 		if err != nil {
 			return nil, fmt.Errorf("read the mapping that holds %s: %w", path, err)
 		}
@@ -206,11 +194,11 @@ func walk(lines []line, keys ...string) ([]line, error) {
 		found := false
 
 		for _, e := range entries {
-			if e.key != key {
+			if e.Key != key {
 				continue
 			}
 
-			lines, err = blockValue(e, path)
+			lines, err = BlockValue(e, path)
 			if err != nil {
 				return nil, err
 			}
@@ -226,52 +214,52 @@ func walk(lines []line, keys ...string) ([]line, error) {
 	return lines, nil
 }
 
-// blockValue returns the lines of e's value, a block below the key at path. It
+// BlockValue returns the lines of e's value, a block below the key at path. It
 // refuses a value on the key's own line and an empty one.
-func blockValue(e entry, path string) ([]line, error) {
-	if e.value != "" {
-		return nil, fmt.Errorf("line %d: %s has %q on its own line, want a block below it", e.num, path, e.value)
+func BlockValue(e Entry, path string) ([]Line, error) {
+	if e.Value != "" {
+		return nil, fmt.Errorf("line %d: %s has %q on its own line, want a block below it", e.Num, path, e.Value)
 	}
 
-	if len(e.block) == 0 {
-		return nil, fmt.Errorf("line %d: %s is empty", e.num, path)
+	if len(e.Block) == 0 {
+		return nil, fmt.Errorf("line %d: %s is empty", e.Num, path)
 	}
 
-	return e.block, nil
+	return e.Block, nil
 }
 
-// list reads the value of e as a list of scalars: a flow list on the key's own
+// List reads the value of e as a list of scalars: a flow list on the key's own
 // line ([a, b]) or a block sequence below it (- a). A key with no value is an
 // empty list.
-func list(e entry) ([]string, error) {
-	if e.value != "" {
-		if len(e.block) != 0 {
-			return nil, fmt.Errorf("line %d: %s has a value on its own line and lines below it", e.num, e.key)
+func List(e Entry) ([]string, error) {
+	if e.Value != "" {
+		if len(e.Block) != 0 {
+			return nil, fmt.Errorf("line %d: %s has a value on its own line and lines below it", e.Num, e.Key)
 		}
 
-		values, err := flowList(e.value)
+		values, err := FlowList(e.Value)
 		if err != nil {
-			return nil, fmt.Errorf("line %d: %s: %w", e.num, e.key, err)
+			return nil, fmt.Errorf("line %d: %s: %w", e.Num, e.Key, err)
 		}
 
 		return values, nil
 	}
 
-	items, err := sequence(e.block)
+	items, err := Sequence(e.Block)
 	if err != nil {
-		return nil, fmt.Errorf("%s: %w", e.key, err)
+		return nil, fmt.Errorf("%s: %w", e.Key, err)
 	}
 
 	values := make([]string, 0, len(items))
 
 	for _, it := range items {
-		if len(it.lines) != 1 {
-			return nil, fmt.Errorf("line %d: an entry of %s that is not one scalar on its line", it.num, e.key)
+		if len(it.Lines) != 1 {
+			return nil, fmt.Errorf("line %d: an entry of %s that is not one scalar on its line", it.Num, e.Key)
 		}
 
-		value, err := scalar(it.lines[0].text)
+		value, err := Scalar(it.Lines[0].Text)
 		if err != nil {
-			return nil, fmt.Errorf("line %d: an entry of %s: %w", it.num, e.key, err)
+			return nil, fmt.Errorf("line %d: an entry of %s: %w", it.Num, e.Key, err)
 		}
 
 		values = append(values, value)
@@ -280,21 +268,21 @@ func list(e entry) ([]string, error) {
 	return values, nil
 }
 
-// single reads the value of e as one scalar on the key's own line.
-func single(e entry) (string, error) {
-	if len(e.block) != 0 {
-		return "", fmt.Errorf("line %d: %s has lines below it, want one value on its line", e.num, e.key)
+// Single reads the value of e as one scalar on the key's own line.
+func Single(e Entry) (string, error) {
+	if len(e.Block) != 0 {
+		return "", fmt.Errorf("line %d: %s has lines below it, want one value on its line", e.Num, e.Key)
 	}
 
-	value, err := scalar(e.value)
+	value, err := Scalar(e.Value)
 	if err != nil {
-		return "", fmt.Errorf("line %d: %s: %w", e.num, e.key, err)
+		return "", fmt.Errorf("line %d: %s: %w", e.Num, e.Key, err)
 	}
 
 	return value, nil
 }
 
-// literalBlock reads the value of e, a literal block scalar (|) with clip
+// LiteralBlock reads the value of e, a literal block scalar (|) with clip
 // chomping and its indentation taken from its first line, from raw, the lines
 // of the document e is in with their line ends removed. It returns the block's
 // lines, that indentation removed, joined by newlines, without the newline
@@ -305,36 +293,36 @@ func single(e entry) (string, error) {
 // It refuses a block whose first line is not its first content line, and a
 // content line indented less than the first: YAML ends the block there, where
 // the mapping reader would keep the line in it.
-func literalBlock(raw []string, e entry) (string, error) {
+func LiteralBlock(raw []string, e Entry) (string, error) {
 	return readLiteralBlock(raw, e, false)
 }
 
-// literalBlockLeadingHashes reads e as literalBlock does, but accepts lines
+// LiteralBlockLeadingHashes reads e as LiteralBlock does, but accepts lines
 // starting with # before the block's first content line when they sit at
 // exactly its indentation: YAML reads them as the block's first lines, and so
 // does this reader, keeping them in the value. Any other line there is still
 // refused.
-func literalBlockLeadingHashes(raw []string, e entry) (string, error) {
+func LiteralBlockLeadingHashes(raw []string, e Entry) (string, error) {
 	return readLiteralBlock(raw, e, true)
 }
 
 // readLiteralBlock is literalBlock, with lines starting with # at the block's
 // indentation accepted before its first content line when leadingHashes.
-func readLiteralBlock(raw []string, e entry, leadingHashes bool) (string, error) {
-	if e.value != "|" {
-		return "", fmt.Errorf("line %d: %s is %q, want a literal block (|)", e.num, e.key, e.value)
+func readLiteralBlock(raw []string, e Entry, leadingHashes bool) (string, error) {
+	if e.Value != "|" {
+		return "", fmt.Errorf("line %d: %s is %q, want a literal block (|)", e.Num, e.Key, e.Value)
 	}
 
-	if len(e.block) == 0 {
-		return "", fmt.Errorf("line %d: %s is an empty literal block", e.num, e.key)
+	if len(e.Block) == 0 {
+		return "", fmt.Errorf("line %d: %s is an empty literal block", e.Num, e.Key)
 	}
 
-	first, last := e.block[0], e.block[len(e.block)-1]
+	first, last := e.Block[0], e.Block[len(e.Block)-1]
 
 	var out []string
 
 	// raw[e.num] is the line after the key's, line numbers counting from 1.
-	for i := e.num; i < len(raw); i++ {
+	for i := e.Num; i < len(raw); i++ {
 		text := strings.TrimLeft(raw[i], " ")
 		indent := len(raw[i]) - len(text)
 
@@ -344,19 +332,19 @@ func readLiteralBlock(raw []string, e entry, leadingHashes bool) (string, error)
 			continue
 		}
 
-		if i+1 < first.num && (!leadingHashes || indent != first.indent || !strings.HasPrefix(text, "#")) {
-			return "", fmt.Errorf("line %d: %s has a line before its first content line, which this reader does not follow", i+1, e.key)
+		if i+1 < first.Num && (!leadingHashes || indent != first.Indent || !strings.HasPrefix(text, "#")) {
+			return "", fmt.Errorf("line %d: %s has a line before its first content line, which this reader does not follow", i+1, e.Key)
 		}
 
-		if indent < first.indent {
-			if i+1 <= last.num {
-				return "", fmt.Errorf("line %d: a line of %s indented less than its first", i+1, e.key)
+		if indent < first.Indent {
+			if i+1 <= last.Num {
+				return "", fmt.Errorf("line %d: a line of %s indented less than its first", i+1, e.Key)
 			}
 
 			break
 		}
 
-		out = append(out, raw[i][first.indent:])
+		out = append(out, raw[i][first.Indent:])
 	}
 
 	for len(out) > 0 && out[len(out)-1] == "" {
@@ -366,9 +354,9 @@ func readLiteralBlock(raw []string, e entry, leadingHashes bool) (string, error)
 	return strings.Join(out, "\n"), nil
 }
 
-// flowList reads a flow list written on one line, [a, b], whose entries are
+// FlowList reads a flow list written on one line, [a, b], whose entries are
 // scalars.
-func flowList(text string) ([]string, error) {
+func FlowList(text string) ([]string, error) {
 	if !strings.HasPrefix(text, "[") {
 		return nil, fmt.Errorf("%q is not a list", text)
 	}
@@ -395,7 +383,7 @@ func flowList(text string) ([]string, error) {
 	values := make([]string, 0, len(parts))
 
 	for _, part := range parts {
-		value, err := scalar(strings.TrimSpace(part))
+		value, err := Scalar(strings.TrimSpace(part))
 		if err != nil {
 			return nil, fmt.Errorf("an entry of %q: %w", text, err)
 		}
@@ -406,11 +394,11 @@ func flowList(text string) ([]string, error) {
 	return values, nil
 }
 
-// scalar reads one scalar: plain, or in single or double quotes without
+// Scalar reads one scalar: plain, or in single or double quotes without
 // escapes, followed by nothing but a comment. It refuses an empty value, and a
 // plain one that starts with a YAML indicator (an anchor, alias, tag, block
 // scalar or flow collection) or holds a key.
-func scalar(text string) (string, error) {
+func Scalar(text string) (string, error) {
 	if text == "" {
 		return "", errors.New("an empty value")
 	}
@@ -449,16 +437,16 @@ func scalar(text string) (string, error) {
 	return value, nil
 }
 
-// keyValue splits a mapping line into its plain key and the value after it,
+// KeyValue splits a mapping line into its plain key and the value after it,
 // with a value that is only a comment returned as empty.
-func keyValue(text string) (key, value string, ok bool) {
+func KeyValue(text string) (key, value string, ok bool) {
 	for i := range len(text) {
 		if text[i] != ':' || (i+1 < len(text) && text[i+1] != ' ') {
 			continue
 		}
 
 		key = text[:i]
-		if !isPlainKey(key) {
+		if !IsPlainKey(key) {
 			return "", "", false
 		}
 
@@ -473,13 +461,13 @@ func keyValue(text string) (key, value string, ok bool) {
 	return "", "", false
 }
 
-// isPlainKey reports whether key is a key this reader takes as written:
+// IsPlainKey reports whether key is a key this reader takes as written:
 // lower-case ASCII letters, digits, _, . and -, starting with a letter, digit
 // or _. An upper-case letter is refused: golangci-lint reads its configuration
 // keys without regard to case, so List-Mode would be list-mode to it, and
 // Domain-Is-Pure a repeat of domain-is-pure, where this reader compares keys
 // as written.
-func isPlainKey(key string) bool {
+func IsPlainKey(key string) bool {
 	if key == "" || key[0] == '.' || key[0] == '-' {
 		return false
 	}
@@ -493,8 +481,8 @@ func isPlainKey(key string) bool {
 	return true
 }
 
-// isSequenceEntry reports whether text starts a block sequence entry.
-func isSequenceEntry(text string) bool {
+// IsSequenceEntry reports whether text starts a block sequence entry.
+func IsSequenceEntry(text string) bool {
 	return text == "-" || strings.HasPrefix(text, "- ")
 }
 

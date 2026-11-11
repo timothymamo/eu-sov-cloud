@@ -7,6 +7,8 @@ import (
 	"slices"
 	"sort"
 	"strings"
+
+	"github.com/timothymamo/eu-sov-cloud/test/internal/yamlread"
 )
 
 // AllowEntry is one entry of a depguard allow list, read the way depguard reads
@@ -104,12 +106,12 @@ func sortedAllowLists(rules []Rule) []Rule {
 // which depguard expands to the standard library's top-level directories, is
 // no import path and so is refused.
 func AllowList(golangci []byte, rule string) ([]AllowEntry, error) {
-	lines, err := splitLines(golangci)
+	lines, err := yamlread.SplitLines(golangci)
 	if err != nil {
 		return nil, fmt.Errorf("read .golangci.yml: %w", err)
 	}
 
-	body, err := walk(lines, "linters", "settings", "depguard", "rules", rule)
+	body, err := yamlread.Walk(lines, "linters", "settings", "depguard", "rules", rule)
 	if err != nil {
 		return nil, fmt.Errorf("read depguard rule %s: %w", rule, err)
 	}
@@ -133,19 +135,19 @@ func AllowList(golangci []byte, rule string) ([]AllowEntry, error) {
 // as Strict, is refused rather than counted as not strict, since this check
 // cannot tell what depguard makes of it.
 func StrictRules(golangci []byte) ([]string, error) {
-	lines, err := splitLines(golangci)
+	lines, err := yamlread.SplitLines(golangci)
 	if err != nil {
 		return nil, fmt.Errorf("read .golangci.yml: %w", err)
 	}
 
 	const path = "linters: settings: depguard: rules"
 
-	block, err := walk(lines, "linters", "settings", "depguard", "rules")
+	block, err := yamlread.Walk(lines, "linters", "settings", "depguard", "rules")
 	if err != nil {
 		return nil, fmt.Errorf("read the depguard rules: %w", err)
 	}
 
-	rules, err := mapping(block)
+	rules, err := yamlread.Mapping(block)
 	if err != nil {
 		return nil, fmt.Errorf("read the depguard rules: %w", err)
 	}
@@ -153,23 +155,23 @@ func StrictRules(golangci []byte) ([]string, error) {
 	var strict []string
 
 	for _, rule := range rules {
-		body, err := blockValue(rule, path+": "+rule.key)
+		body, err := yamlread.BlockValue(rule, path+": "+rule.Key)
 		if err != nil {
-			return nil, fmt.Errorf("read depguard rule %s: %w", rule.key, err)
+			return nil, fmt.Errorf("read depguard rule %s: %w", rule.Key, err)
 		}
 
-		entries, err := mapping(body)
+		entries, err := yamlread.Mapping(body)
 		if err != nil {
-			return nil, fmt.Errorf("read depguard rule %s: %w", rule.key, err)
+			return nil, fmt.Errorf("read depguard rule %s: %w", rule.Key, err)
 		}
 
 		mode, _, err := listMode(entries)
 		if err != nil {
-			return nil, fmt.Errorf("read depguard rule %s: %w", rule.key, err)
+			return nil, fmt.Errorf("read depguard rule %s: %w", rule.Key, err)
 		}
 
 		if mode == "strict" {
-			strict = append(strict, rule.key)
+			strict = append(strict, rule.Key)
 		}
 	}
 
@@ -179,22 +181,22 @@ func StrictRules(golangci []byte) ([]string, error) {
 // listMode returns the list-mode of a rule's body and the line it is on, or
 // an empty mode when the body has none. It refuses a mode written other than
 // original, strict or lax.
-func listMode(entries []entry) (string, int, error) {
+func listMode(entries []yamlread.Entry) (string, int, error) {
 	for _, e := range entries {
-		if e.key != "list-mode" {
+		if e.Key != "list-mode" {
 			continue
 		}
 
-		mode, err := single(e)
+		mode, err := yamlread.Single(e)
 		if err != nil {
 			return "", 0, err
 		}
 
 		switch mode {
 		case "original", "strict", "lax":
-			return mode, e.num, nil
+			return mode, e.Num, nil
 		default:
-			return "", 0, fmt.Errorf("line %d: list-mode %s, want original, strict or lax, written in lower case", e.num, mode)
+			return "", 0, fmt.Errorf("line %d: list-mode %s, want original, strict or lax, written in lower case", e.Num, mode)
 		}
 	}
 
@@ -203,8 +205,8 @@ func listMode(entries []entry) (string, int, error) {
 
 // readAllow checks the list-mode of a rule's body and returns its allow
 // entries.
-func readAllow(body []line) ([]AllowEntry, error) {
-	entries, err := mapping(body)
+func readAllow(body []yamlread.Line) ([]AllowEntry, error) {
+	entries, err := yamlread.Mapping(body)
 	if err != nil {
 		return nil, err
 	}
@@ -222,10 +224,10 @@ func readAllow(body []line) ([]AllowEntry, error) {
 		return nil, fmt.Errorf("line %d: list-mode is %s, want strict: in any other mode depguard allows what no list names", modeLine, mode)
 	}
 
-	var allow *entry
+	var allow *yamlread.Entry
 
 	for i := range entries {
-		if entries[i].key == "allow" {
+		if entries[i].Key == "allow" {
 			allow = &entries[i]
 		}
 	}
@@ -234,13 +236,13 @@ func readAllow(body []line) ([]AllowEntry, error) {
 		return nil, errors.New("no allow list")
 	}
 
-	values, err := list(*allow)
+	values, err := yamlread.List(*allow)
 	if err != nil {
 		return nil, err
 	}
 
 	if len(values) == 0 {
-		return nil, fmt.Errorf("line %d: the allow list is empty", allow.num)
+		return nil, fmt.Errorf("line %d: the allow list is empty", allow.Num)
 	}
 
 	out := make([]AllowEntry, 0, len(values))
@@ -281,9 +283,9 @@ func readAllow(body []line) ([]AllowEntry, error) {
 // it, so the allow list alone no longer says what the rule allows. A deny
 // entry no allow entry allows, such as net beside net/netip$, leaves the allow
 // list as the whole answer and is fine.
-func checkDeny(entries []entry, allow []AllowEntry) error {
+func checkDeny(entries []yamlread.Entry, allow []AllowEntry) error {
 	for _, e := range entries {
-		if e.key != "deny" {
+		if e.Key != "deny" {
 			continue
 		}
 
@@ -297,7 +299,7 @@ func checkDeny(entries []entry, allow []AllowEntry) error {
 
 			for _, a := range allow {
 				if a.allows(name) {
-					return fmt.Errorf("line %d: deny entry %s is allowed by allow entry %s: depguard decides that import by entry length, so the allow list does not say what the rule allows", e.num, p, a.written())
+					return fmt.Errorf("line %d: deny entry %s is allowed by allow entry %s: depguard decides that import by entry length, so the allow list does not say what the rule allows", e.Num, p, a.written())
 				}
 			}
 		}
@@ -310,18 +312,18 @@ func checkDeny(entries []entry, allow []AllowEntry) error {
 // sequence below the key, optionally anchored (deny: &name), whose entries are
 // a scalar path or a mapping of pkg and desc. It fails closed on an alias,
 // whose entries this reader of one rule cannot see.
-func readDenyPaths(e entry) ([]string, error) {
-	if e.value != "" && !strings.HasPrefix(e.value, "&") {
-		return nil, fmt.Errorf("line %d: deny has %q on its own line, want an anchor or nothing", e.num, e.value)
+func readDenyPaths(e yamlread.Entry) ([]string, error) {
+	if e.Value != "" && !strings.HasPrefix(e.Value, "&") {
+		return nil, fmt.Errorf("line %d: deny has %q on its own line, want an anchor or nothing", e.Num, e.Value)
 	}
 
-	if strings.HasPrefix(e.value, "&") {
-		if _, err := anchorName(e, e.value[1:]); err != nil {
+	if strings.HasPrefix(e.Value, "&") {
+		if _, err := anchorName(e, e.Value[1:]); err != nil {
 			return nil, err
 		}
 	}
 
-	items, err := sequence(e.block)
+	items, err := yamlread.Sequence(e.Block)
 	if err != nil {
 		return nil, fmt.Errorf("deny: %w", err)
 	}
@@ -329,11 +331,11 @@ func readDenyPaths(e entry) ([]string, error) {
 	paths := make([]string, 0, len(items))
 
 	for _, it := range items {
-		if len(it.lines) == 1 {
-			if _, _, isKey := keyValue(it.lines[0].text); !isKey {
-				value, err := scalar(it.lines[0].text)
+		if len(it.Lines) == 1 {
+			if _, _, isKey := yamlread.KeyValue(it.Lines[0].Text); !isKey {
+				value, err := yamlread.Scalar(it.Lines[0].Text)
 				if err != nil {
-					return nil, fmt.Errorf("line %d: a deny entry: %w", it.num, err)
+					return nil, fmt.Errorf("line %d: a deny entry: %w", it.Num, err)
 				}
 
 				paths = append(paths, value)
@@ -367,4 +369,9 @@ func isImportPath(name string) bool {
 	}
 
 	return true
+}
+
+// isASCIIAlnum reports whether r is an ASCII letter or digit.
+func isASCIIAlnum(r rune) bool {
+	return ('a' <= r && r <= 'z') || ('A' <= r && r <= 'Z') || ('0' <= r && r <= '9')
 }
