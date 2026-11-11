@@ -119,6 +119,9 @@ docker run --rm --read-only --network none --user "$(id -u):$(id -g)" \
 To build the image yourself from a clone instead, `make image` tags `eusov:<version>`, `eusov:dev` and
 `eusov:latest`, stamped from git (`docker build -t eusov .` builds it without the version stamp); use
 `eusov` in place of `ghcr.io/timothymamo/eusov:v0.1.0` in the commands here.
+`make image PLATFORMS=linux/amd64,linux/arm64` builds both release platforms (with Docker, that needs
+the containerd image store). `make image` runs `docker`, or `nerdctl` where there is no `docker`, as in
+the project's Lima VM; set `DOCKER=` to choose.
 
 ### Verify the image
 
@@ -153,11 +156,22 @@ gh attestation verify "oci://$IMAGE" --repo timothymamo/eu-sov-cloud \
 docker run --rm "$IMAGE" version
 ```
 
+Inside the project's Lima VM, which has rootless nerdctl and no Docker
+([ADR 0016](docs/adr/0016-run-a-rootless-container-runtime-in-the-lima-vm.md)), resolve the digest with
+[crane](https://github.com/google/go-containerregistry/tree/main/cmd/crane), which reads only the
+index and pulls nothing, and run with `nerdctl`; the `cosign` and `gh` commands are the same:
+
+```bash
+DIGEST="$(crane digest "ghcr.io/timothymamo/eusov:$TAG")"
+nerdctl run --rm --read-only --network none "$IMAGE" version
+```
+
 Each platform's image is signed too, so `cosign verify` also accepts the `linux/amd64` or
 `linux/arm64` digest that `docker buildx imagetools inspect` lists. `gh attestation verify ...
 --format json` prints the attested statements, the SBOM's packages among them. The SBOM is attested
 on the index digest but generated from its `linux/amd64` image; the `linux/arm64` image is built from
-the same source, Go modules and distroless base. The image's labels
+the same source, Go modules and distroless base (`crane digest --platform linux/arm64 ...` prints one
+platform's digest). The image's labels
 name the source repository (`org.opencontainers.image.source`) and the commit
 (`org.opencontainers.image.revision`).
 
@@ -169,6 +183,10 @@ still not as root, so it reads your private files without their mode being loose
 passes it. `--mount type=bind` fails if the file is missing, where `-v` would quietly create a
 root-owned directory in its place. The image works with `--read-only`, and the subshell keeps
 `umask 077` from applying to the rest of your session.
+
+With a rootless runtime (rootless Docker, or nerdctl in the project's Lima VM), container user 0 is you,
+not root, and `--user "$(id -u):$(id -g)"` maps to a subordinate UID that cannot read your private files:
+pass `--user 0:0` instead.
 
 Redirect the report from standard output as above. To use `--output` instead, mount a directory you
 own; running as your own user lets the container write there without the directory being opened up:

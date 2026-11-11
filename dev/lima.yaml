@@ -21,6 +21,10 @@ disk: 40GiB
 # Deliberately empty: host mounts come only from `--mount-only` in the Makefile.
 mounts: []
 
+# Lima's own containerd stays off: the provisioning below installs a rootless containerd and BuildKit
+# (nerdctl-full) at a version pinned here rather than the one the host's Lima bundles. Nothing rootful:
+# no root daemon, no docker group, no socket the VM user can use to become root
+# (docs/adr/0016-run-a-rootless-container-runtime-in-the-lima-vm.md).
 containerd:
   system: false
   user: false
@@ -39,6 +43,18 @@ param:
   nodeVersion: "26.13.0"
   # renovate: datasource=npm depName=@earendil-works/pi-coding-agent
   piVersion: "1.5.2"
+  # gh from its release, not Ubuntu's package: `gh attestation verify` needs gh 2.49 or later.
+  # renovate: datasource=github-releases depName=cli/cli
+  ghVersion: "v2.103.3"
+  # cosign v3 or later reads the release's signature bundles (README, "Verify the image").
+  # renovate: datasource=github-releases depName=sigstore/cosign
+  cosignVersion: "v3.1.4"
+  # nerdctl-full: nerdctl, containerd, BuildKit, RootlessKit, runc and CNI plugins, run rootless.
+  # renovate: datasource=github-releases depName=containerd/nerdctl
+  nerdctlVersion: "v2.4.1"
+  # crane resolves a tag to its digest without pulling the image (README, "Verify the image").
+  # renovate: datasource=go depName=github.com/google/go-containerregistry
+  craneVersion: "v0.22.1"
 
 provision:
   - mode: system
@@ -47,10 +63,15 @@ provision:
       set -eux -o pipefail
       export DEBIAN_FRONTEND=noninteractive
       # Provisioning re-runs on every boot, so each step is skipped when already done.
-      pkgs="build-essential ca-certificates curl gh git jq make ripgrep unzip"
+      # uidmap (newuidmap, newgidmap) and slirp4netns are what rootless containerd needs from the system.
+      pkgs="build-essential ca-certificates curl git jq make ripgrep slirp4netns uidmap unzip"
       if ! dpkg -s ${pkgs} >/dev/null 2>&1; then
         apt-get update
         apt-get install -y --no-install-recommends ${pkgs}
+      fi
+      # gh comes from its release below; Ubuntu's older package goes, so there is one gh on the PATH.
+      if dpkg -s gh >/dev/null 2>&1; then
+        apt-get remove -y gh
       fi
 
       arch="$(dpkg --print-architecture)" # amd64 | arm64, matching Go's naming
@@ -82,8 +103,65 @@ provision:
           | sh -s -- -b /usr/local/bin "${PARAM_golangciLintVersion}"
       fi
 
+      # gh release binary, verified against the release checksums.
+      if ! /usr/local/bin/gh --version 2>/dev/null | grep -q "^gh version ${PARAM_ghVersion#v} "; then
+        name="gh_${PARAM_ghVersion#v}_linux_${arch}"
+        base="https://github.com/cli/cli/releases/download/${PARAM_ghVersion}"
+        tmp="$(mktemp -d)"
+        curl -fsSL -o "${tmp}/${name}.tar.gz" "${base}/${name}.tar.gz"
+        curl -fsSL -o "${tmp}/checksums.txt" "${base}/gh_${PARAM_ghVersion#v}_checksums.txt"
+        (cd "${tmp}" && grep " ${name}.tar.gz\$" checksums.txt | sha256sum --check --strict)
+        tar -C "${tmp}" --no-same-owner -xzf "${tmp}/${name}.tar.gz"
+        install -m 0755 "${tmp}/${name}/bin/gh" /usr/local/bin/gh
+        rm -rf "${tmp}"
+      fi
+
+      # cosign release binary, verified against the release checksums.
+      if ! /usr/local/bin/cosign version 2>&1 | grep -qE "^GitVersion:[[:space:]]+${PARAM_cosignVersion}\$"; then
+        asset="cosign-linux-${arch}"
+        base="https://github.com/sigstore/cosign/releases/download/${PARAM_cosignVersion}"
+        tmp="$(mktemp -d)"
+        curl -fsSL -o "${tmp}/${asset}" "${base}/${asset}"
+        curl -fsSL -o "${tmp}/cosign_checksums.txt" "${base}/cosign_checksums.txt"
+        (cd "${tmp}" && grep " ${asset}\$" cosign_checksums.txt | sha256sum --check --strict)
+        install -m 0755 "${tmp}/${asset}" /usr/local/bin/cosign
+        rm -rf "${tmp}"
+      fi
+
+      # nerdctl-full in its own directory, verified against the release checksums. The VM user runs its
+      # containerd and BuildKit rootless (user provisioning below); nothing here starts a daemon as root.
+      if ! /usr/local/nerdctl/bin/nerdctl --version 2>/dev/null | grep -qx "nerdctl version ${PARAM_nerdctlVersion#v}"; then
+        tarball="nerdctl-full-${PARAM_nerdctlVersion#v}-linux-${arch}.tar.gz"
+        base="https://github.com/containerd/nerdctl/releases/download/${PARAM_nerdctlVersion}"
+        tmp="$(mktemp -d)"
+        curl -fsSL -o "${tmp}/${tarball}" "${base}/${tarball}"
+        curl -fsSL -o "${tmp}/SHA256SUMS" "${base}/SHA256SUMS"
+        (cd "${tmp}" && grep " ${tarball}\$" SHA256SUMS | sha256sum --check --strict)
+        rm -rf /usr/local/nerdctl && mkdir -p /usr/local/nerdctl
+        tar -C /usr/local/nerdctl --no-same-owner -xzf "${tmp}/${tarball}"
+        rm -rf "${tmp}"
+      fi
+
+      # Ubuntu lets only programs with an AppArmor profile create user namespaces
+      # (kernel.apparmor_restrict_unprivileged_userns), and its own rootlesskit profile covers only
+      # /usr/bin/rootlesskit. This one lets the pinned RootlessKit, and nothing else, create them.
+      if command -v apparmor_parser >/dev/null 2>&1 && [ -d /sys/kernel/security/apparmor ]; then
+        cat > /etc/apparmor.d/usr.local.nerdctl.bin.rootlesskit <<'APPARMOR'
+      abi <abi/4.0>,
+      include <tunables/global>
+
+      /usr/local/nerdctl/bin/rootlesskit flags=(unconfined) {
+        userns,
+
+        # Site-specific additions and overrides. See local/README for details.
+        include if exists <local/usr.local.nerdctl.bin.rootlesskit>
+      }
+      APPARMOR
+        apparmor_parser -r /etc/apparmor.d/usr.local.nerdctl.bin.rootlesskit
+      fi
+
       cat > /etc/profile.d/eu-sov-cloud.sh <<'PROFILE'
-      export PATH="$HOME/.local/bin:$HOME/go/bin:/usr/local/go/bin:/usr/local/node/bin:$PATH"
+      export PATH="$HOME/.local/bin:$HOME/go/bin:/usr/local/go/bin:/usr/local/node/bin:/usr/local/nerdctl/bin:$PATH"
       # Agent credentials, copied in from the Mac by `make vm-env` (docs/dev-environment.md).
       if [ -r "$HOME/.config/dot-agent-deck/daemon.env" ]; then
         set -a
@@ -96,10 +174,12 @@ provision:
     script: |
       #!/bin/bash
       set -eux -o pipefail
-      export PATH="$HOME/.local/bin:$HOME/go/bin:/usr/local/go/bin:/usr/local/node/bin:$PATH"
+      export PATH="$HOME/.local/bin:$HOME/go/bin:/usr/local/go/bin:/usr/local/node/bin:/usr/local/nerdctl/bin:$PATH"
       mkdir -p "$HOME/.local/bin"
 
       go install "golang.org/x/vuln/cmd/govulncheck@${PARAM_govulncheckVersion}"
+      # Verified against the Go checksum database, as govulncheck is.
+      go install "github.com/google/go-containerregistry/cmd/crane@${PARAM_craneVersion}"
 
       # git push over HTTPS authenticates through gh, with the GITHUB_TOKEN copied in by `make vm-env`.
       git config --global credential.https://github.com.helper '!gh auth git-credential'
@@ -135,15 +215,41 @@ provision:
         dot-agent-deck hooks install
       fi
 
+      # Rootless containerd and BuildKit (nerdctl-full, from the system provisioning) as systemd user
+      # services of the VM user, started at boot through lingering. Last, so a failure here leaves the
+      # agent toolchain above installed. No registry login is configured: pulls are anonymous.
+      export XDG_RUNTIME_DIR="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"
+      units="$HOME/.config/systemd/user"
+      stamp="$HOME/.local/state/eu-sov-cloud/nerdctl-version"
+      if [ ! -e "${units}/containerd.service" ]; then
+        containerd-rootless-setuptool.sh install
+      fi
+      if [ ! -e "${units}/buildkit.service" ]; then
+        containerd-rootless-setuptool.sh install-buildkit
+      fi
+      # After an upgrade the services still run the replaced binaries: restart them once.
+      if [ -e "${stamp}" ] && [ "$(cat "${stamp}")" != "${PARAM_nerdctlVersion}" ]; then
+        systemctl --user restart containerd.service buildkit.service
+      fi
+      mkdir -p "$(dirname "${stamp}")"
+      echo "${PARAM_nerdctlVersion}" > "${stamp}"
+
 probes:
   - script: |
       #!/bin/bash
       set -eux -o pipefail
-      export PATH="$HOME/.local/bin:$HOME/go/bin:/usr/local/go/bin:/usr/local/node/bin:$PATH"
-      for bin in go golangci-lint govulncheck node claude pi dot-agent-deck gh; do
+      export PATH="$HOME/.local/bin:$HOME/go/bin:/usr/local/go/bin:/usr/local/node/bin:/usr/local/nerdctl/bin:$PATH"
+      for bin in go golangci-lint govulncheck node claude pi dot-agent-deck gh cosign crane nerdctl; do
         if ! timeout 300s bash -c "until command -v ${bin} >/dev/null 2>&1; do sleep 5; done"; then
           echo >&2 "${bin} is not installed yet"
           exit 1
         fi
       done
+      # gh attestation verify needs the release gh, not Ubuntu's older package.
+      gh attestation --help >/dev/null
+      export XDG_RUNTIME_DIR="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"
+      if ! timeout 300s bash -c "until systemctl --user is-active --quiet containerd.service buildkit.service; do sleep 5; done"; then
+        echo >&2 "rootless containerd or BuildKit is not running (systemctl --user status containerd buildkit)"
+        exit 1
+      fi
     hint: See /var/log/cloud-init-output.log in the guest
