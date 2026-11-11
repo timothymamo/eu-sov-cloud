@@ -3,7 +3,8 @@
 Analyse what you run on a hyperscaler today, and find out what can move to a European cloud provider.
 
 > **Status: walking skeleton.** `eusov assess` assesses an inventory file against an embedded snapshot
-> of the OVHcloud, the Scaleway or the UpCloud catalog, offline. Live discovery from AWS, Azure and GCP
+> of the OVHcloud, the Scaleway or the UpCloud catalog, offline, or compares several of them in one
+> report. Live discovery from AWS, Azure and GCP
 > is not implemented yet.
 
 ## What it will do
@@ -44,16 +45,19 @@ on either side does not mean writing a mapping for every pair. See
 ## Usage
 
 ```text
-eusov assess --inventory <file> --target <target> [--output <file>]
+eusov assess --inventory <file> --target <targets> [--output <file>]
 ```
 
-`<target>` is `ovhcloud`, `scaleway` or `upcloud`; `eusov help` lists them. For example:
+`<targets>` is one of `ovhcloud`, `scaleway` or `upcloud`, a comma-separated list of them, or `all` for
+every target; `eusov help` lists them. For example:
 
 ```bash
 make build
 ./bin/eusov assess --inventory inventory.json --target ovhcloud
 ./bin/eusov assess --inventory inventory.json --target scaleway --output report.md
 ./bin/eusov assess --inventory inventory.json --target upcloud
+./bin/eusov assess --inventory inventory.json --target ovhcloud,upcloud
+./bin/eusov assess --inventory inventory.json --target all --output comparison.md
 ```
 
 `assess` reads an inventory file, compares every resource with the target's catalog and writes a
@@ -67,6 +71,50 @@ one of them, such as `/dev/stdout`) or the inventory file itself (the same path,
 symbolic link to it) is refused with exit code 1 before the inventory is read; leave out `--output` to
 write to standard output.
 
+With two or more targets, `assess` reads the inventory once and writes one comparison report. The
+targets are compared in sorted key order, whatever order they are given in. The report starts with a
+comparison: the fits counted per target, one row per resource with its fit and best offering on each
+target, and the resources that are blockers on every target. Each target's own report follows, one
+heading level lower. The comparison states facts per target; it does not rank the targets or recommend
+one. Its start looks like this:
+
+```markdown
+# Migration assessment: `OVHcloud`, `Scaleway`, `UpCloud`
+
+- Inventory file: `inventory.json`
+- Source: `aws`
+- Catalog: `OVHcloud` snapshot from `https://www.ovhcloud.com/en/public-cloud/regions-availability/`, retrieved 2026-11-11
+- Catalog: `Scaleway` snapshot from `https://www.scaleway.com/en/docs/`, retrieved 2026-11-11
+- Catalog: `UpCloud` snapshot from `https://upcloud.com/docs/`, retrieved 2026-11-11
+
+## Comparison
+
+### Summary
+
+| Fit | `OVHcloud` | `Scaleway` | `UpCloud` |
+|---|---|---|---|
+| direct | 6 | 5 | 5 |
+| partial | 2 | 5 | 3 |
+| none | 3 | 1 | 3 |
+| total | 11 | 11 | 11 |
+
+### Resources
+
+| ID | Category | `OVHcloud` fit | `OVHcloud` best offering | `Scaleway` fit | ... |
+|---|---|---|---|---|---|
+| `fn-example` | `serverless.function` | none |  | direct | ... |
+
+### Blockers on every target
+
+- `misc-example`
+  - `OVHcloud`: not classified
+  ...
+```
+
+A target named twice, an unknown target, an empty element (`ovhcloud,,scaleway`) or `all` together
+with another target is a usage error. If any selected target's catalog fails, the run fails with exit
+code 1 and writes no report.
+
 The inventory file is versioned JSON, described in
 [ADR 0006](docs/adr/0006-json-inventory-file-format-v1.md). `--inventory` takes a path; standard input
 is not supported. The targets are `ovhcloud` (OVHcloud Public Cloud), `scaleway` and `upcloud`, each
@@ -77,7 +125,7 @@ embedded in the binary, so `assess` runs offline and needs no credentials.
 |---|---|
 | 0 | The assessment ran. Blockers are a result, not a failure. |
 | 1 | The inventory, the catalog, the report or the output failed, or the run was interrupted (SIGINT, SIGTERM, SIGHUP): one `eusov: ...` line on standard error. |
-| 2 | Usage error: missing or unknown flag, command or target. Usage text on standard error. |
+| 2 | Usage error: missing or unknown flag, command or target, or a malformed target list. Usage text on standard error. |
 
 SIGQUIT is not part of the exit-code contract: it is the Go runtime's debugging signal, which dumps
 every goroutine to standard error and exits with code 2.

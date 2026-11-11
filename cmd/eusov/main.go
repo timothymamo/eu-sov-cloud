@@ -39,7 +39,8 @@ func main() {
 }
 
 // deps wires the adapters of the assess path: the inventory file, the embedded
-// OVHcloud, Scaleway and UpCloud catalogs and the Markdown reporter. None of
+// OVHcloud, Scaleway and UpCloud catalogs and the Markdown reporter, which
+// renders both the single-target report and the comparison of several targets. None of
 // them uses the network or credentials.
 func deps() cli.Deps {
 	return cli.Deps{
@@ -51,6 +52,7 @@ func deps() cli.Deps {
 			"scaleway": func() analysis.CatalogSource { return scaleway.New() },
 			"upcloud":  func() analysis.CatalogSource { return upcloud.New() },
 		},
-		NewReporter: func() analysis.Reporter { return markdown.New() },
+		NewReporter:           func() analysis.Reporter { return markdown.New() },
+		NewComparisonReporter: func() analysis.ComparisonReporter { return markdown.New() },
 	}
 }

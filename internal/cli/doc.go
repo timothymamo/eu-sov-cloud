@@ -5,12 +5,17 @@
 //
 // # Commands
 //
-//	eusov assess --inventory <file> --target <target> [--output <file>]
+//	eusov assess --inventory <file> --target <targets> [--output <file>]
 //	eusov version
 //	eusov help
 //
 // assess reads the inventory file, loads the catalog of the target, assesses
-// every resource and writes the report. --inventory is a file path: standard
+// every resource and writes the report. --target takes one key of Deps.Targets,
+// a comma-separated list of distinct keys, or all for every key. One key runs
+// analysis.Analysis with Deps.NewReporter, exactly as a single-target run always
+// has. Two or more run analysis.Comparison with Deps.NewComparisonReporter, in
+// sorted key order whatever order they were given in, reading the inventory once
+// (docs/adr/0016). Only the selected targets' catalog sources are built. --inventory is a file path: standard
 // input is not supported, so a source is always a file the inventory-file
 // adapter reads once per run (ADR 0006). The report names the file by its base
 // name only (analysis.ReportMeta). Without --output the report goes to standard
@@ -27,7 +32,8 @@
 //     context in cmd/eusov). Exactly one error line goes to standard error and
 //     nothing to standard output.
 //   - 2: a usage error: no command or an unknown one, a missing --inventory or
-//     --target, an unknown target (the error lists the supported ones), an
+//     --target, an unknown, repeated or empty target in the --target list, or
+//     all with another target (each error lists the supported targets), an
 //     unknown flag or an extra argument. An error line and the usage text go to
 //     standard error, nothing goes to standard output, and no adapter is built.
 //
