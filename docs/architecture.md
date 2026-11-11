@@ -349,12 +349,19 @@ The shapes and their alternatives are in [ADR 0005](adr/0005-context-first-ports
 | `InventorySource` | `Inventory(ctx) (inventory.Inventory, error)` | `adapter/source/inventoryfile` (the JSON inventory file, [ADR 0006](adr/0006-json-inventory-file-format-v1.md)), `adapter/source/{aws,azure,gcp}` | Contract suite `adapter/source/sourcetest` |
 | `CatalogSource` | `Catalog(ctx) (catalog.Catalog, error)` | `adapter/target/{ovhcloud,scaleway,upcloud}`. OVHcloud, Scaleway and UpCloud each serve an embedded, dated snapshot read through the shared reader `adapter/target/snapshot` ([ADR 0007](adr/0007-shared-target-catalog-snapshot-format-v1.md)) | Contract suite `adapter/target/targettest`; the snapshot format once, in `adapter/target/snapshot` |
 | `Reporter` | `Report(ctx, w io.Writer, assessment.Assessment, ReportMeta) error` | `adapter/report/{markdown,jsonreport}` | Golden files |
+| `ComparisonReporter` | `ReportComparison(ctx, w io.Writer, assessment.Comparison, ReportMeta) error` | `adapter/report/markdown` (PRD #89, milestone 2); a second port so a reporter opts in to comparisons ([ADR 0016](adr/0016-compare-targets-through-a-second-reporter-port-and-use-case.md)) | Golden files |
 
 The use case is `analysis.New(inventorySource, catalogSource, reporter)` followed by
 `Run(ctx, w, meta)`. Run checks `ReportMeta` (the inventory file's base name must pass `text.Validate`)
 before any port is called, loads the inventory and the catalog, assesses, checks the context itself and
 renders to `w`. The driving adapter chooses `w` (standard output or a file) and owns it. Blockers are a
 result, not an error.
+
+A comparison of several targets is `analysis.NewComparison(inventorySource, []analysis.Target{{Key, Catalog}}, comparisonReporter)`
+followed by `Run(ctx, w, meta)`: the inventory is read once, each target's catalog is loaded and
+assessed in key order, `assessment.Compare` derives the blockers every target shares, and the
+comparison is rendered. Any target's failure fails the run with one line naming the target
+([ADR 0016](adr/0016-compare-targets-through-a-second-reporter-port-and-use-case.md)).
 
 A contract suite exports `Check(ctx, src, want) error`, which returns every violation joined and named
 after its check, and `Run(t, src, want)`, which fails the test on a violation. A target adapter declares
