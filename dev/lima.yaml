@@ -28,7 +28,7 @@ containerd:
 # Kept current by Renovate through the "# renovate:" comments (.github/renovate.json5).
 param:
   # renovate: datasource=golang-version depName=go
-  goVersion: "1.27.3"
+  goVersion: "1.27.4"
   # renovate: datasource=github-releases depName=golangci/golangci-lint
   golangciLintVersion: "v2.15.0"
   # renovate: datasource=go depName=golang.org/x/vuln
