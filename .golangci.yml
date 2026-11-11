@@ -753,7 +753,7 @@ linters:
         # metadata (internal/adapter/report/markdown/doc.go). So a reporter
         # reads no file, no environment and no clock, and sends nothing over
         # the network: this rule covers every package under
-        # internal/adapter/report, jsonreport (a doc.go stub today) and any
+        # internal/adapter/report, markdown and jsonreport included, and any
         # reporter added later included. The glob ends in /** so it matches
         # the files directly in each package.
         #
@@ -766,8 +766,8 @@ linters:
         # names it here, ending in $, never by prefix: make lint runs on
         # ./..., which skips testdata directories and directories whose name
         # starts with _, so a helper placed there is never linted. The list
-        # is what markdown imports today; jsonreport adds what it needs when
-        # it gets code (encoding/json$, say, which does no I/O).
+        # is what markdown and jsonreport import; encoding/json$ is for the
+        # JSON report (docs/adr/0018) and does no I/O.
         #
         # context$ is for the context Report takes, fmt$ for fmt.Fprintf to
         # the given writer, and io$ for io.Writer. An allowed package can
@@ -789,6 +789,7 @@ linters:
             - io$
             - strconv$
             - strings$
+            - encoding/json$
             - github.com/timothymamo/eu-sov-cloud/internal/app/analysis$
             - github.com/timothymamo/eu-sov-cloud/internal/domain/assessment$
             - github.com/timothymamo/eu-sov-cloud/internal/domain/mapping$

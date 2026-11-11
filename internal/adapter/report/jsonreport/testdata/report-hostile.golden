@@ -1,0 +1,100 @@
+{
+  "schemaVersion": 1,
+  "kind": "assessment",
+  "inventoryName": "inv\"\\\n\t\u0000\u001b\u2028\u003c/script\u003e�.json",
+  "source": "aws\"\\\n\t\u0000\u001b\u2028\u003c/script\u003e�",
+  "target": {
+    "name": "Evil \"target\" \\ \t\u0000\u001b\u2028\u003c/script\u003e�",
+    "snapshot": {
+      "source": "https://example.com/a\"b\\c\nd\te\u0000\u001b\u2028\u003c/script\u003e�",
+      "retrieved": "2026-11-02"
+    }
+  },
+  "summary": {
+    "direct": 1,
+    "partial": 1,
+    "none": 1,
+    "total": 3
+  },
+  "resources": [
+    {
+      "id": "i-\"1\"\\x\n\t\u0000\u001b\u2028\u003c/script\u003e�",
+      "rawType": "AWS::\"X\"\\Y\t\u0000\u001b\u2028\u003c/script\u003e�",
+      "category": "cat\"\\\n\t\u0000\u001b\u2028\u003c/script\u003e�",
+      "region": "eu-\"west\"\\1\n\u0000\u001b\u2028\u003c/script\u003e�",
+      "fit": "direct",
+      "bestOffering": "Off\"er\\ing\u0000\u001b\u2028\u003c/script\u003e�",
+      "ties": [
+        "Tie\"\\\n\t\u0000\u001b\u2028\u003c/script\u003e�"
+      ],
+      "reasons": [
+        {
+          "code": "all-capabilities",
+          "text": "Off\"er\\ing\u0000\u001b\u2028\u003c/script\u003e� offers every capability the resource uses",
+          "offering": "Off\"er\\ing\u0000\u001b\u2028\u003c/script\u003e�"
+        }
+      ],
+      "requiredChanges": []
+    },
+    {
+      "id": "partial-example",
+      "rawType": "AWS::EC2::Instance",
+      "category": "cat\"\\\n\t\u0000\u001b\u2028\u003c/script\u003e�",
+      "region": "",
+      "fit": "partial",
+      "bestOffering": "Off\"er\\ing\u0000\u001b\u2028\u003c/script\u003e�",
+      "ties": [],
+      "reasons": [
+        {
+          "code": "missing-capability",
+          "text": "Off\"er\\ing\u0000\u001b\u2028\u003c/script\u003e� does not offer cap\"a\\b\n\t\u0000\u001b\u2028\u003c/script\u003e�",
+          "offering": "Off\"er\\ing\u0000\u001b\u2028\u003c/script\u003e�",
+          "capability": "cap\"a\\b\n\t\u0000\u001b\u2028\u003c/script\u003e�"
+        }
+      ],
+      "requiredChanges": [
+        "cap\"a\\b\n\t\u0000\u001b\u2028\u003c/script\u003e�"
+      ]
+    },
+    {
+      "id": "fn\"\\\n\t\u0000\u001b\u2028\u003c/script\u003e�",
+      "rawType": "AWS::\"X\"\\Y\t\u0000\u001b\u2028\u003c/script\u003e�",
+      "category": "cat\"\\\n\t\u0000\u001b\u2028\u003c/script\u003e�",
+      "region": "eu-\"west\"\\1\n\u0000\u001b\u2028\u003c/script\u003e�",
+      "fit": "none",
+      "bestOffering": "",
+      "ties": [],
+      "reasons": [
+        {
+          "code": "reason\"\\\n\t\u0000\u001b\u2028\u003c/script\u003e�",
+          "text": "reason\"\\\n\t\u0000\u001b\u2028\u003c/script\u003e�"
+        },
+        {
+          "code": "no-offering",
+          "text": "no offering in the Evil \"target\" \\ \t\u0000\u001b\u2028\u003c/script\u003e� catalog for cat\"\\\n\t\u0000\u001b\u2028\u003c/script\u003e�",
+          "target": "Evil \"target\" \\ \t\u0000\u001b\u2028\u003c/script\u003e�",
+          "category": "cat\"\\\n\t\u0000\u001b\u2028\u003c/script\u003e�"
+        }
+      ],
+      "requiredChanges": []
+    }
+  ],
+  "blockers": [
+    {
+      "resourceId": "fn\"\\\n\t\u0000\u001b\u2028\u003c/script\u003e�",
+      "reason": {
+        "code": "reason\"\\\n\t\u0000\u001b\u2028\u003c/script\u003e�",
+        "text": "reason\"\\\n\t\u0000\u001b\u2028\u003c/script\u003e�"
+      }
+    },
+    {
+      "resourceId": "fn\"\\\n\t\u0000\u001b\u2028\u003c/script\u003e�",
+      "reason": {
+        "code": "no-offering",
+        "text": "no offering in the Evil \"target\" \\ \t\u0000\u001b\u2028\u003c/script\u003e� catalog for cat\"\\\n\t\u0000\u001b\u2028\u003c/script\u003e�",
+        "target": "Evil \"target\" \\ \t\u0000\u001b\u2028\u003c/script\u003e�",
+        "category": "cat\"\\\n\t\u0000\u001b\u2028\u003c/script\u003e�"
+      }
+    }
+  ]
+}
