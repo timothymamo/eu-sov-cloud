@@ -1,6 +1,6 @@
 # 0016. Compare targets through a second reporter port and use case
 
-- Status: Proposed
+- Status: Accepted
 - Date: 2026-11-11
 
 ## Context
@@ -38,7 +38,9 @@ func (c *Comparison) Run(ctx context.Context, w io.Writer, meta ReportMeta) erro
   list it cannot compare (`ErrInvalidTargets`: no targets, or a key that is empty, repeated or not valid
   free text). It keeps its own copy of the targets, in key order.
 - `Run` validates `ReportMeta` exactly as `Analysis.Run` does, checks the context before reading,
-  reads the inventory once, then loads each target's catalog once, in key order, and assesses it. Any
+  reads the inventory once, then loads each target's catalog once, in key order, and assesses it. It
+  checks the context before each target's catalog, so a cancelled run stops at the next target
+  (`target "scaleway": cancelled before loading the catalog: ...`) without loading the rest. Any
   target's failure fails the whole run with one line naming the target
   (`target "scaleway": load catalog: ...`); nothing reaches the reporter or the writer. It checks the
   context again before rendering and wraps a reporter failure as `render report: ...`.

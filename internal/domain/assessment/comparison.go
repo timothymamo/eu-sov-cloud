@@ -48,8 +48,13 @@ type Comparison struct {
 
 // Compare puts the given target assessments side by side. It sorts a copy of
 // targets by key, so the caller's slice keeps its order, changes no assessment,
-// and finds the blockers every target shares. The result does not depend on the
-// order the targets were given in.
+// and finds the blockers every target shares.
+//
+// Keys are expected to be unique; analysis.NewComparison guarantees it. With
+// unique keys the result does not depend on the order the targets were given
+// in; with a repeated key the stable sort keeps those targets in input order.
+// Compare does not validate keys: they are untrusted values that reporters must
+// escape like any other free text.
 func Compare(targets []TargetAssessment) Comparison {
 	if len(targets) == 0 {
 		return Comparison{}
