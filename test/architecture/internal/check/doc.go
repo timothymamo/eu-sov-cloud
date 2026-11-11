@@ -1,5 +1,5 @@
 // Package check holds the package-level architecture checks that
-// test/architecture runs against this repository (issue #40, ADR 0011).
+// test/architecture runs against this repository (issue #40, ADR 0012).
 //
 // The checks work on packages, not file names. ListPackages lists packages and
 // every package they depend on with go list, for one release platform, with

@@ -75,7 +75,7 @@ linters:
         # or Time.Local(). Review holds that line.
         #
         # test/architecture reads every strict rule's files: and allow: lists
-        # and checks the rule package by package (ADR 0011): write a strict
+        # and checks the rule package by package (ADR 0012): write a strict
         # rule's directories as "**/<dir>/**" with "!$test", or give it a
         # reasoned skip there.
         domain-is-pure:
