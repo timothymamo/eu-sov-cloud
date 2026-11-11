@@ -212,8 +212,67 @@ func TestReportComparison(t *testing.T) {
 			testutil.Golden(t, test.goldenFile, got)
 
 			checkTableShape(t, got)
+			checkComparisonHasNoTieNote(t, got)
 		})
 	}
+}
+
+// comparisonTieNote is the text the single-target table appends to a best
+// offering that has other candidates a reader could take: renderBestOffering
+// writes " (tie: ...)" after the best offering's code span.
+const comparisonTieNote = "(tie: "
+
+// checkComparisonHasNoTieNote asserts that the comparison table states each
+// target's best offering alone, while the Scaleway section keeps the tie notes
+// of the single-target table it is the report's own section of.
+func checkComparisonHasNoTieNote(t *testing.T, out []byte) {
+	t.Helper()
+
+	rows := linesBetween(t, sectionLines(t, out, "## Comparison"),
+		"### Resources", "### Blockers on every target")
+
+	for _, row := range rows {
+		if strings.Contains(row, comparisonTieNote) {
+			t.Errorf("the comparison table row holds the tie note %q: %q", comparisonTieNote, row)
+		}
+	}
+
+	if len(rows) == 0 {
+		t.Fatalf("the comparison holds no resources table, so the tie-note check saw no row:\n%s", out)
+	}
+
+	scalewayRows := linesBetween(t, sectionLines(t, out, targetSectionHeading("Scaleway")),
+		"### Resources", "### Required changes")
+
+	if !slices.ContainsFunc(scalewayRows, func(row string) bool {
+		return strings.Contains(row, comparisonTieNote)
+	}) {
+		t.Errorf("the Scaleway resources table holds no tie note %q, although its best offerings have ties: %q",
+			comparisonTieNote, scalewayRows)
+	}
+}
+
+// linesBetween returns the lines that follow the start heading and precede the
+// first line that starts with stop, both excluded. It fails the test when either
+// heading is missing.
+func linesBetween(t *testing.T, lines []string, start, stop string) []string {
+	t.Helper()
+
+	begin := slices.Index(lines, start)
+	if begin < 0 {
+		t.Fatalf("no %q heading among the section's lines: %q", start, lines)
+	}
+
+	for i, line := range lines[begin+1:] {
+		if strings.HasPrefix(line, stop) {
+			return lines[begin+1 : begin+1+i]
+		}
+	}
+
+	t.Fatalf("no line starting with %q after the %q heading among the section's lines: %q",
+		stop, start, lines)
+
+	return nil
 }
 
 // TestReportComparisonNoInventoryName pins that the inventory file line is left
@@ -235,12 +294,15 @@ func TestReportComparisonNoInventoryName(t *testing.T) {
 }
 
 // TestReportComparisonHostileValues pins that no value a renderer would read as
-// syntax can end a line, a heading or a table row: every value from the
-// comparison (keys, target display names, resource IDs, categories, raw types,
-// offering names, reason text, the inventory file name, the source and the
-// snapshot URLs) is a code span, and a line ending inside a code span is a space.
-// Table cell counts are checked with checkTableShape, which a forged cell
-// boundary would break.
+// syntax can end a line, a heading or a table row: every value the report shows
+// (target display names, resource IDs, categories, raw types, offering names,
+// reason text, the inventory file name, the source and the snapshot URLs) is a
+// code span, and a line ending inside a code span is a space. Table cell counts
+// are checked with checkTableShape, which a forged cell boundary would break.
+//
+// The target keys are hostile too, but no key reaches the output: the shared
+// blocker list names a target by its display name, so the hostile keys only
+// exercise the key-to-name lookup.
 func TestReportComparisonHostileValues(t *testing.T) {
 	t.Parallel()
 
@@ -373,6 +435,129 @@ func TestReportComparisonIsDeterministic(t *testing.T) {
 	if !bytes.Equal(first, reordered) {
 		t.Errorf("the comparison depends on the order the targets were given in:\nfirst:\n%s\nreordered:\n%s",
 			first, reordered)
+	}
+}
+
+// TestReportComparisonNoTarget pins that a comparison of no target is an error a
+// renderer reports, not an empty document: ReportComparison writes nothing and
+// the caller decides what to show instead.
+func TestReportComparisonNoTarget(t *testing.T) {
+	t.Parallel()
+
+	var out bytes.Buffer
+
+	err := markdown.New().ReportComparison(t.Context(), &out, assessment.Comparison{},
+		analysis.ReportMeta{InventoryName: inventoryFileName})
+	if err == nil {
+		t.Fatalf("ReportComparison() error = nil for a comparison of no target, want an error")
+	}
+
+	if out.Len() != 0 {
+		t.Errorf("ReportComparison() wrote %d bytes to the writer, want none:\n%s", out.Len(), out.String())
+	}
+}
+
+// TestReportComparisonSharedBlockerUnknownTarget pins that a shared blocker
+// naming a target key the comparison does not hold is an error: the section
+// would otherwise name an empty target, or the wrong one. Nothing is written.
+func TestReportComparisonSharedBlockerUnknownTarget(t *testing.T) {
+	t.Parallel()
+
+	const unknownKey = "missing"
+
+	c := assessment.Compare(assessTargets(t, comparisonInventory(t), threeTargetKeys()))
+	c.SharedBlockers[0].Targets = append(c.SharedBlockers[0].Targets, assessment.TargetReasons{
+		Key:     unknownKey,
+		Reasons: []mapping.Reason{{Code: mapping.NotClassified}},
+	})
+
+	var out bytes.Buffer
+
+	err := markdown.New().ReportComparison(t.Context(), &out, c, analysis.ReportMeta{InventoryName: inventoryFileName})
+	if err == nil {
+		t.Fatalf("ReportComparison() error = nil, want an error for a shared blocker naming the unknown target key %q",
+			unknownKey)
+	}
+
+	if out.Len() != 0 {
+		t.Errorf("ReportComparison() wrote %d bytes to the writer, want none:\n%s", out.Len(), out.String())
+	}
+}
+
+// TestReportComparisonMismatchedTargets pins that the targets of a comparison
+// must report on the same resources in the same order, the order of the one
+// inventory they all assessed: the comparison table is laid out from the first
+// target's verdicts, so a target that reports on other resources, or on the same
+// ones in another order, would be shown under the wrong rows. Each mismatch is
+// an error, and nothing is written.
+func TestReportComparisonMismatchedTargets(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name   string
+		change func(c *assessment.Comparison)
+	}{
+		{
+			name: "a later target has an extra verdict the first target lacks",
+			change: func(c *assessment.Comparison) {
+				c.Targets[1].Assessment.Verdicts = append(slices.Clone(c.Targets[1].Assessment.Verdicts),
+					extraVerdict())
+			},
+		},
+		{
+			name: "a later target lacks a verdict the first target has",
+			change: func(c *assessment.Comparison) {
+				c.Targets[1].Assessment.Verdicts = c.Targets[1].Assessment.Verdicts[1:]
+			},
+		},
+		{
+			name: "the targets report on a different resource",
+			change: func(c *assessment.Comparison) {
+				c.Targets[1].Assessment.Verdicts[0] = extraVerdict()
+			},
+		},
+		{
+			name: "the targets report on the same resources in another order",
+			change: func(c *assessment.Comparison) {
+				c.Targets[1].Assessment.Verdicts[0], c.Targets[1].Assessment.Verdicts[1] =
+					c.Targets[1].Assessment.Verdicts[1], c.Targets[1].Assessment.Verdicts[0]
+			},
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+
+			c := assessment.Compare(assessTargets(t, comparisonInventory(t), threeTargetKeys()))
+			test.change(&c)
+
+			var out bytes.Buffer
+
+			err := markdown.New().ReportComparison(t.Context(), &out, c,
+				analysis.ReportMeta{InventoryName: inventoryFileName})
+			if err == nil {
+				t.Fatalf("ReportComparison() error = nil, want an error for targets that do not report on the same resources")
+			}
+
+			if out.Len() != 0 {
+				t.Errorf("ReportComparison() wrote %d bytes to the writer, want none:\n%s", out.Len(), out.String())
+			}
+		})
+	}
+}
+
+// extraVerdict is a verdict on a resource the comparison inventory does not
+// hold, for the fixture targets that must report on other resources.
+func extraVerdict() assessment.Verdict {
+	return assessment.Verdict{
+		Resource: inventory.Resource{
+			ID:       "extra-example",
+			RawType:  "AWS::SQS::Queue",
+			Category: taxonomy.Unclassified,
+		},
+		Fit:     mapping.None,
+		Reasons: []mapping.Reason{{Code: mapping.NotClassified}},
 	}
 }
 
