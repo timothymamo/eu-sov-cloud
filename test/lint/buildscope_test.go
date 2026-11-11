@@ -74,13 +74,16 @@ func TestLintLoadsEveryGoFile(t *testing.T) {
 
 // TestUnloadedGoFilesProbe pins unloadedGoFiles, the helper
 // TestLintLoadsEveryGoFile reports from, on a probe module
-// (testdata/platformprobe) of three files: one built on every platform, one
-// built for windows/arm64 alone, and one built for plan9 alone, which no
-// release target builds. A target list that loads a file must not report it,
-// and one that leaves it out must; a helper that reported nothing, that looked
-// at one target only, or that reported in the order the go command answered
-// fails here. The probe module has a go.mod of its own, so ./... of the main
-// module skips it.
+// (testdata/platformprobe) of five files: one built on every platform, one
+// built for windows/arm64 alone, one built for plan9 alone, one built only with
+// cgo, and one built for amd64 only at GOAMD64=v3. Only the first is loaded by
+// any release target, which builds every target with CGO_ENABLED=0 at the
+// default GOAMD64 level (v1): the other four must be reported by every target
+// list, and the windows/arm64 file only by a list that leaves windows/arm64
+// out. A target list that loads a file must not report it, and one that leaves
+// it out must; a helper that reported nothing, that looked at one target only,
+// or that reported in the order the go command answered fails here. The probe
+// module has a go.mod of its own, so ./... of the main module skips it.
 func TestUnloadedGoFilesProbe(t *testing.T) {
 	t.Parallel()
 
@@ -103,9 +106,11 @@ func TestUnloadedGoFilesProbe(t *testing.T) {
 		want    []string
 	}{
 		{
-			name:    "a target list that holds windows/arm64 reports only the file no target builds",
+			// The release builds with CGO_ENABLED=0 and at GOAMD64=v1, so no
+			// target loads the cgo file or the amd64.v3 file.
+			name:    "a target list that holds windows/arm64 reports the cgo file, the amd64.v3 file and the file no target builds",
 			targets: []releasetarget.Target{linux, windowsARM},
-			want:    []string{"plan9only.go"},
+			want:    []string{"amd64v3.go", "cgoonly.go", "plan9only.go"},
 		},
 		{
 			// Issue #82: the test this helper replaces held files to linux/amd64
@@ -113,17 +118,17 @@ func TestUnloadedGoFilesProbe(t *testing.T) {
 			// though lint lints that file in that target's run.
 			name:    "linux/amd64 alone reports the windows/arm64 file, the complaint of issue #82",
 			targets: []releasetarget.Target{linux},
-			want:    []string{"plan9only.go", "windowsarm.go"},
+			want:    []string{"amd64v3.go", "cgoonly.go", "plan9only.go", "windowsarm.go"},
 		},
 		{
 			name:    "another windows target is not windows/arm64",
 			targets: []releasetarget.Target{linux, windowsAMD},
-			want:    []string{"plan9only.go", "windowsarm.go"},
+			want:    []string{"amd64v3.go", "cgoonly.go", "plan9only.go", "windowsarm.go"},
 		},
 		{
 			name:    "the order of the targets does not change the report",
 			targets: []releasetarget.Target{windowsARM, linux},
-			want:    []string{"plan9only.go"},
+			want:    []string{"amd64v3.go", "cgoonly.go", "plan9only.go"},
 		},
 	}
 

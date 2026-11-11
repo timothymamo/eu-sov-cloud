@@ -350,6 +350,15 @@ func buildDoc(lines string) string {
 		"    goos: [linux, darwin, windows]\n    goarch: [amd64, arm64]\n"
 }
 
+// buildLists returns a .goreleaser.yaml with one build whose goos and goarch
+// lists are exactly the two lines given, each already indented under the
+// build's dash: for a case about a list itself rather than about the keys
+// around it.
+func buildLists(goos, goarch string) string {
+	return "version: 2\n\nbuilds:\n  - id: eusov\n    main: ./cmd/eusov\n    env:\n      - CGO_ENABLED=0\n" +
+		goos + "\n" + goarch + "\n"
+}
+
 // buildWithComment returns buildReal with comment added as a comment line
 // above project_name. The reader skips comments, so a character the check must
 // refuse is the only reason a case using it fails.
@@ -547,6 +556,20 @@ func TestRead(t *testing.T) {
 		{
 			name:       "a repeated key is refused",
 			goreleaser: buildRepeatedGoos,
+			wantErr:    true,
+		},
+
+		// A ' #' starts a comment, and a comment runs to the end of the line:
+		// a closing bracket inside one does not close the list, so the document
+		// never says which platforms the release builds.
+		{
+			name:       "a goos flow list whose closing bracket sits in a comment is refused",
+			goreleaser: buildLists("    goos: [linux # ]", "    goarch: [amd64, arm64]"),
+			wantErr:    true,
+		},
+		{
+			name:       "a goarch flow list whose closing bracket sits in a comment is refused",
+			goreleaser: buildLists("    goos: [linux, darwin, windows]", "    goarch: [amd64 # ]"),
 			wantErr:    true,
 		},
 		{

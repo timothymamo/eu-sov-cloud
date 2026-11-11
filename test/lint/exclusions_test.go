@@ -155,3 +155,182 @@ func exclusionRuleOf(t *testing.T, it yamlread.Item) exclusionRule {
 	}
 	return r
 }
+
+// exclusionDoc returns a .golangci.yml whose linters.exclusions.rules hold the
+// lines rules, each already indented under the rules key: the keys
+// parseExclusionRules walks, so a case of TestParseExclusionRules below holds
+// nothing but the rules it is about. Its first rule starts on line 4.
+func exclusionDoc(rules string) string {
+	return "linters:\n  exclusions:\n    rules:\n" + rules
+}
+
+// exclusionDocTrailingKeys closes the rules block with a top-level key of its
+// own. A case whose one rule is a key with no value at all needs it: a rules
+// key with no entry below it is a document no caller accepts, so without a key
+// after the rules there would be nothing to read the empty entry from.
+const exclusionDocTrailingKeys = "\nissues:\n  max-issues-per-linter: 0\n"
+
+// TestParseExclusionRules pins parseExclusionRules, the seam that reads
+// linters.exclusions.rules from .golangci.yml: exclusionRules reads the file
+// and hands the document to it, so a rule no test reads from disk is still
+// read here.
+//
+// golangci-lint matches a rule that names no linter against every linter, so an
+// empty linters list must never be read as "not a forbidigo rule". It is read
+// as a rule that names no linter (nil linters), not as an error: the reader
+// says what the document says, and TestForbidigoExclusionsDropOneGroup is what
+// rejects such a rule, with a message that says why.
+//
+// Every other way of writing a rule that this reader does not follow is an
+// error rather than a guess, so a rule is never silently skipped: a repeated
+// key, an upper-case key, a block scalar, a double-quoted text with an escape,
+// an anchor or an alias, a single-quoted text that doubles a quote to escape
+// it (which YAML would unescape, and this reader refuses to decode), and a
+// closing bracket inside a comment, which a comment swallows.
+func TestParseExclusionRules(t *testing.T) {
+	t.Parallel()
+
+	// ruleLine is the line of the one rule of a document exclusionDoc builds.
+	const ruleLine = 4
+
+	tests := []struct {
+		name    string
+		config  string
+		want    []exclusionRule
+		wantErr bool
+	}{
+		{
+			name:   "a linters list in block form names its one linter",
+			config: exclusionDoc("      - linters:\n          - forbidigo\n"),
+			want: []exclusionRule{{
+				line:    ruleLine,
+				fields:  map[string]string{},
+				linters: []string{"forbidigo"},
+			}},
+		},
+		{
+			name:   "a linters list in flow form names every linter in it, in order",
+			config: exclusionDoc("      - linters: [forbidigo, gosec]\n"),
+			want: []exclusionRule{{
+				line:    ruleLine,
+				fields:  map[string]string{},
+				linters: []string{"forbidigo", "gosec"},
+			}},
+		},
+		{
+			name: "a rule reads every key and the linters together",
+			config: exclusionDoc(`      - linters: [forbidigo]
+        path: _test\.go$
+        text: 'because "domain-is-pure: [^"]*"$'
+`),
+			want: []exclusionRule{{
+				line: ruleLine,
+				fields: map[string]string{
+					"path": `_test\.go$`,
+					"text": `because "domain-is-pure: [^"]*"$`,
+				},
+				linters: []string{"forbidigo"},
+			}},
+		},
+
+		// A rule that names no linter matches every linter's issues, forbidigo's
+		// included: the reader reports it as naming none, never as a rule that
+		// names one or as no rule at all.
+		{
+			name:   "an empty linters flow list names no linter",
+			config: exclusionDoc("      - linters: []\n"),
+			want: []exclusionRule{{
+				line:   ruleLine,
+				fields: map[string]string{},
+			}},
+		},
+		{
+			name:   "an empty linters key names no linter",
+			config: exclusionDoc("      - linters:\n") + exclusionDocTrailingKeys,
+			want: []exclusionRule{{
+				line:   ruleLine,
+				fields: map[string]string{},
+			}},
+		},
+		{
+			name:   "a rule with no linters key names no linter",
+			config: exclusionDoc("      - path: _test\\.go$\n"),
+			want: []exclusionRule{{
+				line:   ruleLine,
+				fields: map[string]string{"path": `_test\.go$`},
+			}},
+		},
+
+		// Every other way of writing a rule is refused, not guessed at.
+		{
+			name:    "a repeated key is an error",
+			config:  exclusionDoc("      - linters: [forbidigo]\n        text: 'a'\n        text: 'b'\n"),
+			wantErr: true,
+		},
+		{
+			name:    "an upper-case key is an error",
+			config:  exclusionDoc("      - linters: [forbidigo]\n        Text: 'a'\n"),
+			wantErr: true,
+		},
+		{
+			name:    "a literal block scalar text is an error",
+			config:  exclusionDoc("      - linters: [forbidigo]\n        text: |\n          because a tag: x$\n"),
+			wantErr: true,
+		},
+		{
+			name: "a double-quoted text with an escape is an error",
+			config: exclusionDoc(`      - linters: [forbidigo]
+        text: "because \"x\"$"
+`),
+			wantErr: true,
+		},
+		{
+			name:    "an anchored text is an error",
+			config:  exclusionDoc("      - linters: [forbidigo]\n        text: &t 'a'\n"),
+			wantErr: true,
+		},
+		{
+			name:    "an aliased text is an error",
+			config:  exclusionDoc("      - linters: [forbidigo]\n        text: *t\n"),
+			wantErr: true,
+		},
+		{
+			// YAML reads 'it''s' as it's; this reader refuses to decode the
+			// escape rather than keep the quotes it does not decode.
+			name:    "a single-quoted text with '' escaping is an error",
+			config:  exclusionDoc("      - linters: [forbidigo]\n        text: 'it''s'\n"),
+			wantErr: true,
+		},
+		{
+			// A comment runs to the end of the line, so the bracket in it does
+			// not close the list.
+			name:    "a bracket in a comment inside a linters flow list is an error",
+			config:  exclusionDoc("      - linters: [forbidigo # ]\n"),
+			wantErr: true,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			got, err := parseExclusionRules([]byte(tc.config))
+
+			if tc.wantErr {
+				if err == nil {
+					t.Fatalf("parseExclusionRules() = %v, nil; want an error", got)
+				}
+
+				return
+			}
+
+			if err != nil {
+				t.Fatalf("parseExclusionRules(): %v", err)
+			}
+
+			if diff := cmp.Diff(tc.want, got, cmp.AllowUnexported(exclusionRule{})); diff != "" {
+				t.Errorf("parseExclusionRules() mismatch (-want +got):\n%s", diff)
+			}
+		})
+	}
+}
