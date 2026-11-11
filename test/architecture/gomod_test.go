@@ -82,6 +82,27 @@ func TestReplaceDirectives(t *testing.T) {
 			name:  "a module path that merely holds the word is no directive",
 			goMod: "module example.com/m\n\nrequire example.com/replace v1.0.0\n",
 		},
+		{
+			// The go.mod lexer reads a bare carriage return as whitespace, so
+			// the go command applies this directive.
+			name:  "a bare carriage return after the word does not hide a single-line replace",
+			goMod: "module example.com/m\n\nreplace\rexample.com/lib => example.com/fork v1.2.3\n",
+			want:  []replaceDirective{{Line: 3, Text: "replace example.com/lib => example.com/fork v1.2.3"}},
+		},
+		{
+			name: "a bare carriage return after the word does not hide a replace block",
+			goMod: "module example.com/m\n\nreplace\r(\n\texample.com/lib => example.com/fork v1.2.3\n" +
+				"\texample.com/other => ../other\n)\n",
+			want: []replaceDirective{
+				{Line: 4, Text: "example.com/lib => example.com/fork v1.2.3"},
+				{Line: 5, Text: "example.com/other => ../other"},
+			},
+		},
+		{
+			name:  "a CRLF file's replace directive is found",
+			goMod: "module example.com/m\r\n\r\nreplace example.com/lib => example.com/fork v1.2.3\r\n",
+			want:  []replaceDirective{{Line: 3, Text: "replace example.com/lib => example.com/fork v1.2.3"}},
+		},
 	}
 
 	for _, tc := range tests {
