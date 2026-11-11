@@ -41,7 +41,7 @@ Hexagonal (ports and adapters). Dependencies point inwards only. See `docs/archi
 | Application | `internal/app/analysis` | Domain. Declares the ports (interfaces) it consumes |
 | Adapters | `internal/adapter/source/{inventoryfile,aws,azure,gcp}`, `internal/adapter/target/{ovhcloud,scaleway,upcloud}`, `internal/adapter/report/{markdown,jsonreport}`, and `internal/adapter/internal/jsondoc`, the JSON decoder they share | Domain, the ports they implement, SDKs. Never `internal/cli` or `cmd/` |
 | Driving adapter | `internal/cli` | Application, domain, `internal/version` |
-| Composition root | `cmd/eusov` | Everything but a cloud SDK; the only place adapters are constructed |
+| Composition root | `cmd/eusov` | The module's own packages and the standard packages it needs, a strict allow list (`composition-root`); no third-party package, no cloud SDK. The only place adapters are constructed |
 
 - The dependency rule is **enforced by `golangci-lint` (depguard)** and, package by package for every
   release target, by `test/architecture` (ADR 0012). Do not add `//nolint:depguard`; fix the design.

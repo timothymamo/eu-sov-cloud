@@ -73,17 +73,24 @@
 // rules (go-cmp-only-in-tests, cloud-sdks-only-in-provider-adapters) are held
 // by depguard in make lint alone. A third-party import in internal/cli is
 // refused by depguard alone, whose strict rule there allows only $gostd and
-// named module packages. One in cmd/eusov is refused by no rule but the lax
-// SDK and go-cmp denies, so a new third-party dependency of the composition
-// root is held only by review of the import and of go.mod: a known gap that a
-// strict depguard rule for **/cmd/eusov/** would close, left to a follow-up
-// issue. The exemption trusts the import path, which is sound because nothing
+// named module packages. One in cmd/eusov is refused by the strict rule
+// composition-root (issue #101), which allows the module path as its one prefix
+// entry and the standard packages cmd/eusov imports today, each exact:
+// TestCompositionRootRuleIsChecked pins its shape and that it is a reasoned
+// skip of the shared layer listing, since go list -deps ./cmd/eusov/... also
+// lists internal/cli and internal/version, which no rule the check reads holds.
+// TestCompositionRootIsHeldToItsRuleForEveryReleaseTarget holds the real
+// cmd/eusov to it on every release platform, and
+// TestCompositionRootRuleHoldsItsProbeForEveryReleaseTarget fails a fixture
+// cmd/eusov that imports a third-party library and a stand-in SDK, while the
+// rule holds its sibling cmd/eusov-server not at all. The exemption trusts the import path, which is sound because nothing
 // can substitute other code for an allowed path: TestRootModuleHasNoReplace
 // reads the root go.mod with the go command's own parser (go mod edit -json)
 // and finds no replace, and TestRepositoryHasNoWorkspaceOrVendor finds no
 // go.work, go.work.sum or vendor directory.
 // TestOnlyTheSDKRuleHoldsPrefixEntries keeps prefix entries,
-// which must end in /, to that rule.
+// which must end in /, to that rule and to composition-root, whose one prefix
+// entry is the module path.
 //
 // The checks are tests: they run in make test, make check and CI's make cover,
 // with no workflow of their own. They need no network and no credentials.

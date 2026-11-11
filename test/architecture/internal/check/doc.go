@@ -19,13 +19,12 @@
 // dependency. Any other package outside the module that the layers reach is
 // reported. The exemption reads the strict allow lists only: the lax deny
 // rules (go-cmp-only-in-tests, cloud-sdks-only-in-provider-adapters) are held
-// by depguard in make lint alone. No checked rule holds a third-party import
-// in cmd/eusov or internal/cli: one in internal/cli is refused by depguard
-// alone, whose strict rule allows only $gostd and named module packages, and
-// one in cmd/eusov by no rule but the lax SDK and go-cmp denies, so a new
-// third-party dependency of the composition root is held only by review of
-// the import and of go.mod (a known gap; a strict depguard rule for
-// **/cmd/eusov/** would close it). The exemption trusts the import path,
+// by depguard in make lint alone. A third-party import in internal/cli is
+// refused by depguard alone, whose strict rule allows only $gostd and named
+// module packages. One in cmd/eusov is refused by the strict rule
+// composition-root (issue #101), which the architecture tests hold the
+// composition root to with Packages, apart from the shared layer listing.
+// The exemption trusts the import path,
 // which is sound because the root go.mod holds no replace directive, read
 // with the go command's own parser (TestRootModuleHasNoReplace), and the
 // repository holds no go.work, go.work.sum or vendor directory
