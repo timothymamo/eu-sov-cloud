@@ -41,24 +41,26 @@ the tagged commit is on `main`: always tag a commit of `main`.
    step's log and stop; never delete or move a pushed tag.
 8. Check the published image yourself; do not hand this to the user. The Lima VM has cosign, a `gh`
    with `gh attestation`, `crane` and rootless `nerdctl` (ADR 0016); this is the README's "Verify the
-   image" in its VM form, for the new tag. Run it from the repository root, with no registry login:
+   image" in its VM form, for the new tag. Run it from the repository root, with no registry login, and
+   call each tool by its absolute path: `~/.local/bin` and `~/go/bin` come first on the `PATH` and the VM
+   user can write there, while these binaries are root-owned:
 
    ```bash
    TAG=vX.Y.Z
-   DIGEST="$(crane digest "ghcr.io/timothymamo/eusov:$TAG")"
+   DIGEST="$(/usr/local/bin/crane digest "ghcr.io/timothymamo/eusov:$TAG")"
    IMAGE="ghcr.io/timothymamo/eusov@$DIGEST"
-   cosign verify "$IMAGE" \
+   /usr/local/bin/cosign verify "$IMAGE" \
      --certificate-identity "https://github.com/timothymamo/eu-sov-cloud/.github/workflows/release.yml@refs/tags/$TAG" \
      --certificate-oidc-issuer https://token.actions.githubusercontent.com \
      --certificate-github-workflow-trigger push
-   gh attestation verify "oci://$IMAGE" --repo timothymamo/eu-sov-cloud \
+   /usr/local/bin/gh attestation verify "oci://$IMAGE" --repo timothymamo/eu-sov-cloud \
      --signer-workflow timothymamo/eu-sov-cloud/.github/workflows/release.yml \
      --source-ref "refs/tags/$TAG" --deny-self-hosted-runners
-   gh attestation verify "oci://$IMAGE" --repo timothymamo/eu-sov-cloud \
+   /usr/local/bin/gh attestation verify "oci://$IMAGE" --repo timothymamo/eu-sov-cloud \
      --signer-workflow timothymamo/eu-sov-cloud/.github/workflows/release.yml \
      --source-ref "refs/tags/$TAG" --deny-self-hosted-runners \
      --predicate-type https://spdx.dev/Document/v2.3
-   nerdctl run --rm --read-only --network none "$IMAGE" version   # prints X.Y.Z, without the v
+   /usr/local/nerdctl/bin/nerdctl run --rm --read-only --network none "$IMAGE" version   # prints X.Y.Z, without the v
    ```
 
    Report the digest and each command's outcome. Every command must exit 0 and `version` must print the
@@ -66,3 +68,8 @@ the tagged commit is on `main`: always tag a commit of `main`.
    push GHCR has created the package private, so `crane digest` and the pull fail anonymously: report
    that a maintainer must make `ghcr.io/timothymamo/eusov` public once in the package settings (an agent
    cannot), and run the checks after that.
+
+   This is a smoke test, not the trust anchor: every agent shares the VM user, which has passwordless
+   `sudo`, so any of them could tamper with these binaries or their output. An independent check on a
+   GitHub-hosted runner, a post-publish job in `release.yml`, is the follow-up that would make it
+   authoritative (ADR 0016).

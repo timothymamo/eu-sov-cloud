@@ -186,6 +186,8 @@ that is not set is skipped. Two things read the file:
   workspace or this repository would be readable by every agent and by the model providers they send
   files to. A direnv `.envrc` in a directory above the workspace works: direnv loads it in this
   repository, and the VM cannot see it.
+- **No token that can push images.** Never put a classic personal access token, or any token with
+  `write:packages`, into `VM_ENV`: the token's scope is what stops agents pushing to GHCR.
 - **Every agent gets every variable.** The tester holds the GitHub and Claude tokens, the Claude roles
   the DeepSeek key. Scope each one narrowly so it is cheap to revoke. The file stays on the VM's disk
   (under `~/.lima` on the Mac) until `make vm-delete`.
@@ -256,14 +258,15 @@ outside it.
 
 The VM can verify, run and build the eusov image, as the VM user, with no root daemon
 ([ADR 0016](adr/0016-run-a-rootless-container-runtime-in-the-lima-vm.md)). `dev/lima.yaml` installs,
-each pinned under `param:` and checked against its release's checksums:
+each pinned under `param:`. Downloads are checked against their release's checksums, and nerdctl-full's
+`SHA256SUMS` also against its GPG signature, from a release manager pinned by fingerprint:
 
 | Tool | For | Where |
 |---|---|---|
 | nerdctl-full: `nerdctl`, containerd, BuildKit, RootlessKit | pulling, running and building images | `/usr/local/nerdctl` |
 | `cosign` (v3 or later) | the image's signature | `/usr/local/bin` |
 | `gh` from its release | `gh attestation verify`, which Ubuntu's older `gh` lacks | `/usr/local/bin` |
-| `crane` | resolving a tag to its digest without pulling the image | `~/go/bin` |
+| `crane` (`go install`, Go checksum database) | resolving a tag to its digest without pulling the image | `/usr/local/bin` |
 
 containerd and BuildKit run **rootless**, as the systemd user services `containerd.service` and
 `buildkit.service`, started at boot like the deck's daemon. Check them, then run the README's
@@ -280,11 +283,15 @@ The `Dockerfile` cross-compiles, so building for both platforms needs no emulati
 its own platform's image: no QEMU is registered, since that needs root.
 
 **The isolation trade-off.** No `docker` group, no root daemon and no host socket: a container runs as the
-VM user and its subordinate UIDs, so escaping it gains no more than the VM user already has. In exchange
-RootlessKit creates user namespaces, which Ubuntu otherwise restricts because they are a common start of
-kernel privilege escalations; `dev/lima.yaml` adds an AppArmor profile that allows it for
-`/usr/local/nerdctl/bin/rootlesskit` only (any VM process can run that program). None of it reaches the
-Mac. No registry login or credential helper is configured: pulls are anonymous, and agents never push
+VM user and its subordinate UIDs, so escaping it gains no more than the VM user already has. That holds
+because the VM user already has passwordless `sudo` (Lima's default): there is no root left to protect
+inside the VM. In exchange RootlessKit creates user namespaces, which Ubuntu otherwise restricts because
+they are a common start of kernel privilege escalations; `dev/lima.yaml` adds an AppArmor profile that
+allows it for `/usr/local/nerdctl/bin/rootlesskit` (the same profile Ubuntu ships for
+`/usr/bin/rootlesskit`), and any VM process can run that program, so any VM process can create a user
+namespace through it. `uidmap` adds the setuid-root `newuidmap` and `newgidmap`. If `sudo` is ever taken
+away from the VM user, revisit the profile and `uidmap`: they would then be a path towards root. None of
+it reaches the Mac. No registry login or credential helper is configured: pulls are anonymous, and agents never push
 (`release.yml` does). Do not run `nerdctl login` in the VM.
 
 In a rootless runtime, container UID 0 is the VM user, not root. To let a container read your `0600`

@@ -162,6 +162,7 @@ Inside the project's Lima VM, which has rootless nerdctl and no Docker
 index and pulls nothing, and run with `nerdctl`; the `cosign` and `gh` commands are the same:
 
 ```bash
+# Replaces the DIGEST= line and the final `docker run` line above; TAG, IMAGE, cosign and gh stay as they are.
 DIGEST="$(crane digest "ghcr.io/timothymamo/eusov:$TAG")"
 nerdctl run --rm --read-only --network none "$IMAGE" version
 ```

@@ -64,7 +64,7 @@ provision:
       export DEBIAN_FRONTEND=noninteractive
       # Provisioning re-runs on every boot, so each step is skipped when already done.
       # uidmap (newuidmap, newgidmap) and slirp4netns are what rootless containerd needs from the system.
-      pkgs="build-essential ca-certificates curl git jq make ripgrep slirp4netns uidmap unzip"
+      pkgs="build-essential ca-certificates curl git gnupg jq make ripgrep slirp4netns uidmap unzip"
       if ! dpkg -s ${pkgs} >/dev/null 2>&1; then
         apt-get update
         apt-get install -y --no-install-recommends ${pkgs}
@@ -128,14 +128,44 @@ provision:
         rm -rf "${tmp}"
       fi
 
-      # nerdctl-full in its own directory, verified against the release checksums. The VM user runs its
-      # containerd and BuildKit rootless (user provisioning below); nothing here starts a daemon as root.
+      # crane, root-owned in /usr/local/bin like cosign and gh, so the VM user cannot replace it. Verified
+      # against the Go checksum database, as govulncheck is. Go's caches go to a directory removed after.
+      if ! /usr/local/bin/crane version 2>/dev/null | grep -qx "${PARAM_craneVersion}"; then
+        tmp="$(mktemp -d)"
+        GOBIN=/usr/local/bin GOPATH="${tmp}/gopath" GOCACHE="${tmp}/gocache" GOFLAGS=-modcacherw GOTOOLCHAIN=local \
+          /usr/local/go/bin/go install "github.com/google/go-containerregistry/cmd/crane@${PARAM_craneVersion}"
+        rm -rf "${tmp}"
+      fi
+
+      # nerdctl-full in its own directory. SHA256SUMS must carry a valid signature from one of the release
+      # managers pinned here by full fingerprint, as listed with their GPG fingerprints in nerdctl's
+      # MAINTAINERS (MAINTAINERS_GUIDE.md: they sign SHA256SUMS and publish the key at
+      # https://github.com/<user>.gpg). A release signed by anyone else fails here: check the new signer's
+      # fingerprint against MAINTAINERS before adding it. The VM user runs its containerd and BuildKit
+      # rootless (user provisioning below); nothing here starts a daemon as root.
       if ! /usr/local/nerdctl/bin/nerdctl --version 2>/dev/null | grep -qx "nerdctl version ${PARAM_nerdctlVersion#v}"; then
         tarball="nerdctl-full-${PARAM_nerdctlVersion#v}-linux-${arch}.tar.gz"
         base="https://github.com/containerd/nerdctl/releases/download/${PARAM_nerdctlVersion}"
         tmp="$(mktemp -d)"
         curl -fsSL -o "${tmp}/${tarball}" "${base}/${tarball}"
         curl -fsSL -o "${tmp}/SHA256SUMS" "${base}/SHA256SUMS"
+        curl -fsSL -o "${tmp}/SHA256SUMS.asc" "${base}/SHA256SUMS.asc"
+        # GitHub ID and fingerprint: AkihiroSuda, ChengyuZhu6.
+        signers="C020EA876CE4E06C7AB95AEF49524C6F9F638F1A 521B0CBA0657089B2B8141FDE14F08B8908ED6E8"
+        export GNUPGHOME="${tmp}/gnupg"
+        mkdir -m 0700 "${GNUPGHOME}"
+        for user in AkihiroSuda ChengyuZhu6; do
+          curl -fsSL "https://github.com/${user}.gpg" | gpg --batch --quiet --import
+        done
+        # The primary key fingerprint of the good signature, whichever key it was fetched from.
+        signer="$(gpg --batch --status-fd 1 --verify "${tmp}/SHA256SUMS.asc" "${tmp}/SHA256SUMS" 2>/dev/null \
+          | awk '$2 == "VALIDSIG" { print $NF }')"
+        gpgconf --kill all
+        unset GNUPGHOME
+        if [ -z "${signer}" ] || [[ " ${signers} " != *" ${signer} "* ]]; then
+          echo >&2 "nerdctl ${PARAM_nerdctlVersion}: SHA256SUMS is not signed by a pinned release manager (${signer:-no valid signature})"
+          exit 1
+        fi
         (cd "${tmp}" && grep " ${tarball}\$" SHA256SUMS | sha256sum --check --strict)
         rm -rf /usr/local/nerdctl && mkdir -p /usr/local/nerdctl
         tar -C /usr/local/nerdctl --no-same-owner -xzf "${tmp}/${tarball}"
@@ -178,8 +208,6 @@ provision:
       mkdir -p "$HOME/.local/bin"
 
       go install "golang.org/x/vuln/cmd/govulncheck@${PARAM_govulncheckVersion}"
-      # Verified against the Go checksum database, as govulncheck is.
-      go install "github.com/google/go-containerregistry/cmd/crane@${PARAM_craneVersion}"
 
       # git push over HTTPS authenticates through gh, with the GITHUB_TOKEN copied in by `make vm-env`.
       git config --global credential.https://github.com.helper '!gh auth git-credential'
@@ -219,15 +247,17 @@ provision:
       # services of the VM user, started at boot through lingering. Last, so a failure here leaves the
       # agent toolchain above installed. No registry login is configured: pulls are anonymous.
       export XDG_RUNTIME_DIR="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"
-      units="$HOME/.config/systemd/user"
+      # The user's systemd manager (user@UID.service) starts asynchronously once lingering is on: wait for it,
+      # as Lima's own rootless containerd setup does.
+      timeout 120s bash -c 'until [ -S "$XDG_RUNTIME_DIR/systemd/private" ]; do sleep 2; done'
       stamp="$HOME/.local/state/eu-sov-cloud/nerdctl-version"
-      if [ ! -e "${units}/containerd.service" ]; then
-        containerd-rootless-setuptool.sh install
-      fi
-      if [ ! -e "${units}/buildkit.service" ]; then
-        containerd-rootless-setuptool.sh install-buildkit
-      fi
-      # After an upgrade the services still run the replaced binaries: restart them once.
+      # Keyed on the outcome, not on the unit file: the setuptool writes the unit before enabling it, so a
+      # failed first start is retried on the next boot.
+      systemctl --user is-enabled --quiet containerd.service || containerd-rootless-setuptool.sh install
+      systemctl --user is-enabled --quiet buildkit.service || containerd-rootless-setuptool.sh install-buildkit
+      # After a `limactl edit` that changes nerdctlVersion, the system provisioning above installs the new
+      # binaries but the running services keep the replaced ones: restart them once. (A Renovate bump reaches
+      # only VMs created after it: Lima copies the template when it creates the VM.)
       if [ -e "${stamp}" ] && [ "$(cat "${stamp}")" != "${PARAM_nerdctlVersion}" ]; then
         systemctl --user restart containerd.service buildkit.service
       fi
@@ -245,8 +275,10 @@ probes:
           exit 1
         fi
       done
-      # gh attestation verify needs the release gh, not Ubuntu's older package.
-      gh attestation --help >/dev/null
+      # The release check (release-tag skill) calls these root-owned binaries by absolute path.
+      /usr/local/bin/gh attestation --help >/dev/null
+      /usr/local/bin/cosign version >/dev/null 2>&1
+      /usr/local/bin/crane version >/dev/null
       export XDG_RUNTIME_DIR="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"
       if ! timeout 300s bash -c "until systemctl --user is-active --quiet containerd.service buildkit.service; do sleep 5; done"; then
         echo >&2 "rootless containerd or BuildKit is not running (systemctl --user status containerd buildkit)"
