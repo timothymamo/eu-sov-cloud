@@ -318,13 +318,15 @@ func TestEveryStrictRuleIsChecked(t *testing.T) {
 }
 
 // TestReleaseWorkflowIsClosed pins that the release is closed to what the
-// check lists: the workflow holds exactly the three jobs the check knows, test,
-// goreleaser and image, with exactly their steps, so goreleaser runs with
-// exactly release --clean after no repository code and with no environment of
-// its own for the go command, and the image job publishes only the signed
-// image, its provenance and its SBOM (check.ReleaseWorkflow). Nor may any
-// other goreleaser document, go.work, go.work.sum or vendor sit at the root
-// that git could commit (check.StrayReleaseFiles).
+// check lists: the workflow holds exactly the five jobs the check knows, test,
+// goreleaser, image, sbom and sign, with exactly their steps, so goreleaser
+// runs with exactly release --clean after no repository code and with no
+// environment of its own for the go command, only a commit on main is released,
+// and the publishing privileges stay split: the image job publishes what it
+// builds, the SBOM job only reads the registry and signs nothing, and the sign
+// job runs sigstore's and GitHub's actions alone (check.ReleaseWorkflow). Nor
+// may any other goreleaser document, go.work, go.work.sum or vendor sit at the
+// root that git could commit (check.StrayReleaseFiles).
 func TestReleaseWorkflowIsClosed(t *testing.T) {
 	t.Parallel()
 
@@ -338,6 +340,55 @@ func TestReleaseWorkflowIsClosed(t *testing.T) {
 	}
 
 	for _, message := range check.ReleaseWorkflow(readRepositoryFile(t, ".github/workflows/release.yml")) {
+		t.Error(message)
+	}
+}
+
+// TestWorkflowPrivilegesAreClosed pins the audit's finding of issue #72: no
+// workflow but .github/workflows/release.yml may hold a packages: write,
+// id-token: write or attestations: write permission, a write-all, or an
+// on: push: tags: trigger. A workflow that pushes to a registry, mints an OIDC
+// identity or runs on a tag publishes releases, and the release workflow is the
+// one place that is reviewed for it.
+func TestWorkflowPrivilegesAreClosed(t *testing.T) {
+	t.Parallel()
+
+	const dir = ".github/workflows"
+
+	entries, err := os.ReadDir(filepath.Join(repositoryRoot(t), filepath.FromSlash(dir)))
+	if err != nil {
+		t.Fatalf("read %s: %v", dir, err)
+	}
+
+	if len(entries) == 0 {
+		t.Fatalf("%s holds no workflow, so this test would check nothing", dir)
+	}
+
+	for _, entry := range entries {
+		if entry.IsDir() {
+			continue
+		}
+
+		name := dir + "/" + entry.Name()
+
+		for _, message := range check.WorkflowPrivileges(name, readRepositoryFile(t, name)) {
+			t.Error(message)
+		}
+	}
+}
+
+// TestCIImageJobIsTheReleaseDryRun pins the review's finding of issue #72:
+// ci.yml's image job is the dry run of release.yml's image and sbom jobs, so a
+// pull request fails when the release's platforms, annotations, provenance and
+// SBOM settings, tag rules, syft version, action pins or BuildKit image drift
+// from what the dry run builds and checks (check.DryRunMirrorsRelease).
+func TestCIImageJobIsTheReleaseDryRun(t *testing.T) {
+	t.Parallel()
+
+	ci := readRepositoryFile(t, ".github/workflows/ci.yml")
+	release := readRepositoryFile(t, ".github/workflows/release.yml")
+
+	for _, message := range check.DryRunMirrorsRelease(ci, release) {
 		t.Error(message)
 	}
 }
