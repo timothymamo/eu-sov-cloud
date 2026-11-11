@@ -3,6 +3,7 @@ package container_test
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io/fs"
 	"os"
 	"path"
@@ -156,6 +157,19 @@ func TestBuildMatchesGoReleaser(t *testing.T) {
 				dockerfileName, tc.env, tc.buildArg, tc.buildArg, tc.buildArg)
 		}
 	}
+}
+
+// TestBuilderStageCrossCompilesOnBuildPlatform pins that the stage running
+// `go build` starts FROM --platform=$BUILDPLATFORM, so `docker buildx build
+// --platform linux/arm64` compiles the binary on the build host and
+// cross-compiles it for the target, instead of running the whole builder stage
+// under QEMU emulation (docs/adr/0012-ship-eusov-as-a-distroless-container-image.md).
+// The builder is found by the go build it runs rather than by its name, so a
+// renamed or reordered stage is still the one checked.
+func TestBuilderStageCrossCompilesOnBuildPlatform(t *testing.T) {
+	t.Parallel()
+
+	assertBuilderCrossCompiles(t, readRepoFile(t, dockerfileName))
 }
 
 // TestFinalStageIsMinimalAndNonRoot pins the last stage of the Dockerfile: a
@@ -331,14 +345,21 @@ func TestDockerignoreKeepsEmbeddedFiles(t *testing.T) {
 }
 
 // TestDockerignoreKeepsDataOutOfContext pins that .dockerignore keeps the git
-// data, the worktrees, the build output and the local inventories and reports
-// out of the build context, so no layer can hold real infrastructure data
-// (CLAUDE.md rule 2). The inventory and report patterns are matched loosely: any
-// entry mentioning them counts, as only some globs are needed.
+// data, the worktrees, the build output, the credentials and the local
+// inventories and reports out of the build context, so no layer can hold real
+// infrastructure data (CLAUDE.md rule 2). The sample paths are evaluated with
+// the same matcher TestDockerignoreKeepsEmbeddedFiles uses, last matching
+// pattern winning, so the test pins where a path ends up rather than which lines
+// the file happens to hold: the context is an allow list (`*`, then
+// `!internal/`), and a pattern anchored to the context root, such as `.env`,
+// never matches the .env a package keeps under internal/. The literal entries
+// are pinned as well, because they name the data in the file itself.
 func TestDockerignoreKeepsDataOutOfContext(t *testing.T) {
 	t.Parallel()
 
-	entries := dockerignoreEntries(t, readRepoFile(t, dockerignoreName))
+	dockerignore := readRepoFile(t, dockerignoreName)
+	entries := dockerignoreEntries(t, dockerignore)
+	patterns := dockerignorePatterns(t, dockerignore)
 
 	for _, want := range []string{".git", ".worktrees", "bin", "coverage.out"} {
 		if !slices.Contains(entries, want) {
@@ -355,6 +376,136 @@ func TestDockerignoreKeepsDataOutOfContext(t *testing.T) {
 			t.Errorf("%s: no entry mentions %q: a local inventory or report would be sent to the daemon and could land in a layer, which CLAUDE.md rule 2 forbids",
 				dockerignoreName, want)
 		}
+	}
+
+	tests := []struct {
+		name string
+		path string
+		why  string
+	}{
+		{name: "env file at the context root", path: ".env", why: "holds credentials"},
+		{name: "env file in a package", path: "internal/x/.env", why: "holds credentials"},
+		{name: "env variant in a package", path: "internal/x/.env.local", why: "holds credentials"},
+		{name: "envrc in a package", path: "cmd/eusov/.envrc", why: "holds credentials"},
+		{name: "private key in a package", path: "internal/x/key.pem", why: "is a private key"},
+		{name: "key file in a package", path: "internal/x/id.key", why: "is a private key"},
+		{name: "aws credentials", path: "internal/x/.aws/credentials", why: "holds cloud credentials"},
+		{name: "azure configuration", path: "internal/x/.azure/config", why: "holds cloud credentials"},
+		{name: "gcloud credentials", path: "internal/x/.config/gcloud/creds.json", why: "holds cloud credentials"},
+		{name: "inventory in a package", path: "internal/x/inventory.json", why: "describes real infrastructure"},
+		{name: "report in a package", path: "internal/x/report.md", why: "describes real infrastructure"},
+		{name: "git data", path: ".git/config", why: "holds the repository's history and remotes"},
+		{name: "local build", path: "bin/eusov", why: "is a locally built binary"},
+		{name: "coverage report", path: "coverage.out", why: "is a local build artefact"},
+		{name: "worktree module", path: ".worktrees/x/go.mod", why: "belongs to a worktree, not the build"},
+		{name: "test fixture", path: "internal/x/testdata/inventory.json", why: "is test data the binary does not build"},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			excluded, rule := dockerignoreExcludes(patterns, tc.path)
+			if excluded {
+				return
+			}
+
+			matched := "no pattern matches it at all"
+			if rule.pattern != "" {
+				matched = fmt.Sprintf("the last pattern matching it is %q, on line %d", rule.raw, rule.line)
+			}
+
+			t.Errorf("%s: the path %q would be sent to the daemon (%s) because it is in the build context: %s. Patterns are matched against the whole path relative to the context root, so an entry without a **/ prefix only covers the root, and `!internal/` re-includes the directory after it; want a pattern such as `**/%s` that excludes it at any depth",
+				dockerignoreName, tc.path, tc.why, matched, tc.path)
+		})
+	}
+}
+
+// TestEmbedPatternTokens pins how the patterns of a //go:embed directive are
+// split: whitespace separates them, and a double-quoted or back-quoted literal is
+// one pattern however many spaces it holds, unquoted the way the go command
+// unquotes it. A pattern that cannot be read fails rather than being skipped, so
+// the test never silently stops looking at an embedded file.
+func TestEmbedPatternTokens(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name     string
+		patterns string
+		want     []string
+		wantErr  bool
+	}{
+		{
+			name:     "bare patterns",
+			patterns: "catalog.json other.json",
+			want:     []string{"catalog.json", "other.json"},
+		},
+		{
+			name:     "tabs separate patterns too",
+			patterns: "catalog.json\tother.json",
+			want:     []string{"catalog.json", "other.json"},
+		},
+		{
+			name:     "leading and trailing whitespace",
+			patterns: "  catalog.json  ",
+			want:     []string{"catalog.json"},
+		},
+		{
+			name:     "double-quoted pattern with a space",
+			patterns: `catalog.json "catalog 2.json"`,
+			want:     []string{"catalog.json", "catalog 2.json"},
+		},
+		{
+			name:     "back-quoted pattern with a space",
+			patterns: "`catalog 3.json` other.json",
+			want:     []string{"catalog 3.json", "other.json"},
+		},
+		{
+			name:     "escape in a double-quoted pattern",
+			patterns: `"say \"hi\".json"`,
+			want:     []string{`say "hi".json`},
+		},
+		{
+			name:     "escaped tab in a double-quoted pattern",
+			patterns: `"catalog\t2.json"`,
+			want:     []string{"catalog\t2.json"},
+		},
+		{
+			name:     "glob pattern",
+			patterns: "snapshots/*.json",
+			want:     []string{"snapshots/*.json"},
+		},
+		{
+			name:     "all prefix is kept on the token",
+			patterns: "all:web",
+			want:     []string{"all:web"},
+		},
+		{name: "no pattern", patterns: "", want: nil},
+		{name: "unterminated quote", patterns: `"catalog.json`, wantErr: true},
+		{name: "invalid escape", patterns: `"catalog\q.json"`, wantErr: true},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			got, err := embedPatternTokens(tc.patterns)
+			if tc.wantErr {
+				if err == nil {
+					t.Fatalf("embedPatternTokens(%q) = %q, want an error", tc.patterns, got)
+				}
+
+				return
+			}
+
+			if err != nil {
+				t.Fatalf("embedPatternTokens(%q): %v", tc.patterns, err)
+			}
+
+			if diff := cmp.Diff(tc.want, got); diff != "" {
+				t.Errorf("embedPatternTokens(%q) mismatch (-want +got):\n%s", tc.patterns, diff)
+			}
+		})
 	}
 }
 
@@ -517,11 +668,7 @@ func fromImages(instructions []instruction) []baseImage {
 			continue
 		}
 
-		fields := strings.Fields(in.arguments())
-		for len(fields) > 0 && strings.HasPrefix(fields[0], "--") {
-			fields = fields[1:]
-		}
-
+		fields := fromFields(in)
 		if len(fields) == 0 {
 			continue
 		}
@@ -676,6 +823,102 @@ func unquote(value string) string {
 	}
 
 	return value
+}
+
+// stageInstructions returns the instructions after the FROM at index i, up to
+// the next FROM: the body of the stage that FROM starts.
+func stageInstructions(instructions []instruction, i int) []instruction {
+	for j := i + 1; j < len(instructions); j++ {
+		if instructions[j].keyword() == "FROM" {
+			return instructions[i+1 : j]
+		}
+	}
+
+	return instructions[i+1:]
+}
+
+// builderStage returns the FROM instruction of the stage that runs `go build`,
+// and fails the test when no stage builds anything: the builder is found by what
+// it does, so it is checked whatever the stage is called.
+func builderStage(t *testing.T, dockerfile string) instruction {
+	t.Helper()
+
+	instructions := dockerfileInstructions(t, dockerfile)
+
+	for i, in := range instructions {
+		if in.keyword() != "FROM" {
+			continue
+		}
+
+		for _, stageIn := range stageInstructions(instructions, i) {
+			if stageIn.keyword() == "RUN" && strings.Contains(stageIn.arguments(), "go build") {
+				return in
+			}
+		}
+	}
+
+	t.Fatalf("%s: no stage runs `go build`, so there is no builder stage whose platform can be checked",
+		dockerfileName)
+
+	return instruction{}
+}
+
+// assertBuilderCrossCompiles fails unless the stage that runs `go build` starts
+// FROM --platform=$BUILDPLATFORM. It reads the Dockerfile text it is given, so a
+// mutated copy can be run through it to show the check discriminates.
+func assertBuilderCrossCompiles(t *testing.T, dockerfile string) {
+	t.Helper()
+
+	builder := builderStage(t, dockerfile)
+
+	switch platform := fromPlatform(builder); platform {
+	case "$BUILDPLATFORM", "${BUILDPLATFORM}":
+		return
+	case "":
+		t.Errorf("%s:%d: the stage that runs `go build` starts FROM %q and names no platform: want FROM --platform=$BUILDPLATFORM, so the builder runs on the build host and cross-compiles for TARGETOS and TARGETARCH; without it a --platform linux/arm64 build emulates the whole builder stage under QEMU",
+			dockerfileName, builder.line, fromImage(builder))
+	default:
+		t.Errorf("%s:%d: the stage that runs `go build` starts FROM --platform=%s %q: want --platform=$BUILDPLATFORM, so the builder runs on the build host and cross-compiles for TARGETOS and TARGETARCH instead of being emulated under QEMU",
+			dockerfileName, builder.line, platform, fromImage(builder))
+	}
+}
+
+// fromFields returns the fields of a FROM instruction after its flags: the
+// image reference, then AS and the stage name when the stage has one.
+func fromFields(in instruction) []string {
+	fields := strings.Fields(in.arguments())
+	for len(fields) > 0 && strings.HasPrefix(fields[0], "--") {
+		fields = fields[1:]
+	}
+
+	return fields
+}
+
+// fromImage returns the image reference of a FROM instruction, and "" when the
+// instruction names no image.
+func fromImage(in instruction) string {
+	if fields := fromFields(in); len(fields) > 0 {
+		return fields[0]
+	}
+
+	return ""
+}
+
+// fromPlatform returns the value of the --platform flag of a FROM instruction,
+// "$BUILDPLATFORM" for "--platform=$BUILDPLATFORM", and "" when it carries
+// none. Only the flags before the image reference are read.
+func fromPlatform(in instruction) string {
+	for _, field := range strings.Fields(in.arguments()) {
+		if !strings.HasPrefix(field, "--") {
+			break
+		}
+
+		if value, found := strings.CutPrefix(field, "--platform="); found {
+			return value
+		}
+	}
+
+	return ""
 }
 
 // xFlagPrefixes returns the path prefix of every linker -X flag in ldflags, the
@@ -899,9 +1142,10 @@ func matchDockerignoreSegments(pattern, segments []string) bool {
 
 // embeddedFiles walks the non-test .go files under cmd/ and internal/, the two
 // directories the Dockerfile copies into the builder, and returns every file
-// their embed directives name. A quoted pattern and a glob are resolved as the
-// go command resolves them, and a directory pattern is walked recursively,
-// leaving out the names starting with . or _ that it leaves out.
+// their embed directives name. The patterns are tokenised and unquoted as the go
+// command reads them, a glob is expanded, and a directory pattern is walked
+// recursively, leaving out the names starting with . or _ that it leaves out
+// unless the pattern carries the all: prefix.
 func embeddedFiles(t *testing.T) []embeddedFile {
 	t.Helper()
 
@@ -938,7 +1182,12 @@ func embeddedFiles(t *testing.T) []embeddedFile {
 					continue
 				}
 
-				for _, pattern := range strings.Fields(match[1]) {
+				patterns, parseErr := embedPatternTokens(match[1])
+				if parseErr != nil {
+					t.Fatalf("%s:%d: //go:embed %s: %v", filePath, i+1, match[1], parseErr)
+				}
+
+				for _, pattern := range patterns {
 					files = append(files, embedTargets(t, tree, filePath, i+1, pattern)...)
 				}
 			}
@@ -955,14 +1204,25 @@ func embeddedFiles(t *testing.T) []embeddedFile {
 	return files
 }
 
+// embedAllPrefix is the prefix an embed pattern carries to include the files a
+// directory pattern otherwise leaves out, the ones whose name starts with . or
+// _. The go command strips it before it resolves the pattern.
+const embedAllPrefix = "all:"
+
 // embedTargets resolves one embed pattern, declared on the given line of the
 // .go file source, to the files it embeds, relative to its package directory.
-// A pattern matching nothing fails the test: go build fails the same way, so the
-// repository is broken rather than this test.
+// The pattern is one token as embedPatternTokens returns it: already unquoted,
+// with the all: prefix still on it. A pattern matching nothing fails the test: go
+// build fails the same way, so the repository is broken rather than this test.
 func embedTargets(t *testing.T, tree fs.FS, source string, line int, pattern string) []embeddedFile {
 	t.Helper()
 
-	name := embedPatternValue(pattern)
+	name := pattern
+	all := false
+	if stripped, found := strings.CutPrefix(name, embedAllPrefix); found {
+		name, all = stripped, true
+	}
+
 	target := path.Join(path.Dir(source), name)
 
 	matches := []string{target}
@@ -1001,9 +1261,13 @@ func embedTargets(t *testing.T, tree fs.FS, source string, line int, pattern str
 				return err
 			case embeddedPath == match:
 				return nil
-			case excludedByEmbed(entry.Name()) && entry.IsDir():
-				return fs.SkipDir
-			case excludedByEmbed(entry.Name()), entry.IsDir():
+			case !all && excludedByEmbed(entry.Name()):
+				if entry.IsDir() {
+					return fs.SkipDir
+				}
+
+				return nil
+			case entry.IsDir():
 				return nil
 			}
 
@@ -1020,19 +1284,64 @@ func embedTargets(t *testing.T, tree fs.FS, source string, line int, pattern str
 }
 
 // excludedByEmbed reports whether go:embed leaves the name out of a directory
-// pattern: it skips files whose name starts with . or _.
+// pattern: it skips the files and directories whose name starts with . or _,
+// unless the pattern carries the all: prefix.
 func excludedByEmbed(name string) bool {
 	return strings.HasPrefix(name, ".") || strings.HasPrefix(name, "_")
 }
 
-// embedPatternValue removes the quotes an embed pattern may carry, as in
-// "catalog 2.json".
-func embedPatternValue(pattern string) string {
-	if len(pattern) >= 2 && (pattern[0] == '"' || pattern[0] == '`') {
-		if value, err := strconv.Unquote(pattern); err == nil {
-			return value
+// embedPatternTokens splits the patterns of a //go:embed directive the way the
+// go command does: spaces and tabs separate them, and a pattern may be written
+// as a double-quoted or back-quoted Go string literal, which may hold spaces and
+// escapes. Every quoted token is unquoted, so the caller works with the file
+// names as the go command reads them.
+func embedPatternTokens(patterns string) ([]string, error) {
+	var tokens []string
+
+	for rest := strings.TrimLeft(patterns, " \t"); rest != ""; rest = strings.TrimLeft(rest, " \t") {
+		if rest[0] == '"' || rest[0] == '`' {
+			token, after, err := cutQuotedEmbedPattern(rest)
+			if err != nil {
+				return nil, err
+			}
+
+			tokens = append(tokens, token)
+			rest = after
+
+			continue
+		}
+
+		end := strings.IndexAny(rest, " \t")
+		if end < 0 {
+			end = len(rest)
+		}
+
+		tokens = append(tokens, rest[:end])
+		rest = rest[end:]
+	}
+
+	return tokens, nil
+}
+
+// cutQuotedEmbedPattern reads the Go string literal at the start of rest, which
+// begins with a double or back quote, and returns its value and the text after
+// it.
+func cutQuotedEmbedPattern(rest string) (string, string, error) {
+	quote := rest[0]
+
+	for i := 1; i < len(rest); i++ {
+		switch {
+		case quote == '"' && rest[i] == '\\':
+			i++
+		case rest[i] == quote:
+			value, err := strconv.Unquote(rest[:i+1])
+			if err != nil {
+				return "", "", fmt.Errorf("the embed pattern %s is not a valid Go string literal: %w", rest[:i+1], err)
+			}
+
+			return value, rest[i+1:], nil
 		}
 	}
 
-	return pattern
+	return "", "", fmt.Errorf("the embed pattern %s has no closing %c", rest, quote)
 }
