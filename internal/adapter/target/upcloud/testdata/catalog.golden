@@ -1,0 +1,13 @@
+target: UpCloud
+sourceURL: https://upcloud.com/docs/
+retrievedOn: 2026-11-11
+Block Storage | storage.block | snapshots | de-fra1, dk-cph1, es-mad1, fi-hel1, fi-hel2, nl-ams1, pl-waw1, se-sto1
+Block Storage Encrypted | storage.block | encryption-at-rest, snapshots | de-fra1, dk-cph1, es-mad1, fi-hel1, fi-hel2, nl-ams1, pl-waw1, se-sto1
+Cloud Servers | compute.vm | ipv6, snapshots | de-fra1, dk-cph1, es-mad1, fi-hel1, fi-hel2, nl-ams1, pl-waw1, se-sto1
+Managed Kubernetes | kubernetes.managed | - | de-fra1, dk-cph1, es-mad1, fi-hel1, fi-hel2, nl-ams1, pl-waw1, se-sto1
+Managed Kubernetes Production | kubernetes.managed | node-high-availability | de-fra1, dk-cph1, es-mad1, fi-hel1, fi-hel2, nl-ams1, pl-waw1, se-sto1
+Managed MySQL | database.mysql | encryption-at-rest, point-in-time-restore | de-fra1, dk-cph1, es-mad1, fi-hel1, fi-hel2, nl-ams1, pl-waw1, se-sto1
+Managed MySQL Multi-node | database.mysql | encryption-at-rest, node-high-availability, point-in-time-restore, read-replicas | de-fra1, dk-cph1, es-mad1, fi-hel1, fi-hel2, nl-ams1, pl-waw1, se-sto1
+Managed Object Storage | storage.object | encryption-at-rest, object-versioning | de-fra1, dk-cph1, fi-hel2, se-sto1
+Managed PostgreSQL | database.postgresql | encryption-at-rest, point-in-time-restore | de-fra1, dk-cph1, es-mad1, fi-hel1, fi-hel2, nl-ams1, pl-waw1, se-sto1
+Managed PostgreSQL Multi-node | database.postgresql | encryption-at-rest, node-high-availability, point-in-time-restore, read-replicas | de-fra1, dk-cph1, es-mad1, fi-hel1, fi-hel2, nl-ams1, pl-waw1, se-sto1
