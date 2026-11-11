@@ -26,6 +26,8 @@ type assessOptions struct {
 	targets []string
 	// output is the path of the report file, or empty for standard output.
 	output string
+	// format is the key of the selected report format in Deps.Formats.
+	format string
 }
 
 // runAssess runs the assess command with args, the arguments after "assess",
@@ -65,6 +67,7 @@ func parseAssess(args []string, deps Deps) (assessOptions, error) {
 	flags.StringVar(&opts.inventory, "inventory", "", "the inventory file")
 	flags.StringVar(&target, "target", "", "the targets to compare with")
 	flags.StringVar(&opts.output, "output", "", "the report file")
+	flags.StringVar(&opts.format, "format", defaultFormat, "the report format")
 
 	if err := flags.Parse(args); err != nil {
 		return assessOptions{}, err
@@ -86,8 +89,17 @@ func parseAssess(args []string, deps Deps) (assessOptions, error) {
 
 	opts.targets = targets
 
+	if _, ok := deps.Formats[opts.format]; !ok {
+		return assessOptions{}, fmt.Errorf("unknown format %s; supported formats: %s",
+			text.Quote(opts.format), strings.Join(formatKeys(deps), ", "))
+	}
+
 	return opts, nil
 }
+
+// defaultFormat is the --format value of a run that names none: the Markdown
+// report every run wrote before --format existed.
+const defaultFormat = "markdown"
 
 // allTargets is the --target value that selects every supported target.
 const allTargets = "all"
@@ -138,19 +150,21 @@ type runFunc func(ctx context.Context, w io.Writer, meta analysis.ReportMeta) er
 // newRunner builds the adapters the selected targets need and the use case that
 // runs them: one target keeps the single-target report, several get a
 // comparison. Only the selected targets' catalog sources are built, and only
-// the reporter the use case needs.
+// the reporter of the selected format the use case needs.
 func newRunner(opts assessOptions, deps Deps) (runFunc, error) {
 	if deps.NewInventorySource == nil {
 		return nil, errMissingAdapter
 	}
 
+	format := deps.Formats[opts.format]
+
 	if len(opts.targets) == 1 {
 		newCatalog := deps.Targets[opts.targets[0]]
-		if newCatalog == nil || deps.NewReporter == nil {
+		if newCatalog == nil || format.NewReporter == nil {
 			return nil, errMissingAdapter
 		}
 
-		single, err := analysis.New(deps.NewInventorySource(opts.inventory), newCatalog(), deps.NewReporter())
+		single, err := analysis.New(deps.NewInventorySource(opts.inventory), newCatalog(), format.NewReporter())
 		if err != nil {
 			return nil, err
 		}
@@ -158,7 +172,7 @@ func newRunner(opts assessOptions, deps Deps) (runFunc, error) {
 		return single.Run, nil
 	}
 
-	if deps.NewComparisonReporter == nil {
+	if format.NewComparisonReporter == nil {
 		return nil, errMissingAdapter
 	}
 
@@ -174,7 +188,7 @@ func newRunner(opts assessOptions, deps Deps) (runFunc, error) {
 	}
 
 	comparison, err := analysis.NewComparison(deps.NewInventorySource(opts.inventory), targets,
-		deps.NewComparisonReporter())
+		format.NewComparisonReporter())
 	if err != nil {
 		return nil, err
 	}
