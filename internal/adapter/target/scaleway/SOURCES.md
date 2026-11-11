@@ -5,7 +5,8 @@ records where each fact comes from, so the snapshot can be checked and refreshed
 
 ## How it was compiled
 
-- **Retrieved on:** 2026-11-10.
+- **Retrieved on:** 2026-11-11, the date of the PRD #14 re-verification below, which changed facts in the
+  snapshot. It was first compiled and verified on 2026-11-10.
 - **Compiled, then verified against the live pages.** The snapshot was first compiled from Scaleway's
   documentation source and Go SDK at the commits below, because `www.scaleway.com` then answered HTTP 403.
   On the same date every region and capability was checked against the live public pages cited below
@@ -27,7 +28,8 @@ records where each fact comes from, so the snapshot can be checked and refreshed
   Kapsule row and no separate row for Dedicated control planes. So no declared region changed, and the
   new variant *Kubernetes Kapsule Dedicated* lists the regions its own section gives. This
   re-verification removed `ipv6` from Serverless Functions and removed Serverless SQL Database
-  (*Left out on purpose*).
+  (*Left out on purpose*). Because it changed facts, `retrievedOn` in `catalog.json` is its date,
+  2026-11-11.
 - **Availability page:** <https://www.scaleway.com/en/product-availability-by-region/>, where every
   offering's regions come from, subject to the API check under *Rules applied*. It has one column per
   region (Paris, Amsterdam, Warsaw, Milan). For a zonal product it gives one mark per zone, and for a
