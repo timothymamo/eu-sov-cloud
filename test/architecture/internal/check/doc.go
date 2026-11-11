@@ -39,5 +39,11 @@
 // PinnedRules compares those rules with a pinned copy, naming the rule of every
 // difference (issue #80).
 //
+// HidingSettings reads .golangci.yml for the settings that hide issues from
+// make lint without touching a rule, and the ways of turning depguard or
+// forbidigo off, and returns one message per setting found, naming it by its
+// dotted key (issue #81). An issues or linters.exclusions key it does not know
+// fails closed.
+//
 // The package is internal to test/architecture: it is not an API of the module.
 package check

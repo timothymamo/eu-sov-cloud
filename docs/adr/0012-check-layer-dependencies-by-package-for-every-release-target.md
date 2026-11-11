@@ -176,4 +176,9 @@ workflow change.
   and each list-mode rewritten, deleted or added. A self-check fails if it misses an entry, and a
   refused document counts as caught only where deleting `app-uses-ports-not-adapters` removes the
   `&app-deny` anchor.
+- So is whether they run (issue #81): `TestGolangciSettingsHideNoIssue` reads `.golangci.yml` with the
+  same reader and fails, naming the setting, on every setting that hides issues without touching a
+  rule: exclusion paths, `issues` caps and filters, `linters.default: none`, `run.tests` not true,
+  depguard or forbidigo not enabled or disabled, and an exclusion rule naming depguard, or forbidigo
+  without a text. An `issues` or `linters.exclusions` key it does not know fails closed.
 - Lint and this check now say the same thing twice: a violation that lint catches also fails here.

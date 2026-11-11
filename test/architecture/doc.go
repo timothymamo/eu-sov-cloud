@@ -39,6 +39,14 @@
 // it: deleting app-uses-ports-not-adapters, which removes the &app-deny anchor
 // a later alias reads.
 //
+// TestGolangciSettingsHideNoIssue covers what the pin does not: whether the
+// rules run and what lint reports (issue #81). It fails, naming the setting, on
+// linters.exclusions.paths or paths-except, an issues cap or filter, an issues
+// or linters.exclusions key the check does not know, linters.default: none,
+// run.tests not true, depguard or forbidigo missing from linters.enable or in
+// linters.disable, and a linters.exclusions.rules entry naming depguard, naming
+// forbidigo without a text, or naming no linter.
+//
 // The checks are tests: they run in make test, make check and CI's make cover,
 // with no workflow of their own. They need no network and no credentials.
 package architecture
