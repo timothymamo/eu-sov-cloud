@@ -77,7 +77,19 @@ func Writes(ctx context.Context, client *ec2.Client, api terminator) {
 	_ = manager.NewUploader(client)         // want "cloud-read-only: the S3 upload manager"
 	_, _ = client.GetPasswordData(ctx, nil) // want "cloud-read-only: this AWS call mints"
 	var _ *ec2.GetPasswordDataInput         // want "cloud-read-only: this AWS call mints"
+	// The issue text keeps the string literal, so an exclusion rule whose
+	// text were just another group's tag would drop this line.
+	byName("domain-is-pure: x").DeleteThing() // want "cloud-read-only: a source adapter calls no method"
 }
+
+// lit is a helper type of the adapter's own, with a method named for a write.
+type lit struct{}
+
+// DeleteThing does nothing; its name alone is refused at the call.
+func (lit) DeleteThing() {}
+
+// byName returns a lit for a name.
+func byName(string) lit { return lit{} }
 
 // Hooks that rewrite a request or hand out a credential are refused.
 func Hooks(cfg aws.Config) {

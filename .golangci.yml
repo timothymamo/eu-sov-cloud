@@ -67,15 +67,8 @@ linters:
         # in app-uses-ports-not-adapters and in cli-gets-adapters-from-cmd.
         #
         # An allowed package can still hold a function that does I/O or reads
-        # the clock, which an import rule cannot see. The domain must not call
-        # fmt.Print* (which writes to stdout) or fmt.Scan* (which reads
-        # stdin); time.Now, Since, Until, Sleep, After, Tick, NewTimer,
-        # NewTicker or AfterFunc (which read or wait on the clock);
-        # time.LoadLocation (which reads zoneinfo files and the ZONEINFO
-        # environment variable); or anything that reaches time.Local, which
-        # reads the TZ environment variable and /etc/localtime: time.Parse of
-        # a value with a zone offset, time.ParseInLocation(..., time.Local)
-        # or Time.Local(). Review holds that line.
+        # the clock (fmt.Println, time.Now), which an import rule cannot see.
+        # The forbidigo group domain-is-pure, below, refuses those calls.
         #
         # test/architecture reads every strict rule's files: and allow: lists
         # and checks the rule package by package (ADR 0012): write a strict
@@ -868,10 +861,10 @@ linters:
       default-signifies-exhaustive: true
     # forbidigo refuses calls, which an import rule cannot see. Its entries
     # come in groups, one per rule, each opened by a comment, and every msg in
-    # a group starts with the group's tag (cloud-read-only:). forbidigo has no
-    # per-entry file scope: a group that holds for some files only gets an
-    # entry in linters.exclusions.rules with linters [forbidigo], a path or
-    # path-except, and a text of exactly this form:
+    # a group starts with the group's tag (cloud-read-only:, domain-is-pure:).
+    # forbidigo has no per-entry file scope: a group that holds for some files
+    # only gets an entry in linters.exclusions.rules with linters [forbidigo],
+    # a path or path-except, and a text of exactly this form:
     #   text: 'because "<tag>: [^"]*"$'
     # The issue text is: use of `<expression>` forbidden because "<msg>".
     # The expression keeps its string literals, so a text of just '<tag>:'
@@ -1086,6 +1079,49 @@ linters:
         - pattern: '^\w+\.\w+\.(?:Abandon|Abort|Accept|Acquire|Activate|Add|Advertise|Allocate|Apply|Archive|Assign|Associate|Assume|Attach|Authorize|Backtrack|Batch|Begin|Break|Bulk|Bundle|Cancel|Change|Clear|Commit|Complete|Confirm|Continue|Copy|Create|Deactivate|Deallocate|Decrypt|Delete|Deploy|Deprecate|Deprovision|Deregister|Detach|Disable|Disassociate|Enable|Execute|Expand|Export|Failover|Flush|Generalize|Generate|Grant|Import|Initiate|Insert|Invoke|Leave|Lock|Merge|Modify|Monitor|Move|Patch|Perform|Power|Promote|Provision|Publish|Purchase|Purge|Put|Reapply|Reboot|Receive|Recreate|Redeploy|Regenerate|Register|Reimage|Reject|Release|Remove|Renew|Replace|Request|Reset|Resize|Restart|Restore|Resume|Revoke|Rollback|Rotate|Run|Scale|Send|Set|Sign|Signal|Simulate|Split|Start|Stop|Subscribe|Suspend|Swap|Switch|Tag|Terminate|Truncate|Unarchive|Unassign|Undelete|Unlock|Unmonitor|Unsubscribe|Untag|Update|Upgrade|Upload|Upsert|Withdraw|Write)(?:[A-Z0-9]\w*)?$'
           pkg: '^github\.com/timothymamo/eu-sov-cloud/internal/adapter/source/'
           msg: 'cloud-read-only: a source adapter calls no method named for a write on a type of its own; call the SDK client directly, or rename the helper (CLAUDE.md rule 1)'
+        # Group domain-is-pure: the domain does no I/O and reads no clock. The
+        # depguard rule of the same name allows fmt and time for fmt.Errorf and
+        # time.Time; these entries refuse what in them reaches stdio, the
+        # clock, zoneinfo files or the environment. docs/architecture.md
+        # (Domain-is-pure rule) says why each entry is listed, what stays
+        # allowed and the gaps that remain.
+        #
+        # Scope: production files under internal/domain/ only. The two
+        # exclusion rules marked domain-is-pure at the end of
+        # linters.exclusions.rules drop the group's issues in every other path
+        # and in _test.go files, godoc examples included.
+        #
+        # Every entry is pinned twice in test/lint: TestDomainIsPureProbe runs
+        # lint on a probe domain package (testdata/domainispure), with a line
+        # for each name an entry refuses, and TestDomainIsPurePatterns checks
+        # the patterns against lists of refused and allowed names.
+        - pattern: '^fmt\.Print(?:f|ln)?$'
+          pkg: '^fmt$'
+          msg: 'domain-is-pure: fmt.Print* writes to stdout; return the value or an error and let an adapter or the CLI write it'
+        - pattern: '^fmt\.Scan(?:f|ln)?$'
+          pkg: '^fmt$'
+          msg: 'domain-is-pure: fmt.Scan* reads stdin; take the input as a parameter (fmt.Sscan* parses a string)'
+        - pattern: '^print(?:ln)?$'
+          pkg: '^$'
+          msg: 'domain-is-pure: print and println write to stderr; return the value or an error instead'
+        - pattern: '^time\.(?:Now|Since|Until|Sleep|After|Tick|NewTimer|NewTicker|AfterFunc)$'
+          pkg: '^time$'
+          msg: 'domain-is-pure: the domain reads no clock; take the time.Time or time.Duration as a parameter, or through a port'
+        - pattern: '^time\.(?:Timer|Ticker)(?:\.\w+)?$'
+          pkg: '^time$'
+          msg: 'domain-is-pure: a time.Timer or time.Ticker waits on the clock; take the time.Time or time.Duration as a parameter, or through a port'
+        - pattern: '^time\.LoadLocation$'
+          pkg: '^time$'
+          msg: 'domain-is-pure: time.LoadLocation reads zoneinfo files and the ZONEINFO variable; use time.UTC or time.FixedZone, or take the *time.Location as a parameter'
+        - pattern: '^time\.(?:Time\.)?Local$'
+          pkg: '^time$'
+          msg: 'domain-is-pure: time.Local reads the TZ variable and /etc/localtime; use time.UTC, or take the *time.Location as a parameter'
+        - pattern: '^time\.Unix(?:Milli|Micro)?$'
+          pkg: '^time$'
+          msg: 'domain-is-pure: time.Unix* returns a time in time.Local, which reads TZ and /etc/localtime; take the time.Time as a parameter, converted with .UTC() where the timestamp is read'
+        - pattern: '^time\.(?:Parse|Time\.(?:UnmarshalJSON|UnmarshalText|UnmarshalBinary|GobDecode))$'
+          pkg: '^time$'
+          msg: 'domain-is-pure: this matches a zone offset against time.Local, which reads TZ and /etc/localtime; use time.ParseInLocation with time.UTC or a *time.Location passed in'
     gosec:
       excludes:
         - G104 # unchecked errors are already reported by errcheck
@@ -1140,6 +1176,18 @@ linters:
         linters:
           - gosec
         text: "^G101:"
+      # domain-is-pure: the forbidigo group of that name holds for production
+      # files under internal/domain/ only. These two rules drop its issues in
+      # every other path and in every _test.go file. text has the form the
+      # forbidigo settings set out, so no other group's issue is dropped.
+      - path-except: ^internal/domain/
+        linters:
+          - forbidigo
+        text: 'because "domain-is-pure: [^"]*"$'
+      - path: _test\.go$
+        linters:
+          - forbidigo
+        text: 'because "domain-is-pure: [^"]*"$'
 
 formatters:
   enable:
