@@ -9,6 +9,10 @@
 # Run from inside a pull request's worktree, it uses the checkout that holds that worktree, so pull
 # request worktrees are never nested in each other.
 #
+# It prints only a pull request's worktree, a linked worktree directly under a .worktrees/, and refuses
+# anything else in the branch's way. Every command it suggests acts on one named worktree, never on the
+# whole repository.
+#
 # Usage: dev/worktree.sh <type>/<issue>-<slug>   (or: make worktree BRANCH=<type>/<issue>-<slug>)
 set -euo pipefail
 
@@ -19,50 +23,119 @@ if [[ ! "${branch}" =~ ^(${types})/[0-9]+-[a-z0-9]+(-[a-z0-9]+)*$ ]]; then
   echo "<type> is one of: ${types//|/, }" >&2
   exit 2
 fi
+slug="${branch//\//-}"
 
 # Every worktree of the repository, read whole before it is searched: git gets SIGPIPE when a reader
 # stops early, and with pipefail that would end this script without a message. One entry per worktree,
 # the main worktree first: a "worktree <path>" line, then lines such as "HEAD <sha>", "branch <ref>" or
-# "detached", and "locked [<reason>]", then a blank line.
+# "detached", "locked [<reason>]" and "prunable <reason>", then a blank line.
 worktrees="$(git worktree list --porcelain)"
 
-# entry <line>: prints the entry that has exactly this line, or nothing. The main worktree's entry gets
-# an extra first line, "main".
+# entry <line>: prints the first entry that has exactly this line, or nothing. The main worktree's entry
+# gets an extra first line, "main". The line reaches awk through the environment, because awk -v would
+# expand the backslash escapes in it.
 entry() {
-  awk -v want="$1" '
+  want="$1" awk '
     BEGIN { RS = ""; FS = "\n" }
     !found {
-      for (i = 1; i <= NF; i++) if ($i == want) found = 1
+      for (i = 1; i <= NF; i++) if ($i == ENVIRON["want"]) found = 1
       if (found) { if (NR == 1) print "main"; print }
     }
   ' <<<"${worktrees}"
 }
 
-# Resume: a branch that is already checked out keeps its worktree, wherever that is.
+# detached_at: prints the first linked worktree on a detached HEAD whose directory is .worktrees/<slug>
+# in any checkout, or nothing.
+detached_at() {
+  suffix="/.worktrees/${slug}" awk '
+    BEGIN { RS = ""; FS = "\n"; suffix = ENVIRON["suffix"] }
+    !found && NR > 1 {
+      path = substr($1, length("worktree ") + 1)
+      if (length(path) > length(suffix) && substr(path, length(path) - length(suffix) + 1) == suffix)
+        for (i = 2; i <= NF; i++) if ($i == "detached") found = 1
+      if (found) print
+    }
+  ' <<<"${worktrees}"
+}
+
+path_of() { sed -n 's/^worktree //p' <<<"$1"; }
+
+refuse() {
+  echo "worktree: $*" >&2
+  exit 1
+}
+
+# refuse_broken <entry>: refuses an entry whose directory no longer exists, that git marks prunable, or
+# whose directory git does not see as that worktree (a locked entry is never marked prunable), and
+# returns for a healthy one. For a missing directory it names the commands that clear that one entry. It
+# never suggests 'git worktree prune', which clears every stale entry of the repository, including those
+# of healthy worktrees on a disk that is not mounted
+# (docs/adr/0008-mount-a-workspace-directory-for-dispatcher-mode.md).
+refuse_broken() {
+  local path quoted reason actual where=''
+  path="$(path_of "$1")"
+  printf -v quoted '%q' "${path}"
+  if [[ -d "${path}" ]]; then
+    actual="$(git -C "${path}" rev-parse --show-toplevel 2>/dev/null || true)"
+    if [[ -z "${actual}" ]]; then
+      where="git commands fail there"
+    elif [[ "${actual}" != "${path}" ]]; then
+      where="git commands run there act on ${actual}"
+    fi
+    if [[ $'\n'"$1" == *$'\n'prunable* ]]; then
+      reason="$(sed -n 's/^prunable *//p' <<<"$1")"
+      refuse "${path} is registered as a worktree, but git marks the entry prunable (${reason:-no reason" \
+        "given})${where:+, and ${where}}. It may still hold work, so leave it where it is and report it"
+    fi
+    if [[ -n "${where}" ]]; then
+      refuse "${path} is registered as a worktree, but ${where}. It may still hold work, so leave it" \
+        "where it is and report it"
+    fi
+    return 0
+  fi
+  if [[ $'\n'"$1" == *$'\n'locked* ]]; then
+    reason="$(sed -n 's/^locked *//p' <<<"$1")"
+    refuse "${path} is registered as a worktree but no longer exists, and the entry is" \
+      "locked${reason:+ (${reason})}. Unless ${path} is on a disk that is not mounted, run" \
+      "'git worktree unlock ${quoted}', then 'git worktree remove ${quoted}', and try again"
+  fi
+  refuse "${path} is registered as a worktree but no longer exists; run 'git worktree remove ${quoted}'" \
+    "and try again"
+}
+
+# refuse_detached <dir>: refuses the worktree at <dir>, which is on a detached HEAD.
+refuse_detached() {
+  local quoted
+  printf -v quoted '%q' "$1"
+  refuse "$1 is a worktree on a detached HEAD, not on '${branch}': a rebase or bisect may be in progress" \
+    "there, or it was detached by hand, and 'git -C ${quoted} status' says which. It may hold the" \
+    "branch's work, so leave it where it is and report it"
+}
+
+# Resume: a branch that already has a pull request's worktree gets that worktree's path, wherever it is.
 found="$(entry "branch refs/heads/${branch}")"
 if [[ -n "${found}" ]]; then
-  existing="$(sed -n 's/^worktree //p' <<<"${found}")"
+  existing="$(path_of "${found}")"
   if [[ "${found%%$'\n'*}" == main ]]; then
-    echo "worktree: '${branch}' is checked out in the main checkout, ${existing}, which stays on main" \
-      "and is never a pull request's worktree (CLAUDE.md rule 4); commit any changes there, run" \
-      "'git -C ${existing} switch main', and try again" >&2
-    exit 1
+    refuse "'${branch}' is checked out in the main checkout, ${existing}, which stays on main and is" \
+      "never a pull request's worktree (CLAUDE.md rule 4); leave the main checkout as it is and report it"
   fi
-  if [[ ! -d "${existing}" ]]; then
-    if lock="$(grep -m 1 '^locked' <<<"${found}")"; then
-      reason="${lock#locked}"
-      echo "worktree: '${branch}' is registered at ${existing}, which no longer exists, and the entry is" \
-        "locked${reason:+ (${reason# })}, so 'git worktree prune' keeps it; unless ${existing} is on a disk" \
-        "that is not mounted, run 'git worktree unlock ${existing}', then 'git worktree prune', and try" \
-        "again" >&2
-    else
-      echo "worktree: '${branch}' is registered at ${existing}, which no longer exists;" \
-        "run 'git worktree prune' and try again" >&2
-    fi
-    exit 1
+  if [[ "$(basename "$(dirname "${existing}")")" != .worktrees ]]; then
+    refuse "'${branch}' is checked out in ${existing}, which is not a pull request worktree (one directly" \
+      "under a .worktrees/); leave it where it is and report it"
   fi
+  refuse_broken "${found}"
   echo "${existing}"
   exit 0
+fi
+
+# A worktree on a detached HEAD at .worktrees/<slug>, in any checkout, is this branch's worktree in the
+# middle of a rebase or bisect, or detached by hand. Git refuses a second worktree for a branch that is
+# being rebased or bisected, but not for one detached by hand, so this refuses all of them.
+held="$(detached_at)"
+if [[ -n "${held}" ]]; then
+  refuse_broken "${held}"
+  refuse_detached "$(path_of "${held}")"
 fi
 
 # The checkout this runs in. A linked worktree directly under a .worktrees/ is a pull request's worktree,
@@ -72,23 +145,21 @@ if [[ "$(git rev-parse --path-format=absolute --git-dir)" != "$(git rev-parse --
   "$(basename "$(dirname "${top}")")" == ".worktrees" ]]; then
   top="$(dirname "$(dirname "${top}")")"
 fi
-dir="${top}/.worktrees/${branch//\//-}"
+dir="${top}/.worktrees/${slug}"
 
 if [[ -e "${dir}" ]]; then
   held="$(entry "worktree ${dir}")"
-  on="$(sed -n 's#^branch refs/heads/##p' <<<"${held}")"
   if [[ -z "${held}" ]]; then
-    echo "worktree: ${dir} exists but is not a worktree; look at what it holds, move it out of the way," \
-      "and try again" >&2
-  elif [[ -n "${on}" ]]; then
-    echo "worktree: ${dir} is the worktree of '${on}', not of '${branch}'; it may hold that branch's" \
-      "work, so leave it where it is and report it" >&2
-  else
-    echo "worktree: ${dir} is a worktree on a detached HEAD, not on '${branch}': a rebase or bisect may be" \
-      "in progress there. Leave it where it is; 'git -C ${dir} status' says what is in progress." \
-      "Finish that, and try again" >&2
+    refuse "${dir} exists but is not a worktree; look at what it holds, move it out of the way, and try" \
+      "again"
   fi
-  exit 1
+  refuse_broken "${held}"
+  on="$(sed -n 's#^branch refs/heads/##p' <<<"${held}")"
+  if [[ -n "${on}" ]]; then
+    refuse "${dir} is the worktree of '${on}', not of '${branch}'; it may hold that branch's work, so" \
+      "leave it where it is and report it"
+  fi
+  refuse_detached "${dir}"
 fi
 
 base=main
