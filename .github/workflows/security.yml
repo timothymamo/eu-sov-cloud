@@ -18,16 +18,37 @@ jobs:
   govulncheck:
     name: govulncheck
     runs-on: ubuntu-latest
+    # Plain steps, not golang/govulncheck-action: the action passes setup-go a go-version of "stable",
+    # which overrides go-version-file, and installs govulncheck at @latest (issue #44).
     steps:
-      # Our own checkout: the action's built-in one keeps the token in .git/config.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: golang/govulncheck-action@032d45514ae346b1db93c04b0c90b841c370344f # v1.1.0
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
-          repo-checkout: false
           go-version-file: go.mod
-          go-package: ./...
+      # govulncheck reports standard-library vulnerabilities for the Go it runs with, so that Go must be
+      # the one eusov is built and released with.
+      - name: Go matches go.mod
+        run: |
+          want="go$(go list -m -f '{{.GoVersion}}')"
+          got="$(go env GOVERSION)"
+          echo "go.mod go directive: ${want}"
+          echo "GOVERSION: ${got}"
+          if [ "${got}" != "${want}" ]; then
+            echo "::error::setup-go installed ${got}, but go.mod declares ${want}"
+            exit 1
+          fi
+      - name: Install govulncheck
+        env:
+          # Same version as govulncheckVersion in dev/lima.yaml; Renovate bumps both in one PR.
+          # renovate: datasource=go depName=golang.org/x/vuln
+          GOVULNCHECK_VERSION: v1.9.0
+        run: go install "golang.org/x/vuln/cmd/govulncheck@${GOVULNCHECK_VERSION}"
+      - name: govulncheck
+        run: |
+          govulncheck -version
+          govulncheck ./...
 
   codeql:
     name: CodeQL
