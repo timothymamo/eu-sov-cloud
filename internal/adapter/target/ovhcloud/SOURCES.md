@@ -5,8 +5,9 @@ in taxonomy terms. This file records where each fact comes from, so the snapshot
 
 ## How it was compiled
 
-- **Retrieved on:** 2026-11-10. Every page cited below was fetched on that date, without credentials and
-  without calling any OVHcloud API.
+- **Retrieved on:** 2026-11-11, the date of the PRD #14 re-verification below, which changed facts in the
+  snapshot. The snapshot was first compiled on 2026-11-10, and every page cited below was fetched on
+  one of those two dates, without credentials and without calling any OVHcloud API.
 - **`sourceURL`** is OVHcloud's Public Cloud regions and availability page,
   <https://www.ovhcloud.com/en/public-cloud/regions-availability/>. It is the one page that lists, per
   product, the locations where it is offered, and it is where the declared regions and most offering regions
@@ -33,8 +34,9 @@ in taxonomy terms. This file records where each fact comes from, so the snapshot
   read-replica claim was checked again, and replaced by its scoped capability (`node-high-availability`
   or `zone-high-availability`) or dropped, under the target rule and the tier-variant rule (*Rules
   applied*). `ovh/ovhcloud-docs` `develop` was still at the commit cited below, and the pages cited were
-  read from it; the MySQL and PostgreSQL product pages were read live. `retrievedOn` in `catalog.json`
-  stays 2026-11-10, the date the regions page was read, because no region changed.
+  read from it; the MySQL and PostgreSQL product pages were read live. Because it changed facts,
+  `retrievedOn` in `catalog.json` is its date, 2026-11-11. No region changed; the regions page was
+  read on 2026-11-10.
 
 ## Licences of the sources
 

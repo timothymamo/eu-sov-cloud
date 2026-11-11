@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "target": "OVHcloud",
   "sourceURL": "https://www.ovhcloud.com/en/public-cloud/regions-availability/",
-  "retrievedOn": "2026-11-10",
+  "retrievedOn": "2026-11-11",
   "regions": ["GRA", "LIM", "MIL", "PAR", "RBX", "SBG", "WAW"],
   "offerings": [
     {

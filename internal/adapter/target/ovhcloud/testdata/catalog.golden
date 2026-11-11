@@ -1,6 +1,6 @@
 target: OVHcloud
 sourceURL: https://www.ovhcloud.com/en/public-cloud/regions-availability/
-retrievedOn: 2026-11-10
+retrievedOn: 2026-11-11
 Block Storage | storage.block | snapshots | GRA, LIM, RBX, SBG, WAW
 Block Storage 3-AZ Regional Classic | storage.block | node-high-availability, zone-high-availability | MIL, PAR
 Block Storage LUKS | storage.block | encryption-at-rest, snapshots | GRA, LIM, RBX, SBG
