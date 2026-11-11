@@ -2,6 +2,7 @@ package taxonomy_test
 
 import (
 	"errors"
+	"slices"
 	"strings"
 	"testing"
 
@@ -328,6 +329,37 @@ func TestCapabilityImplies(t *testing.T) {
 
 			if diff := cmp.Diff(tc.want, tc.in.Implies()); diff != "" {
 				t.Errorf("Implies() of %q mismatch (-want +got):\n%s", tc.in, diff)
+			}
+		})
+	}
+}
+
+// The implication table is data a future entry can break silently, so its
+// invariants are pinned over the whole vocabulary: every implied value is a
+// capability of the vocabulary (it can be parsed back), the result is sorted by
+// value as Implies promises, and no capability implies itself, which would make
+// an offering satisfy a need out of nothing.
+func TestCapabilityImplicationInvariants(t *testing.T) {
+	t.Parallel()
+
+	for _, c := range taxonomy.Capabilities() {
+		t.Run(string(c), func(t *testing.T) {
+			t.Parallel()
+
+			implied := c.Implies()
+
+			if !slices.IsSorted(implied) {
+				t.Errorf("Implies() of %q = %v, want it sorted by value", c, implied)
+			}
+
+			for _, i := range implied {
+				if _, err := taxonomy.ParseCapability(string(i)); err != nil {
+					t.Errorf("Implies() of %q contains %q, which is not in the vocabulary: %v", c, i, err)
+				}
+
+				if i == c {
+					t.Errorf("Implies() of %q contains itself", c)
+				}
 			}
 		})
 	}
