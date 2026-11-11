@@ -269,15 +269,15 @@ func TestDebugBaseImageClassification(t *testing.T) {
 	}{
 		{
 			name:  "distroless nonroot tag",
-			image: "gcr.io/distroless/static-debian12:nonroot@sha256:afa5c872c891853ca7fcf1f12c3edb23f7eeef36189728842dd51042ff57f7ab",
+			image: "gcr.io/distroless/static-debian13:nonroot@sha256:25ac8f0c3b2334a9eb05452266bd4697864a8c8ef0ef71e5e6480d7f92868329",
 		},
 		{
 			name:  "distroless untagged with digest",
-			image: "gcr.io/distroless/static-debian12@sha256:afa5c872c891853ca7fcf1f12c3edb23f7eeef36189728842dd51042ff57f7ab",
+			image: "gcr.io/distroless/static-debian13@sha256:25ac8f0c3b2334a9eb05452266bd4697864a8c8ef0ef71e5e6480d7f92868329",
 		},
 		{
 			name:  "distroless latest tag",
-			image: "gcr.io/distroless/static-debian12:latest",
+			image: "gcr.io/distroless/static-debian13:latest",
 		},
 		{
 			name:  "scratch",
@@ -285,21 +285,21 @@ func TestDebugBaseImageClassification(t *testing.T) {
 		},
 		{
 			name:  "registry with a port and no tag",
-			image: "localhost:5000/distroless/static-debian12",
+			image: "localhost:5000/distroless/static-debian13",
 		},
 		{
 			name:  "distroless debug tag",
-			image: "gcr.io/distroless/static-debian12:debug@sha256:afa5c872c891853ca7fcf1f12c3edb23f7eeef36189728842dd51042ff57f7ab",
+			image: "gcr.io/distroless/static-debian13:debug@sha256:25ac8f0c3b2334a9eb05452266bd4697864a8c8ef0ef71e5e6480d7f92868329",
 			want:  true,
 		},
 		{
 			name:  "distroless debug-nonroot tag",
-			image: "gcr.io/distroless/static-debian12:debug-nonroot@sha256:afa5c872c891853ca7fcf1f12c3edb23f7eeef36189728842dd51042ff57f7ab",
+			image: "gcr.io/distroless/static-debian13:debug-nonroot@sha256:25ac8f0c3b2334a9eb05452266bd4697864a8c8ef0ef71e5e6480d7f92868329",
 			want:  true,
 		},
 		{
 			name:  "registry with a port and a debug tag",
-			image: "localhost:5000/distroless/static-debian12:debug",
+			image: "localhost:5000/distroless/static-debian13:debug",
 			want:  true,
 		},
 	}

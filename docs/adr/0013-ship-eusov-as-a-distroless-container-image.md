@@ -26,7 +26,7 @@ Forces:
 ## Decision
 
 A multi-stage `Dockerfile` at the root builds `./cmd/eusov` in the `golang` image and copies only the
-binary into `gcr.io/distroless/static-debian12:nonroot`. CI builds it for both Linux release platforms
+binary into `gcr.io/distroless/static-debian13:nonroot` (Debian 13, trixie). CI builds it for both Linux release platforms
 and smoke-tests it on every pull request; publishing it to a registry is a follow-up.
 
 - **Final stage: distroless static, `nonroot` tag.** It holds CA certificates, tzdata, an `/etc/passwd`
@@ -93,5 +93,3 @@ and smoke-tests it on every pull request; publishing it to a registry is a follo
 - Live sources will read credentials through the SDK default chain from `-e` variables or a read-only
   mount at `docker run` time; the image never contains them.
 - Follow-up: publish to GHCR from the release, signed, with an SBOM.
-- Follow-up: move the final stage to `gcr.io/distroless/static-debian13`. Renovate updates the
-  `static-debian12` digest but never changes the Debian suite in the image name.
