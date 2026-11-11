@@ -791,6 +791,11 @@ formatters:
   enable:
     - gofumpt
     - goimports
+  # As for the linters (linters.exclusions.generated): golangci-lint fmt (make
+  # fmt) formats a file that looks generated too, so it fixes what golangci-lint
+  # run reports there.
+  exclusions:
+    generated: disable
   settings:
     goimports:
       local-prefixes:
