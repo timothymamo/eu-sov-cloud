@@ -1,7 +1,8 @@
 version: "2"
 
 # The files behind these build tags are loaded, so every lint run (make lint,
-# make check, CI) lints the e2e tests in test/e2e and the integration tests,
+# make check, CI, each of which lints every release target with cgo off and the
+# host natively) lints the e2e tests in test/e2e and the integration tests,
 # which run with real read-only cloud credentials. What applies to them:
 #   - gosec runs on every _test.go file except for G204 and G304, which tests
 #     trip by design (see the exclusion rules at the end of this file).
