@@ -10,7 +10,8 @@ version: "2"
 #     depguard rule but app-tests-use-fakes-not-adapters leaves _test.go files
 #     out, so an integration test gets no depguard rule.
 # e2e and integration are the only custom build tags. Never negate them: lint
-# always sets both, so a file behind !e2e or !integration is never linted.
+# always sets both, so a file behind !e2e or !integration would never be
+# linted, and test/lint refuses such a build constraint.
 run:
   build-tags:
     - e2e

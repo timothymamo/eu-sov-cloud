@@ -44,17 +44,28 @@ Arrows are imports. They point inwards only:
 - **`cmd/eusov`** is the only place that constructs adapters and injects them.
 
 The rule is enforced by `depguard` in `.golangci.yml`, so `make lint`, which lints the host natively and
-then every GOOS/GOARCH `.goreleaser.yaml` builds with cgo off, fails on a violating import.
-A comment cannot switch it off: every file is linted, also one that looks generated, and `test/lint`
-fails on any nolint directive that would hide a depguard issue (one naming `depguard`, `all` or no
-linter). Nor can a file name: `test/architecture` checks every directory a strict depguard rule names
-(the domain, the application layer, the snapshot reader, the adapter helpers, the inventory file
-reader and the targets that embed a snapshot) package by package, for every platform
-`.goreleaser.yaml` builds. It reads those directories from `.golangci.yml`, lists them with `go list`
-and holds each package to the allow list of every rule that covers it, and it holds every package of the module in the
-release binary to Go sources in their own directory, so assembly, cgo, line directives and symlinked
-directories cannot get past the file-name-based rules
-([ADR 0011](adr/0011-check-layer-dependencies-by-package-for-every-release-target.md)).
+then every GOOS/GOARCH `.goreleaser.yaml` builds with cgo off, fails on a violating import. These are all
+the ways code could be hidden from it, and what refuses each:
+
+- A comment. Every file is linted, also one that looks generated, and `test/lint` fails on any nolint
+  directive that would hide a depguard issue (one naming `depguard`, `all` or no linter) and on a build
+  constraint that negates the `e2e` or `integration` tag (lint sets both, so it would never read that
+  file).
+- A line directive. depguard matches its file globs against the position a `//line` directive names,
+  so `test/architecture` (`TestRepositoryHasNoLineDirectives`) fails on any line directive in a Go file
+  git tracks or would add.
+- A symbolic link. golangci-lint lints a linked Go file with the nolint directives of its target.
+  `TestRepositoryHasNoLineDirectives` fails on any symlink git tracks or would add, and `test/lint`
+  fails on any Go file the `./...` pattern reaches that is a symlink, git-ignored ones included, as
+  deliberate defence in depth.
+- A file name. `test/architecture` checks every directory a strict depguard rule names (the domain, the
+  application layer, the snapshot reader, the adapter helpers, the inventory file reader and the
+  targets that embed a snapshot) package by package, for every platform `.goreleaser.yaml` builds. It
+  reads those directories from `.golangci.yml`, lists them with `go list` and holds each package to the
+  allow list of every rule that covers it, and it holds every package of the module in the release
+  binary to Go sources in their own directory, so assembly, cgo, line directives and symlinked
+  directories cannot get past the file-name-based rules
+  ([ADR 0011](adr/0011-check-layer-dependencies-by-package-for-every-release-target.md)).
 
 ## Domain model
 
