@@ -4,6 +4,7 @@ package e2e_test
 
 import (
 	"bytes"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -266,6 +267,126 @@ func TestAssessOutput(t *testing.T) {
 			}
 
 			testutil.Golden(t, goldenPath(tc.golden), written)
+		})
+	}
+}
+
+// jsonAssessmentGolden and jsonComparisonGolden are the JSON documents the shared
+// fixture renders: one target's assessment and the comparison of every target
+// (PRD #103, milestone 1).
+const (
+	jsonAssessmentGolden = "assess-ovhcloud-json.golden"
+	jsonComparisonGolden = "assess-all-json.golden"
+	// jsonFormat is the --format value that selects the JSON document.
+	jsonFormat = "json"
+	// markdownFormat is the --format value that selects the Markdown report, which
+	// is also what a run without --format writes.
+	markdownFormat = "markdown"
+)
+
+// TestAssessJSONFormat pins --format json end to end: the built binary writes the
+// versioned JSON document for one target and the comparison document for all of
+// them, naming the shared inventory by its base name.
+func TestAssessJSONFormat(t *testing.T) {
+	t.Parallel()
+
+	inventory := filepath.Join("testdata", "inventory.json")
+
+	tests := []struct {
+		name   string
+		target string
+		golden string
+		kind   string
+	}{
+		{
+			name:   "one target is an assessment",
+			target: ovhcloudKey,
+			golden: jsonAssessmentGolden,
+			kind:   "assessment",
+		},
+		{
+			name:   "every target is a comparison",
+			target: allKey,
+			golden: jsonComparisonGolden,
+			kind:   "comparison",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			got := assess(t, tc.target, inventory, "--format", jsonFormat)
+
+			if got.code != 0 {
+				t.Fatalf("exit code = %d, want 0; stderr = %q", got.code, got.stderr)
+			}
+
+			if got.stderr != "" {
+				t.Errorf("stderr = %q, want empty", got.stderr)
+			}
+
+			if !json.Valid([]byte(got.stdout)) {
+				t.Fatalf("stdout is not valid JSON:\n%s", got.stdout)
+			}
+
+			testutil.Golden(t, goldenPath(tc.golden), []byte(got.stdout))
+
+			var header struct {
+				SchemaVersion int    `json:"schemaVersion"`
+				Kind          string `json:"kind"`
+				InventoryName string `json:"inventoryName"`
+			}
+
+			if err := json.Unmarshal([]byte(got.stdout), &header); err != nil {
+				t.Fatalf("decoding the document: %v", err)
+			}
+
+			if header.SchemaVersion != 1 {
+				t.Errorf("schemaVersion = %d, want 1", header.SchemaVersion)
+			}
+
+			if header.Kind != tc.kind {
+				t.Errorf("kind = %q, want %q", header.Kind, tc.kind)
+			}
+
+			if want := "inventory.json"; header.InventoryName != want {
+				t.Errorf("inventoryName = %q, want the base name %q", header.InventoryName, want)
+			}
+
+			if !strings.HasSuffix(got.stdout, "\n") || strings.HasSuffix(got.stdout, "\n\n") {
+				t.Errorf("stdout must end with exactly one newline")
+			}
+		})
+	}
+}
+
+// TestAssessMarkdownFormatIsDefault pins that --format markdown is what a run
+// without --format writes, byte for byte, and that the output is that target's
+// golden report: the flag changes the output only when it names json.
+func TestAssessMarkdownFormatIsDefault(t *testing.T) {
+	t.Parallel()
+
+	inventory := filepath.Join("testdata", "inventory.json")
+
+	for _, tc := range targets() {
+		t.Run(tc.key, func(t *testing.T) {
+			t.Parallel()
+
+			byDefault := assess(t, tc.key, inventory)
+			explicit := assess(t, tc.key, inventory, "--format", markdownFormat)
+
+			if byDefault.code != 0 || explicit.code != 0 {
+				t.Fatalf("exit codes = %d and %d, want 0; stderr = %q and %q",
+					byDefault.code, explicit.code, byDefault.stderr, explicit.stderr)
+			}
+
+			if explicit.stdout != byDefault.stdout {
+				t.Errorf("--format %s differs from the default output:\ndefault:\n%s\nexplicit:\n%s",
+					markdownFormat, byDefault.stdout, explicit.stdout)
+			}
+
+			testutil.Golden(t, goldenPath(tc.golden), []byte(explicit.stdout))
 		})
 	}
 }
@@ -648,6 +769,24 @@ func TestAssessUsage(t *testing.T) {
 				"assess", "--inventory", filepath.Join("testdata", "inventory.json"),
 				"--target", scalewayKey, "--bogus",
 			},
+		},
+		{
+			name: "unknown format",
+			args: []string{
+				"assess", "--inventory", filepath.Join("testdata", "inventory.json"),
+				"--target", scalewayKey, "--format", "yaml",
+			},
+			wantStderr:    []string{"--format"},
+			wantFirstLine: []string{`"yaml"`, jsonFormat, markdownFormat},
+		},
+		{
+			name: "empty format",
+			args: []string{
+				"assess", "--inventory", filepath.Join("testdata", "inventory.json"),
+				"--target", scalewayKey, "--format=",
+			},
+			wantStderr:    []string{"--format"},
+			wantFirstLine: []string{"unknown format", jsonFormat, markdownFormat},
 		},
 	}
 
