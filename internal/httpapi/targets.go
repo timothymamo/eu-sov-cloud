@@ -40,23 +40,35 @@ type statusDocument struct {
 // cannot be loaded is 500 internal, and nothing is kept, so the next request
 // loads them again.
 func (a *api) targets(w http.ResponseWriter, r *http.Request) {
-	// The lock is held while the catalogs load, so concurrent first requests
-	// load each catalog once between them.
+	body, err := a.cachedTargets(r.Context())
+	if err != nil {
+		writeInternal(w)
+
+		return
+	}
+
+	writeBody(w, http.StatusOK, body)
+}
+
+// cachedTargets returns the body of GET /v1/targets, loading and keeping it
+// on the first call. The lock is held while the catalogs load, so concurrent
+// first requests load each catalog once between them, but not while the body
+// is written: a client that reads its answer slowly never holds up another.
+// The kept body is never changed, so it is shared without a copy.
+func (a *api) cachedTargets(ctx context.Context) ([]byte, error) {
 	a.targetsMu.Lock()
 	defer a.targetsMu.Unlock()
 
 	if a.targetsBody == nil {
-		body, err := a.loadTargets(r.Context())
+		body, err := a.loadTargets(ctx)
 		if err != nil {
-			writeInternal(w)
-
-			return
+			return nil, err
 		}
 
 		a.targetsBody = body
 	}
 
-	writeBody(w, http.StatusOK, a.targetsBody)
+	return a.targetsBody, nil
 }
 
 // loadTargets loads every target's catalog and returns the body of GET
