@@ -1,0 +1,122 @@
+# Migration assessment: ``Evil | `x` <b> [a](b) *s*``, `` Tick `Name` ``, `` <img src=x> | `t` ``
+
+- Inventory file: ``inv|`x` [y](z).json``
+- Source: ``aws|`src` # heading``
+- Catalog: ``Evil | `x` <b> [a](b) *s*`` snapshot from ``https://example.com/a|b`c`<d> e``, retrieved 2026-11-08
+- Catalog: `` Tick `Name` `` snapshot from ``https://example.com/|`url` <x>``, retrieved 2026-11-01
+- Catalog: `` <img src=x> | `t` `` snapshot from ``https://example.com/<x>|`u` v``, retrieved 2026-10-25
+
+## Comparison
+
+### Summary
+
+| Fit | ``Evil \| `x` <b> [a](b) *s*`` | `` Tick `Name` `` | `` <img src=x> \| `t` `` |
+|---|---|---|---|
+| direct | 1 | 0 | 0 |
+| partial | 0 | 1 | 0 |
+| none | 2 | 2 | 3 |
+| total | 3 | 3 | 3 |
+
+### Resources
+
+| ID | Category | ``Evil \| `x` <b> [a](b) *s*`` fit | ``Evil \| `x` <b> [a](b) *s*`` best offering | `` Tick `Name` `` fit | `` Tick `Name` `` best offering | `` <img src=x> \| `t` `` fit | `` <img src=x> \| `t` `` best offering |
+|---|---|---|---|---|---|---|---|
+| `` `tick` `` | ``store\|age`<x> z`` | none |  | none |  | none |  |
+| ``a`b`` | `unclassified` | none |  | none |  | none |  |
+| `i-1 \| x` | `compute.vm` | direct | `` `tick` [row](x) \| Name `` | partial | `<b>Offering</b>` | none |  |
+
+### Blockers on every target
+
+- `` `tick` ``
+  - ``Evil | `x` <b> [a](b) *s*``: no offering in the ``Evil | `x` <b> [a](b) *s*`` catalog for ``store|age`<x> z``
+  - `` Tick `Name` ``: no offering in the `` Tick `Name` `` catalog for ``store|age`<x> z``
+  - `` <img src=x> | `t` ``: no offering in the `` <img src=x> | `t` `` catalog for ``store|age`<x> z``
+- ``a`b``
+  - ``Evil | `x` <b> [a](b) *s*``: not classified
+  - `` Tick `Name` ``: not classified
+  - `` <img src=x> | `t` ``: not classified
+
+## ``Evil | `x` <b> [a](b) *s*``
+
+### Summary
+
+| Fit | Resources |
+|---|---|
+| direct | 1 |
+| partial | 0 |
+| none | 2 |
+| total | 3 |
+
+### Resources
+
+| ID | Raw type | Category | Fit | Best offering | Reasons |
+|---|---|---|---|---|---|
+| `` `tick` `` | `` AWS::X\|<y>`  `` | ``store\|age`<x> z`` | none |  | no offering in the ``Evil \| `x` <b> [a](b) *s*`` catalog for ``store\|age`<x> z`` |
+| ``a`b`` | `AWS::Y` | `unclassified` | none |  | not classified |
+| `i-1 \| x` | `AWS::EC2::Instance` | `compute.vm` | direct | `` `tick` [row](x) \| Name `` | `` `tick` [row](x) \| Name `` offers every capability the resource uses |
+
+### Required changes
+
+None.
+
+### Blockers
+
+- `` `tick` ``: no offering in the ``Evil | `x` <b> [a](b) *s*`` catalog for ``store|age`<x> z``
+- ``a`b``: not classified
+
+## `` Tick `Name` ``
+
+### Summary
+
+| Fit | Resources |
+|---|---|
+| direct | 0 |
+| partial | 1 |
+| none | 2 |
+| total | 3 |
+
+### Resources
+
+| ID | Raw type | Category | Fit | Best offering | Reasons |
+|---|---|---|---|---|---|
+| `` `tick` `` | `` AWS::X\|<y>`  `` | ``store\|age`<x> z`` | none |  | no offering in the `` Tick `Name` `` catalog for ``store\|age`<x> z`` |
+| ``a`b`` | `AWS::Y` | `unclassified` | none |  | not classified |
+| `i-1 \| x` | `AWS::EC2::Instance` | `compute.vm` | partial | `<b>Offering</b>` | `<b>Offering</b>` does not offer `snapshots` |
+
+### Required changes
+
+- `i-1 | x`: `snapshots` (not offered by `<b>Offering</b>`)
+
+### Blockers
+
+- `` `tick` ``: no offering in the `` Tick `Name` `` catalog for ``store|age`<x> z``
+- ``a`b``: not classified
+
+## `` <img src=x> | `t` ``
+
+### Summary
+
+| Fit | Resources |
+|---|---|
+| direct | 0 |
+| partial | 0 |
+| none | 3 |
+| total | 3 |
+
+### Resources
+
+| ID | Raw type | Category | Fit | Best offering | Reasons |
+|---|---|---|---|---|---|
+| `` `tick` `` | `` AWS::X\|<y>`  `` | ``store\|age`<x> z`` | none |  | no offering in the `` <img src=x> \| `t` `` catalog for ``store\|age`<x> z`` |
+| ``a`b`` | `AWS::Y` | `unclassified` | none |  | not classified |
+| `i-1 \| x` | `AWS::EC2::Instance` | `compute.vm` | none |  | \<b\>x\|\`y\`&#10;z |
+
+### Required changes
+
+None.
+
+### Blockers
+
+- `` `tick` ``: no offering in the `` <img src=x> | `t` `` catalog for ``store|age`<x> z``
+- ``a`b``: not classified
+- `i-1 | x`: \<b\>x\|\`y\`&#10;z

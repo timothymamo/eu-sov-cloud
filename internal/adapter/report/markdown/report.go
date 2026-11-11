@@ -18,6 +18,14 @@ const dateLayout = "2006-01-02"
 // reasonSeparator joins the reasons of one resource in its table cell.
 const reasonSeparator = "; "
 
+// The heading markers of a report's sections: sectionHeading in a single-target
+// report and for a comparison's own sections, subsectionHeading for the sections
+// inside them, such as a target's summary in a comparison, one level lower.
+const (
+	sectionHeading    = "##"
+	subsectionHeading = "###"
+)
+
 // nameSeparator joins names in one line or cell: tied offerings and required
 // changes.
 const nameSeparator = ", "
@@ -46,10 +54,7 @@ func (*Reporter) Report(ctx context.Context, w io.Writer, a assessment.Assessmen
 	var b strings.Builder
 
 	writeHeader(&b, a, meta)
-	writeSummary(&b, a.Summary)
-	writeResources(&b, a.Verdicts)
-	writeRequiredChanges(&b, a.Verdicts)
-	writeBlockers(&b, a.Blockers)
+	writeBody(&b, a, sectionHeading)
 
 	if _, err := io.WriteString(w, b.String()); err != nil {
 		return fmt.Errorf("write markdown report: %w", err)
@@ -74,9 +79,19 @@ func writeHeader(b *strings.Builder, a assessment.Assessment, meta analysis.Repo
 		", retrieved " + a.Snapshot.RetrievedOn.UTC().Format(dateLayout) + "\n\n")
 }
 
+// writeBody writes the sections of the report of a: its summary, resources,
+// required changes and blockers, each headed by the heading marker heading and
+// the section's name. It ends with a single newline.
+func writeBody(b *strings.Builder, a assessment.Assessment, heading string) {
+	writeSummary(b, a.Summary, heading)
+	writeResources(b, a.Verdicts, heading)
+	writeRequiredChanges(b, a.Verdicts, heading)
+	writeBlockers(b, a.Blockers, heading)
+}
+
 // writeSummary writes the number of resources per fit, and in total.
-func writeSummary(b *strings.Builder, s assessment.Summary) {
-	b.WriteString("## Summary\n\n")
+func writeSummary(b *strings.Builder, s assessment.Summary, heading string) {
+	b.WriteString(heading + " Summary\n\n")
 	writeRow(b, "Fit", "Resources")
 	writeSeparator(b, 2)
 	writeRow(b, string(mapping.Direct), strconv.Itoa(s.Direct))
@@ -87,8 +102,8 @@ func writeSummary(b *strings.Builder, s assessment.Summary) {
 }
 
 // writeResources writes one table row per verdict, in the order given.
-func writeResources(b *strings.Builder, verdicts []assessment.Verdict) {
-	b.WriteString("## Resources\n\n")
+func writeResources(b *strings.Builder, verdicts []assessment.Verdict, heading string) {
+	b.WriteString(heading + " Resources\n\n")
 	writeRow(b, "ID", "Raw type", "Category", "Fit", "Best offering", "Reasons")
 	writeSeparator(b, 6)
 
@@ -109,8 +124,8 @@ func writeResources(b *strings.Builder, verdicts []assessment.Verdict) {
 // writeRequiredChanges writes one list item per partial verdict that has
 // required changes, in the order given: the capabilities the best offering
 // lacks, and that offering. It writes "None." when there is no such verdict.
-func writeRequiredChanges(b *strings.Builder, verdicts []assessment.Verdict) {
-	b.WriteString("## Required changes\n\n")
+func writeRequiredChanges(b *strings.Builder, verdicts []assessment.Verdict, heading string) {
+	b.WriteString(heading + " Required changes\n\n")
 
 	items := 0
 
@@ -139,8 +154,8 @@ func writeRequiredChanges(b *strings.Builder, verdicts []assessment.Verdict) {
 
 // writeBlockers writes one list item per blocker, in the order given, or "None."
 // when there is none. It ends the report, so it ends with a single newline.
-func writeBlockers(b *strings.Builder, blockers []assessment.Blocker) {
-	b.WriteString("## Blockers\n\n")
+func writeBlockers(b *strings.Builder, blockers []assessment.Blocker, heading string) {
+	b.WriteString(heading + " Blockers\n\n")
 
 	if len(blockers) == 0 {
 		b.WriteString("None.\n")

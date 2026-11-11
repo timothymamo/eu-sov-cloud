@@ -1,5 +1,7 @@
-// Package markdown renders an assessment as a human-readable Markdown report. It
-// implements the analysis.Reporter port.
+// Package markdown renders an assessment as a human-readable Markdown report, and
+// a comparison of several targets' assessments as one Markdown comparison
+// report. It implements the analysis.Reporter and analysis.ComparisonReporter
+// ports.
 //
 // # Layout
 //
@@ -23,6 +25,34 @@
 // The report ends with a single newline. Its bytes depend only on the
 // assessment and the report metadata: never on the clock, the environment or
 // map iteration.
+//
+// # Comparison layout
+//
+// A comparison report is, in this order:
+//
+//   - the title, "# Migration assessment: " and every target's display name, in
+//     the comparison's order (target key order);
+//   - the header lines: the inventory file name (left out when the name is
+//     empty), the source once, taken from the first target, and one catalog line
+//     per target with its snapshot's source URL and retrieval date;
+//   - "## Comparison", holding "### Summary", a table of the counts per fit with
+//     one column per target; "### Resources", one table row per resource in the
+//     first target's verdict order, which is the inventory's, with the ID, the
+//     category and each target's fit and best offering, without the tie note;
+//     and "### Blockers on every target", one list item per shared blocker with
+//     a nested item per target naming it by display name, never by key, and
+//     giving its reasons, or "None.";
+//   - one "## " section per target, headed by its display name, holding that
+//     target's single-target report from "Summary" to "Blockers", every heading
+//     one level lower.
+//
+// The comparison ranks no target and recommends none. Values are escaped as in
+// the single-target report.
+//
+// A comparison must hold at least one target, every target must assess the same
+// resources in the same order, the one inventory's, and every shared blocker
+// must name only compared targets. A comparison that breaks any of these is an
+// error, and nothing is written.
 //
 // # Values are code spans
 //
