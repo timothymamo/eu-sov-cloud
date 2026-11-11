@@ -186,6 +186,79 @@ func TestNoAllowedHostsAcceptsEveryHost(t *testing.T) {
 	}
 }
 
+// TestNewRejectsAnInvalidAllowedHost pins that every entry of the host allow
+// list is a host the handler can compare a request's Host with: a name, an
+// IPv4 address or a bracketed IPv6 address, with an optional port that is a
+// number. An option with no entry at all, an empty entry, an unbracketed IPv6
+// address, a port that is not a number and an empty port are configuration
+// errors from New, never an allow list that silently serves another host.
+func TestNewRejectsAnInvalidAllowedHost(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name       string
+		configured []string
+	}{
+		{name: "no entries"},
+		{name: "an empty entry", configured: []string{""}},
+		{name: "an unbracketed IPv6 address", configured: []string{"::1"}},
+		{name: "a port that is not a number", configured: []string{"localhost:abc"}},
+		{name: "an empty port", configured: []string{"localhost:"}},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			handler, err := httpapi.New(newHarness(t).deps(), httpapi.WithAllowedHosts(tc.configured...))
+			if err == nil {
+				t.Fatalf("httpapi.New() returned no error for the allowed hosts %v", tc.configured)
+			}
+
+			if handler != nil {
+				t.Errorf("httpapi.New() returned a non-nil handler beside the error")
+			}
+		})
+	}
+}
+
+// TestAllowedHostsAcceptsValidEntries pins that the entries a host may be named
+// by are served: a bracketed IPv6 address, a bare name and a name with a
+// numeric port, in any case, so the refusals above are not satisfied by
+// refusing every entry.
+func TestAllowedHostsAcceptsValidEntries(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name       string
+		configured []string
+		host       string
+	}{
+		{name: "a bracketed IPv6 address", configured: []string{"[::1]"}, host: "[::1]"},
+		{name: "a bracketed IPv6 address with a port", configured: []string{"[::1]"}, host: "[::1]:8080"},
+		{name: "a bare name", configured: []string{"localhost"}, host: "localhost"},
+		{name: "a name with a port", configured: []string{"localhost:8080"}, host: "localhost:8080"},
+		{name: "a name in capitals", configured: []string{"API.example.com"}, host: "api.example.com"},
+		{name: "a name in capitals, requested in capitals with a port", configured: []string{"API.example.com"}, host: "API.EXAMPLE.COM:8443"},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			h := newHarness(t)
+			handler := h.handler(t, httpapi.WithAllowedHosts(tc.configured...))
+
+			rec := serve(handler, assessRequestForHost(t, tc.host))
+
+			if rec.Code != http.StatusOK {
+				t.Fatalf("POST /v1/assessments with Host %q, allowed as %v = %d, want %d; body: %q",
+					tc.host, tc.configured, rec.Code, http.StatusOK, rec.Body.String())
+			}
+		})
+	}
+}
+
 // TestAllowedHostsUsesTheRequestHost verifies the check reads the request's Host
 // and not a forwarded header a client controls.
 func TestAllowedHostsUsesTheRequestHost(t *testing.T) {

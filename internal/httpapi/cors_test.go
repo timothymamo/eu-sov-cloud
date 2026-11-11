@@ -226,6 +226,7 @@ func TestNewRejectsAnInvalidAllowedOrigin(t *testing.T) {
 		{name: "a path", origin: "https://app.example.com/x"},
 		{name: "another scheme", origin: "ftp://x.example.com"},
 		{name: "user info", origin: "https://user@app.example.com"},
+		{name: "an empty port", origin: "https://app.example.com:"},
 	}
 
 	for _, tc := range tests {
@@ -296,6 +297,94 @@ func TestAllowedOriginMatchIgnoresCase(t *testing.T) {
 			}
 
 			requireVaryOrigin(t, rec)
+		})
+	}
+}
+
+// TestNewRejectsAnEmptyAllowedOriginList pins that turning CORS on with no
+// origin at all is a configuration error: an empty list would either allow
+// every origin or none, and neither is what the composition root meant to say.
+// Leaving the option out is how CORS stays off.
+func TestNewRejectsAnEmptyAllowedOriginList(t *testing.T) {
+	t.Parallel()
+
+	handler, err := httpapi.New(newHarness(t).deps(), httpapi.WithAllowedOrigins())
+	if err == nil {
+		t.Fatal("httpapi.New() returned no error for an allowed origin list with no entries")
+	}
+
+	if handler != nil {
+		t.Errorf("httpapi.New() returned a non-nil handler beside the error")
+	}
+}
+
+// TestAllowedOriginIgnoresTheDefaultPort pins that a default port is dropped on
+// both sides of the comparison: a browser may send :443 for https and :80 for
+// http or leave them out, and it is the same origin either way. A port that is
+// not the scheme's default is still compared exactly.
+func TestAllowedOriginIgnoresTheDefaultPort(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name       string
+		configured string
+		origin     string
+		wantAllow  bool
+	}{
+		{
+			name:       "a configured https default port, requested without a port",
+			configured: "https://app.example.com:443",
+			origin:     "https://app.example.com",
+			wantAllow:  true,
+		},
+		{
+			name:       "a configured https origin without a port, requested with the default",
+			configured: "https://app.example.com",
+			origin:     "https://app.example.com:443",
+			wantAllow:  true,
+		},
+		{
+			name:       "a configured http default port, requested without a port",
+			configured: "http://app.example.com:80",
+			origin:     "http://app.example.com",
+			wantAllow:  true,
+		},
+		{
+			name:       "another port is not the default",
+			configured: "https://app.example.com:8443",
+			origin:     "https://app.example.com",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			h := newHarness(t)
+			handler := h.handler(t, httpapi.WithAllowedOrigins(tc.configured))
+
+			req := newAssessRequest(assessBody(t, alphaKey))
+			req.Header.Set("Origin", tc.origin)
+
+			rec := serve(handler, req)
+
+			if rec.Code != http.StatusOK {
+				t.Fatalf("POST /v1/assessments = %d, want %d; body: %q",
+					rec.Code, http.StatusOK, rec.Body.String())
+			}
+
+			requireVaryOrigin(t, rec)
+
+			if !tc.wantAllow {
+				requireNoCORSHeaders(t, rec)
+
+				return
+			}
+
+			if got := rec.Header().Get("Access-Control-Allow-Origin"); got != tc.origin {
+				t.Errorf("Access-Control-Allow-Origin = %q for the configured origin %q, want the request's origin %q",
+					got, tc.configured, tc.origin)
+			}
 		})
 	}
 }

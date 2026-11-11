@@ -18,6 +18,7 @@ import (
 	"github.com/timothymamo/eu-sov-cloud/internal/adapter/source/sourcetest"
 	"github.com/timothymamo/eu-sov-cloud/internal/domain/inventory"
 	"github.com/timothymamo/eu-sov-cloud/internal/domain/taxonomy"
+	"github.com/timothymamo/eu-sov-cloud/internal/domain/text"
 )
 
 // FromBytes must build the source type New builds: pin the signature at compile
@@ -260,6 +261,10 @@ func TestInventoryFromBytesErrorNeverEchoesAValue(t *testing.T) {
 		// is and which field is at fault. Matched case-insensitively, so a
 		// message naming its field as a key or in prose both pass.
 		wantMentions []string
+		// notMentions lists the fields the error must not name: when two fields
+		// of one resource are refused, the one the domain checks first is at
+		// fault, and naming the other sends the reader to the wrong value.
+		notMentions []string
 	}{
 		{
 			// The unknown key is named; the ID beside it is not.
@@ -334,6 +339,46 @@ func TestInventoryFromBytesErrorNeverEchoesAValue(t *testing.T) {
 			value:        "4242",
 			wantMentions: []string{"schemaVersion"},
 		},
+		{
+			// The document repeats an ID and the second resource also carries a
+			// category the taxonomy does not know. The domain refuses the repeat
+			// first, so the ID is the field at fault; naming the category would
+			// send the reader to a value that is not what the error is about.
+			// The path and the field are asserted together: the sentinel's own
+			// text already holds "ID", so a bare "id" mention proves nothing.
+			name: "a duplicate resource ID beside an unknown category",
+			document: `{"schemaVersion":1,"source":"aws","resources":[` +
+				`{"id":"` + marker + `","category":"compute.vm"},` +
+				`{"id":"` + marker + `","category":"nope"}]}`,
+			wantErr:      inventory.ErrDuplicateID,
+			value:        marker,
+			wantMentions: []string{"resources[1].id"},
+			notMentions:  []string{"category"},
+		},
+		{
+			// Two fields of the one resource are invalid: its ID holds a no-break
+			// space, which validateID refuses, and its raw type starts with a
+			// space. The domain checks the ID first, so the ID is the field at
+			// fault.
+			name: "an invalid ID beside an invalid raw type",
+			document: `{"schemaVersion":1,"source":"aws","resources":[` +
+				`{"id":"` + marker + `\u00a0x","rawType":" x","category":"compute.vm"}]}`,
+			wantErr:      text.ErrInvalid,
+			value:        marker,
+			wantMentions: []string{"resources[0].id"},
+			notMentions:  []string{"rawType"},
+		},
+		{
+			// The guard against over-correcting: with a valid ID and only a raw
+			// type at fault, the raw type is named and the ID beside it is not.
+			name: "an invalid raw type alone",
+			document: `{"schemaVersion":1,"source":"aws","resources":[` +
+				`{"id":"i-0123456789abcdef0","rawType":" x","category":"compute.vm"}]}`,
+			wantErr:      text.ErrInvalid,
+			value:        " x",
+			wantMentions: []string{"resources[0].rawType"},
+			notMentions:  []string{"resources[0].id"},
+		},
 	}
 
 	for _, tt := range tests {
@@ -358,6 +403,12 @@ func TestInventoryFromBytesErrorNeverEchoesAValue(t *testing.T) {
 			for _, mention := range tt.wantMentions {
 				if !strings.Contains(lowered, strings.ToLower(mention)) {
 					t.Errorf("FromBytes(...).Inventory() error = %q, want it to name %q", msg, mention)
+				}
+			}
+
+			for _, mention := range tt.notMentions {
+				if strings.Contains(lowered, strings.ToLower(mention)) {
+					t.Errorf("FromBytes(...).Inventory() error = %q, want it not to name the field %q", msg, mention)
 				}
 			}
 		})
