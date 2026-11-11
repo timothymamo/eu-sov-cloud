@@ -43,8 +43,10 @@ func workflowOn(on, workflowPermissions, jobPermissions string) string {
 // .github/workflows/release.yml may hold what publishes to a registry, mints an
 // OIDC identity or stores attestations, and only it may run on a tag. Every
 // other workflow is refused a packages: write, id-token: write or
-// attestations: write permission, at workflow or job level, a write-all, and an
-// on: push: tags: trigger.
+// attestations: write permission, at workflow or job level, a write-all, a
+// trigger that runs on a tag (on: push: tags: and the events GitHub runs for a
+// tag, create, release and workflow_run), and any workflow that leaves its
+// permissions to the repository default by declaring none at the top level.
 func TestWorkflowPrivileges(t *testing.T) {
 	t.Parallel()
 
@@ -97,6 +99,14 @@ func TestWorkflowPrivileges(t *testing.T) {
 			name:     "a workflow_dispatch trigger",
 			workflow: ciName,
 			src:      workflowDoc("  workflow_dispatch:\n  pull_request:\n", workflowRead, ""),
+		},
+		{
+			// A job's own permissions: add nothing to what the workflow's
+			// permissions: already say, so a top-level read and a job-level read
+			// are accepted together.
+			name:     "a job-level permissions next to the workflow's",
+			workflow: ciName,
+			src:      workflowDoc(onBranches, workflowRead, "    permissions:\n      packages: read\n      contents: read\n"),
 		},
 		{
 			name:     "permissions: read-all",
@@ -158,6 +168,29 @@ func TestWorkflowPrivileges(t *testing.T) {
 			wantIn:   "on: push: tags runs the workflow on a tag; only",
 		},
 		{name: "a tags-ignore trigger", workflow: ciName, src: workflowDoc("  push:\n    tags-ignore: [\"v*\"]\n  pull_request:\n", workflowRead, ""), wantIn: "on: push: tags-ignore runs the workflow on a tag; only"},
+
+		// Other events GitHub runs for a tag: a created tag or branch, a
+		// published release, and a workflow run the tag started. Each is
+		// refused in every form on: takes, since the reader holds no list of
+		// the events that carry a tag.
+		{name: "a create trigger", workflow: ciName, src: workflowDoc("  create:\n  pull_request:\n", workflowRead, ""), wantIn: "on: create"},
+		{name: "a release trigger", workflow: ciName, src: workflowDoc("  release:\n    types: [published]\n  pull_request:\n", workflowRead, ""), wantIn: "on: release"},
+		{name: "a release trigger with nothing below it", workflow: ciName, src: workflowDoc("  release:\n  pull_request:\n", workflowRead, ""), wantIn: "on: release"},
+		{name: "a workflow_run trigger", workflow: ciName, src: workflowDoc("  workflow_run:\n    workflows: [CI]\n    types: [completed]\n  pull_request:\n", workflowRead, ""), wantIn: "on: workflow_run"},
+		{name: "a bare on: create", workflow: ciName, src: workflowOn("on: create\n", workflowRead, ""), wantIn: "on: create"},
+		{name: "a bare on: release", workflow: ciName, src: workflowOn("on: release\n", workflowRead, ""), wantIn: "on: release"},
+		{name: "a bare on: workflow_run", workflow: ciName, src: workflowOn("on: workflow_run\n", workflowRead, ""), wantIn: "on: workflow_run"},
+		{name: "a release in an on: flow list", workflow: ciName, src: workflowOn("on: [pull_request, release]\n", workflowRead, ""), wantIn: "on: [pull_request, release]"},
+		{name: "a create in an on: flow list", workflow: ciName, src: workflowOn("on: [create, pull_request]\n", workflowRead, ""), wantIn: "on: [create, pull_request]"},
+		{name: "a workflow_run in an on: flow list", workflow: ciName, src: workflowOn("on: [pull_request, workflow_run]\n", workflowRead, ""), wantIn: "on: [pull_request, workflow_run]"},
+
+		// A workflow that declares no permissions at the top level takes the
+		// repository's default, which may grant packages: write, so it must
+		// say what it holds: a job's own permissions: is not the whole
+		// workflow's answer.
+		{name: "a workflow without a top-level permissions", workflow: ciName, src: workflowDoc(onBranches, "", ""), wantIn: "no top-level permissions"},
+		{name: "a workflow whose jobs declare permissions but the top level does not", workflow: ciName, src: workflowDoc(onBranches, "", "    permissions:\n      contents: read\n"), wantIn: "no top-level permissions"},
+		{name: "a workflow whose jobs declare publishing permissions and whose top level declares none", workflow: ciName, src: workflowDoc(onBranches, "", "    permissions:\n      packages: write\n"), wantIn: "no top-level permissions"},
 
 		// The triggers and the flow values the reader cannot follow are refused
 		// rather than guessed at, since either way the workflow may run on a tag.

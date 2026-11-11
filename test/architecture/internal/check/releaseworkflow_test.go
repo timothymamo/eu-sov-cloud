@@ -7,6 +7,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/google/go-cmp/cmp"
+
 	"github.com/timothymamo/eu-sov-cloud/test/architecture/internal/check"
 )
 
@@ -27,6 +29,14 @@ on:
 
 # No permission by default; each job asks for its own.
 permissions: {}
+
+# One release at a time, across every tag: two tags pushed together would
+# otherwise race to move latest, and the run that finished last would win
+# whichever tag it carried. A queued run waits; none is cancelled, so no
+# release is left half published (ADR 0015).
+concurrency:
+  group: release
+  cancel-in-progress: false
 
 # The steps of all five jobs are a closed list that test/architecture holds
 # (check.ReleaseWorkflow): add no step, run: or env: here without changing it.
@@ -145,14 +155,16 @@ var imageSteps = []string{
 `,
 	`      # The values GoReleaser stamps into the release binaries: .Version (the
       # tag without its v), .ShortCommit and .CommitDate (RFC 3339, UTC). And
-      # whether the tag is the highest release tag, pre-releases left out:
-      # only that tag moves latest, so a patch to an older line does not.
+      # whether the tag is the highest release tag on main, pre-releases left
+      # out: only that tag moves latest, so a patch to an older line does not,
+      # and a stray tag off main (one the guard refused and nobody deleted)
+      # cannot hold latest back. fetch-depth: 0 brings origin/main.
       - name: Build arguments, as GoReleaser stamps them
         id: stamp
         env:
           TAG: ${{ github.ref_name }}
         run: |
-          highest="$(git tag -l 'v*.*.*' | sed -nE '/^v[0-9]+\.[0-9]+\.[0-9]+$/p' | sort -V | tail -n 1)"
+          highest="$(git tag -l 'v*.*.*' --merged refs/remotes/origin/main | sed -nE '/^v[0-9]+\.[0-9]+\.[0-9]+$/p' | sort -V | tail -n 1)"
           latest=false
           if [ "$TAG" = "$highest" ]; then latest=true; fi
           {
@@ -613,6 +625,17 @@ func TestReleaseWorkflow(t *testing.T) {
 		{name: "GITHUB_ENV in a comment", workflow: strings.Replace(releaseWorkflow, "# v7.3.0", "# GITHUB_ENV", 1), wantIn: "GITHUB_ENV"},
 		{name: "GOEXPERIMENT in a comment", workflow: strings.Replace(releaseWorkflow, "# v7.0.1", "# GOEXPERIMENT", 1), wantIn: "GOEXPERIMENT"},
 
+		// One release at a time, across every tag (ADR 0015): a queued run
+		// waits, none is cancelled, and every tag shares the one group. The
+		// block is exact, so a flow mapping, another group or a third key is
+		// refused rather than read.
+		{name: "no concurrency block", workflow: strings.Replace(releaseWorkflow, "concurrency:\n  group: release\n  cancel-in-progress: false\n", "", 1), wantIn: `holds no "concurrency"`},
+		{name: "no concurrency group", workflow: strings.Replace(releaseWorkflow, "  group: release\n", "", 1), wantIn: `holds no "group"`},
+		{name: "a concurrency that cancels the run in progress", workflow: strings.Replace(releaseWorkflow, "  cancel-in-progress: false\n", "  cancel-in-progress: true\n", 1), wantIn: `cancel-in-progress is "true"`},
+		{name: "a concurrency group per tag", workflow: strings.Replace(releaseWorkflow, "  group: release\n", "  group: release-${{ github.ref }}\n", 1), wantIn: "group is"},
+		{name: "a concurrency in flow form", workflow: strings.Replace(releaseWorkflow, "concurrency:\n  group: release\n  cancel-in-progress: false\n", "concurrency: {group: release, cancel-in-progress: false}\n", 1), wantIn: "want a block below it"},
+		{name: "a third concurrency key", workflow: strings.Replace(releaseWorkflow, "  cancel-in-progress: false\n", "  cancel-in-progress: false\n  queue: max\n", 1), wantIn: `holds the key "queue"`},
+
 		// The keys around the steps.
 		{name: "a workflow-level env", workflow: strings.Replace(releaseWorkflow, "jobs:\n", "env:\n  SNEAKY: x\njobs:\n", 1), wantIn: `key "env"`},
 		{name: "a workflow-level defaults", workflow: strings.Replace(releaseWorkflow, "jobs:\n", "defaults:\n  run:\n    shell: bash\njobs:\n", 1), wantIn: `key "defaults"`},
@@ -718,6 +741,10 @@ func TestReleaseWorkflow(t *testing.T) {
 		{name: "a stamp without the latest decision", workflow: in("image", "\n          if [ \"$TAG\" = \"$highest\" ]; then latest=true; fi", ""), wantIn: "run is"},
 		{name: "a stamp with latest always", workflow: in("image", `echo "latest=$latest"`, `echo "latest=true"`), wantIn: "latest=$latest"},
 		{name: "a stamp that does not sort the tags by version", workflow: in("image", `| sed -nE '/^v[0-9]+\.[0-9]+\.[0-9]+$/p'`, ""), wantIn: "sed -nE"},
+		// Only the tags on main count: a stray tag off main could otherwise
+		// hold latest back (ADR 0015).
+		{name: "a stamp counting every tag, not only those on main", workflow: in("image", "git tag -l 'v*.*.*' --merged refs/remotes/origin/main", "git tag -l 'v*.*.*'"), wantIn: "--merged refs/remotes/origin/main"},
+		{name: "a stamp counting the tags of another branch", workflow: in("image", "--merged refs/remotes/origin/main", "--merged refs/heads/main"), wantIn: "--merged refs/remotes/origin/main"},
 		{
 			name:     "an interpolation inside a run script",
 			workflow: in("image", `            echo "version=${TAG#v}"`+"\n", `            echo "version=${{ github.ref_name }}"`+"\n"),
@@ -840,6 +867,24 @@ func TestReleaseWorkflow(t *testing.T) {
 				t.Errorf("ReleaseWorkflow() = %q, want a message containing %q", got, tc.wantIn)
 			}
 		})
+	}
+}
+
+// TestReleaseWorkflowFixtureIsTheWorkflow pins that the fixture the cases
+// above change one part of is .github/workflows/release.yml itself: rendering
+// it rebuilds the file byte for byte, comments included. A release.yml that
+// moves on without the fixture would leave every case below probing a document
+// the release no longer runs.
+func TestReleaseWorkflowFixtureIsTheWorkflow(t *testing.T) {
+	t.Parallel()
+
+	want, err := os.ReadFile(filepath.FromSlash("../../../../.github/workflows/release.yml"))
+	if err != nil {
+		t.Fatalf("read release.yml: %v", err)
+	}
+
+	if diff := cmp.Diff(string(want), releaseWorkflowFixture().render()); diff != "" {
+		t.Errorf("the fixture is not .github/workflows/release.yml (-want +got):\n%s", diff)
 	}
 }
 

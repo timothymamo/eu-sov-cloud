@@ -10,9 +10,9 @@ import (
 
 // ciDryRun is the image job of .github/workflows/ci.yml as far as the dry run
 // checks it against release.yml: the same BuildKit, the same action pins, the
-// release's tag rules with a sample tag in place of the pushed one, the
-// release's build settings written to an OCI archive, and the SBOM of the built
-// image.
+// release's latest and tag rules run on sample tags in place of the pushed one,
+// the release's build settings written to an OCI archive, and the SBOM of the
+// built image.
 const ciDryRun = `name: CI
 
 on:
@@ -28,6 +28,21 @@ jobs:
       - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
         with:
           driver-opts: image=moby/buildkit:${{ env.BUILDKIT_VERSION }}
+      - name: Latest for sample tags, as release.yml decides it
+        id: latest
+        run: |
+          # $1 is the pushed tag, the rest every tag merged into main.
+          decide() {
+            TAG="$1"
+            shift
+            highest="$(printf '%s\n' "$@" | sed -nE '/^v[0-9]+\.[0-9]+\.[0-9]+$/p' | sort -V | tail -n 1)"
+            latest=false
+            if [ "$TAG" = "$highest" ]; then latest=true; fi
+            echo "$latest"
+          }
+          {
+            echo "highest=$(decide v1.2.3 v1.1.0 v1.2.2 v1.2.3 v1.3.0-rc.1)"
+          } >> "$GITHUB_OUTPUT"
       - name: Image tags for a sample release tag, the highest
         uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6.2.0
         with:
@@ -62,9 +77,10 @@ jobs:
 `
 
 // releaseDryRun is the image and sbom jobs of .github/workflows/release.yml as
-// far as the dry run checks them: the BuildKit image by exact release and index
-// digest, the pins, the tag rules on github.ref_name, the build settings, and
-// the SPDX SBOM with an exact syft.
+// far as the dry run checks them: the latest decision on the release tags on
+// main, the BuildKit image by exact release and index digest, the pins, the tag
+// rules on github.ref_name, the build settings, and the SPDX SBOM with an exact
+// syft.
 const releaseDryRun = `name: Release
 
 on:
@@ -76,6 +92,17 @@ jobs:
     name: Container image
     runs-on: ubuntu-latest
     steps:
+      - name: Build arguments, as GoReleaser stamps them
+        id: stamp
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          highest="$(git tag -l 'v*.*.*' --merged refs/remotes/origin/main | sed -nE '/^v[0-9]+\.[0-9]+\.[0-9]+$/p' | sort -V | tail -n 1)"
+          latest=false
+          if [ "$TAG" = "$highest" ]; then latest=true; fi
+          {
+            echo "latest=$latest"
+          } >> "$GITHUB_OUTPUT"
       - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
         with:
           driver-opts: image=moby/buildkit:v0.34.2@sha256:c5f8862f52499773af85bc07695b2379ef08e8002352b0df2c4864c91d78dabe
@@ -127,7 +154,8 @@ func mutate(t *testing.T, doc, old, new string) string {
 // the two documents publish differ by design (push: true against an OCI
 // archive, a real tag against a sample one, a registry image against an
 // archive), so the check compares the fields the release's build and SBOM rest
-// on.
+// on: the latest decision too, whose step and whose highest-tag pipeline the
+// dry run must have, on sample tags in place of the release's git tag -l.
 func TestDryRunMirrorsRelease(t *testing.T) {
 	t.Parallel()
 
@@ -179,7 +207,7 @@ func TestDryRunMirrorsRelease(t *testing.T) {
 		// The pins: the same commit for every action the two share, and the
 		// same BuildKit image by tag and digest.
 		{name: "a drifted metadata-action pin", ci: mutate(t, ciDryRun, "docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302", "docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411303"), release: releaseDryRun, wantIn: "docker/metadata-action runs at"},
-		{name: "a drifted build-push-action pin", ci: ciDryRun, release: mutate(t, releaseDryRun, "docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc", "docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dd"), wantIn: "docker/build-push-action runs at c3c9e263c25d99ce0380d002d59b67737d91b0dc (line 24) and at c3c9e263c25d99ce0380d002d59b67737d91b0dd"},
+		{name: "a drifted build-push-action pin", ci: ciDryRun, release: mutate(t, releaseDryRun, "docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc", "docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dd"), wantIn: "docker/build-push-action runs at c3c9e263c25d99ce0380d002d59b67737d91b0dc (line 39) and at c3c9e263c25d99ce0380d002d59b67737d91b0dd"},
 		{name: "a drifted sbom-action pin", ci: mutate(t, ciDryRun, "anchore/sbom-action@66cbf4bc1f1c0d2edc94016e65bc221b6bb0ad6c", "anchore/sbom-action@66cbf4bc1f1c0d2edc94016e65bc221b6bb0ad6d"), release: releaseDryRun, wantIn: "anchore/sbom-action runs at"},
 		{name: "a drifted setup-buildx-action pin", ci: ciDryRun, release: mutate(t, releaseDryRun, "docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069", "docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497070"), wantIn: "docker/setup-buildx-action runs at"},
 		{name: "a drifted BuildKit image", ci: mutate(t, ciDryRun, "v0.34.2@sha256:c5f8862f52499773af85bc07695b2379ef08e8002352b0df2c4864c91d78dabe", "v0.35.0@sha256:1111111111111111111111111111111111111111111111111111111111111111"), release: releaseDryRun, wantIn: "the dry run must build with the release's moby/buildkit tag and digest"},
@@ -226,6 +254,25 @@ func TestDryRunMirrorsRelease(t *testing.T) {
 			release: releaseDryRun,
 			wantIn:  "so the dry run checks none of the release's tags",
 		},
+
+		// The latest decision: the dry run makes it in a step of its own, id:
+		// latest, whose outputs its metadata-action steps read. A flavor: that
+		// reads anything else, a literal or another step, is refused, and so is
+		// one that is not the release's shape.
+		{name: "a flavor of latest=auto", ci: mutate(t, ciDryRun, "          flavor: latest=${{ steps.latest.outputs.highest }}\n", "          flavor: latest=auto\n"), release: releaseDryRun, wantIn: "the dry run must tag latest as the release does"},
+		{name: "a flavor that is always latest", ci: mutate(t, ciDryRun, "          flavor: latest=${{ steps.latest.outputs.highest }}\n", "          flavor: latest=true\n"), release: releaseDryRun, wantIn: "the dry run must tag latest as the release does"},
+		{name: "a flavor read from a step that is not the latest step", ci: mutate(t, ciDryRun, "          flavor: latest=${{ steps.latest.outputs.highest }}\n", "          flavor: latest=${{ steps.stamp.outputs.latest }}\n"), release: releaseDryRun, wantIn: "the dry run must tag latest as the release does"},
+
+		// The pipeline that picks latest: the release's line that takes the
+		// highest release tag merged into main, with its git tag -l
+		// 'v*.*.*' --merged refs/remotes/origin/main in place of the dry run's
+		// printf '%s\n' "$@". Everything after the source, the sed, the sort
+		// and the tail, must be the release's.
+		{name: "a latest rule without the release regex", ci: mutate(t, ciDryRun, `'/^v[0-9]+\.[0-9]+\.[0-9]+$/p'`, `'/^v[0-9]+\.[0-9]+\.[0-9]+$/p;/^latest$/p'`), release: releaseDryRun, wantIn: "the dry run must pick the highest tag the release picks"},
+		{name: "a latest rule that sorts like the shell", ci: mutate(t, ciDryRun, "| sort -V |", "| sort |"), release: releaseDryRun, wantIn: "the dry run must pick the highest tag the release picks"},
+		{name: "a latest rule that takes another line", ci: mutate(t, ciDryRun, "| tail -n 1)", "| tail -n 2)"), release: releaseDryRun, wantIn: "the dry run must pick the highest tag the release picks"},
+		{name: "a release that counts every tag", ci: ciDryRun, release: mutate(t, releaseDryRun, "git tag -l 'v*.*.*' --merged refs/remotes/origin/main", "git tag -l 'v*.*.*'"), wantIn: "the dry run must pick the highest tag the release picks"},
+		{name: "a release that takes another line", ci: ciDryRun, release: mutate(t, releaseDryRun, "| tail -n 1)", "| tail -n 2)"), wantIn: "the dry run must pick the highest tag the release picks"},
 
 		// The with: keys the build and the SBOM are compared on, and the steps
 		// themselves: a key or a step the dry run does not have is named.
