@@ -67,6 +67,23 @@ the ways code could be hidden from it, and what refuses each:
   binary to Go sources in their own directory, so assembly, cgo, line directives and symlinked
   directories cannot get past the file-name-based rules
   ([ADR 0012](adr/0012-check-layer-dependencies-by-package-for-every-release-target.md)).
+- An edit to the rules themselves. A merge conflict resolution once dropped the whole
+  `reporters-stay-offline` rule and the exact `jsondoc$` allow entry, and no check noticed (issue #80).
+  `test/architecture` (`TestDepguardRulesArePinned`) now pins every depguard rule: its list-mode, its
+  files and allow lists and the `pkg` of each deny entry, against a copy in
+  `test/architecture/depguardpin_test.go`. Adding, removing or changing a rule means updating
+  `pinnedDepguardRules` in the same commit, on purpose, so review sees it as a change to the
+  architecture rules. `TestDepguardPinCatchesMutations` proves the pin notices, with 532 mutations of
+  the real file: for every rule it deletes the rule and each of its files, allow and deny entries
+  (every deny entry, a shared list's too), drops the trailing `$` of each exact allow entry, adds an
+  allow entry `os` and a negated files glob, and rewrites, deletes or adds the list-mode. A self-check
+  fails if the walk misses an entry, and a document the reader refuses counts as caught only for the
+  one mutation expected to break it: deleting `app-uses-ports-not-adapters`, which removes the
+  `&app-deny` anchor a later alias reads.
+- Turning depguard off. The pin covers the rules, not whether depguard runs: removing it from
+  `linters.enable`, `linters.default: none`, `linters.disable: [depguard]`, a
+  `linters.exclusions.rules` entry naming it, or `run.tests: false` would switch rules off while every
+  rule stays pinned. That is not pinned yet; it is proposed as an addition to issue #81.
 
 A cloud SDK is imported only in its provider's adapter package (`source/aws`, `source/azure`,
 `source/gcp`, `target/ovhcloud`, `target/scaleway`, `target/upcloud`): the depguard rule

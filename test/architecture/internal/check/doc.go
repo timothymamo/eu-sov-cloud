@@ -35,5 +35,9 @@
 // on indentation that refuses what it does not expect, and the characters YAML
 // readers do not agree on, rather than guess at them.
 //
+// DepguardRules reads every depguard rule of .golangci.yml whole, and
+// PinnedRules compares those rules with a pinned copy, naming the rule of every
+// difference (issue #80).
+//
 // The package is internal to test/architecture: it is not an API of the module.
 package check

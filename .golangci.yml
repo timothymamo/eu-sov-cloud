@@ -74,6 +74,11 @@ linters:
         # and checks the rule package by package (ADR 0012): write a strict
         # rule's directories as "**/<dir>/**" with "!$test", or give it a
         # reasoned skip there.
+        #
+        # test/architecture also pins every rule here whole
+        # (TestDepguardRulesArePinned, issue #80): list-mode, files, allow and
+        # the pkg of each deny entry. A change to any rule also updates
+        # pinnedDepguardRules in test/architecture/depguardpin_test.go.
         domain-is-pure:
           list-mode: strict
           files:
@@ -716,6 +721,7 @@ linters:
           files:
             - "**/internal/adapter/target/ovhcloud/**"
             - "**/internal/adapter/target/scaleway/**"
+            - "**/internal/adapter/target/upcloud/**"
             - "!$test"
           allow:
             - context$

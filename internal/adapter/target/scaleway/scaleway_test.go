@@ -461,9 +461,11 @@ func TestCatalogHonoursCancelledContext(t *testing.T) {
 		t.Errorf("Catalog() error = %q, want a single line", err.Error())
 	}
 
-	// PRD 11: no error says "OVHcloud" when the target is Scaleway. The OVHcloud
-	// adapter's own tests pin the other direction.
-	if strings.Contains(err.Error(), "OVHcloud") {
-		t.Errorf("Catalog() error = %q, want no other target's name in it", err.Error())
+	// PRD 11: no error says "OVHcloud" or "UpCloud" when the target is Scaleway.
+	// The other adapters' own tests pin the other directions.
+	for _, other := range []string{"OVHcloud", "UpCloud"} {
+		if strings.Contains(err.Error(), other) {
+			t.Errorf("Catalog() error = %q, want no other target's name in it, but it names %q", err.Error(), other)
+		}
 	}
 }

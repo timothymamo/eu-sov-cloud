@@ -23,6 +23,22 @@
 // closed schema, pins the golangci-lint step to make lint's build settings and
 // the aggregator's script whole, and compares the matrix with .goreleaser.yaml.
 //
+// TestDepguardRulesArePinned pins every depguard rule of .golangci.yml, strict
+// or not, against the copy pinnedDepguardRules: its list-mode, its files and
+// allow lists and the pkg of each deny entry (issue #80). A merge conflict
+// resolution once dropped the reporters-stay-offline rule and the exact
+// jsondoc$ allow entry, and no check noticed. Adding, removing or changing a
+// rule now means updating pinnedDepguardRules in the same commit, on purpose,
+// where review sees it. TestDepguardPinCatchesMutations proves the pin
+// notices, with 532 mutations of the real file: for every rule it deletes the
+// rule and each of its files, allow and deny entries (every deny entry, a
+// shared list's too), drops the trailing $ of each exact allow entry, adds an
+// allow entry os and a negated files glob, and rewrites, deletes or adds the
+// list-mode. A self-check fails if the walk misses an entry, and a document the
+// reader refuses counts as caught only for the one mutation expected to break
+// it: deleting app-uses-ports-not-adapters, which removes the &app-deny anchor
+// a later alias reads.
+//
 // The checks are tests: they run in make test, make check and CI's make cover,
 // with no workflow of their own. They need no network and no credentials.
 package architecture

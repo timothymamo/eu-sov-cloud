@@ -1,0 +1,69 @@
+{
+  "schemaVersion": 1,
+  "target": "UpCloud",
+  "sourceURL": "https://upcloud.com/docs/",
+  "retrievedOn": "2026-11-11",
+  "regions": ["de-fra1", "dk-cph1", "es-mad1", "fi-hel1", "fi-hel2", "nl-ams1", "pl-waw1", "se-sto1"],
+  "offerings": [
+    {
+      "name": "Block Storage",
+      "categories": ["storage.block"],
+      "capabilities": ["snapshots"],
+      "regions": ["de-fra1", "dk-cph1", "es-mad1", "fi-hel1", "fi-hel2", "nl-ams1", "pl-waw1", "se-sto1"]
+    },
+    {
+      "name": "Block Storage Encrypted",
+      "categories": ["storage.block"],
+      "capabilities": ["encryption-at-rest", "snapshots"],
+      "regions": ["de-fra1", "dk-cph1", "es-mad1", "fi-hel1", "fi-hel2", "nl-ams1", "pl-waw1", "se-sto1"]
+    },
+    {
+      "name": "Cloud Servers",
+      "categories": ["compute.vm"],
+      "capabilities": ["ipv6", "snapshots"],
+      "regions": ["de-fra1", "dk-cph1", "es-mad1", "fi-hel1", "fi-hel2", "nl-ams1", "pl-waw1", "se-sto1"]
+    },
+    {
+      "name": "Managed Kubernetes",
+      "categories": ["kubernetes.managed"],
+      "capabilities": [],
+      "regions": ["de-fra1", "dk-cph1", "es-mad1", "fi-hel1", "fi-hel2", "nl-ams1", "pl-waw1", "se-sto1"]
+    },
+    {
+      "name": "Managed Kubernetes Production",
+      "categories": ["kubernetes.managed"],
+      "capabilities": ["node-high-availability"],
+      "regions": ["de-fra1", "dk-cph1", "es-mad1", "fi-hel1", "fi-hel2", "nl-ams1", "pl-waw1", "se-sto1"]
+    },
+    {
+      "name": "Managed MySQL",
+      "categories": ["database.mysql"],
+      "capabilities": ["encryption-at-rest", "point-in-time-restore"],
+      "regions": ["de-fra1", "dk-cph1", "es-mad1", "fi-hel1", "fi-hel2", "nl-ams1", "pl-waw1", "se-sto1"]
+    },
+    {
+      "name": "Managed MySQL Multi-node",
+      "categories": ["database.mysql"],
+      "capabilities": ["encryption-at-rest", "node-high-availability", "point-in-time-restore", "read-replicas"],
+      "regions": ["de-fra1", "dk-cph1", "es-mad1", "fi-hel1", "fi-hel2", "nl-ams1", "pl-waw1", "se-sto1"]
+    },
+    {
+      "name": "Managed Object Storage",
+      "categories": ["storage.object"],
+      "capabilities": ["encryption-at-rest", "object-versioning"],
+      "regions": ["de-fra1", "dk-cph1", "fi-hel2", "se-sto1"]
+    },
+    {
+      "name": "Managed PostgreSQL",
+      "categories": ["database.postgresql"],
+      "capabilities": ["encryption-at-rest", "point-in-time-restore"],
+      "regions": ["de-fra1", "dk-cph1", "es-mad1", "fi-hel1", "fi-hel2", "nl-ams1", "pl-waw1", "se-sto1"]
+    },
+    {
+      "name": "Managed PostgreSQL Multi-node",
+      "categories": ["database.postgresql"],
+      "capabilities": ["encryption-at-rest", "node-high-availability", "point-in-time-restore", "read-replicas"],
+      "regions": ["de-fra1", "dk-cph1", "es-mad1", "fi-hel1", "fi-hel2", "nl-ams1", "pl-waw1", "se-sto1"]
+    }
+  ]
+}
