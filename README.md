@@ -83,6 +83,37 @@ every goroutine to standard error and exits with code 2.
 
 `eusov version` prints the version, `eusov help` the usage.
 
+## Run with Docker
+
+The `Dockerfile` builds a minimal image: the static `eusov` binary on
+[distroless static](https://github.com/GoogleContainerTools/distroless) (CA certificates and a
+non-root user, no shell or package manager), for `linux/amd64` and `linux/arm64`
+([ADR 0012](docs/adr/0012-ship-eusov-as-a-distroless-container-image.md)). No image is published to a
+registry yet, so build it yourself:
+
+```bash
+make image                       # eusov:<version> and eusov:dev, version, commit and date from git
+docker build -t eusov .          # the same without the version stamp
+docker buildx build --platform linux/amd64,linux/arm64 .
+```
+
+The entrypoint is `eusov` and the working directory `/work`. Mount the directory that holds the
+inventory there, read-only:
+
+```bash
+docker run --rm --read-only -v "$PWD:/work:ro" eusov assess --inventory inventory.json --target scaleway
+docker run --rm --read-only -v "$PWD:/work:ro" eusov assess --inventory inventory.json --target ovhcloud > report.md
+```
+
+The image runs as the non-root user `nonroot` (uid 65532) and works with `--read-only`. Redirect the
+report from standard output as above; to use `--output` instead, mount a writable directory for it.
+
+Cloud credentials, for the live sources to come, reach the container the way the providers' SDKs read
+them, through their default credential chain, at `docker run` time: environment variables
+(`-e AWS_PROFILE`, `-e AWS_REGION`, ...) or the provider's config directory mounted read-only into the
+user's home, for example `-v "$HOME/.aws:/home/nonroot/.aws:ro"`. **Never** bake credentials into an
+image (no `COPY` or `ENV` of them, no build args), and never print or log them.
+
 ## Repository layout
 
 ```
@@ -108,9 +139,11 @@ internal/
 test/e2e/                     Black-box tests of the built binary
 test/lint/                    Source rules golangci-lint cannot express
 test/architecture/            Layer dependencies checked package by package, per release target
+test/container/               The Dockerfile pinned to go.mod and .goreleaser.yaml
 testdata/                     Shared, sanitised fixtures
 docs/                         Architecture, ADRs, dev environment
 prds/                         Product requirements, one per feature
+Dockerfile, .dockerignore     The container image (make image)
 dev/lima.yaml                 Isolated VM for running the agents
 dev/worktree.sh               Creates the worktree for a branch (make worktree)
 .githooks/                    Refuse commits and pushes to main (make git-hooks)
