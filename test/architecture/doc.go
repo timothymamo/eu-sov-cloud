@@ -8,7 +8,7 @@
 //
 // The package holds only this file and the repository tests. They run the
 // checks of internal/check against this repository: the platforms
-// .goreleaser.yaml builds, the strict depguard rules of .golangci.yml, the
+// .goreleaser.yaml builds and how it publishes the GitHub release, the strict depguard rules of .golangci.yml, the
 // packages go list reports for the layers and for the release binary, and
 // every Go file under the root. The code lives in internal/check, so no
 // package outside test/architecture can import it.

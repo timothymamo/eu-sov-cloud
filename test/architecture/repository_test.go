@@ -347,6 +347,19 @@ func TestReleaseWorkflowIsClosed(t *testing.T) {
 	}
 }
 
+// TestRCTagsArePreReleases pins how .goreleaser.yaml publishes the GitHub
+// release: release.prerelease: auto and nothing else, so a tag with a
+// pre-release suffix (v0.1.0-rc.2) is a GitHub pre-release and never the
+// latest release, as it gets no X.Y and no latest image tag (issue #92, ADR
+// 0015).
+func TestRCTagsArePreReleases(t *testing.T) {
+	t.Parallel()
+
+	if err := check.GitHubRelease(readRepositoryFile(t, ".goreleaser.yaml")); err != nil {
+		t.Error(err)
+	}
+}
+
 // TestWorkflowPrivilegesAreClosed pins the audit's finding of issue #72: no
 // workflow but .github/workflows/release.yml may hold a packages: write,
 // id-token: write or attestations: write permission, a write-all, or an

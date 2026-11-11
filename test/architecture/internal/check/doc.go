@@ -28,6 +28,10 @@
 // settings, tag rules, latest decision, SBOM settings, action pins and
 // BuildKit image.
 //
+// GitHubRelease holds the release section of .goreleaser.yaml to exactly
+// prerelease: auto, so a pre-release tag is a GitHub pre-release and never the
+// latest release (issue #92).
+//
 // Nothing is copied: the release platforms are read from .goreleaser.yaml
 // (ReleaseTargets), and the strict rules and their allow lists from
 // .golangci.yml (StrictRules, RuleDirs, AllowList). These files and the

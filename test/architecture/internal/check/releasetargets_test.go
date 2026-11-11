@@ -460,8 +460,15 @@ func TestReleaseTargets(t *testing.T) {
 		},
 		{
 			name:       "an unknown top-level key is refused",
-			goreleaser: buildFlow + "\nrelease:\n  mode: append\n",
+			goreleaser: buildFlow + "\nupx:\n  - enabled: true\n",
 			wantErr:    true,
+		},
+		{
+			// release says how the GitHub release is published, not what is
+			// compiled: GitHubRelease holds it to its one setting.
+			name:       "a release section still gives every pair",
+			goreleaser: buildFlow + "\nrelease:\n  prerelease: auto\n",
+			want:       allSix,
 		},
 		{
 			name:       "a document marker is refused",
