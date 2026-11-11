@@ -140,7 +140,9 @@ var (
 
 	// imageSteps are the image job's steps: the build arguments GoReleaser
 	// stamps and whether the tag is the highest release tag on main, read from git
-	// with the tag passed through env:; a build of two platforms from an empty
+	// with the tag passed through env:, refusing a checkout without origin/main
+	// because the run shell has no pipefail and the pipeline would otherwise
+	// leave highest empty and latest false; a build of two platforms from an empty
 	// BuildKit, pushed, without BuildKit's own provenance or SBOM, tagged
 	// latest by the stamp's decision alone. Nothing signs or attests here.
 	imageSteps = []releaseStep{
@@ -149,6 +151,10 @@ var (
 			what: "the stamp of the build arguments", name: "Build arguments, as GoReleaser stamps them", id: "stamp",
 			env: []string{"TAG: ${{ github.ref_name }}"},
 			run: strings.Join([]string{
+				`git rev-parse --verify --quiet refs/remotes/origin/main > /dev/null || {`,
+				`  echo "origin/main is missing from the checkout" >&2`,
+				`  exit 1`,
+				`}`,
 				`highest="$(git tag -l 'v*.*.*' --merged refs/remotes/origin/main | sed -nE '/^v[0-9]+\.[0-9]+\.[0-9]+$/p' | sort -V | tail -n 1)"`,
 				`latest=false`,
 				`if [ "$TAG" = "$highest" ]; then latest=true; fi`,
@@ -341,7 +347,8 @@ var releaseJobs = []releaseJob{
 //   - the image job's steps are exactly actions/checkout, the stamp of the
 //     build arguments and of the latest decision (a run: script, with the
 //     tag through env:, counting only the release tags merged into
-//     origin/main), docker/setup-buildx-action (BuildKit by exact release
+//     origin/main, and refusing a checkout without origin/main, since the
+//     run shell has no pipefail to fail the pipeline that counts them), docker/setup-buildx-action (BuildKit by exact release
 //     and index digest), docker/login-action, docker/metadata-action (latest
 //     from the stamp's output alone) and docker/build-push-action
 //     (linux/amd64 and linux/arm64, pushed, no cache, no BuildKit provenance
