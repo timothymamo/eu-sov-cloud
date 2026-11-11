@@ -21,5 +21,5 @@
 // Escaping for an output format, such as a Markdown table cell, is not done here:
 // that belongs to the reporter for that format.
 //
-// Domain layer: standard library only, no I/O.
+// Domain layer: standard library only, no I/O, no clock.
 package text

@@ -16,5 +16,6 @@
 // Inventory has not been validated; later layers only receive inventories
 // built by New.
 //
-// Domain layer: standard library and other domain packages only, no I/O.
+// Domain layer: standard library and other domain packages only, no I/O, no
+// clock.
 package inventory

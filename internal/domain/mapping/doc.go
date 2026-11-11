@@ -14,5 +14,6 @@
 // never escapes them: renderers build their output from Reason.Parts and escape
 // every part for their own format; Reason.String is for logs, errors and JSON.
 //
-// Domain layer: standard library and other domain packages only, no I/O.
+// Domain layer: standard library and other domain packages only, no I/O, no
+// clock.
 package mapping

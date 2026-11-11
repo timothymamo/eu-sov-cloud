@@ -48,7 +48,11 @@
 // warning. TestCloudReadOnlyPatterns and
 // TestCloudReadOnlyPackages check the group's allowlist patterns, read from
 // .golangci.yml, against lists of write and read names and of import paths,
-// without golangci-lint.
+// without golangci-lint. TestForbidigoExclusionsDropOneGroup checks every
+// exclusion rule that drops forbidigo issues: it names forbidigo alone, its
+// text matches only one group's quoted msg, and the rules of each group are
+// exactly those it states: none for cloud-read-only, and for domain-is-pure
+// one path and one path-except.
 //
 // TestLintLoadsEveryGoFile and TestLintVisitsEveryImportedPackage keep every
 // Go file within lint's reach. Lint loads, for the host and every release

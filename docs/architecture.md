@@ -219,6 +219,74 @@ hand-written GCP package, add an entry for it, a probe line only it refuses and 
   adapter can import only the project packages its depguard rule lists, which keeps that interface
   out of its reach unless one of those packages declares it.
 
+## Domain-is-pure rule
+
+The domain does no I/O and reads no clock. The depguard rule `domain-is-pure` holds it to an allow list
+of pure standard packages, but it allows `fmt` for `fmt.Errorf` and `time` for `time.Time`, and both
+hold functions that reach standard I/O, the clock, zoneinfo files or the environment. An import rule
+cannot see a call, so the forbidigo group `domain-is-pure` refuses those functions. It holds for
+production files under `internal/domain/` only: two exclusion rules at the end of
+`linters.exclusions.rules` drop its issues in every other path and in `_test.go` files, godoc examples
+included, so the CLI and tests may print and read the clock.
+
+### Why each entry is listed
+
+Each claim was checked against the Go 1.27 source.
+
+| Entry | Refuses | Why |
+|---|---|---|
+| `fmt.Print*` | `fmt.Print`, `Printf`, `Println` | They write to `os.Stdout`. |
+| `fmt.Scan*` | `fmt.Scan`, `Scanf`, `Scanln` | They read `os.Stdin`. |
+| `print` and `println` | the builtins | They write to standard error. `pkg: '^$'` matches a name with no package, which is the builtin, so a call of a domain function named `println` is not refused. A `print :=` that shadows the builtin is refused at the `:=`, because forbidigo finds no package for a name being declared. |
+| the clock | `time.Now`, `Since`, `Until`, `Sleep`, `After`, `Tick`, `NewTimer`, `NewTicker`, `AfterFunc` | They read or wait on the clock. |
+| `time.Timer` and `time.Ticker` | the types, their methods (`Stop`, `Reset`) and their field `C` | A timer or ticker handed in still waits on the clock. forbidigo renders `(*time.Timer).Stop` as `time.Timer.Stop`, so one pattern, `^time\.(?:Timer\|Ticker)(?:\.\w+)?$`, covers the type, each method and `t.C`. |
+| `time.LoadLocation` | `time.LoadLocation` | It reads the `ZONEINFO` variable and zoneinfo files. |
+| `time.Local` | the variable `time.Local` and the method `Time.Local` | A time in `Local` reads the `TZ` variable and `/etc/localtime` when its fields, zone or text are first read (`initLocal`). |
+| `time.Unix*` | `time.Unix`, `UnixMilli`, `UnixMicro` | They return a time in `Local`, as `Time.Local` does. |
+| a zone offset matched against `Local` | `time.Parse` and the `Time` methods `UnmarshalJSON`, `UnmarshalText`, `UnmarshalBinary`, `GobDecode` | They match a zone offset or abbreviation in the value against `Local`. |
+
+What stays allowed takes or returns the data, or names its location: `fmt.Errorf`, `Sprint*`,
+`Sscan*`, and `Fprint*` and `Fscan*` on a writer or reader passed in (the domain cannot import `os` to
+reach a standard stream); `time.ParseInLocation` with `time.UTC` or a `*time.Location` passed in,
+`time.FixedZone`, `time.Date`, and the `Time` methods that read no zone, such as `Unix` (an `int64`),
+`UTC`, `In` and `Format`. Each entry's msg says what to use instead.
+
+### How the domain rule is pinned
+
+`TestDomainIsPureProbe` runs forbidigo, with the same harness as `TestCloudReadOnlyProbe`, on a probe
+domain package (`test/lint/testdata/domainispure`). It has a line for every name an entry's pattern
+lists, each marked `// want "<msg prefix>"` with the start of its own entry's msg, so narrowing a
+pattern fails the probe, and lines for a method value (`_ = t.Local`), a func value
+(`f := time.Now`), a method expression (`time.Time.Local`) and an aliased import. The pure calls, a
+domain function named `println`, and the refused calls in a domain test and a CLI file must pass.
+`TestDomainIsPurePatterns` checks the patterns, offline, against lists of refused and allowed names.
+`TestForbidigoExclusionsDropOneGroup` pins the exclusion rules of every group: every rule that drops
+forbidigo issues names forbidigo alone with a text of exactly `because "<tag>: [^"]*"$`, the
+cloud-read-only group has none, and the domain-is-pure rules are exactly `path-except: ^internal/domain/`
+and `path: _test\.go$`. A new group adds its tag and states its rules, even none. A line in the
+cloud-read-only probe passes the string `"domain-is-pure: x"` to a refused call, so a text of just the
+tag fails the probe.
+For a new entry, add its names to both, each on a line of its own in the probe.
+
+### Gaps in the domain rule
+
+forbidigo matches a selector against its static type, so these get through:
+
+- **A call through an interface or a type parameter.** `Local` or an `Unmarshal*` method called on a
+  domain interface that a `time.Time` satisfies is matched against the interface, and one called
+  through a type parameter has no type name.
+- **A method promoted from an embedded `time.Time`**, which is matched against the embedding type.
+- **A `time.Time` handed to the domain already in `Local`, or a `*time.Location` handed in that is
+  `time.Local`.** Formatting such a time reads `TZ`, and so does building one with `time.Date` or
+  `time.ParseInLocation` in that location, or in `t.Location()` of a `Local` time. No call rule can see
+  where the value came from. The adapter converts a time with `.UTC()` before handing it in, and passes
+  `time.UTC` or a location it loaded, never `time.Local`.
+- **A dot import of `time`.** After `import . "time"`, `Local.String()` is not reported, yet it reads
+  `TZ` and `/etc/localtime` through `initLocal`. staticcheck's ST1001 refuses dot imports, so this gets
+  through only behind a nolint directive that silences it.
+- **A receive from a channel handed in.** `<-t.C` on a `time.Timer` or `time.Ticker` is refused through
+  the field `C`, but a `<-chan time.Time` passed as a parameter is a plain channel.
+
 ## Domain model
 
 | Package | Holds |
@@ -263,7 +331,7 @@ its expectations itself: its display name, its EU regions and the categories its
 | Golden | Report and CLI output | `testdata/*.golden` | yes |
 | Integration | Real provider APIs, read-only | `//go:build integration` | no (manual, credentials) |
 | E2E | The built binary against fixtures | `test/e2e`, `//go:build e2e` | yes |
-| Source rules | Rules on the Go source and its packages that golangci-lint cannot express, and the probes that prove the cloud-read-only lint rules fire | `test/lint`, `test/architecture` | yes |
+| Source rules | Rules on the Go source and its packages that golangci-lint cannot express, and the probes that prove the cloud-read-only and domain-is-pure lint rules fire | `test/lint`, `test/architecture` | yes |
 
 Most tests sit in the domain, where they are fast and need no fakes. Adapters are tested against
 recorded, sanitised API responses through the contract suites, so adding a provider means passing an
