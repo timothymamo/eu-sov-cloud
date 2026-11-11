@@ -100,7 +100,7 @@ All criteria are pinned by tests that run offline under `make test` or `make tes
 
 Each milestone ships as one PR, in this order.
 
-1. [ ] **Comparison model and use case.** The application layer runs one inventory against several
+1. [x] **Comparison model and use case.** The application layer runs one inventory against several
    catalogs and returns one assessment per target, in key order, reading the inventory once. A domain
    type, or one in the application layer, holds the comparison: the per-target assessments, and the
    blockers every target shares. Its tests pin the order, the shared blockers and the single read. An
