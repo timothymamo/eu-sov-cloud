@@ -1,0 +1,36 @@
+# The build context is an allow list: everything is left out, then only what `go build ./cmd/eusov`
+# needs is let back in. Later lines win, so the exclusions at the end apply inside the allowed paths too.
+*
+
+!go.mod
+!go.sum
+!cmd/
+!internal/
+
+# Tests and their fixtures are not built into the binary. The catalog snapshots the targets embed
+# (internal/adapter/target/*/catalog.json) are not test data and stay in.
+**/*_test.go
+**/testdata
+
+# Named explicitly as well, so they stay out if the allow list above is ever loosened: git data,
+# worktrees, local builds, coverage reports, credentials.
+.git
+.worktrees
+bin
+dist
+coverage.out
+coverage.*
+.env
+.env.*
+.envrc
+**/*credentials*.json
+**/*service-account*.json
+
+# Real inventories and reports describe someone's infrastructure (CLAUDE.md rule 2): no layer may hold
+# one. Matches file names only, so the internal/adapter/report packages are kept.
+inventories
+reports
+**/*inventory*.json
+**/*report*.json
+**/*report*.md
+**/*report*.html
