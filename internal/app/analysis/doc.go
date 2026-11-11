@@ -9,6 +9,12 @@
 // validates it before any port is called. The writer a report goes to is
 // chosen by the driving adapter and passed through Run to the reporter.
 //
+// Comparison is the second use case: it reads the inventory once, assesses it
+// against several targets' catalogs in key order, compares the assessments with
+// assessment.Compare and hands the comparison to a ComparisonReporter. Analysis
+// and Reporter stay unchanged; docs/adr/0016 records why the comparison has its
+// own port.
+//
 // The package depends only on internal/domain/... and the standard library.
 // Concrete adapters implement the ports and are wired in cmd/eusov, never
 // imported here. The port shapes are recorded in docs/adr/0005.
