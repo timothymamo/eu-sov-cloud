@@ -137,7 +137,8 @@ the one source of truth for the report.
   the client's rate. **The slot is taken before the body is read**, so at most N bodies are in memory at
   once, whatever the clients send. The trade-off: a slow upload holds a slot while it trickles in, and N
   slow clients can keep everyone else at 503. `WithBodyReadTimeout` (default 30 s) bounds how long
-  reading one body may hold its slot; past it the request fails and the slot is freed. Taking the slot
+  reading one body may hold its slot; past it the request is 400 `invalid_request` with
+  `Connection: close`, the server closes the connection and the slot is freed. Taking the slot
   after the body would free slots from slow clients but put no bound on memory, which the cap exists
   for. The body is read through `http.MaxBytesReader` up to `MaxBodySize` (413 over it) and decoded
   strictly (400 for an unknown key, a duplicate key or trailing data).

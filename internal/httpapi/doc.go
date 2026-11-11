@@ -52,8 +52,10 @@
 //     refused at once with 503 busy and Retry-After: 1, never queued. The slot
 //     is taken before the body is read, so at most that many bodies are in
 //     memory at once; WithBodyReadTimeout (default 30 seconds) bounds how long
-//     reading one body may hold its slot. The composition root must still set
-//     the server's ReadHeaderTimeout and ReadTimeout.
+//     reading one body may hold its slot. A body that cannot be read in full
+//     in time, or at all, is 400 invalid_request with Connection: close, and
+//     the server closes the connection after the answer. The composition root
+//     must still set the server's ReadHeaderTimeout and ReadTimeout.
 //   - The body is read through http.MaxBytesReader, capped at the limit
 //     WithMaxBodyBytes sets (the composition root passes
 //     assessmentrequest.MaxBodySize, the inventory reader's cap plus 64 KiB);
@@ -96,6 +98,7 @@
 // Every error has one shape, {"error":{"code":"<code>","message":"<message>"}}:
 //
 //	400 invalid_request         the body is not a valid request (assessmentrequest.Decode)
+//	                            or cannot be read in full within WithBodyReadTimeout
 //	400 invalid_inventory       the inventory reader refuses the inventory
 //	400 invalid_targets         the target list breaks the CLI's rules; the message lists the targets
 //	401 unauthorized            a /v1/ request without the configured bearer token
