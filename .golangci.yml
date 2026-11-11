@@ -264,6 +264,47 @@ linters:
               desc: the CLI makes no raw system calls; os, io/fs and os/signal cover what it needs
             - pkg: plugin$
               desc: the CLI loads no code at run time; adapters are wired in cmd/eusov
+        # The composition root constructs the adapters, hands them to the CLI
+        # and does nothing else (issue #101). So its imports are a strict
+        # allow list: the module's own packages and the standard packages it
+        # needs today, each ending in $ so it covers that package only. Any
+        # other import, a logging library or an HTTP client included, fails
+        # lint; add a standard package only when cmd/eusov needs it, and a
+        # third-party one never: it belongs in an adapter behind a port.
+        #
+        # The module path is the one prefix entry, so cmd/eusov may import
+        # every package of the module, a new adapter included, without an
+        # entry here; what each of those may import is held by its own rule.
+        # A module package under testdata or a _ directory is never linted,
+        # but cmd/eusov constructing one would show in review. The cloud SDKs
+        # are denied as well, though the allow list already refuses them:
+        # a cloud SDK lives only in its provider's adapter, which cmd/eusov
+        # constructs without importing the SDK itself.
+        #
+        # The rule holds cmd/eusov only. A glob segment matches no "/", so
+        # **/cmd/eusov/** does not match a sibling such as cmd/eusov-server.
+        # A future cmd/eusov-server (PRD #103) gets a sibling rule written the
+        # same way, with its own files: entry and the packages it needs.
+        composition-root:
+          list-mode: strict
+          files:
+            - "**/cmd/eusov/**"
+            - "!$test"
+          allow:
+            - context$
+            - os$
+            - os/signal$
+            - syscall$
+            - github.com/timothymamo/eu-sov-cloud/
+          deny:
+            - pkg: github.com/aws/aws-sdk-go-v2
+              desc: a cloud SDK lives only in its provider's adapter
+            - pkg: github.com/Azure/azure-sdk-for-go
+              desc: a cloud SDK lives only in its provider's adapter
+            - pkg: cloud.google.com/go
+              desc: a cloud SDK lives only in its provider's adapter
+            - pkg: google.golang.org/api
+              desc: a cloud SDK lives only in its provider's adapter
         # Adapters are constructed only in the composition root. No other
         # production package, adapters included, imports an adapter: one
         # adapter never builds or calls another, and internal/config or the
