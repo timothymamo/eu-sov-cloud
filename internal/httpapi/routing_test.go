@@ -115,6 +115,9 @@ func TestResponseHeadersAndErrorShape(t *testing.T) {
 		configure  func(*harness)
 		req        func(h *harness) *http.Request
 		wantStatus int
+		// wantContentType is the success's media type; empty means
+		// application/json.
+		wantContentType string
 		// wantCode is the error code; empty for a success.
 		wantCode string
 	}{
@@ -128,7 +131,8 @@ func TestResponseHeadersAndErrorShape(t *testing.T) {
 			req: func(*harness) *http.Request {
 				return withAccept(newAssessRequest(assessBody(t, alphaKey)), "text/markdown")
 			},
-			wantStatus: http.StatusOK,
+			wantStatus:      http.StatusOK,
+			wantContentType: markdownContentType,
 		},
 		{
 			name:       "the target list",
@@ -257,7 +261,12 @@ func TestResponseHeadersAndErrorShape(t *testing.T) {
 			requireHardeningHeaders(t, rec)
 
 			if tc.wantCode == "" {
-				requireJSONContentType(t, rec)
+				want := tc.wantContentType
+				if want == "" {
+					want = jsonContentType
+				}
+
+				requireMediaType(t, rec, want)
 
 				return
 			}
