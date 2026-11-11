@@ -86,5 +86,18 @@
 //
 // A message never echoes request content beyond a quoted, escaped key or field
 // name, as the CLI's one-line errors do: never a target value, a header value
-// or the path the client sent. A 500 carries nothing internal.
+// or the path the client sent. An invalid_targets message names a bad target by
+// its index in the list and ends with the supported keys, sorted. The
+// invalid_request and invalid_inventory messages are the decoder's and the
+// inventory reader's own, escaped as the CLI's are: a control or format
+// character, a line or paragraph separator or an invalid byte is written as its
+// escape (a line feed as \n, an escape as \x1b), and a message over 1 KiB is
+// cut. A 500 carries nothing internal.
+//
+// The order of the checks: an unknown path is 404; an allowed origin's
+// preflight is answered next, before the token, as a browser sends no
+// Authorization on it; then a wrong method is 405 (an OPTIONS from any other
+// origin included); then the bearer token on /v1/; then, for POST
+// /v1/assessments, the Content-Type, the Accept header, the concurrency cap,
+// the body cap and the decoding.
 package httpapi
