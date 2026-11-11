@@ -14,6 +14,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/google/go-cmp/cmp"
+
 	"github.com/timothymamo/eu-sov-cloud/test/internal/releasetarget"
 )
 
@@ -231,6 +233,49 @@ func relToRoot(t *testing.T, root, dir string) (string, bool) {
 		return "", false
 	}
 	return filepath.ToSlash(rel), true
+}
+
+// TestTargetEnvPinsTheReleaseBuild pins the whole environment of a release
+// target's lint run. The platform bounds what the target loads and the levels
+// GOAMD64=v1 and GOARM64=v8.0 pin the amd64 and arm64 build to the release
+// baseline: without the pin, a file built only at a higher level, such as
+// testdata/platformprobe/amd64v3.go, is loaded on a host whose go env sets
+// that level, and the test that only a release target loads it passes for the
+// wrong reason. cgo is off as the release builds it, and the run is offline.
+func TestTargetEnvPinsTheReleaseBuild(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name   string
+		target releasetarget.Target
+	}{
+		{name: "linux amd64", target: releasetarget.Target{GOOS: "linux", GOARCH: "amd64"}},
+		{name: "windows arm64", target: releasetarget.Target{GOOS: "windows", GOARCH: "arm64"}},
+		{name: "darwin arm64", target: releasetarget.Target{GOOS: "darwin", GOARCH: "arm64"}},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			want := []string{
+				"CGO_ENABLED=0",
+				"GOAMD64=v1",
+				"GOARCH=" + tc.target.GOARCH,
+				"GOARM64=v8.0",
+				"GOFLAGS=-mod=readonly",
+				"GOOS=" + tc.target.GOOS,
+				"GOPROXY=off",
+				"GOWORK=off",
+			}
+			got := slices.Clone(targetEnv(tc.target))
+			slices.Sort(got)
+
+			if diff := cmp.Diff(want, got); diff != "" {
+				t.Errorf("targetEnv(%s/%s) mismatch (-want +got):\n%s", tc.target.GOOS, tc.target.GOARCH, diff)
+			}
+		})
+	}
 }
 
 // TestChildEnvPassesOnlyItsList pins that a child process gets the variables
