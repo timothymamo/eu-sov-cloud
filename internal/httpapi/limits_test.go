@@ -35,9 +35,12 @@ func TestConcurrencyCap(t *testing.T) {
 
 	handler := h.handler(t, httpapi.WithMaxConcurrent(1))
 
-	// The first assessment holds the only slot until gate is closed.
+	// The first assessment holds the only slot until gate is closed. The request
+	// is built before the goroutine so the test never touches t off its own
+	// goroutine.
+	firstReq := newAssessRequest(assessBody(t, alphaKey))
 	firstDone := make(chan *httptest.ResponseRecorder, 1)
-	go func() { firstDone <- serve(handler, newAssessRequest(assessBody(t, alphaKey))) }()
+	go func() { firstDone <- serve(handler, firstReq) }()
 
 	select {
 	case <-started:
@@ -89,6 +92,39 @@ func TestConcurrencyCap(t *testing.T) {
 	if third.Code != http.StatusOK {
 		t.Fatalf("the third POST /v1/assessments = %d, want %d; body: %q",
 			third.Code, http.StatusOK, third.Body.String())
+	}
+}
+
+// TestPanicReleasesTheSlot pins that a panic in a handler costs one request and
+// not the API: the assessment that panicked is answered 500 internal, and the
+// slot it held is given back, so the next assessment runs instead of being
+// refused with 503 busy forever.
+func TestPanicReleasesTheSlot(t *testing.T) {
+	t.Parallel()
+
+	h := newHarness(t)
+	h.jsonReporter.panics = true
+
+	handler := h.handler(t, httpapi.WithMaxConcurrent(1))
+
+	panicked := serveWithin(t, handler, newAssessRequest(assessBody(t, alphaKey)), settle)
+
+	if panicked.Code != http.StatusInternalServerError {
+		t.Fatalf("POST /v1/assessments with a panicking reporter = %d, want %d; body: %q",
+			panicked.Code, http.StatusInternalServerError, panicked.Body.String())
+	}
+
+	requireHardeningHeaders(t, panicked)
+	decodeError(t, panicked, "internal")
+
+	// The slot of the panicked assessment is free again: the next one runs.
+	h.jsonReporter.panics = false
+
+	next := serveWithin(t, handler, newAssessRequest(assessBody(t, betaKey)), settle)
+
+	if next.Code != http.StatusOK {
+		t.Fatalf("the next POST /v1/assessments = %d, want %d; body: %q",
+			next.Code, http.StatusOK, next.Body.String())
 	}
 }
 

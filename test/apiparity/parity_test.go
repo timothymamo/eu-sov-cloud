@@ -32,11 +32,10 @@ const (
 	hostileFixture   = "../e2e/testdata/inventory-hostile.json"
 )
 
-// The report schemas jsonreport publishes, relative to this package.
-const (
-	assessmentSchemaPath = "../../internal/adapter/report/jsonreport/schema/assessment-v1.schema.json"
-	comparisonSchemaPath = "../../internal/adapter/report/jsonreport/schema/comparison-v1.schema.json"
-)
+// openAPIPath is the API document, relative to this package: its 200 answer to
+// POST /v1/assessments names the report schemas, by path, that a report is
+// checked against.
+const openAPIPath = "../../api/openapi.json"
 
 // The paths, formats and inventory name both sides share.
 const (
@@ -224,31 +223,123 @@ func readFixture(t *testing.T, path string) []byte {
 	return data
 }
 
-// reportSchemas parses jsonreport's two schemas, keyed by the document kind each
-// describes.
+// reportDocument is the part of api/openapi.json this file reads: the 200 answer
+// of POST /v1/assessments and the schemas its JSON body is one of.
+type reportDocument struct {
+	Paths map[string]struct {
+		Post struct {
+			Responses map[string]struct {
+				Content map[string]struct {
+					Schema struct {
+						OneOf []struct {
+							Ref string `json:"$ref"`
+						} `json:"oneOf"`
+					} `json:"schema"`
+				} `json:"content"`
+			} `json:"responses"`
+		} `json:"post"`
+	} `json:"paths"`
+}
+
+// reportSchemas returns the schema of every report kind the API documents for a
+// 200 JSON answer, keyed by the kind each schema describes. The document decides
+// which schemas those are: it references them by path from the 200 response's
+// oneOf, so a schema the document stops referencing stops being checked here.
 func reportSchemas(t *testing.T) map[string]*testutil.Schema {
 	t.Helper()
 
-	files := []struct {
-		kind string
-		path string
-	}{
-		{kind: "assessment", path: assessmentSchemaPath},
-		{kind: "comparison", path: comparisonSchemaPath},
-	}
+	refs := reportSchemaRefs(t)
 
-	schemas := make(map[string]*testutil.Schema, len(files))
+	schemas := make(map[string]*testutil.Schema, len(refs))
 
-	for _, file := range files {
-		_, schema, err := testutil.ParseSchema(readFixture(t, file.path))
-		if err != nil {
-			t.Fatalf("parsing the %s schema %s: %v", file.kind, file.path, err)
+	for _, ref := range refs {
+		path := filepath.Join(filepath.Dir(openAPIPath), filepath.FromSlash(ref))
+		data := readFixture(t, path)
+		kind := schemaKind(t, path, data)
+
+		if _, ok := schemas[kind]; ok {
+			t.Errorf("the document references two report schemas of the kind %q: %s", kind, path)
 		}
 
-		schemas[file.kind] = schema
+		_, schema, err := testutil.ParseSchema(data)
+		if err != nil {
+			t.Fatalf("parsing the %s schema %s: %v", kind, path, err)
+		}
+
+		schemas[kind] = schema
 	}
 
 	return schemas
+}
+
+// reportSchemaRefs returns the paths the document's 200 JSON answer references
+// for its oneOf, as the document writes them: relative to its own directory.
+func reportSchemaRefs(t *testing.T) []string {
+	t.Helper()
+
+	var document reportDocument
+	if err := json.Unmarshal(readFixture(t, openAPIPath), &document); err != nil {
+		t.Fatalf("decoding %s: %v", openAPIPath, err)
+	}
+
+	content := document.Paths[assessmentsPath].Post.Responses["200"].Content["application/json"]
+
+	if len(content.Schema.OneOf) == 0 {
+		t.Fatalf("%s declares no oneOf for the 200 JSON answer to POST %s", openAPIPath, assessmentsPath)
+	}
+
+	refs := make([]string, 0, len(content.Schema.OneOf))
+
+	for _, alternative := range content.Schema.OneOf {
+		if alternative.Ref == "" {
+			t.Fatalf("%s declares an alternative of the 200 JSON answer with no $ref, want the report schemas by path",
+				openAPIPath)
+		}
+
+		if strings.HasPrefix(alternative.Ref, "#") {
+			t.Fatalf("%s references %q inside itself, want the report schema file", openAPIPath, alternative.Ref)
+		}
+
+		refs = append(refs, alternative.Ref)
+	}
+
+	if len(refs) < 2 {
+		t.Fatalf("%s references %d report schemas for the 200 JSON answer, want the assessment and the comparison one",
+			openAPIPath, len(refs))
+	}
+
+	return refs
+}
+
+// schemaKind returns the report kind a schema describes: the constant of its
+// kind property, or its title when the constant is missing.
+func schemaKind(t *testing.T, path string, data []byte) string {
+	t.Helper()
+
+	var schema struct {
+		Title      string `json:"title"`
+		Properties struct {
+			Kind struct {
+				Const string `json:"const"`
+			} `json:"kind"`
+		} `json:"properties"`
+	}
+
+	if err := json.Unmarshal(data, &schema); err != nil {
+		t.Fatalf("decoding the schema %s: %v", path, err)
+	}
+
+	if schema.Properties.Kind.Const != "" {
+		return schema.Properties.Kind.Const
+	}
+
+	if schema.Title != "" {
+		return schema.Title
+	}
+
+	t.Fatalf("the schema %s names no kind constant and has no title, so a report cannot be matched to it", path)
+
+	return ""
 }
 
 // validateReport holds a JSON report to the schema of the kind it declares.

@@ -252,12 +252,19 @@ func (d *SchemaDoc) checkReferences(schemas ...*Schema) error {
 // parseKeywords parses every keyword of one schema object. A required name the
 // object does not describe is an error: the validator would otherwise check for
 // a key it cannot validate, so a schema that names one is not one it can fully
-// check.
+// check. A reference beside another keyword is an error too: validate applies a
+// reference instead of the keywords around it, so such a schema would leave its
+// own keywords unchecked.
 func (s *Schema) parseKeywords(raw map[string]json.RawMessage) error {
 	for _, keyword := range slices.Sorted(maps.Keys(raw)) {
 		if err := s.parseKeyword(keyword, raw[keyword]); err != nil {
 			return err
 		}
+	}
+
+	if s.ref != "" && len(raw) > 1 {
+		return fmt.Errorf("$ref beside %s is unsupported: a schema object that refers to another must hold only $ref",
+			siblingKeyword(raw))
 	}
 
 	for _, name := range s.required {
@@ -422,6 +429,18 @@ func (s *Schema) parseKeyword(keyword string, value json.RawMessage) error {
 		return fmt.Errorf("unsupported keyword %q: the validator checks only %s",
 			keyword, strings.Join(schemaKeywords, ", "))
 	}
+}
+
+// siblingKeyword names, quoted, the first keyword of a schema object beside
+// $ref, for the error parseKeywords returns for such an object.
+func siblingKeyword(raw map[string]json.RawMessage) string {
+	for _, keyword := range slices.Sorted(maps.Keys(raw)) {
+		if keyword != "$ref" {
+			return strconv.Quote(keyword)
+		}
+	}
+
+	return ""
 }
 
 // parseRawSchema decodes one schema object and parses it into the document.

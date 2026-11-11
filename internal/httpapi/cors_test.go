@@ -310,6 +310,128 @@ func requireVaryOrigin(t *testing.T, rec *httptest.ResponseRecorder) {
 	}
 }
 
+// TestCORSExposesTheErrorHeaders pins that a browser running on an allowed
+// origin can read the two headers the API answers an error with and a browser
+// may not read by default: Retry-After on 503 busy and WWW-Authenticate on 401.
+// The answer names both, in any order and any case, and a disallowed origin or
+// one that sends no Origin gets no Access-Control-Expose-Headers at all.
+func TestCORSExposesTheErrorHeaders(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name string
+		// origin is the request Origin; empty sets none.
+		origin string
+		// authenticated sends the configured token instead of omitting it.
+		authenticated bool
+		// token requires the bearer token, so the request can be refused with 401.
+		token      bool
+		request    func(t *testing.T) *http.Request
+		wantStatus int
+		wantExpose bool
+	}{
+		{
+			name:       "a report to the allowed origin",
+			origin:     allowedOrigin,
+			request:    func(t *testing.T) *http.Request { t.Helper(); return newAssessRequest(assessBody(t, alphaKey)) },
+			wantStatus: http.StatusOK,
+			wantExpose: true,
+		},
+		{
+			name:       "the target list to the allowed origin",
+			origin:     allowedOrigin,
+			request:    func(*testing.T) *http.Request { return newRequest(http.MethodGet, targetsPath) },
+			wantStatus: http.StatusOK,
+			wantExpose: true,
+		},
+		{
+			name:       "a refused token from the allowed origin",
+			origin:     allowedOrigin,
+			token:      true,
+			request:    func(t *testing.T) *http.Request { t.Helper(); return newAssessRequest(assessBody(t, alphaKey)) },
+			wantStatus: http.StatusUnauthorized,
+			wantExpose: true,
+		},
+		{
+			name:          "an accepted token from the allowed origin",
+			origin:        allowedOrigin,
+			token:         true,
+			authenticated: true,
+			request:       func(t *testing.T) *http.Request { t.Helper(); return newAssessRequest(assessBody(t, alphaKey)) },
+			wantStatus:    http.StatusOK,
+			wantExpose:    true,
+		},
+		{
+			name:       "another origin",
+			origin:     otherOrigin,
+			request:    func(t *testing.T) *http.Request { t.Helper(); return newAssessRequest(assessBody(t, alphaKey)) },
+			wantStatus: http.StatusOK,
+		},
+		{
+			name:       "no origin",
+			request:    func(t *testing.T) *http.Request { t.Helper(); return newAssessRequest(assessBody(t, alphaKey)) },
+			wantStatus: http.StatusOK,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			h := newHarness(t)
+
+			opts := []httpapi.Option{httpapi.WithAllowedOrigins(allowedOrigin)}
+			if tc.token {
+				opts = append(opts, httpapi.WithBearerToken(bearerToken))
+			}
+
+			handler := h.handler(t, opts...)
+
+			req := tc.request(t)
+			if tc.origin != "" {
+				req.Header.Set("Origin", tc.origin)
+			}
+
+			if tc.authenticated {
+				req.Header.Set("Authorization", "Bearer "+bearerToken)
+			}
+
+			rec := serve(handler, req)
+
+			if rec.Code != tc.wantStatus {
+				t.Fatalf("%s %s = %d, want %d; body: %q",
+					req.Method, req.URL.Path, rec.Code, tc.wantStatus, rec.Body.String())
+			}
+
+			if !tc.wantExpose {
+				requireNoCORSHeaders(t, rec)
+
+				return
+			}
+
+			requireExposeHeaders(t, rec)
+		})
+	}
+}
+
+// requireExposeHeaders fails unless the answer lets a browser read the two
+// headers the API answers an error with, in any order and any case.
+func requireExposeHeaders(t *testing.T, rec *httptest.ResponseRecorder) {
+	t.Helper()
+
+	expose := strings.Join(rec.Header().Values("Access-Control-Expose-Headers"), ", ")
+	if strings.TrimSpace(expose) == "" {
+		t.Fatalf("the response carries no Access-Control-Expose-Headers, so a browser at an allowed origin " +
+			"cannot read Retry-After or WWW-Authenticate")
+	}
+
+	for _, header := range []string{"Retry-After", "WWW-Authenticate"} {
+		if !headerHasToken(expose, header) {
+			t.Errorf("Access-Control-Expose-Headers = %q, want it to name %s", expose, header)
+		}
+	}
+}
+
 // TestVaryOriginWhenCORSIsConfigured pins that a handler with CORS configured
 // tells every cache that its answer depends on the request's Origin: every
 // response carries Vary: Origin, one to an allowed origin, one to a disallowed

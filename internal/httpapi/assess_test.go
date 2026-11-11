@@ -202,6 +202,50 @@ func TestAcceptNegotiation(t *testing.T) {
 			wantStatus: http.StatusNotAcceptable,
 			wantCode:   "not_acceptable",
 		},
+		// An entry whose q is not a number in [0, 1] is invalid on its own and
+		// skipped: it neither excludes the entry nor spoils the rest of the header.
+		// NaN is the trap, because strconv.ParseFloat parses it without an error.
+		{
+			name:            "a NaN q beside Markdown",
+			accept:          "application/json;q=NaN, text/markdown",
+			wantStatus:      http.StatusOK,
+			wantContentType: markdownContentType,
+			wantBody:        singleBody(markdownFormat, alphaTarget, inventoryName),
+		},
+		{
+			name:            "a NaN q on Markdown beside a lower JSON q",
+			accept:          "text/markdown;q=NaN, application/json;q=0.5",
+			wantStatus:      http.StatusOK,
+			wantContentType: jsonContentType,
+			wantBody:        singleBody(jsonFormat, alphaTarget, inventoryName),
+		},
+		{
+			name:       "a q above 1",
+			accept:     "text/markdown;q=2",
+			wantStatus: http.StatusNotAcceptable,
+			wantCode:   "not_acceptable",
+		},
+		{
+			name:            "a q above 1 beside JSON",
+			accept:          "text/markdown;q=2, application/json;q=0.5",
+			wantStatus:      http.StatusOK,
+			wantContentType: jsonContentType,
+			wantBody:        singleBody(jsonFormat, alphaTarget, inventoryName),
+		},
+		{
+			name:            "a negative q beside Markdown",
+			accept:          "application/json;q=-1, text/markdown;q=0.5",
+			wantStatus:      http.StatusOK,
+			wantContentType: markdownContentType,
+			wantBody:        singleBody(markdownFormat, alphaTarget, inventoryName),
+		},
+		{
+			name:            "a q that is no number beside Markdown",
+			accept:          "application/json;q=abc, text/markdown",
+			wantStatus:      http.StatusOK,
+			wantContentType: markdownContentType,
+			wantBody:        singleBody(markdownFormat, alphaTarget, inventoryName),
+		},
 	}
 
 	for _, tc := range tests {
@@ -255,6 +299,30 @@ func TestContentType(t *testing.T) {
 			name:        "application/json with a charset",
 			contentType: "application/json; charset=utf-8",
 			wantStatus:  http.StatusOK,
+		},
+		{
+			name:        "application/json with an upper-case charset",
+			contentType: "application/json; charset=UTF-8",
+			wantStatus:  http.StatusOK,
+		},
+		{
+			name:        "application/json with a quoted charset",
+			contentType: `application/json; charset="utf-8"`,
+			wantStatus:  http.StatusOK,
+		},
+		// Only UTF-8 is JSON text the decoder may read: another charset is a body
+		// this API cannot decode, however valid the media type is.
+		{
+			name:        "application/json in latin-1",
+			contentType: "application/json; charset=iso-8859-1",
+			wantStatus:  http.StatusUnsupportedMediaType,
+			wantCode:    "unsupported_media_type",
+		},
+		{
+			name:        "application/json in utf-16",
+			contentType: "application/json; charset=utf-16",
+			wantStatus:  http.StatusUnsupportedMediaType,
+			wantCode:    "unsupported_media_type",
 		},
 		{
 			name:        "application/json",
@@ -319,31 +387,106 @@ func TestContentType(t *testing.T) {
 }
 
 // TestBodyTooLarge pins the body cap: a body over the limit is refused with 413
-// before the decoder ever sees it.
+// before the decoder ever sees it, however the request states its length. The
+// check against ContentLength is only a shortcut that saves reading; the cap
+// that holds is http.MaxBytesReader's, which counts the bytes actually read, so
+// a chunked body (no length at all) and a body that declares a small length are
+// both refused too, and the decoder is never handed a byte past the cap.
 func TestBodyTooLarge(t *testing.T) {
 	t.Parallel()
 
-	h := newHarness(t)
-	handler := h.handler(t, httpapi.WithMaxBodyBytes(64))
+	const maxBody = 64
 
 	body := assessBody(t, alphaKey)
-	if len(body) <= 64 {
-		t.Fatalf("the test body is %d bytes, not over the 64-byte cap", len(body))
+	if len(body) <= maxBody {
+		t.Fatalf("the test body is %d bytes, not over the %d-byte cap", len(body), maxBody)
 	}
 
-	rec := serve(handler, newAssessRequest(body))
+	// small is a valid request under the cap, so only a declared length can
+	// take the shortcut to 413 for it.
+	small := `{"inventory":{},"targets":["` + alphaKey + `"]}`
 
-	if rec.Code != http.StatusRequestEntityTooLarge {
-		t.Fatalf("POST /v1/assessments = %d, want %d; body: %q",
-			rec.Code, http.StatusRequestEntityTooLarge, rec.Body.String())
+	if len(small) > maxBody {
+		t.Fatalf("the small test body is %d bytes, not under the %d-byte cap", len(small), maxBody)
 	}
 
-	requireHardeningHeaders(t, rec)
-	decodeError(t, rec, "payload_too_large")
+	tests := []struct {
+		name string
+		// request builds the request a fresh handler is sent.
+		request func(t *testing.T) *http.Request
+	}{
+		{
+			name:    "an accurate ContentLength",
+			request: func(t *testing.T) *http.Request { t.Helper(); return newAssessRequest(body) },
+		},
+		{
+			name: "a chunked body",
+			request: func(t *testing.T) *http.Request {
+				t.Helper()
 
-	if got := h.decoder.callCount(); got != 0 {
-		t.Errorf("the request decoder ran %d times for an oversized body, want 0", got)
+				return assessRequestWithLength(t, body, -1)
+			},
+		},
+		{
+			name: "a ContentLength below the body's length",
+			request: func(t *testing.T) *http.Request {
+				t.Helper()
+
+				return assessRequestWithLength(t, body, 10)
+			},
+		},
+		{
+			name: "a ContentLength over the cap for a small body",
+			request: func(t *testing.T) *http.Request {
+				t.Helper()
+
+				return assessRequestWithLength(t, small, 1<<20)
+			},
+		},
 	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			h := newHarness(t)
+			handler := h.handler(t, httpapi.WithMaxBodyBytes(maxBody))
+
+			rec := serve(handler, tc.request(t))
+
+			// Every case is 413: http.MaxBytesReader reports the cap it hit, and
+			// the handler reads through it whatever ContentLength claims.
+			if rec.Code != http.StatusRequestEntityTooLarge {
+				t.Fatalf("POST /v1/assessments = %d, want %d; body: %q",
+					rec.Code, http.StatusRequestEntityTooLarge, rec.Body.String())
+			}
+
+			requireHardeningHeaders(t, rec)
+			decodeError(t, rec, "payload_too_large")
+
+			if got := h.decoder.callCount(); got != 0 {
+				t.Errorf("the request decoder ran %d times for an oversized body, want 0", got)
+			}
+
+			for _, seen := range h.decoder.seenBodies() {
+				if len(seen) > maxBody {
+					t.Errorf("the decoder was given a %d-byte body, over the %d-byte cap", len(seen), maxBody)
+				}
+			}
+		})
+	}
+}
+
+// assessRequestWithLength returns a POST /v1/assessments whose body is body and
+// whose declared ContentLength is contentLength, -1 being a chunked body that
+// declares none.
+func assessRequestWithLength(t *testing.T, body string, contentLength int64) *http.Request {
+	t.Helper()
+
+	req := newAssessRequest(body)
+	req.ContentLength = contentLength
+
+	return req
 }
 
 // TestDecodeError pins that a body the decoder refuses is 400 invalid_request.

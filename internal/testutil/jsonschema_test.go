@@ -216,6 +216,21 @@ func TestParseSchemaRefusesWhatItCannotCheck(t *testing.T) {
 			want:   `"#/$defs/missing" names no schema`,
 		},
 		{
+			// The validator applies a reference instead of the keywords beside it,
+			// so a schema that holds both would leave its own keywords unchecked:
+			// it refuses the object rather than pass a document the sibling
+			// keyword should have rejected.
+			name:   "a reference beside a validation keyword",
+			schema: `{"$ref":"#/$defs/id","type":"object","$defs":{"id":{"type":"string"}}}`,
+			want:   "is unsupported",
+		},
+		{
+			name: "a reference beside required",
+			schema: `{"type":"object","properties":{"item":{"$ref":"#/$defs/id","required":["id"]}},` +
+				`"$defs":{"id":{"type":"object"}}}`,
+			want: `$ref beside "required" is unsupported`,
+		},
+		{
 			name:   "a reference outside the document",
 			schema: `{"$ref":"https://example.com/other.schema.json"}`,
 			want:   "is not a local JSON pointer",

@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"path/filepath"
 	"slices"
 	"strconv"
 	"strings"
@@ -85,11 +86,26 @@ type apiResponse struct {
 
 // apiHeader is one declared response header, or one of components.headers.
 type apiHeader struct {
-	Ref    string `json:"$ref"`
-	Schema struct {
-		Type  string  `json:"type"`
-		Const *string `json:"const"`
+	Ref         string `json:"$ref"`
+	Description string `json:"description"`
+	Schema      struct {
+		Type  string   `json:"type"`
+		Const *string  `json:"const"`
+		Enum  []string `json:"enum"`
 	} `json:"schema"`
+}
+
+// value returns what the declaration says the header holds: its constant, its
+// listed values, or the description when it fixes none.
+func (h apiHeader) value() string {
+	switch {
+	case h.Schema.Const != nil:
+		return *h.Schema.Const
+	case len(h.Schema.Enum) > 0:
+		return strings.Join(h.Schema.Enum, ", ")
+	default:
+		return h.Description
+	}
 }
 
 // apiContent is one declared media type of a response.
@@ -271,6 +287,134 @@ func (d *apiDocument) declaredResponse(t *testing.T, op *apiOperation, status in
 	}
 
 	return d.resolveResponse(t, resp)
+}
+
+// TestOpenAPIReferencesResolve pins that every reference a client has to follow
+// leads somewhere: a "#..." pointer stays inside the document, and every other
+// reference names a file beside the document, which must exist and be valid
+// JSON. A reference to a missing or broken schema file leaves the document
+// describing a body no client can check, even though the document itself parses.
+func TestOpenAPIReferencesResolve(t *testing.T) {
+	t.Parallel()
+
+	_, data := loadOpenAPI(t)
+
+	var document any
+	if err := json.Unmarshal(data, &document); err != nil {
+		t.Fatalf("decoding %s: %v", openAPIPath, err)
+	}
+
+	refs := map[string]bool{}
+	collectRefs(t, document, refs)
+
+	external := 0
+
+	for _, ref := range slices.Sorted(maps.Keys(refs)) {
+		if strings.HasPrefix(ref, "#") {
+			continue
+		}
+
+		external++
+
+		path := filepath.Join(filepath.Dir(openAPIPath), filepath.FromSlash(ref))
+
+		content, err := os.ReadFile(path)
+		if err != nil {
+			t.Errorf("the document references %q, which cannot be read: %v", ref, err)
+
+			continue
+		}
+
+		if !json.Valid(content) {
+			t.Errorf("the document references %q, which is not valid JSON", ref)
+		}
+	}
+
+	if external == 0 {
+		t.Errorf("the document references no file beside itself, so this test checks nothing: " +
+			"the report schemas should be referenced by path")
+	}
+}
+
+// collectRefs adds every $ref value the document holds to refs.
+func collectRefs(t *testing.T, value any, refs map[string]bool) {
+	t.Helper()
+
+	switch node := value.(type) {
+	case map[string]any:
+		for _, key := range slices.Sorted(maps.Keys(node)) {
+			if key != "$ref" {
+				collectRefs(t, node[key], refs)
+
+				continue
+			}
+
+			ref, ok := node[key].(string)
+			if !ok {
+				t.Fatalf("the document has a $ref that is not a string: %v", node[key])
+			}
+
+			refs[ref] = true
+		}
+	case []any:
+		for _, item := range node {
+			collectRefs(t, item, refs)
+		}
+	}
+}
+
+// TestOpenAPIExposesTheErrorHeaders pins that the document declares, on every
+// response where it declares CORS headers, that a browser may read Retry-After
+// and WWW-Authenticate. A browser at an allowed origin cannot read either header
+// without Access-Control-Expose-Headers, so a document that promises CORS and
+// omits it would hide the API's own 503 busy and 401 answers from the page.
+func TestOpenAPIExposesTheErrorHeaders(t *testing.T) {
+	t.Parallel()
+
+	doc, _ := loadOpenAPI(t)
+
+	cors, exposing := 0, 0
+
+	for _, route := range doc.routes(t) {
+		for _, key := range slices.Sorted(maps.Keys(route.op.Responses)) {
+			resp := doc.resolveResponse(t, route.op.Responses[key])
+
+			if _, ok := resp.Headers["Access-Control-Allow-Origin"]; !ok {
+				continue
+			}
+
+			cors++
+
+			header, ok := resp.Headers["Access-Control-Expose-Headers"]
+			if !ok {
+				t.Errorf("%s declares CORS headers on its %s response but not Access-Control-Expose-Headers, "+
+					"so a browser at an allowed origin cannot read Retry-After or WWW-Authenticate",
+					route.name(), key)
+
+				continue
+			}
+
+			exposing++
+
+			value := doc.resolveHeader(t, header).value()
+
+			for _, name := range []string{"Retry-After", "WWW-Authenticate"} {
+				if !headerHasToken(value, name) {
+					t.Errorf("%s declares Access-Control-Expose-Headers %q on its %s response, want it to name %s",
+						route.name(), value, key, name)
+				}
+			}
+		}
+	}
+
+	if cors == 0 {
+		t.Fatal("the document declares CORS headers on no response, so this test checks nothing")
+	}
+
+	if exposing != cors {
+		t.Errorf("%d of the %d responses that declare CORS headers declare Access-Control-Expose-Headers, want all",
+			exposing, cors)
+	}
 }
 
 // TestOpenAPIDocumentedOperationsAnswer pins that the handler serves every
@@ -657,8 +801,9 @@ func busyScenario(t *testing.T) *httptest.ResponseRecorder {
 
 	handler := mustNew(t, h.deps(), httpapi.WithMaxConcurrent(1))
 
+	firstReq := newAssessRequest(assessBody(t, alphaKey))
 	firstDone := make(chan *httptest.ResponseRecorder, 1)
-	go func() { firstDone <- serve(handler, newAssessRequest(assessBody(t, alphaKey))) }()
+	go func() { firstDone <- serve(handler, firstReq) }()
 
 	select {
 	case <-started:

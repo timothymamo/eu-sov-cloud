@@ -389,6 +389,14 @@ func (d *fakeDecoder) callCount() int {
 	return d.calls
 }
 
+// seenBodies returns every body the decoder was given, in order.
+func (d *fakeDecoder) seenBodies() [][]byte {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+
+	return slices.Clone(d.bodies)
+}
+
 // harness holds the fakes the handler is built over and what they were asked
 // for, so each test says what it expects without wiring deps itself.
 type harness struct {
