@@ -27,8 +27,9 @@ const (
 // TestReleaseTargetDependencies lists the packages of its directories. A strict
 // rule in neither fails TestEveryStrictRuleIsChecked.
 var skippedStrictRules = map[string]string{
-	"cli-gets-adapters-from-cmd": "it allows $gostd, which depguard expands to one prefix entry per top-level directory of GOROOT/src, so no allow list of package-by-package imports can say what it means",
-	"e2e-is-black-box":           "it holds test files, and go list -deps lists no test file and no package only a test imports",
+	"cli-gets-adapters-from-cmd":                     "it allows $gostd, which depguard expands to one prefix entry per top-level directory of GOROOT/src, so no allow list of package-by-package imports can say what it means",
+	"e2e-is-black-box":                               "it holds test files, and go list -deps lists no test file and no package only a test imports",
+	"cloud-adapters-reach-the-cloud-through-the-sdk": "it covers every directory under internal/adapter/source but two it excludes, so a sibling helper package is held too, which no list of **/<dir>/** directories can say; its allow list names the cloud SDK roots as prefixes, every package of the SDK, which no package-by-package list can spell out; and it holds test files, integration tests included, which go list -deps does not list",
 }
 
 // TestRepositoryHasNoLineDirectives pins that no Go file of this repository

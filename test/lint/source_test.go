@@ -9,6 +9,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -16,9 +17,10 @@ import (
 )
 
 // TestSourcesHideNothingFromDepguard fails on every place, in any Go file
-// golangci-lint lints, that would hide code from depguard (see the package
-// documentation). depguard enforces the dependency rule; a violation is fixed
-// in the design, never hidden (CLAUDE.md).
+// golangci-lint lints, that would hide code from depguard, or a call from
+// forbidigo (see the package documentation). depguard enforces the dependency
+// rule and forbidigo the cloud-read-only rule; a violation is fixed in the
+// design or the call, never hidden (CLAUDE.md).
 func TestSourcesHideNothingFromDepguard(t *testing.T) {
 	t.Parallel()
 
@@ -51,29 +53,68 @@ const whyNotRegular = "is not a regular file: golangci-lint lints a symbolic lin
 // root, whatever its build constraints, so every file any golangci-lint run of
 // make lint lints (natively or for a release target, with every build tag
 // set), and returns what in them would hide code from depguard, one line each,
-// and the number of Go files it read. It refuses a Go file that is not a
-// regular file itself and leaves every other check to checkSource.
+// and the number of Go files it read. walkGoFiles refuses a Go file that is not
+// a regular file itself; checkSource does every other check. The lines are in
+// walk order, the lexical order of path elements: a refused file's line sits
+// among the other files' lines where the walk met it, and the lines of one
+// file keep checkSource's order.
 func scanSources(root string) ([]string, int, error) {
-	// Every access goes through an os.Root, so no path can reach outside root.
-	r, err := os.OpenRoot(root)
+	type problem struct{ rel, line string }
+	var problems []problem
+	files := 0
+	refused, err := walkGoFiles(root, skipDir, func(rel string, src []byte) error {
+		files++
+		found, err := checkSource(rel, src)
+		if err != nil {
+			return err
+		}
+		for _, line := range found {
+			problems = append(problems, problem{rel, line})
+		}
+		return nil
+	})
+	for _, line := range refused {
+		problems = append(problems, problem{strings.TrimSuffix(line, ": "+whyNotRegular), line})
+	}
+	// Both lists are in walk order already; a stable sort by path merges them.
+	slices.SortStableFunc(problems, func(a, b problem) int {
+		return slices.Compare(strings.Split(a.rel, "/"), strings.Split(b.rel, "/"))
+	})
+	var lines []string
+	for _, p := range problems {
+		lines = append(lines, p.line)
+	}
+	return lines, files, err
+}
+
+// walkGoFiles is the one walk of Go files in test/lint. It walks dir through
+// an os.Root, so no path can reach outside dir, leaves out every directory
+// skip reports (none when skip is nil), and calls visit with the
+// slash-separated path relative to dir and the content of every regular .go
+// file, in lexical order. It never reads a .go file that is not a regular
+// file, such as a symbolic link, and returns one problem line for each
+// instead (whyNotRegular).
+func walkGoFiles(dir string, skip func(r *os.Root, rel, name string) (bool, error),
+	visit func(rel string, src []byte) error,
+) ([]string, error) {
+	r, err := os.OpenRoot(dir)
 	if err != nil {
-		return nil, 0, err
+		return nil, err
 	}
 	defer r.Close()
 
-	var problems []string
-	files := 0
-	// fs.WalkDir walks slash-separated paths relative to root, as reported.
+	var refused []string
+	// fs.WalkDir walks slash-separated paths relative to dir, as reported.
 	err = fs.WalkDir(r.FS(), ".", func(rel string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return err
 		}
 		if d.IsDir() {
-			if rel == "." {
+			if rel == "." || skip == nil {
 				return nil
 			}
-			skip, err := skipDir(r, rel, d.Name())
-			if err != nil || !skip {
+			skipped, err := skip(r, rel, d.Name())
+			if err != nil || !skipped {
 				return err
 			}
 			return fs.SkipDir
@@ -82,28 +123,21 @@ func scanSources(root string) ([]string, int, error) {
 			return nil
 		}
 		if !d.Type().IsRegular() {
-			problems = append(problems, rel+": "+whyNotRegular)
+			refused = append(refused, rel+": "+whyNotRegular)
 			return nil
 		}
-		files++
-
 		src, err := r.ReadFile(filepath.FromSlash(rel))
 		if err != nil {
 			return err
 		}
-		found, err := checkSource(rel, src)
-		if err != nil {
-			return err
-		}
-		problems = append(problems, found...)
-		return nil
+		return visit(rel, src)
 	})
-	return problems, files, err
+	return refused, err
 }
 
 // checkSource returns what in src, the content of the Go file at rel, a
-// slash-separated path from the module root, would hide code from depguard,
-// one line each.
+// slash-separated path from the module root, would hide code from depguard or
+// forbidigo, one line each.
 func checkSource(rel string, src []byte) ([]string, error) {
 	fset := token.NewFileSet()
 	f, err := parser.ParseFile(fset, rel, src, parser.ParseComments|parser.SkipObjectResolution)
@@ -115,8 +149,10 @@ func checkSource(rel string, src []byte) ([]string, error) {
 		for _, c := range group.List {
 			pos := fset.Position(c.Slash)
 			at := fmt.Sprintf("%s:%d:%d: %s", rel, pos.Line, pos.Column, c.Text)
-			if silencesDepguard(c.Text) {
-				problems = append(problems, at+" would hide depguard issues; fix the design instead (CLAUDE.md)")
+			for _, linter := range guardrails {
+				if silences(c.Text, linter) {
+					problems = append(problems, at+" would hide "+linter+" issues; fix the design or the call instead (CLAUDE.md)")
+				}
 			}
 			// The go command reads build constraints above the package
 			// clause only.
@@ -169,7 +205,22 @@ func TestScanSources(t *testing.T) {
 			name:  "nolint directive",
 			files: map[string]string{"a/a.go": "package a\n\nimport \"os\" //nolint:depguard // probe\n\nvar _ = os.Getpagesize\n"},
 			want: []string{
-				"a/a.go:3:13: //nolint:depguard // probe would hide depguard issues; fix the design instead (CLAUDE.md)",
+				"a/a.go:3:13: //nolint:depguard // probe would hide depguard issues; fix the design or the call instead (CLAUDE.md)",
+			},
+		},
+		{
+			name:  "nolint directive for forbidigo",
+			files: map[string]string{"a/a.go": "package a\n\nvar _ = 1 //nolint:forbidigo // probe\n"},
+			want: []string{
+				"a/a.go:3:11: //nolint:forbidigo // probe would hide forbidigo issues; fix the design or the call instead (CLAUDE.md)",
+			},
+		},
+		{
+			name:  "bare nolint directive",
+			files: map[string]string{"a/a.go": "package a\n\nvar _ = 1 //nolint // probe\n"},
+			want: []string{
+				"a/a.go:3:11: //nolint // probe would hide depguard issues; fix the design or the call instead (CLAUDE.md)",
+				"a/a.go:3:11: //nolint // probe would hide forbidigo issues; fix the design or the call instead (CLAUDE.md)",
 			},
 		},
 		{
@@ -197,6 +248,24 @@ func TestScanSources(t *testing.T) {
 			files:    map[string]string{"_hidden/zz.go": "package a\n\nimport \"os\" //nolint: all // probe\n"},
 			symlinks: map[string]string{"a/zz.go": "../_hidden/zz.go"},
 			want:     []string{"a/zz.go: " + whyNotRegular},
+		},
+		{
+			// The walk visits a/ before a.go and b.go, so a/zz.go's
+			// refusal comes between their problems.
+			name: "refusals in walk order among other problems",
+			files: map[string]string{
+				"_hidden/zz.go": "package a\n",
+				"a.go":          "//go:build !e2e\n\npackage a\n",
+				"b.go":          "//go:build !e2e\n\npackage a\n",
+				"0/a.go":        "//go:build !e2e\n\npackage a\n",
+			},
+			symlinks: map[string]string{"a/zz.go": "../_hidden/zz.go"},
+			want: []string{
+				"0/a.go:1:1: //go:build !e2e " + constraintHides("//go:build !e2e"),
+				"a/zz.go: " + whyNotRegular,
+				"a.go:1:1: //go:build !e2e " + constraintHides("//go:build !e2e"),
+				"b.go:1:1: //go:build !e2e " + constraintHides("//go:build !e2e"),
+			},
 		},
 	}
 	for _, tc := range tests {
