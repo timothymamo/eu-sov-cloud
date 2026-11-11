@@ -10,39 +10,70 @@ import (
 
 // The release workflow is read as a closed schema: every key, job and step it
 // may hold is listed below, with the value it must have. A pin a Renovate
-// update changes (an action's commit, goreleaser's version) is matched by
-// form, everything else exactly.
+// update changes (an action's commit, goreleaser's, cosign's and syft's
+// versions, the BuildKit image) is matched by form, everything else exactly.
 var (
 	// actionPin matches the commit an action is pinned to.
 	actionPin = `@[0-9a-f]{40}$`
 
-	checkoutAction   = regexp.MustCompile(`^actions/checkout` + actionPin)
-	setupGoAction    = regexp.MustCompile(`^actions/setup-go` + actionPin)
-	goreleaserAction = regexp.MustCompile(`^goreleaser/goreleaser-action` + actionPin)
+	checkoutAction         = regexp.MustCompile(`^actions/checkout` + actionPin)
+	setupGoAction          = regexp.MustCompile(`^actions/setup-go` + actionPin)
+	goreleaserAction       = regexp.MustCompile(`^goreleaser/goreleaser-action` + actionPin)
+	setupBuildxAction      = regexp.MustCompile(`^docker/setup-buildx-action` + actionPin)
+	loginAction            = regexp.MustCompile(`^docker/login-action` + actionPin)
+	metadataAction         = regexp.MustCompile(`^docker/metadata-action` + actionPin)
+	buildPushAction        = regexp.MustCompile(`^docker/build-push-action` + actionPin)
+	sbomAction             = regexp.MustCompile(`^anchore/sbom-action` + actionPin)
+	uploadArtifactAction   = regexp.MustCompile(`^actions/upload-artifact` + actionPin)
+	cosignInstallerAction  = regexp.MustCompile(`^sigstore/cosign-installer` + actionPin)
+	downloadArtifactAction = regexp.MustCompile(`^actions/download-artifact` + actionPin)
+	attestAction           = regexp.MustCompile(`^actions/attest` + actionPin)
 
-	// goreleaserVersion matches one exact goreleaser release.
-	goreleaserVersion = regexp.MustCompile(`^v[0-9]+\.[0-9]+\.[0-9]+$`)
+	// exactRelease matches one exact release of a tool: goreleaser, cosign,
+	// syft.
+	exactRelease = regexp.MustCompile(`^v[0-9]+\.[0-9]+\.[0-9]+$`)
+
+	// buildkitImage matches the BuildKit image setup-buildx-action runs,
+	// pinned by an exact release and the digest of its multi-arch index.
+	buildkitImage = regexp.MustCompile(`^image=moby/buildkit:v[0-9]+\.[0-9]+\.[0-9]+@sha256:[0-9a-f]{64}$`)
 )
 
-// releaseStep is one step a job of the release workflow must run.
+// releaseStep is one step a job of the release workflow must run. The keys
+// the step holds are exactly those whose field is set.
 type releaseStep struct {
 	// what names the step in a message.
 	what string
+	// name and id are the step's name: and id:, "" for none.
+	name, id string
 	// uses matches the action the step runs, nil for a run: step.
 	uses *regexp.Regexp
-	// name and run are a run: step's name and command.
-	name, run string
 	// with is the step's whole with: mapping, each key with what its value
-	// must match.
+	// must match; nil for none. A literal block value (|) is matched as its
+	// lines joined by newlines.
 	with map[string]*regexp.Regexp
 	// env is the step's whole env: mapping, line by line; nil for none.
 	env []string
+	// run is the step's command, a literal block's lines joined by newlines;
+	// "" for none.
+	run string
 }
 
 // exactly matches value and nothing else.
 func exactly(value string) *regexp.Regexp {
 	return regexp.MustCompile(`^` + regexp.QuoteMeta(value) + `$`)
 }
+
+// The image the release publishes; the expression of the digest the image job
+// builds and gives as its output; and the expression through which the sbom
+// and sign jobs read that output, to read, sign and attest the image by.
+const (
+	imageName     = "ghcr.io/timothymamo/eusov"
+	builtDigest   = "${{ steps.build.outputs.digest }}"
+	imageDigest   = "${{ needs.image.outputs.digest }}"
+	sbomFile      = "eusov.spdx.json"
+	sbomArtifact  = "sbom"
+	registryLogin = "ghcr.io"
+)
 
 var (
 	// setupGoStep is setup-go with its Actions cache off: the cache would
@@ -53,12 +84,39 @@ var (
 		with: map[string]*regexp.Regexp{"go-version-file": exactly("go.mod"), "cache": exactly("false")},
 	}
 
-	// testSteps are the test job's steps: the tests, and nothing else, on a
-	// runner of their own.
+	// fullCheckoutStep checks out the whole history without keeping the token.
+	fullCheckoutStep = releaseStep{
+		what: "actions/checkout", uses: checkoutAction,
+		with: map[string]*regexp.Regexp{"fetch-depth": exactly("0"), "persist-credentials": exactly("false")},
+	}
+
+	// loginStep logs in to GHCR with the job's own token.
+	loginStep = releaseStep{
+		what: "docker/login-action", uses: loginAction,
+		with: map[string]*regexp.Regexp{
+			"registry": exactly(registryLogin),
+			"username": exactly("${{ github.actor }}"),
+			"password": exactly("${{ secrets.GITHUB_TOKEN }}"),
+		},
+	}
+
+	// testSteps are the test job's steps: the whole history, the guard that
+	// the tagged commit is on main (ADR 0015) before anything runs repository
+	// code, and the tests, on a runner of their own.
 	testSteps = []releaseStep{
+		fullCheckoutStep,
 		{
-			what: "actions/checkout", uses: checkoutAction,
-			with: map[string]*regexp.Regexp{"persist-credentials": exactly("false")},
+			what: "the guard that the tagged commit is on main", name: "The tagged commit is on main",
+			run: strings.Join([]string{
+				`git rev-parse --verify --quiet refs/remotes/origin/main > /dev/null || {`,
+				`  echo "origin/main is missing from the checkout" >&2`,
+				`  exit 1`,
+				`}`,
+				`git merge-base --is-ancestor "$GITHUB_SHA" refs/remotes/origin/main || {`,
+				`  echo "$GITHUB_SHA is not on main: nothing is released" >&2`,
+				`  exit 1`,
+				`}`,
+			}, "\n"),
 		},
 		setupGoStep,
 		{what: "make test", name: "Test", run: "make test"},
@@ -67,40 +125,248 @@ var (
 	// goreleaserSteps are the goreleaser job's steps: no repository code runs
 	// before goreleaser, which is asked for exactly release --clean.
 	goreleaserSteps = []releaseStep{
-		{
-			what: "actions/checkout", uses: checkoutAction,
-			with: map[string]*regexp.Regexp{"fetch-depth": exactly("0"), "persist-credentials": exactly("false")},
-		},
+		fullCheckoutStep,
 		setupGoStep,
 		{
 			what: "goreleaser/goreleaser-action", uses: goreleaserAction,
 			with: map[string]*regexp.Regexp{
 				"distribution": exactly("goreleaser"),
-				"version":      goreleaserVersion,
+				"version":      exactRelease,
 				"args":         exactly("release --clean"),
 			},
 			env: []string{"GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}"},
 		},
 	}
+
+	// imageSteps are the image job's steps: the build arguments GoReleaser
+	// stamps and whether the tag is the highest release tag on main, read from git
+	// with the tag passed through env:, refusing a checkout without origin/main
+	// because the run shell has no pipefail and the pipeline would otherwise
+	// leave highest empty and latest false; a build of two platforms from an empty
+	// BuildKit, pushed, without BuildKit's own provenance or SBOM, tagged
+	// latest by the stamp's decision alone. Nothing signs or attests here.
+	imageSteps = []releaseStep{
+		fullCheckoutStep,
+		{
+			what: "the stamp of the build arguments", name: "Build arguments, as GoReleaser stamps them", id: "stamp",
+			env: []string{"TAG: ${{ github.ref_name }}"},
+			run: strings.Join([]string{
+				`git rev-parse --verify --quiet refs/remotes/origin/main > /dev/null || {`,
+				`  echo "origin/main is missing from the checkout" >&2`,
+				`  exit 1`,
+				`}`,
+				`highest="$(git tag -l 'v*.*.*' --merged refs/remotes/origin/main | sed -nE '/^v[0-9]+\.[0-9]+\.[0-9]+$/p' | sort -V | tail -n 1)"`,
+				`latest=false`,
+				`if [ "$TAG" = "$highest" ]; then latest=true; fi`,
+				`{`,
+				`  echo "version=${TAG#v}"`,
+				`  echo "commit=$(git rev-parse --short HEAD)"`,
+				`  echo "date=$(TZ=UTC git log -1 --format=%cd --date=format-local:%Y-%m-%dT%H:%M:%SZ)"`,
+				`  echo "latest=$latest"`,
+				`} >> "$GITHUB_OUTPUT"`,
+			}, "\n"),
+		},
+		{
+			what: "docker/setup-buildx-action", uses: setupBuildxAction,
+			with: map[string]*regexp.Regexp{"driver-opts": buildkitImage},
+		},
+		loginStep,
+		{
+			what: "docker/metadata-action", name: "Image tags", id: "tags", uses: metadataAction,
+			with: map[string]*regexp.Regexp{
+				"images": exactly(imageName),
+				"flavor": exactly("latest=${{ steps.stamp.outputs.latest }}"),
+				"tags": exactly(strings.Join([]string{
+					"type=semver,pattern={{raw}}",
+					"type=semver,pattern={{major}}.{{minor}},enable=${{ !contains(github.ref_name, '-') }}",
+				}, "\n")),
+			},
+		},
+		{
+			what: "docker/build-push-action", name: "Build and push linux/amd64 and linux/arm64", id: "build", uses: buildPushAction,
+			with: map[string]*regexp.Regexp{
+				"context":     exactly("."),
+				"platforms":   exactly("linux/amd64,linux/arm64"),
+				"push":        exactly("true"),
+				"tags":        exactly("${{ steps.tags.outputs.tags }}"),
+				"annotations": exactly("index:org.opencontainers.image.source=https://github.com/timothymamo/eu-sov-cloud"),
+				"provenance":  exactly("false"),
+				"sbom":        exactly("false"),
+				"build-args": exactly(strings.Join([]string{
+					"VERSION=${{ steps.stamp.outputs.version }}",
+					"COMMIT=${{ steps.stamp.outputs.commit }}",
+					"DATE=${{ steps.stamp.outputs.date }}",
+				}, "\n")),
+			},
+		},
+	}
+
+	// sbomSteps are the sbom job's steps: a read-only login, syft on the
+	// pushed index by digest (an exact syft, uploading nothing itself), and
+	// the SPDX document handed to the sign job as a short-lived workflow
+	// artifact.
+	sbomSteps = []releaseStep{
+		loginStep,
+		{
+			what: "anchore/sbom-action", uses: sbomAction,
+			with: map[string]*regexp.Regexp{
+				"image":                 exactly("registry:" + imageName + "@" + imageDigest),
+				"format":                exactly("spdx-json"),
+				"output-file":           exactly(sbomFile),
+				"upload-artifact":       exactly("false"),
+				"upload-release-assets": exactly("false"),
+				"syft-version":          exactRelease,
+			},
+		},
+		{
+			what: "actions/upload-artifact", uses: uploadArtifactAction,
+			with: map[string]*regexp.Regexp{
+				"name":              exactly(sbomArtifact),
+				"path":              exactly(sbomFile),
+				"if-no-files-found": exactly("error"),
+				"retention-days":    exactly("1"),
+			},
+		},
+	}
+
+	// signSteps are the sign job's steps, sigstore's and GitHub's code alone:
+	// cosign by exact release; a cosign login fed the actor and the token
+	// through env:; a keyless, recursive signature by digest; the provenance
+	// attestation; the SBOM artifact; and its attestation, both by digest,
+	// pushed to the registry and stored in no organisation API.
+	signSteps = []releaseStep{
+		{
+			what: "sigstore/cosign-installer", uses: cosignInstallerAction,
+			with: map[string]*regexp.Regexp{"cosign-release": exactRelease},
+		},
+		{
+			what: "the cosign login", name: "Log in to ghcr.io",
+			env: []string{"ACTOR: ${{ github.actor }}", "GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}"},
+			run: `printf '%s' "$GITHUB_TOKEN" | cosign login ` + registryLogin + ` --username "$ACTOR" --password-stdin`,
+		},
+		{
+			what: "the signature", name: "Sign the image",
+			env: []string{"DIGEST: " + imageDigest},
+			run: `cosign sign --yes --recursive "` + imageName + `@${DIGEST}"`,
+		},
+		{
+			what: "actions/attest (the build provenance)", name: "Attest the build provenance", uses: attestAction,
+			with: map[string]*regexp.Regexp{
+				"subject-name":          exactly(imageName),
+				"subject-digest":        exactly(imageDigest),
+				"push-to-registry":      exactly("true"),
+				"create-storage-record": exactly("false"),
+			},
+		},
+		{
+			what: "actions/download-artifact", uses: downloadArtifactAction,
+			with: map[string]*regexp.Regexp{"name": exactly(sbomArtifact)},
+		},
+		{
+			what: "actions/attest (the SBOM)", name: "Attest the SBOM", uses: attestAction,
+			with: map[string]*regexp.Regexp{
+				"subject-name":          exactly(imageName),
+				"subject-digest":        exactly(imageDigest),
+				"sbom-path":             exactly(sbomFile),
+				"push-to-registry":      exactly("true"),
+				"create-storage-record": exactly("false"),
+			},
+		},
+	}
 )
 
+// releaseJob is one job of the release workflow.
+type releaseJob struct {
+	key, name string
+	// needs are the jobs it needs, in the order written; nil for none. One
+	// job may be written as a single name or a list of one.
+	needs []string
+	// permissions is the job's whole permissions: mapping.
+	permissions map[string]string
+	// outputs is the job's whole outputs: mapping; nil for none.
+	outputs map[string]string
+	steps   []releaseStep
+}
+
+// releaseJobs are the release workflow's jobs, in the order a message lists
+// them. The write permissions stay split: the goreleaser job alone writes the
+// repository's contents; the image job pushes and nothing more; the sbom job,
+// which runs syft, can only read the registry; and the sign job alone holds
+// an OIDC token and writes attestations.
+var releaseJobs = []releaseJob{
+	{key: "test", name: "Test", permissions: map[string]string{"contents": "read"}, steps: testSteps},
+	{
+		key: "goreleaser", name: "GoReleaser", needs: []string{"test"},
+		permissions: map[string]string{"contents": "write"}, steps: goreleaserSteps,
+	},
+	{
+		key: "image", name: "Container image", needs: []string{"test", "goreleaser"},
+		permissions: map[string]string{"contents": "read", "packages": "write"},
+		outputs:     map[string]string{"digest": builtDigest},
+		steps:       imageSteps,
+	},
+	{
+		key: "sbom", name: "SBOM", needs: []string{"image"},
+		permissions: map[string]string{"packages": "read"}, steps: sbomSteps,
+	},
+	{
+		key: "sign", name: "Sign and attest", needs: []string{"image", "sbom"},
+		permissions: map[string]string{"packages": "write", "id-token": "write", "attestations": "write"},
+		steps:       signSteps,
+	},
+}
+
 // ReleaseWorkflow returns a message for everything in the release workflow
-// document src that could make goreleaser build something other than what
-// the check lists. It reads the document as a closed schema:
+// document src that could make goreleaser build, or the publishing jobs
+// publish, something other than what the check lists. It reads the document
+// as a closed schema:
 //
 //   - the top level holds exactly name, on (a push of v*.*.* tags),
-//     permissions ({}) and jobs, so no workflow-level env: or defaults:;
-//   - jobs holds exactly test and goreleaser, each with exactly name, runs-on
-//     (ubuntu-latest), permissions (contents: read for test, contents: write
-//     for goreleaser) and steps, and goreleaser needs: test, so no job-level
-//     env:, container:, if: or other key;
-//   - the test job's steps are exactly actions/checkout, actions/setup-go and
-//     make test; the goreleaser job's exactly actions/checkout,
-//     actions/setup-go and goreleaser/goreleaser-action, in that order, each
-//     action pinned by commit and each with exactly the with: keys and values
-//     listed, setup-go with cache: false in both jobs, goreleaser asked for
-//     exactly release --clean at an exact version, with an env: of exactly
-//     GITHUB_TOKEN from secrets.GITHUB_TOKEN.
+//     permissions ({}), concurrency (exactly group: release and
+//     cancel-in-progress: false, so one release runs at a time across every
+//     tag and a run in progress is never cancelled half published; a waiting
+//     run may be replaced by a newer tag's and must then be re-run by hand,
+//     ADR 0015) and jobs, so no workflow-level env: or defaults:;
+//   - jobs holds exactly test, goreleaser, image, sbom and sign, each with
+//     exactly name, runs-on (ubuntu-latest), permissions and steps, and needs
+//     for all but test (goreleaser needs test; image [test, goreleaser]; sbom
+//     image; sign [image, sbom], in that order), and image an outputs: of
+//     exactly its build's digest, so no job-level env:, container:, if: or
+//     other key;
+//   - the permissions are exactly contents: read for test; contents: write
+//     for goreleaser; contents: read and packages: write for image;
+//     packages: read for sbom; packages: write, id-token: write and
+//     attestations: write for sign;
+//   - the test job's steps are exactly actions/checkout of the whole history,
+//     the guard that the tagged commit is on main (an exact run: script),
+//     actions/setup-go and make test; the goreleaser job's exactly
+//     actions/checkout, actions/setup-go and goreleaser/goreleaser-action,
+//     setup-go with cache: false in both jobs, goreleaser asked for exactly
+//     release --clean at an exact version, with an env: of exactly
+//     GITHUB_TOKEN from secrets.GITHUB_TOKEN;
+//   - the image job's steps are exactly actions/checkout, the stamp of the
+//     build arguments and of the latest decision (a run: script, with the
+//     tag through env:, counting only the release tags merged into
+//     origin/main, and refusing a checkout without origin/main, since the
+//     run shell has no pipefail to fail the pipeline that counts them), docker/setup-buildx-action (BuildKit by exact release
+//     and index digest), docker/login-action, docker/metadata-action (latest
+//     from the stamp's output alone) and docker/build-push-action
+//     (linux/amd64 and linux/arm64, pushed, no cache, no BuildKit provenance
+//     or SBOM);
+//   - the sbom job's steps are exactly docker/login-action, anchore/sbom-action
+//     (the pushed index by digest, an exact syft, uploading nothing) and
+//     actions/upload-artifact of the SPDX document;
+//   - the sign job's steps are exactly sigstore/cosign-installer (an exact
+//     release), a cosign login with the actor and token through env:, cosign
+//     sign --recursive by digest, actions/attest of the build provenance,
+//     actions/download-artifact of the SPDX document and actions/attest of the
+//     SBOM, both by digest, pushed to the registry;
+//   - every step holds exactly the keys listed (name, id, uses, with, env,
+//     run), in that order of steps, each action pinned by commit, each with:
+//     key and value, env: line and run: command as listed. A run: command is
+//     one line or a literal block (|), compared line by line, and holds no
+//     ${{ }} expression: what a step takes from the workflow comes in through
+//     env:.
 //
 // The goreleaser job therefore runs no repository code before goreleaser, and
 // make test, which does, runs on another runner: neither the go env file nor
@@ -118,8 +384,10 @@ var (
 func ReleaseWorkflow(src []byte) []string {
 	var messages []string
 
-	for _, raw := range strings.Split(string(src), "\n") {
-		messages = append(messages, forbiddenNames(strings.TrimSpace(raw))...)
+	raw := strings.Split(string(src), "\n")
+	for i := range raw {
+		raw[i] = strings.TrimSuffix(raw[i], "\r")
+		messages = append(messages, forbiddenNames(strings.TrimSpace(raw[i]))...)
 	}
 
 	lines, err := splitLines(src)
@@ -127,19 +395,20 @@ func ReleaseWorkflow(src []byte) []string {
 		return append(messages, fmt.Sprintf("read the release workflow: %v", err))
 	}
 
-	return append(messages, releaseSchema(lines)...)
+	return append(messages, releaseSchema(raw, lines)...)
 }
 
-// releaseSchema returns a message for every way lines, the release workflow,
-// departs from the schema ReleaseWorkflow describes.
-func releaseSchema(lines []line) []string {
-	r := &schemaReader{}
+// releaseSchema returns a message for every way lines, the content lines of
+// the release workflow whose every line is raw, departs from the schema
+// ReleaseWorkflow describes.
+func releaseSchema(raw []string, lines []line) []string {
+	r := &schemaReader{raw: raw}
 
 	if len(lines) == 0 {
 		return []string{"the release workflow is empty, so this check cannot tell what goreleaser is asked to do"}
 	}
 
-	top := r.exactKeys(lines, "the release workflow", "name", "on", "permissions", "jobs")
+	top := r.exactKeys(lines, "the release workflow", "name", "on", "permissions", "concurrency", "jobs")
 	if top == nil {
 		return r.messages
 	}
@@ -147,25 +416,39 @@ func releaseSchema(lines []line) []string {
 	r.scalar(top["name"], "the release workflow's name", exactly("Release"))
 	r.rawValue(top["permissions"], "the release workflow's permissions", "{}")
 
+	if c := r.exactKeys(r.block(top["concurrency"], "concurrency"), "concurrency", "group", "cancel-in-progress"); c != nil {
+		r.scalar(c["group"], "concurrency: group", exactly("release"))
+		r.scalar(c["cancel-in-progress"], "concurrency: cancel-in-progress", exactly("false"))
+	}
+
 	if on := r.exactKeys(r.block(top["on"], "on"), "on", "push"); on != nil {
 		if push := r.exactKeys(r.block(on["push"], "on: push"), "on: push", "tags"); push != nil {
 			r.list(push["tags"], "on: push: tags", []string{"v*.*.*"})
 		}
 	}
 
-	jobs := r.exactKeys(r.block(top["jobs"], "jobs"), "jobs", "test", "goreleaser")
+	keys := make([]string, 0, len(releaseJobs))
+	for _, j := range releaseJobs {
+		keys = append(keys, j.key)
+	}
+
+	jobs := r.exactKeys(r.block(top["jobs"], "jobs"), "jobs", keys...)
 	if jobs == nil {
 		return r.messages
 	}
 
-	r.job(jobs["test"], "jobs: test", "Test", "", "read", testSteps)
-	r.job(jobs["goreleaser"], "jobs: goreleaser", "GoReleaser", "test", "write", goreleaserSteps)
+	for _, j := range releaseJobs {
+		r.job(jobs[j.key], "jobs: "+j.key, j)
+	}
 
 	return r.messages
 }
 
 // schemaReader collects the messages of a schema check.
 type schemaReader struct {
+	// raw are the document's lines, line ends removed, from which a literal
+	// block is read.
+	raw      []string
 	messages []string
 }
 
@@ -173,12 +456,16 @@ func (r *schemaReader) fail(format string, args ...any) {
 	r.messages = append(r.messages, fmt.Sprintf(format, args...))
 }
 
-// job checks one job: its name, needs (none when needs is empty), runner,
-// contents permission and steps.
-func (r *schemaReader) job(e entry, path, name, needs, contents string, steps []releaseStep) {
+// job checks one job against want: its name, needs, runner, permissions,
+// outputs and steps.
+func (r *schemaReader) job(e entry, path string, want releaseJob) {
 	keys := []string{"name", "runs-on", "permissions", "steps"}
-	if needs != "" {
+	if want.needs != nil {
 		keys = append(keys, "needs")
+	}
+
+	if want.outputs != nil {
+		keys = append(keys, "outputs")
 	}
 
 	job := r.exactKeys(r.block(e, path), path, keys...)
@@ -186,15 +473,17 @@ func (r *schemaReader) job(e entry, path, name, needs, contents string, steps []
 		return
 	}
 
-	r.scalar(job["name"], path+": name", exactly(name))
+	r.scalar(job["name"], path+": name", exactly(want.name))
 	r.scalar(job["runs-on"], path+": runs-on", exactly("ubuntu-latest"))
 
-	if needs != "" {
-		r.scalar(job["needs"], path+": needs", exactly(needs))
+	if want.needs != nil {
+		r.needs(job["needs"], path+": needs", want.needs)
 	}
 
-	if perms := r.exactKeys(r.block(job["permissions"], path+": permissions"), path+": permissions", "contents"); perms != nil {
-		r.scalar(perms["contents"], path+": permissions: contents", exactly(contents))
+	r.exactMapping(job["permissions"], path+": permissions", want.permissions)
+
+	if want.outputs != nil {
+		r.exactMapping(job["outputs"], path+": outputs", want.outputs)
 	}
 
 	stepsPath := path + ": steps"
@@ -211,20 +500,71 @@ func (r *schemaReader) job(e entry, path, name, needs, contents string, steps []
 		return
 	}
 
-	if len(items) != len(steps) {
-		whats := make([]string, 0, len(steps))
-		for _, s := range steps {
+	if len(items) != len(want.steps) {
+		whats := make([]string, 0, len(want.steps))
+		for _, s := range want.steps {
 			whats = append(whats, s.what)
 		}
 
 		r.fail("%s holds %d steps, want exactly %d: %s, so that nothing the check never lists runs in this job",
-			stepsPath, len(items), len(steps), strings.Join(whats, ", "))
+			stepsPath, len(items), len(want.steps), strings.Join(whats, ", "))
 
 		return
 	}
 
 	for i, it := range items {
-		r.step(it, fmt.Sprintf("%s: step %d", stepsPath, i+1), steps[i])
+		r.step(it, fmt.Sprintf("%s: step %d", stepsPath, i+1), want.steps[i])
+	}
+}
+
+// needs checks that e's value is exactly the jobs want, in that order: a flow
+// or block list, or one job name on the key's own line.
+func (r *schemaReader) needs(e entry, path string, want []string) {
+	var (
+		got []string
+		err error
+	)
+
+	if e.value == "" || strings.HasPrefix(e.value, "[") {
+		got, err = list(e)
+	} else {
+		var one string
+
+		one, err = single(e)
+		got = []string{one}
+	}
+
+	if err != nil {
+		r.fail("%s: %v", path, err)
+
+		return
+	}
+
+	if !slices.Equal(got, want) {
+		r.fail("line %d: %s is %q, want exactly %q", e.num, path, got, want)
+	}
+}
+
+// exactMapping checks that e's value is a block mapping holding exactly the
+// keys of want, each with exactly its value.
+func (r *schemaReader) exactMapping(e entry, path string, want map[string]string) {
+	keys := sortedKeys(want)
+
+	if e.value == "" && len(e.block) == 0 {
+		pairs := make([]string, 0, len(keys))
+		for _, key := range keys {
+			pairs = append(pairs, key+": "+want[key])
+		}
+
+		r.fail("line %d: %s is empty, want exactly %s", e.num, path, strings.Join(pairs, ", "))
+
+		return
+	}
+
+	if got := r.exactKeys(r.block(e, path), path, keys...); got != nil {
+		for _, key := range keys {
+			r.scalar(got[key], path+": "+key, exactly(want[key]))
+		}
 	}
 }
 
@@ -232,21 +572,22 @@ func (r *schemaReader) job(e entry, path, name, needs, contents string, steps []
 func (r *schemaReader) step(it item, path string, want releaseStep) {
 	path = fmt.Sprintf("%s (line %d), want %s", path, it.num, want.what)
 
-	if want.uses == nil {
-		step := r.exactKeys(it.lines, path, "name", "run")
-		if step == nil {
-			return
+	var keys []string
+
+	for _, k := range []struct {
+		key string
+		set bool
+	}{
+		{"name", want.name != ""},
+		{"id", want.id != ""},
+		{"uses", want.uses != nil},
+		{"with", want.with != nil},
+		{"env", want.env != nil},
+		{"run", want.run != ""},
+	} {
+		if k.set {
+			keys = append(keys, k.key)
 		}
-
-		r.scalar(step["name"], path+": name", exactly(want.name))
-		r.scalar(step["run"], path+": run", exactly(want.run))
-
-		return
-	}
-
-	keys := []string{"uses", "with"}
-	if want.env != nil {
-		keys = append(keys, "env")
 	}
 
 	step := r.exactKeys(it.lines, path, keys...)
@@ -254,28 +595,40 @@ func (r *schemaReader) step(it item, path string, want releaseStep) {
 		return
 	}
 
-	r.scalar(step["uses"], path+": uses", want.uses)
-
-	withKeys := make([]string, 0, len(want.with))
-	for key := range want.with {
-		withKeys = append(withKeys, key)
+	if want.name != "" {
+		r.scalar(step["name"], path+": name", exactly(want.name))
 	}
 
-	slices.Sort(withKeys)
+	if want.id != "" {
+		r.scalar(step["id"], path+": id", exactly(want.id))
+	}
 
-	if with := r.exactKeys(r.block(step["with"], path+": with"), path+": with", withKeys...); with != nil {
-		for _, key := range withKeys {
-			r.scalar(with[key], path+": with: "+key, want.with[key])
+	if want.uses != nil {
+		r.scalar(step["uses"], path+": uses", want.uses)
+	}
+
+	if want.with != nil {
+		withKeys := sortedKeys(want.with)
+		if with := r.exactKeys(r.block(step["with"], path+": with"), path+": with", withKeys...); with != nil {
+			for _, key := range withKeys {
+				r.scalar(with[key], path+": with: "+key, want.with[key])
+			}
 		}
 	}
 
-	if want.env == nil {
-		return
+	if want.env != nil {
+		r.env(step["env"], path+": env", want.env)
 	}
 
-	// The env: keys are upper case, which the mapping reader refuses, so the
-	// block is compared line by line.
-	env := r.block(step["env"], path+": env")
+	if want.run != "" {
+		r.run(step["run"], path+": run", want.run)
+	}
+}
+
+// env checks that e's value is exactly the env: mapping want, line by line:
+// its keys are upper case, which the mapping reader refuses.
+func (r *schemaReader) env(e entry, path string, want []string) {
+	env := r.block(e, path)
 	if env == nil {
 		return
 	}
@@ -285,9 +638,41 @@ func (r *schemaReader) step(it item, path string, want releaseStep) {
 		got = append(got, l.text)
 	}
 
-	if !slices.Equal(got, want.env) {
-		r.fail("%s: env holds %q, want exactly %q, so goreleaser could build with an environment the check never lists with", path, got, want.env)
+	if !slices.Equal(got, want) {
+		r.fail("%s holds %q, want exactly %q, so the step could run with an environment the check never lists", path, got, want)
 	}
+}
+
+// run checks that e's value is exactly the command want, and refuses a ${{ }}
+// expression in it: the runner pastes the expression's value into the script
+// before the shell reads it, so a tag or a branch name could run as a command.
+func (r *schemaReader) run(e entry, path, want string) {
+	value, err := r.value(e)
+	if err != nil {
+		r.fail("%s: %v", path, err)
+
+		return
+	}
+
+	if strings.Contains(value, "${{") {
+		r.fail("line %d: %s holds a ${{ }} expression, whose value the runner pastes into the script as code; pass it through env: instead", e.num, path)
+	}
+
+	if value != want {
+		r.fail("line %d: %s is %q, want exactly %q", e.num, path, value, want)
+	}
+}
+
+// sortedKeys returns the keys of m in order.
+func sortedKeys[V any](m map[string]V) []string {
+	keys := make([]string, 0, len(m))
+	for key := range m {
+		keys = append(keys, key)
+	}
+
+	slices.Sort(keys)
+
+	return keys
 }
 
 // exactKeys reads lines as a block mapping holding exactly want, and returns
@@ -346,9 +731,10 @@ func (r *schemaReader) block(e entry, path string) []line {
 	return lines
 }
 
-// scalar checks that e's value is one scalar that want matches.
+// scalar checks that e's value, one scalar or a literal block, is one that
+// want matches.
 func (r *schemaReader) scalar(e entry, path string, want *regexp.Regexp) {
-	value, err := single(e)
+	value, err := r.value(e)
 	if err != nil {
 		r.fail("%s: %v", path, err)
 
@@ -358,6 +744,16 @@ func (r *schemaReader) scalar(e entry, path string, want *regexp.Regexp) {
 	if !want.MatchString(value) {
 		r.fail("line %d: %s is %q, want one matching %s", e.num, path, value, want)
 	}
+}
+
+// value reads e's value: a literal block (|) as its lines joined by newlines,
+// anything else as one scalar on the key's own line.
+func (r *schemaReader) value(e entry) (string, error) {
+	if e.value == "|" {
+		return literalBlock(r.raw, e)
+	}
+
+	return single(e)
 }
 
 // rawValue checks that e's value is exactly want, as written on its line.

@@ -106,7 +106,11 @@ jobs:
         run: make test-e2e
 
   # Builds the container image for both release platforms without pushing it, then
-  # smoke-tests the amd64 image: a broken Dockerfile fails the pull request.
+  # smoke-tests the amd64 image: a broken Dockerfile fails the pull request. It is
+  # also the dry run of release.yml's image and sbom jobs (ADR 0015): the same latest
+  # and tag rules for sample tags, the same build settings, and the SBOM of the built
+  # image. Pushing, signing and the attestations need write access and an OIDC token,
+  # so only a tag runs them.
   image:
     name: Container image
     runs-on: ubuntu-latest
@@ -132,16 +136,111 @@ jobs:
       - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
         with:
           driver-opts: image=moby/buildkit:${{ env.BUILDKIT_VERSION }}
+      # release.yml's latest rule, on sample tag lists in place of its git tag -l --merged
+      # refs/remotes/origin/main: each list stands for the tags on main, and the same sed, sort and
+      # tail pick the highest. latest moves only for the highest release tag, pre-releases left out.
+      - name: Latest for sample tags, as release.yml decides it
+        id: latest
+        run: |
+          # $1 is the pushed tag, the rest every tag merged into main.
+          decide() {
+            TAG="$1"
+            shift
+            highest="$(printf '%s\n' "$@" | sed -nE '/^v[0-9]+\.[0-9]+\.[0-9]+$/p' | sort -V | tail -n 1)"
+            latest=false
+            if [ "$TAG" = "$highest" ]; then latest=true; fi
+            echo "$latest"
+          }
+          {
+            echo "highest=$(decide v1.2.3 v1.1.0 v1.2.2 v1.2.3 v1.3.0-rc.1)"
+            echo "older=$(decide v1.2.3 v1.2.2 v1.2.3 v1.10.0)"
+            echo "prerelease=$(decide v1.2.3-rc.1 v1.2.2 v1.2.3-rc.1)"
+          } >> "$GITHUB_OUTPUT"
+      # release.yml's tag rules, each given a sample tag in place of the pushed one: the highest
+      # release gets vX.Y.Z, X.Y and latest, an older line's release no latest, a pre-release its
+      # own tag only.
+      - name: Image tags for a sample release tag, the highest
+        id: tags-release
+        uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6.2.0
+        with:
+          images: ghcr.io/timothymamo/eusov
+          flavor: latest=${{ steps.latest.outputs.highest }}
+          tags: |
+            type=semver,pattern={{raw}},value=v1.2.3
+            type=semver,pattern={{major}}.{{minor}},value=v1.2.3,enable=${{ !contains('v1.2.3', '-') }}
+      - name: Image tags for a sample release tag on an older line
+        id: tags-older
+        uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6.2.0
+        with:
+          images: ghcr.io/timothymamo/eusov
+          flavor: latest=${{ steps.latest.outputs.older }}
+          tags: |
+            type=semver,pattern={{raw}},value=v1.2.3
+            type=semver,pattern={{major}}.{{minor}},value=v1.2.3,enable=${{ !contains('v1.2.3', '-') }}
+      - name: Image tags for a sample pre-release tag
+        id: tags-prerelease
+        uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6.2.0
+        with:
+          images: ghcr.io/timothymamo/eusov
+          flavor: latest=${{ steps.latest.outputs.prerelease }}
+          tags: |
+            type=semver,pattern={{raw}},value=v1.2.3-rc.1
+            type=semver,pattern={{major}}.{{minor}},value=v1.2.3-rc.1,enable=${{ !contains('v1.2.3-rc.1', '-') }}
+      - name: The tags each sample gets
+        env:
+          RELEASE: ${{ steps.tags-release.outputs.tags }}
+          OLDER: ${{ steps.tags-older.outputs.tags }}
+          PRERELEASE: ${{ steps.tags-prerelease.outputs.tags }}
+        run: |
+          check() {
+            got="$(printf '%s\n' "$2" | sed '/^$/d' | sort)"
+            want="$(printf '%s\n' "$3" | sort)"
+            echo "$1: $(printf '%s\n' "$got" | tr '\n' ' ')"
+            if [ "$got" != "$want" ]; then
+              echo "$1: want $(printf '%s\n' "$want" | tr '\n' ' ')" >&2
+              exit 1
+            fi
+          }
+          image=ghcr.io/timothymamo/eusov
+          check release "$RELEASE" "$image:v1.2.3
+          $image:1.2
+          $image:latest"
+          check older-line "$OLDER" "$image:v1.2.3
+          $image:1.2"
+          check pre-release "$PRERELEASE" "$image:v1.2.3-rc.1"
+      # The settings of release.yml's push, written to an OCI archive instead of a registry.
       - name: Build linux/amd64 and linux/arm64
         uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
         with:
           context: .
           platforms: linux/amd64,linux/arm64
           push: false
+          outputs: type=oci,dest=${{ runner.temp }}/eusov.oci.tar
+          tags: ${{ steps.tags-release.outputs.tags }}
+          annotations: index:org.opencontainers.image.source=https://github.com/timothymamo/eu-sov-cloud
+          provenance: false
+          sbom: false
           build-args: |
             VERSION=${{ steps.meta.outputs.version }}
             COMMIT=${{ steps.meta.outputs.commit }}
             DATE=${{ steps.meta.outputs.date }}
+      - name: SBOM of the built image
+        uses: anchore/sbom-action@66cbf4bc1f1c0d2edc94016e65bc221b6bb0ad6c # v0.24.3
+        with:
+          image: oci-archive:${{ runner.temp }}/eusov.oci.tar
+          format: spdx-json
+          output-file: ${{ runner.temp }}/eusov.spdx.json
+          upload-artifact: false
+          upload-release-assets: false
+          # renovate: datasource=github-releases depName=anchore/syft
+          syft-version: v1.57.1
+      - name: The SBOM is SPDX and lists eusov
+        env:
+          SBOM: ${{ runner.temp }}/eusov.spdx.json
+        run: |
+          jq -r '.spdxVersion, (.packages | length | "\(.) packages")' "$SBOM"
+          jq -e '.spdxVersion == "SPDX-2.3"' "$SBOM" > /dev/null
+          jq -e 'any(.packages[]; .name == "github.com/timothymamo/eu-sov-cloud")' "$SBOM" > /dev/null
       - name: Load linux/amd64 for the smoke test
         uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
         with:

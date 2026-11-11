@@ -8,13 +8,14 @@ import (
 	"unicode/utf8"
 )
 
-// This file reads the small part of YAML that .goreleaser.yaml and
-// .golangci.yml use on the paths the checks follow, with the standard library
-// only. It reads by indentation, line by line: a key's value is the text on its
+// This file reads the small part of YAML that .goreleaser.yaml, .golangci.yml
+// and the workflows in .github/workflows use on the paths the checks follow,
+// with the standard library only. It reads by indentation, line by line: a key's value is the text on its
 // own line and the lines below it indented further. Along the path it walks and
 // in the values it reads, it refuses everything else (anchors, aliases, merge
-// keys, quoted or upper-case keys, tags, escapes, multi-line flow lists, a
-// repeated key) rather than guess at it. The values of the keys it steps over
+// keys, quoted or upper-case keys, tags, escapes, multi-line flow lists, folded
+// or chomped block scalars, a repeated key) rather than guess at it; a literal
+// block scalar (|) it reads only where a check asks for one (literalBlock). The values of the keys it steps over
 // are kept whole, by indentation, and never read. Anywhere in the document,
 // comments included, it refuses the characters YAML readers do not agree on
 // (checkLine).
@@ -291,6 +292,78 @@ func single(e entry) (string, error) {
 	}
 
 	return value, nil
+}
+
+// literalBlock reads the value of e, a literal block scalar (|) with clip
+// chomping and its indentation taken from its first line, from raw, the lines
+// of the document e is in with their line ends removed. It returns the block's
+// lines, that indentation removed, joined by newlines, without the newline
+// after the last one. It reads raw rather than e.block because a block's lines
+// are content, not comments: a line in it that starts with # is part of the
+// value, and so is a blank line between two others.
+//
+// It refuses a block whose first line is not its first content line, and a
+// content line indented less than the first: YAML ends the block there, where
+// the mapping reader would keep the line in it.
+func literalBlock(raw []string, e entry) (string, error) {
+	return readLiteralBlock(raw, e, false)
+}
+
+// literalBlockLeadingHashes reads e as literalBlock does, but accepts lines
+// starting with # before the block's first content line when they sit at
+// exactly its indentation: YAML reads them as the block's first lines, and so
+// does this reader, keeping them in the value. Any other line there is still
+// refused.
+func literalBlockLeadingHashes(raw []string, e entry) (string, error) {
+	return readLiteralBlock(raw, e, true)
+}
+
+// readLiteralBlock is literalBlock, with lines starting with # at the block's
+// indentation accepted before its first content line when leadingHashes.
+func readLiteralBlock(raw []string, e entry, leadingHashes bool) (string, error) {
+	if e.value != "|" {
+		return "", fmt.Errorf("line %d: %s is %q, want a literal block (|)", e.num, e.key, e.value)
+	}
+
+	if len(e.block) == 0 {
+		return "", fmt.Errorf("line %d: %s is an empty literal block", e.num, e.key)
+	}
+
+	first, last := e.block[0], e.block[len(e.block)-1]
+
+	var out []string
+
+	// raw[e.num] is the line after the key's, line numbers counting from 1.
+	for i := e.num; i < len(raw); i++ {
+		text := strings.TrimLeft(raw[i], " ")
+		indent := len(raw[i]) - len(text)
+
+		if text == "" {
+			out = append(out, "")
+
+			continue
+		}
+
+		if i+1 < first.num && (!leadingHashes || indent != first.indent || !strings.HasPrefix(text, "#")) {
+			return "", fmt.Errorf("line %d: %s has a line before its first content line, which this reader does not follow", i+1, e.key)
+		}
+
+		if indent < first.indent {
+			if i+1 <= last.num {
+				return "", fmt.Errorf("line %d: a line of %s indented less than its first", i+1, e.key)
+			}
+
+			break
+		}
+
+		out = append(out, raw[i][first.indent:])
+	}
+
+	for len(out) > 0 && out[len(out)-1] == "" {
+		out = out[:len(out)-1]
+	}
+
+	return strings.Join(out, "\n"), nil
 }
 
 // flowList reads a flow list written on one line, [a, b], whose entries are
