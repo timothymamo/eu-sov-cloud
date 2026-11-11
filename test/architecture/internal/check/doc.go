@@ -14,17 +14,19 @@
 // would add under a root, and every symlink among those files.
 // StrayReleaseFiles and ReleaseWorkflow pin that the release builds what the
 // check lists: no other goreleaser document, go.work or vendor at the root that
-// git could commit, and a release workflow read as a closed schema of five
-// jobs: the tests, behind the guard that the tagged commit is on main; a
+// git could commit, and a release workflow read as a closed schema of one
+// release at a time and five jobs: the tests, behind the guard that the tagged commit is on main; a
 // goreleaser job that runs no repository code and sets no environment for the
 // go command; an image job that builds and pushes the image and can do nothing
 // more; an sbom job that can only read the registry; and a sign job, the only
 // one with an OIDC token, that signs and attests the image by digest with
 // sigstore's and GitHub's actions alone. WorkflowPrivileges keeps every other
 // workflow from publishing: no packages, id-token or attestations write, no
-// write-all, no tag trigger. DryRunMirrorsRelease holds ci.yml's image job, the
-// release's dry run, to the release's build settings, tag rules, SBOM settings,
-// action pins and BuildKit image.
+// write-all, no trigger a tag runs (push of tags, create, release,
+// workflow_run), and a top-level permissions: always. DryRunMirrorsRelease
+// holds ci.yml's image job, the release's dry run, to the release's build
+// settings, tag rules, latest decision, SBOM settings, action pins and
+// BuildKit image.
 //
 // Nothing is copied: the release platforms are read from .goreleaser.yaml
 // (ReleaseTargets), and the strict rules and their allow lists from

@@ -26,6 +26,22 @@ var buildSettings = []string{"platforms", "annotations", "provenance", "sbom"}
 // dry run and the release.
 var sbomSettings = []string{"format", "syft-version"}
 
+// The latest decision: the id of the step that makes it in each document, the
+// flavor: through which metadata-action reads it, the line of its run: block
+// that picks the highest release tag, and the source of the tags that line
+// reads in each document.
+const (
+	releaseLatestID  = "stamp"
+	ciLatestID       = "latest"
+	releaseFlavor    = "latest=${{ steps." + releaseLatestID + ".outputs.latest }}"
+	ciFlavorPrefix   = "latest=${{ steps." + ciLatestID + ".outputs."
+	flavorSuffix     = " }}"
+	latestFlavor     = "latest=<the latest decision>"
+	highestLine      = `highest="$(`
+	releaseTagSource = `git tag -l 'v*.*.*' --merged refs/remotes/origin/main`
+	ciTagSource      = `printf '%s\n' "$@"`
+)
+
 // workflowStep is one step of a job, as the dry run check reads it.
 type workflowStep struct {
 	num int
@@ -36,6 +52,11 @@ type workflowStep struct {
 	commit string
 	// with are the step's with: entries by key.
 	with map[string]entry
+	// id is the step's id:, "" for none.
+	id string
+	// run is the step's run: entry, read only when hasRun.
+	run    entry
+	hasRun bool
 }
 
 // workflowJob is one job, as the dry run check reads it.
@@ -63,7 +84,15 @@ type workflowJob struct {
 //     its tags, once the sample tag of their ,value=<sample> is dropped and
 //     the sample, quoted or not, is replaced by github.ref_name, are exactly
 //     the release's tags;
-//   - anchore/sbom-action has the release's format and syft-version.
+//   - anchore/sbom-action has the release's format and syft-version;
+//   - the release's metadata-action reads latest from its stamp step alone
+//     (flavor: latest=${{ steps.stamp.outputs.latest }}), and every one of the
+//     dry run's from an output of its own step id: latest;
+//   - the line of the stamp's run: block that picks the highest tag, the one
+//     starting highest="$(, is the dry run's line in its latest step once the
+//     release's tag source, git tag -l 'v*.*.*' --merged
+//     refs/remotes/origin/main, is replaced by the dry run's printf '%s\n'
+//     "$@": the same filter, sort and pick, on sample tags.
 func DryRunMirrorsRelease(ci, release []byte) []string {
 	r := &schemaReader{}
 
@@ -90,6 +119,8 @@ func DryRunMirrorsRelease(ci, release []byte) []string {
 	d.buildkit(ciJob, releaseSteps)
 	d.build(ciJob.steps, releaseSteps)
 	d.tags(ciJob.steps, releaseSteps)
+	d.flavor(ciJob.steps, releaseSteps)
+	d.highest(ciJob.steps, releaseSteps)
 	d.sbom(ciJob.steps, releaseSteps)
 
 	return r.messages
@@ -196,7 +227,8 @@ func (r *schemaReader) jobEnv(e entry, path string) (map[string]string, bool) {
 	return env, true
 }
 
-// workflowSteps reads e, a job's steps:, keeping each step's uses: and with:.
+// workflowSteps reads e, a job's steps:, keeping each step's id:, uses:,
+// with: and run:.
 func (r *schemaReader) workflowSteps(e entry, path string) ([]workflowStep, bool) {
 	block := r.block(e, path)
 	if block == nil {
@@ -226,6 +258,17 @@ func (r *schemaReader) workflowSteps(e entry, path string) ([]workflowStep, bool
 
 		for _, se := range entries {
 			switch se.key {
+			case "id":
+				id, err := single(se)
+				if err != nil {
+					r.fail("%s: %v", stepPath, err)
+
+					return nil, false
+				}
+
+				step.id = id
+			case "run":
+				step.run, step.hasRun = se, true
 			case "uses":
 				uses, err := single(se)
 				if err != nil {
@@ -514,4 +557,113 @@ func (d dryRun) sbom(ci, release []workflowStep) {
 	for _, key := range sbomSettings {
 		d.same(ciStep, releaseStep, sbomActionName, key)
 	}
+}
+
+// flavor checks that the release's metadata-action reads latest from its stamp
+// step and every one of the dry run's from an output of its latest step.
+func (d dryRun) flavor(ci, release []workflowStep) {
+	releaseStep, ok := d.one(release, "release.yml's image job", metadataName)
+	if !ok {
+		return
+	}
+
+	want, ok := d.withValue(d.releaseRaw, releaseStep, "release.yml: "+metadataName, "flavor")
+	if !ok {
+		return
+	}
+
+	if want != releaseFlavor {
+		d.r.fail("release.yml: %s (line %d): with: flavor is %q, want exactly %q: the dry run must tag latest as the release does, so the release must read latest from its stamp", metadataName, releaseStep.num, want, releaseFlavor)
+
+		return
+	}
+
+	for _, s := range stepsOf(ci, metadataName) {
+		got, ok := d.withValue(d.ciRaw, s, "ci.yml: "+metadataName, "flavor")
+		if !ok {
+			continue
+		}
+
+		if normaliseCIFlavor(got) != latestFlavor {
+			d.r.fail("ci.yml: %s (line %d): with: flavor is %q, want %s<name>%s: the dry run must tag latest as the release does, from its step id: %s", metadataName, s.num, got, ciFlavorPrefix, flavorSuffix, ciLatestID)
+		}
+	}
+}
+
+// normaliseCIFlavor returns latestFlavor for a flavor: that reads latest from
+// a named output of the dry run's latest step, and flavor unchanged otherwise.
+func normaliseCIFlavor(flavor string) string {
+	name, found := strings.CutPrefix(flavor, ciFlavorPrefix)
+	if !found {
+		return flavor
+	}
+
+	name, found = strings.CutSuffix(name, flavorSuffix)
+	if !found || name == "" || strings.Trim(name, "abcdefghijklmnopqrstuvwxyz0123456789_-") != "" {
+		return flavor
+	}
+
+	return latestFlavor
+}
+
+// highest checks that the dry run picks the highest tag with the release's
+// pipeline, on its sample tags in place of the release's tags on main.
+func (d dryRun) highest(ci, release []workflowStep) {
+	want, wantNum, ok := d.highestLine(d.releaseRaw, release, "release.yml's image job", releaseLatestID)
+	if !ok {
+		return
+	}
+
+	got, gotNum, ok := d.highestLine(d.ciRaw, ci, "ci.yml's image job", ciLatestID)
+	if !ok {
+		return
+	}
+
+	if strings.ReplaceAll(want, releaseTagSource, ciTagSource) != got {
+		d.r.fail("ci.yml (line %d) picks the highest tag with %q, release.yml (line %d) with %q: the dry run must pick the highest tag the release picks, with %s in place of %s", gotNum, got, wantNum, want, ciTagSource, releaseTagSource)
+	}
+}
+
+// highestLine returns the line, trimmed, of the run: block (|) of the step id
+// of steps, in the document raw, that starts highest="$(, and the step's line.
+func (d dryRun) highestLine(raw []string, steps []workflowStep, file, id string) (string, int, bool) {
+	var found []workflowStep
+
+	for _, s := range steps {
+		if s.id == id {
+			found = append(found, s)
+		}
+	}
+
+	if len(found) != 1 || !found[0].hasRun {
+		d.r.fail("%s holds %d run: steps with id: %s, want exactly 1: the dry run must pick the highest tag the release picks", file, len(found), id)
+
+		return "", 0, false
+	}
+
+	s := found[0]
+
+	// The dry run's script opens with a comment line inside its block.
+	script, err := literalBlockLeadingHashes(raw, s.run)
+	if err != nil {
+		d.r.fail("%s: step id: %s (line %d): run: %v", file, id, s.num, err)
+
+		return "", 0, false
+	}
+
+	var lines []string
+
+	for l := range strings.SplitSeq(script, "\n") {
+		if l = strings.TrimSpace(l); strings.HasPrefix(l, highestLine) {
+			lines = append(lines, l)
+		}
+	}
+
+	if len(lines) != 1 {
+		d.r.fail("%s: step id: %s (line %d) holds %d lines starting %s, want exactly 1: the dry run must pick the highest tag the release picks", file, id, s.num, len(lines), highestLine)
+
+		return "", 0, false
+	}
+
+	return lines[0], s.num, true
 }

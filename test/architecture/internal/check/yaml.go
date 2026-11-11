@@ -306,6 +306,21 @@ func single(e entry) (string, error) {
 // content line indented less than the first: YAML ends the block there, where
 // the mapping reader would keep the line in it.
 func literalBlock(raw []string, e entry) (string, error) {
+	return readLiteralBlock(raw, e, false)
+}
+
+// literalBlockLeadingHashes reads e as literalBlock does, but accepts lines
+// starting with # before the block's first content line when they sit at
+// exactly its indentation: YAML reads them as the block's first lines, and so
+// does this reader, keeping them in the value. Any other line there is still
+// refused.
+func literalBlockLeadingHashes(raw []string, e entry) (string, error) {
+	return readLiteralBlock(raw, e, true)
+}
+
+// readLiteralBlock is literalBlock, with lines starting with # at the block's
+// indentation accepted before its first content line when leadingHashes.
+func readLiteralBlock(raw []string, e entry, leadingHashes bool) (string, error) {
 	if e.value != "|" {
 		return "", fmt.Errorf("line %d: %s is %q, want a literal block (|)", e.num, e.key, e.value)
 	}
@@ -329,7 +344,7 @@ func literalBlock(raw []string, e entry) (string, error) {
 			continue
 		}
 
-		if i+1 < first.num {
+		if i+1 < first.num && (!leadingHashes || indent != first.indent || !strings.HasPrefix(text, "#")) {
 			return "", fmt.Errorf("line %d: %s has a line before its first content line, which this reader does not follow", i+1, e.key)
 		}
 

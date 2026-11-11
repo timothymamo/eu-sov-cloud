@@ -139,7 +139,7 @@ var (
 	}
 
 	// imageSteps are the image job's steps: the build arguments GoReleaser
-	// stamps and whether the tag is the highest release tag, read from git
+	// stamps and whether the tag is the highest release tag on main, read from git
 	// with the tag passed through env:; a build of two platforms from an empty
 	// BuildKit, pushed, without BuildKit's own provenance or SBOM, tagged
 	// latest by the stamp's decision alone. Nothing signs or attests here.
@@ -149,7 +149,7 @@ var (
 			what: "the stamp of the build arguments", name: "Build arguments, as GoReleaser stamps them", id: "stamp",
 			env: []string{"TAG: ${{ github.ref_name }}"},
 			run: strings.Join([]string{
-				`highest="$(git tag -l 'v*.*.*' | sed -nE '/^v[0-9]+\.[0-9]+\.[0-9]+$/p' | sort -V | tail -n 1)"`,
+				`highest="$(git tag -l 'v*.*.*' --merged refs/remotes/origin/main | sed -nE '/^v[0-9]+\.[0-9]+\.[0-9]+$/p' | sort -V | tail -n 1)"`,
 				`latest=false`,
 				`if [ "$TAG" = "$highest" ]; then latest=true; fi`,
 				`{`,
@@ -316,7 +316,10 @@ var releaseJobs = []releaseJob{
 // as a closed schema:
 //
 //   - the top level holds exactly name, on (a push of v*.*.* tags),
-//     permissions ({}) and jobs, so no workflow-level env: or defaults:;
+//     permissions ({}), concurrency (exactly group: release and
+//     cancel-in-progress: false, so one release runs at a time across every
+//     tag and none is cancelled half published) and jobs, so no
+//     workflow-level env: or defaults:;
 //   - jobs holds exactly test, goreleaser, image, sbom and sign, each with
 //     exactly name, runs-on (ubuntu-latest), permissions and steps, and needs
 //     for all but test (goreleaser needs test; image [test, goreleaser]; sbom
@@ -336,7 +339,8 @@ var releaseJobs = []releaseJob{
 //     GITHUB_TOKEN from secrets.GITHUB_TOKEN;
 //   - the image job's steps are exactly actions/checkout, the stamp of the
 //     build arguments and of the latest decision (a run: script, with the
-//     tag through env:), docker/setup-buildx-action (BuildKit by exact release
+//     tag through env:, counting only the release tags merged into
+//     origin/main), docker/setup-buildx-action (BuildKit by exact release
 //     and index digest), docker/login-action, docker/metadata-action (latest
 //     from the stamp's output alone) and docker/build-push-action
 //     (linux/amd64 and linux/arm64, pushed, no cache, no BuildKit provenance
@@ -396,13 +400,18 @@ func releaseSchema(raw []string, lines []line) []string {
 		return []string{"the release workflow is empty, so this check cannot tell what goreleaser is asked to do"}
 	}
 
-	top := r.exactKeys(lines, "the release workflow", "name", "on", "permissions", "jobs")
+	top := r.exactKeys(lines, "the release workflow", "name", "on", "permissions", "concurrency", "jobs")
 	if top == nil {
 		return r.messages
 	}
 
 	r.scalar(top["name"], "the release workflow's name", exactly("Release"))
 	r.rawValue(top["permissions"], "the release workflow's permissions", "{}")
+
+	if c := r.exactKeys(r.block(top["concurrency"], "concurrency"), "concurrency", "group", "cancel-in-progress"); c != nil {
+		r.scalar(c["group"], "concurrency: group", exactly("release"))
+		r.scalar(c["cancel-in-progress"], "concurrency: cancel-in-progress", exactly("false"))
+	}
 
 	if on := r.exactKeys(r.block(top["on"], "on"), "on", "push"); on != nil {
 		if push := r.exactKeys(r.block(on["push"], "on: push"), "on: push", "tags"); push != nil {

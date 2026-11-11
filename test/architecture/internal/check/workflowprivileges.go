@@ -14,11 +14,19 @@ const releaseWorkflowName = ".github/workflows/release.yml"
 // registry, mints an OIDC identity to sign with, or stores attestations.
 var publishingScopes = []string{"packages", "id-token", "attestations"}
 
+// tagEvents are the events, other than a push, that GitHub runs a workflow for
+// when a tag is created or released: a created tag or branch, a published
+// release, and a run of another workflow, which a tag may have started.
+var tagEvents = []string{"create", "release", "workflow_run"}
+
 // WorkflowPrivileges returns a message for everything in the workflow
 // document src, at the slash-separated path name, that publishes a release
 // when name is not .github/workflows/release.yml: a packages: write,
 // id-token: write or attestations: write permission, or write-all, at the
-// workflow's level or a job's, and an on: push: tags: trigger. The release
+// workflow's level or a job's; an on: push: tags: trigger, or one of the other
+// events GitHub runs for a tag (create, release, workflow_run), in any form of
+// on:; and a workflow with no top-level permissions:, which takes the
+// repository's default, whatever a job's own permissions: say. The release
 // workflow is the one place reviewed for those; ReleaseWorkflow reads it.
 //
 // It reads only the top-level on: and permissions:, and the permissions: of
@@ -47,22 +55,30 @@ func WorkflowPrivileges(name string, src []byte) []string {
 
 	var messages []string
 
+	declared := false
+
 	for _, e := range top {
 		switch e.key {
 		case "on":
 			messages = append(messages, tagTriggers(name, e)...)
 		case "permissions":
+			declared = true
+
 			messages = append(messages, publishingPermissions(name, e, "permissions")...)
 		case "jobs":
 			messages = append(messages, jobPermissions(name, e)...)
 		}
 	}
 
+	if !declared {
+		messages = append(messages, fmt.Sprintf("%s: the workflow has no top-level permissions:, so it runs with the repository's default token permissions, which may grant packages: write; declare them at the top level (permissions: {} or a block mapping)", name))
+	}
+
 	return messages
 }
 
 // tagTriggers returns a message when e, the workflow's on:, holds a push: of
-// tags (or tags-ignore, which runs on every other tag).
+// tags (or tags-ignore, which runs on every other tag), or one of tagEvents.
 func tagTriggers(name string, e entry) []string {
 	if e.value != "" {
 		// on: push or on: [push, pull_request]: a push of branches and tags
@@ -83,6 +99,12 @@ func tagTriggers(name string, e entry) []string {
 			return []string{fmt.Sprintf("%s: line %d: on: %s runs on a push of any tag; only %s may run on a tag", name, e.num, e.value, releaseWorkflowName)}
 		}
 
+		for _, event := range events {
+			if slices.Contains(tagEvents, event) {
+				return []string{fmt.Sprintf("%s: line %d: on: %s runs on %s, which a tag may start; only %s may run on a tag", name, e.num, e.value, event, releaseWorkflowName)}
+			}
+		}
+
 		return nil
 	}
 
@@ -92,6 +114,10 @@ func tagTriggers(name string, e entry) []string {
 	}
 
 	for _, trigger := range triggers {
+		if slices.Contains(tagEvents, trigger.key) {
+			return []string{fmt.Sprintf("%s: line %d: on: %s runs the workflow for a tag; only %s may run on a tag", name, trigger.num, trigger.key, releaseWorkflowName)}
+		}
+
 		if trigger.key != "push" {
 			continue
 		}
