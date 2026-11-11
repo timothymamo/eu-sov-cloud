@@ -169,9 +169,13 @@ Each milestone ships as one PR, in this order.
 - **Proposed: synchronous requests.** An assessment over an embedded snapshot takes milliseconds, so a
   request answers directly. Async jobs, queues and webhooks are left out until something makes requests
   slow, such as live discovery.
-- **Proposed: one JSON report format for the CLI and the API.** Users can script the CLI and the website
-  can call the API, and both read the same document. A test pins that both give the same bytes. The
-  format is versioned like the inventory format: a change to it is a new `schemaVersion` with an ADR.
+- **Decided: one JSON report format for the CLI and the API** ([ADR 0018](../docs/adr/0018-version-the-json-report-format-for-the-cli-and-the-api.md)).
+  Users can script the CLI and the website can call the API, and both read the same document. A test
+  pins that both give the same bytes. The format carries a `schemaVersion`: adding an optional key or a
+  new value of an open set (such as a reason code) keeps it, and readers ignore what they do not know;
+  removing, renaming or retyping a key, or any other change that can break a reader, is a new
+  `schemaVersion` with an ADR. Unlike the inventory format (ADR 0006), where `eusov` is the strict
+  reader, here `eusov` is the writer.
 - **Proposed: the API is versioned in the path (`/v1/`).** A breaking change is a `/v2/` route beside
   `/v1/` for a deprecation period. Additive fields are not breaking.
 - **Decided: no request content is ever stored or logged.** Inventories and reports are customer data

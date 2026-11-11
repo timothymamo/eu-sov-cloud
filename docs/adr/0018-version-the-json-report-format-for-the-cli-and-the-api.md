@@ -12,6 +12,14 @@ once one is published, changing what it means breaks them. [ADR 0006](0006-json-
 gave the inventory file, our input, a recorded shape and a version policy; the report, our output,
 needs the same before anyone depends on it.
 
+The version policy deliberately differs from ADR 0006's. There, any change, even a new optional key, is
+a new version, because `eusov` is the reader and decodes strictly: a version 1 reader refuses a key it
+does not know, so an added key would break it anyway. Here `eusov` is the writer, and the readers are
+scripts, CI jobs and the website, which ignore keys they do not know. Forcing a new version for every
+added key would make each of them upgrade for a change that cannot break them, and would contradict the
+API's rule that additive fields are not breaking (PRD #103). So only a change that can break such a
+reader is a new version.
+
 Forces:
 
 - Every string in a report comes from the inventory or a catalog and is untrusted: quotes,
@@ -40,7 +48,8 @@ A resource holds `id`, `rawType`, `category`, `region`, `fit` (`direct`, `partia
 sentence of `mapping.Reason.String`, no Markdown), and `target`, `category`, `offering` and `capability`
 only when the reason sets them; the same reason object is used in resources, blockers and shared
 blockers. Ties and required changes come from `assessment.Verdict.Ties` and `ChangesToList`, which the
-Markdown renderer uses too.
+Markdown renderer uses too. The JSON also carries each resource's `region`, which the Markdown report
+does not show.
 
 Every document carries `"schemaVersion": 1` and its `kind`, so a reader can dispatch on both before
 reading anything else.
