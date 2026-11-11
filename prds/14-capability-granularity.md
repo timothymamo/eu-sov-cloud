@@ -427,11 +427,14 @@ Each milestone ships as one PR. Milestones 2 and 3 depend only on 1, and can run
   open question on a product-preference order.
 - **Decided (milestone 3): the tier comes before the region-group suffix.** A tier variant is named
   `<base offering> <tier>`, and a suffix such as `3-AZ` follows the tier: `Managed PostgreSQL Multi-node
-  3-AZ`, not `Managed PostgreSQL 3-AZ Multi-node`. The 1-AZ variant's name is then a prefix and wins ties
-  by name, so a resource that needs only `node-high-availability` or `read-replicas` is pointed at the
-  variant offered in the 1-AZ regions, not at an offering in Milan and Paris only. A `zone-high-availability`
-  need still has the 3-AZ variant as its only direct candidate. This departs from PRD #11's
-  `<product> 3-AZ` pattern only where a tier variant also has a 3-AZ form.
+  3-AZ`, not `Managed PostgreSQL 3-AZ Multi-node`, and `Managed PostgreSQL Multi-node Advanced 3-AZ` for
+  the Advanced plan. The 1-AZ variant's name is then a prefix and wins ties by name, so a resource that
+  needs only `node-high-availability` is pointed at `Managed PostgreSQL Multi-node`, and one that needs
+  `read-replicas` at `Managed PostgreSQL Multi-node Advanced`, the variants offered in the 1-AZ regions,
+  not at an offering in Milan and Paris only. A `zone-high-availability` need still has only 3-AZ
+  variants as direct candidates. This departs from PRD #11's `<product> 3-AZ` pattern only where a tier
+  variant also has a 3-AZ form. *Block Storage 3-AZ Regional Classic* keeps `<product> 3-AZ <tier>`,
+  because that volume class exists only in the 3-AZ regions and has no 1-AZ form to win ties against.
 - **Note: releases between milestones.** From milestone 1 to milestone 4, the vocabulary accepts
   `high-availability` beside its replacements. A release in that window would ship that mixed state, so
   tag none.
