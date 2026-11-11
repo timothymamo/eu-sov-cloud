@@ -222,11 +222,27 @@ hand-written GCP package, add an entry for it, a probe line only it refuses and 
 
 ### Gaps that remain
 
-- **No package check of the source adapters' imports.** `test/architecture` (ADR 0012) skips
-  `cloud-adapters-reach-the-cloud-through-the-sdk` (`skippedStrictRules`): its files cover every
-  directory under `internal/adapter/source` but two, and its allow list names SDK roots as prefixes,
-  neither of which a package-by-package list can say. depguard holds it, in `make lint` and CI, for
-  the host and every release target.
+- **Packages only a test imports are not placed.** `test/architecture` (ADR 0012) holds
+  `cloud-adapters-reach-the-cloud-through-the-sdk` package by package on every release target,
+  as depguard does in `make lint` and CI (issue #79): its SDK-root prefix entries, which must
+  end in `/`, matched as depguard matches them (only the entry sorted nearest before an import
+  decides), the two directories it excludes and its test files, integration tests included. The
+  SDK packages an allowed import reaches, and their own dependencies, are exempt, as depguard
+  lints no file of a dependency, unless a package no strict rule holds imports one directly. The
+  exemption trusts the import path, which is sound only because the root `go.mod` holds no
+  `replace` directive, read with the go command's own parser (`go mod edit -json`), and the
+  repository holds no `go.work`, `go.work.sum` or `vendor/` directory, any of which could otherwise
+  substitute code for an allowed import path (`test/architecture/gomod_test.go`). It reads the
+  strict allow lists only: the lax deny rules (`go-cmp-only-in-tests`,
+  `cloud-sdks-only-in-provider-adapters`) are held by depguard in `make lint` alone. A third-party
+  import in `internal/cli` is refused by depguard alone, whose strict rule there allows only `$gostd`
+  and named module packages; one in `cmd/eusov` is refused by no rule but the lax SDK and go-cmp
+  denies, so a new third-party dependency of the composition root is held only by review of the
+  import and of `go.mod`. That is a known gap: a strict depguard rule for `**/cmd/eusov/**` would
+  close it (a follow-up to issue #79).
+  `go list -deps` lists the imports of a held package's tests but not those imported packages
+  themselves, so a package only a test imports is checked against the test's allow list, not for
+  its own module, directory or non-Go sources.
 - **Files lint never loads**: a file behind a build tag other than `integration` and `e2e`, a
   `//go:build ignore` helper, and the `testdata`, `_` and `.` directories `./...` skips. `test/lint`
   fails on such a file, and on an imported package in such a directory. A main package there, run

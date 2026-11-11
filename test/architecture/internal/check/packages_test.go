@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -34,6 +35,11 @@ func TestPackages(t *testing.T) {
 		"internal/domain/_x",
 		"internal/domain/testdata/y",
 		"internal/adapter/x",
+		"internal/adapter/source",
+		"internal/adapter/source/aws",
+		"internal/adapter/source/helper",
+		"internal/adapter/source/inventoryfile",
+		"internal/adapter/source/inventoryfile/deep",
 		"internal/outside",
 	} {
 		if err := os.MkdirAll(filepath.Join(root, filepath.FromSlash(dir)), 0o700); err != nil {
@@ -68,7 +74,7 @@ func TestPackages(t *testing.T) {
 	domainRules := []check.Rule{{
 		Name:  "domain-is-pure",
 		Dir:   "internal/domain",
-		Allow: []string{"errors", "fmt", testModule + "/internal/domain/text"},
+		Allow: []check.AllowEntry{{Path: "errors"}, {Path: "fmt"}, {Path: testModule + "/internal/domain/text"}},
 	}}
 
 	clean := mainPkg("internal/domain")
@@ -127,12 +133,12 @@ func TestPackages(t *testing.T) {
 		{
 			Name:  "outer",
 			Dir:   "internal/domain",
-			Allow: []string{"errors", "fmt", testModule + "/internal/domain/text"},
+			Allow: []check.AllowEntry{{Path: "errors"}, {Path: "fmt"}, {Path: testModule + "/internal/domain/text"}},
 		},
 		{
 			Name:  "inner",
 			Dir:   "internal/domain/text",
-			Allow: []string{"strings"},
+			Allow: []check.AllowEntry{{Path: "strings"}},
 		},
 	}
 
@@ -149,6 +155,126 @@ func TestPackages(t *testing.T) {
 
 	domainXImportsStrings := mainPkg("internal/domain/x")
 	domainXImportsStrings.Imports = []string{"strings"}
+
+	// The SDK-only rule as .golangci.yml reads it: a directory, exact entries
+	// for the packages it names one by one, a prefix entry for an SDK root it
+	// allows every package of, and test files held too. The SDK root ends in /
+	// the way the real entries do, so an import that only shares its leading
+	// characters is outside it.
+	sdkRules := []check.Rule{{
+		Name:  "cloud-adapters-reach-the-cloud-through-the-sdk",
+		Dir:   "internal/adapter/source",
+		Tests: true,
+		Allow: []check.AllowEntry{
+			{Path: "errors"},
+			{Path: "github.com/aws/aws-sdk-go-v2/", Prefix: true},
+		},
+	}}
+
+	// sdkRulesWithoutTests is the same rule with !$test: it holds no test file.
+	sdkRulesWithoutTests := []check.Rule{{
+		Name:  "adapters-hold-no-test-files",
+		Dir:   "internal/adapter/source",
+		Allow: []check.AllowEntry{{Path: "errors"}},
+	}}
+
+	// sdkRulesWithExcludes takes inventoryfile out of the rule, as
+	// .golangci.yml does, and with it every directory under that name.
+	sdkRulesWithExcludes := []check.Rule{{
+		Name:     "cloud-adapters-reach-the-cloud-through-the-sdk",
+		Dir:      "internal/adapter/source",
+		Excludes: []string{"internal/adapter/source/inventoryfile"},
+		Tests:    true,
+		Allow: []check.AllowEntry{
+			{Path: "errors"},
+			{Path: "github.com/aws/aws-sdk-go-v2/", Prefix: true},
+		},
+	}}
+
+	awsImportsSDKPackage := mainPkg("internal/adapter/source/aws")
+	awsImportsSDKPackage.Imports = []string{"errors", "github.com/aws/aws-sdk-go-v2/service/ec2"}
+
+	// The packages the adapter's own SDK import pulls into the listing: the
+	// SDK package under the rule's prefix entry, and a package that SDK
+	// package imports, which no entry of the rule names at all. depguard
+	// lints no file of either, so neither is a violation of the rule; the
+	// check reports a package outside the module only to catch one the layers
+	// reach behind the rule's back.
+	sdkPackage := check.Package{
+		ImportPath: "github.com/aws/aws-sdk-go-v2/service/ec2",
+		Module:     &check.Module{Path: "github.com/aws/aws-sdk-go-v2"},
+		Imports:    []string{"errors", "github.com/aws/smithy-go"},
+	}
+
+	sdkDependency := check.Package{
+		ImportPath: "github.com/aws/smithy-go",
+		Module:     &check.Module{Path: "github.com/aws/smithy-go"},
+		Imports:    []string{"errors"},
+	}
+
+	// A third-party package no import the allow lists hold reaches: a module
+	// package outside every rule imports it, so the release binary would carry
+	// code no rule of .golangci.yml knows about.
+	outsideImportsThirdParty := mainPkg("internal/adapter/x")
+	outsideImportsThirdParty.Imports = []string{"example.org/lib"}
+
+	thirdParty := check.Package{
+		ImportPath: "example.org/lib",
+		Module:     &check.Module{Path: "example.org/lib"},
+		Imports:    []string{"errors"},
+	}
+
+	// The auditor's L1 finding: the exemption is keyed on the third-party
+	// package alone, so once the SDK chain exempts smithy-go, an in-module
+	// package no strict rule holds imports it unreported. The inventory-file
+	// reader sits in the SDK-only rule's files: list as a negated glob, so no
+	// strict rule holds it (it is not outside every directory either, only
+	// outside that rule) and nothing replaces its allow list: its import of
+	// the SDK's closure still puts third-party code in the release binary.
+	inventoryfileImportsSDKClosure := mainPkg("internal/adapter/source/inventoryfile")
+	inventoryfileImportsSDKClosure.Imports = []string{"errors", "github.com/aws/smithy-go"}
+
+	// depguard's prefix list is sorted and strInPrefixList tests only the entry
+	// that sorts nearest before the import (depguard v2.2.1, settings.go):
+	// with the prefix a/ and the exact entry a/b$ in one list, depguard allows
+	// a/a and a/b and refuses a/c, though the prefix a/ alone would allow it.
+	shadowedPrefixRules := []check.Rule{{
+		Name: "nearest-entry",
+		Dir:  "internal/domain",
+		Allow: []check.AllowEntry{
+			{Path: "a/", Prefix: true},
+			{Path: "a/b"},
+		},
+	}}
+
+	importsShadowedByTheExactEntry := mainPkg("internal/domain")
+	importsShadowedByTheExactEntry.Imports = []string{"a/c"}
+
+	importsTheNearestEntryHolds := mainPkg("internal/domain")
+	importsTheNearestEntryHolds.Imports = []string{"a/a", "a/b"}
+
+	awsImportsOutsideThePrefix := mainPkg("internal/adapter/source/aws")
+	awsImportsOutsideThePrefix.Imports = []string{"github.com/aws/aws-sdk-go-v2x"}
+
+	awsImportsHTTP := mainPkg("internal/adapter/source/aws")
+	awsImportsHTTP.Imports = []string{"net/http"}
+
+	awsTestImportsHTTP := mainPkg("internal/adapter/source/aws")
+	awsTestImportsHTTP.Imports = []string{"errors"}
+	awsTestImportsHTTP.TestImports = []string{"net/http", "testing"}
+
+	awsXTestImportsHTTP := mainPkg("internal/adapter/source/aws")
+	awsXTestImportsHTTP.Imports = []string{"errors"}
+	awsXTestImportsHTTP.XTestImports = []string{"net/http"}
+
+	inventoryfileImportsHTTP := mainPkg("internal/adapter/source/inventoryfile")
+	inventoryfileImportsHTTP.Imports = []string{"net/http"}
+
+	inventoryfileDeepImportsHTTP := mainPkg("internal/adapter/source/inventoryfile/deep")
+	inventoryfileDeepImportsHTTP.Imports = []string{"net/http"}
+
+	helperImportsHTTP := mainPkg("internal/adapter/source/helper")
+	helperImportsHTTP.Imports = []string{"net/http"}
 
 	tests := []struct {
 		name string
@@ -286,6 +412,121 @@ func TestPackages(t *testing.T) {
 			wantFragments: []string{"strings", "outer"},
 			notFragments:  []string{"inner"},
 		},
+		{
+			// depguard reads an entry without $ as a prefix: every import
+			// path that starts with it is allowed.
+			name:  "an import under a prefix entry passes",
+			rules: sdkRules,
+			pkgs:  []check.Package{awsImportsSDKPackage},
+		},
+		{
+			// The adapter reaches its cloud through the SDK, as the rule
+			// requires, so what its import pulls in is no violation: the SDK
+			// package the prefix entry allows, and the SDK packages that
+			// package imports, which no entry names and depguard never lints.
+			// Reporting them would make every real adapter fail the rule the
+			// day it imports its cloud's SDK.
+			name:  "the SDK packages an allowed import pulls in are not flagged",
+			rules: sdkRules,
+			pkgs:  []check.Package{awsImportsSDKPackage, sdkPackage, sdkDependency},
+		},
+		{
+			// The auditor's L1 finding: the exemption holds per third-party
+			// package, not per import, so an allowed chain alone must not
+			// exempt what a package no strict rule holds imports as well: the
+			// exempt set is seeded only by imports of packages the rules hold.
+			// smithy-go is flagged, as a third-party package no allowed import
+			// reaches; the package that imports it directly is one the rule
+			// excludes, so it is placed and unflagged, and no strict rule holds
+			// its import.
+			name:        "a package no strict rule holds cannot pull in the SDK's closure unreported",
+			rules:       sdkRulesWithExcludes,
+			pkgs:        []check.Package{awsImportsSDKPackage, sdkPackage, sdkDependency, inventoryfileImportsSDKClosure},
+			wantFlagged: []string{"github.com/aws/smithy-go"},
+		},
+		{
+			// The guarantee the message exists for stays: a third-party
+			// package no import an allow list holds reaches is still reported,
+			// with the module package that imports it.
+			name:        "a third-party package no allowed import reaches is still flagged",
+			rules:       sdkRules,
+			pkgs:        []check.Package{outsideImportsThirdParty, thirdParty},
+			wantFlagged: []string{testModule + "/internal/adapter/x", "example.org/lib"},
+		},
+		{
+			// depguard tests only the prefix entry that sorts nearest before
+			// the import, so an exact entry that sorts before it shadows the
+			// prefix: a/c is refused even though a/ alone would allow it.
+			name:          "an import the nearest preceding entry refuses is flagged",
+			rules:         shadowedPrefixRules,
+			pkgs:          []check.Package{importsShadowedByTheExactEntry},
+			wantFlagged:   []string{testModule + "/internal/domain"},
+			wantFragments: []string{"a/c"},
+		},
+		{
+			name:  "an import the nearest preceding entry holds passes",
+			rules: shadowedPrefixRules,
+			pkgs:  []check.Package{importsTheNearestEntryHolds},
+		},
+		{
+			// The prefix ends in /, so a path that only shares its leading
+			// characters is a different package and not allowed.
+			name:          "an import that only shares a prefix's leading characters is flagged",
+			rules:         sdkRules,
+			pkgs:          []check.Package{awsImportsOutsideThePrefix},
+			wantFlagged:   []string{testModule + "/internal/adapter/source/aws"},
+			wantFragments: []string{"github.com/aws/aws-sdk-go-v2x"},
+		},
+		{
+			name:          "an import no entry holds is flagged",
+			rules:         sdkRules,
+			pkgs:          []check.Package{awsImportsHTTP},
+			wantFlagged:   []string{testModule + "/internal/adapter/source/aws"},
+			wantFragments: []string{"net/http"},
+		},
+		{
+			// The imports go list reports for an internal test package are
+			// imports of that package too: the rule holds the test files.
+			name:          "an internal test import is flagged when the rule holds test files",
+			rules:         sdkRules,
+			pkgs:          []check.Package{awsTestImportsHTTP},
+			wantFlagged:   []string{testModule + "/internal/adapter/source/aws"},
+			wantFragments: []string{"net/http"},
+		},
+		{
+			name:          "an external test import is flagged when the rule holds test files",
+			rules:         sdkRules,
+			pkgs:          []check.Package{awsXTestImportsHTTP},
+			wantFlagged:   []string{testModule + "/internal/adapter/source/aws"},
+			wantFragments: []string{"net/http"},
+		},
+		{
+			// A rule that names !$test holds no test file: what its tests
+			// import is no business of its allow list.
+			name:  "a test import is not checked when the rule holds no test files",
+			rules: sdkRulesWithoutTests,
+			pkgs:  []check.Package{awsTestImportsHTTP},
+		},
+		{
+			// The negated glob says the rule does not hold this directory: it
+			// is neither held to the allow list nor reported as outside every
+			// directory.
+			name:  "a package under an excluded directory is not held",
+			rules: sdkRulesWithExcludes,
+			pkgs:  []check.Package{inventoryfileImportsHTTP},
+		},
+		{
+			name:  "a package under an excluded directory's subpackage is not held",
+			rules: sdkRulesWithExcludes,
+			pkgs:  []check.Package{inventoryfileDeepImportsHTTP},
+		},
+		{
+			name:          "a sibling helper directory is held",
+			rules:         sdkRulesWithExcludes,
+			pkgs:          []check.Package{helperImportsHTTP},
+			wantFlagged:   []string{testModule + "/internal/adapter/source/helper"},
+			wantFragments: []string{"net/http"},
+		},
 	}
 
 	for _, tc := range tests {
@@ -320,6 +561,162 @@ func TestPackages(t *testing.T) {
 							message, fragment, strings.Join(messages, "\n"))
 					}
 				}
+			}
+		})
+	}
+}
+
+// sourceprobeDoc writes a .golangci.yml holding one strict rule named rule over
+// the sourceprobe fixture's a/source tree: files as its files: list, and an
+// allow list of errors$ and testing$, the two imports its own files have.
+func sourceprobeDoc(rule string, files ...string) string {
+	var b strings.Builder
+
+	b.WriteString("        " + rule + ":\n          list-mode: strict\n          files:\n")
+
+	for _, file := range files {
+		b.WriteString("            - " + strconv.Quote(file) + "\n")
+	}
+
+	b.WriteString("          allow:\n            - errors$\n            - testing$\n")
+
+	return golangciDoc(b.String())
+}
+
+// excludedSourceDirRule is the rule the sourceprobe fixture gives its excluded
+// directory, as .golangci.yml gives inventoryfile one of its own: the package
+// check reports a package outside every rule, and the exclusion says this one
+// is not outside, only outside this rule.
+func excludedSourceDirRule() check.Rule {
+	return check.Rule{
+		Name:  "the-excluded-directory-holds-its-own-rule",
+		Dir:   "a/source/skip",
+		Tests: true,
+		Allow: []check.AllowEntry{
+			{Path: "errors"},
+			{Path: "net/http"},
+			{Path: "testing"},
+		},
+	}
+}
+
+// TestPackagesHoldTheTestFilesOfTheTestdataModule pins that a rule which holds
+// test files holds their imports: an internal test package's and an external
+// one's alike, and the files //go:build integration selects once the tag is
+// passed. A rule that names !$test holds no test file, and the excluded
+// directory's test file is never reported.
+//
+// The fixture's own files import only errors, which the allow list holds, so a
+// package is flagged only for what its test files import.
+func TestPackagesHoldTheTestFilesOfTheTestdataModule(t *testing.T) {
+	t.Parallel()
+
+	const (
+		module = "example.com/sourceprobe"
+		rule   = "cloud-adapters-reach-the-cloud-through-the-sdk"
+	)
+
+	root := fixtureDir(t, sourceProbeModule)
+
+	tests := []struct {
+		name string
+		// files is the rule's files: list.
+		files []string
+		// tags are the build tags the listing gets.
+		tags []string
+		// wantFlagged is the sorted import path of every package the check must
+		// flag.
+		wantFlagged []string
+	}{
+		{
+			// probe's own file imports errors; its internal test file imports
+			// net/http, which the allow list does not hold.
+			name:        "an internal test package's import is checked",
+			files:       []string{"**/a/source/probe/**"},
+			wantFlagged: []string{module + "/a/source/probe"},
+		},
+		{
+			name:        "an external test package's import is checked",
+			files:       []string{"**/a/source/xprobe/**"},
+			wantFlagged: []string{module + "/a/source/xprobe"},
+		},
+		{
+			// The tagged file is no file of this build, so the listing does
+			// not read its import.
+			name:  "an integration test file is not read without the tag",
+			files: []string{"**/a/source/integration/**"},
+		},
+		{
+			name:        "an integration test file is checked with the tag",
+			files:       []string{"**/a/source/integration/**"},
+			tags:        []string{"integration"},
+			wantFlagged: []string{module + "/a/source/integration"},
+		},
+		{
+			// The rule names !$test at its files, so it holds no test file
+			// and the test import of net/http is not its business.
+			name:  "a rule that holds no test files checks no test import",
+			files: []string{"**/a/source/probe/**", "!$test"},
+		},
+		{
+			// helper is held and imports only errors; integration has no
+			// tagged file in this build; skip and its subpackage are taken
+			// out by the negated glob, test file included.
+			name:        "the excluded directory's test file is not reported",
+			files:       []string{"**/a/source/**", "!**/a/source/skip/**"},
+			wantFlagged: []string{module + "/a/source/probe", module + "/a/source/xprobe"},
+		},
+		{
+			name:        "the excluded directory's test file is not reported with the tag either",
+			files:       []string{"**/a/source/**", "!**/a/source/skip/**"},
+			tags:        []string{"integration"},
+			wantFlagged: []string{module + "/a/source/integration", module + "/a/source/probe", module + "/a/source/xprobe"},
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			doc := []byte(sourceprobeDoc(rule, tc.files...))
+
+			files, err := check.RuleDirs(doc, rule)
+			if err != nil {
+				t.Fatalf("RuleDirs(%q): %v", rule, err)
+			}
+
+			allow, err := check.AllowList(doc, rule)
+			if err != nil {
+				t.Fatalf("AllowList(%q): %v", rule, err)
+			}
+
+			var (
+				rules    []check.Rule
+				patterns []string
+			)
+
+			for _, dir := range files.Dirs {
+				rules = append(rules, check.Rule{
+					Name:     rule,
+					Dir:      dir,
+					Excludes: files.Excludes,
+					Tests:    files.Tests,
+					Allow:    allow,
+				})
+				patterns = append(patterns, "./"+dir+"/...")
+			}
+
+			rules = append(rules, excludedSourceDirRule())
+
+			pkgs, err := check.ListPackages(t.Context(), root, check.Target{GOOS: "linux", GOARCH: "amd64"}, false, tc.tags, patterns...)
+			if err != nil {
+				t.Fatalf("ListPackages(%s, %v, tags=%v): %v", sourceProbeModule, patterns, tc.tags, err)
+			}
+
+			messages := check.Packages(root, module, rules, pkgs)
+
+			if diff := cmp.Diff(tc.wantFlagged, flaggedPaths(t, messages, pkgs)); diff != "" {
+				t.Errorf("flagged packages (-want +got):\n%s\nmessages:\n%s", diff, strings.Join(messages, "\n"))
 			}
 		})
 	}

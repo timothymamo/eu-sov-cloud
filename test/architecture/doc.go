@@ -57,6 +57,32 @@
 // run --allow-serial-runners, and TestCILintMatrixCoversEveryReleaseTarget
 // wants only version and skip-cache in the golangci-lint step's with: block.
 //
+// TestCloudAdapterSDKRuleIsChecked pins that the SDK-only rule,
+// cloud-adapters-reach-the-cloud-through-the-sdk, is no skip (issue #79): the
+// check reads its SDK-root prefix entries, the two directories it excludes and
+// its test files, and TestCloudAdapterSDKRuleHoldsItsProbeForEveryReleaseTarget
+// fails a fixture adapter that imports net/http on every release platform.
+// TestCloudAdapterSDKRuleHoldsItsSDKProbeForEveryReleaseTarget passes a fixture
+// adapter that imports a stand-in SDK: the SDK package and what it imports are
+// third-party code an allowed import reaches, which depguard never lints, so
+// the check exempts them, while a third-party package that a package no
+// strict rule holds imports directly, or that no allow list reaches, is still
+// reported. The exemption reads the strict allow lists only: the lax deny
+// rules (go-cmp-only-in-tests, cloud-sdks-only-in-provider-adapters) are held
+// by depguard in make lint alone. A third-party import in internal/cli is
+// refused by depguard alone, whose strict rule there allows only $gostd and
+// named module packages. One in cmd/eusov is refused by no rule but the lax
+// SDK and go-cmp denies, so a new third-party dependency of the composition
+// root is held only by review of the import and of go.mod: a known gap that a
+// strict depguard rule for **/cmd/eusov/** would close, left to a follow-up
+// issue. The exemption trusts the import path, which is sound because nothing
+// can substitute other code for an allowed path: TestRootModuleHasNoReplace
+// reads the root go.mod with the go command's own parser (go mod edit -json)
+// and finds no replace, and TestRepositoryHasNoWorkspaceOrVendor finds no
+// go.work, go.work.sum or vendor directory.
+// TestOnlyTheSDKRuleHoldsPrefixEntries keeps prefix entries,
+// which must end in /, to that rule.
+//
 // The checks are tests: they run in make test, make check and CI's make cover,
 // with no workflow of their own. They need no network and no credentials.
 package architecture
