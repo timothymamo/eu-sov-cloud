@@ -356,7 +356,8 @@ Each milestone ships as one PR. Milestones 2 and 3 depend only on 1, and can run
 3. [x] **OVHcloud snapshot.** In this milestone:
    - set the 1-AZ databases to node level, and the 3-AZ variants (databases, Managed Kubernetes, Object
      Storage, Block Storage) to zone level;
-   - add multi-node plan variants for MySQL and PostgreSQL, carrying high availability and read replicas;
+   - add multi-node plan variants for MySQL and PostgreSQL, carrying high availability, and read
+     replicas on the Enterprise/Advanced plan only;
    - decide Object Storage and Managed Kubernetes Service in the 1-AZ regions under the new definitions,
      and remove the references to #14;
    - extend `TestThreeAZVariantsServeHighAvailability` to the databases at zone level;
