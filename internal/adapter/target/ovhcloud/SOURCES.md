@@ -168,11 +168,19 @@ volumes, and no page names Regional Classic as the default class there. Pages:
 
 - `zone-high-availability`. **Needs:** the Regional Classic Volume class (volume type
   `classic-multiattach`, "Classic 3AZ" in the console), the class this offering is named after.
-  **Scope: zone-level.** The storage class page says the class "provides high availability by
-  automatically replicating data across three availability zones", with a 99.99% SLA and "Multi-zone"
-  replication, and a volume can be attached at once to instances in different zones (up to 16
-  instances, multi-attach page). The product page says high availability is guaranteed in 3-AZ regions
-  with this class. The zonal High Speed volumes also offered in these regions do not have this
+  **Scope: zone-level.** The zone-level evidence is continued service, stated on two pages. The storage
+  class page says: "To ensure service continuity even in the event of an AZ failure, this class also
+  supports Multi-Attach, allowing multiple instances located in different availability zones to
+  simultaneously attach and use the same volume." The reference architecture page
+  (<https://docs.ovhcloud.com/en/guides/public-cloud/cross-functional/deployments-modes-reference-architecture>,
+  row "Block storage Classic Multi-Zone") says that in an AZ failure "Block Storage data remains
+  available without impact or downtime, provided the conditions of the multi-attached resilient
+  architecture are met". The condition is that the volume is attached from instances in more than one
+  zone (up to 16 instances, multi-attach page); a volume attached from one zone only is not stated to
+  keep serving. Supporting evidence only, since copies of data are not availability (*Rules applied*):
+  the storage class page says the class "provides high availability by automatically replicating data
+  across three availability zones", with a 99.99% SLA and "Multi-zone" replication, and the product page
+  says high availability is guaranteed in 3-AZ regions with this class. The zonal High Speed volumes also offered in these regions do not have this
   capability, and get no offering of their own (*Block Storage LUKS Zonal* covers the encrypted ones).
 - `node-high-availability`: implied by zone level (ADR 0011); a volume replicated across three zones
   also survives the loss of one storage server.
@@ -289,7 +297,14 @@ Category `kubernetes.managed`: Managed Kubernetes on the Standard plan in the 3-
   capability. **Scope: zone-level.** The Standard plan replicates the control plane and a dedicated etcd
   across three availability zones (architecture page), and a Standard cluster in a 3-AZ region "can
   remain fully functional during an AZ failure" (plans page), with a 99.99% SLA in 3-AZ regions. Node
-  pools are spread over the zones by the customer (product page FAQ).
+  pools are spread over the zones by the customer (product page FAQ). The reference architecture page
+  (<https://docs.ovhcloud.com/en/guides/public-cloud/cross-functional/deployments-modes-reference-architecture>,
+  row "Managed Kubernetes Service") corroborates it: in an AZ failure "the Control Plane remains
+  available and the customer's workload is rescheduled on the nodes on another available AZ".
+  **Caveat:** zone level covers the control plane and node pools spread across the zones. A stateful
+  workload survives a zone loss only when its persistent volumes use Regional Classic (*Block Storage
+  3-AZ Regional Classic*): the same row says "workloads using persistent volumes of single-zone classes
+  cannot be migrated to other AZs".
 - `node-high-availability`: implied by zone level (ADR 0011); three control plane replicas also survive
   the loss of one of them.
 - Regions `MIL`, `PAR`: the Kubernetes regions page lists EU-WEST-PAR and EU-SOUTH-MIL as Standard plan, 3-AZ.
@@ -346,21 +361,25 @@ tier variant of *Managed MySQL* (tier-variant rule). Pages: <https://www.ovhclou
 
 - `encryption-at-rest` and `point-in-time-restore`: as for *Managed MySQL*; the pages state them for every
   plan, and per engine, not per region.
-- `zone-high-availability`. **Needs:** a multi-node plan, Production or Advanced in "Multi AZ" (the
-  capabilities page's plan overview ticks "High availability" for both). **Scope: zone-level.** The
-  deployment modes page says a multi-node service "is deployed across three independent availability
-  zones, ensuring service continuity even if one zone experiences an outage"; its data is replicated
-  synchronously across the three zones (1-AZ to 3-AZ migration page). The capabilities page gives 99.95%
-  and 99.99% SLAs for the Multi AZ plans.
+- `zone-high-availability`. **Needs:** a multi-node plan, Business/Production or
+  Enterprise/Advanced, Multi AZ (the capabilities page's plan overview ticks "High availability" for
+  both). **Scope: zone-level.** The deployment modes page says a multi-node service "is deployed across
+  three independent availability zones, ensuring service continuity even if one zone experiences an
+  outage"; its data is replicated synchronously across the three zones (1-AZ to 3-AZ migration page).
+  The capabilities page gives 99.95% and 99.99% SLAs for the Multi AZ plans. The reference architecture
+  page
+  (<https://docs.ovhcloud.com/en/guides/public-cloud/cross-functional/deployments-modes-reference-architecture>,
+  row "DBaaS") corroborates it: in an AZ failure "databases and data will remain available".
 - `node-high-availability`: implied by zone level (ADR 0011); failover after a node failure is automatic
   (FAQ).
-- `read-replicas`. **Needs:** a multi-node plan, Production or Advanced in "Multi AZ". "Read-only nodes"
-  for MySQL (capabilities page); a replica node "can accept READ operations only" (FAQ), and the product
-  page lists "Read-only access to replication nodes" as a key feature. The product page names "Read
-  replica included" on the Advanced plan only; Production's second node is a replica in the FAQ's sense,
-  so the capability is counted on every multi-node plan (PRD #14 decision). A refresh that reads the
-  product page strictly would split this offering into a Production and an Advanced variant, with
-  `read-replicas` on Advanced only.
+- `read-replicas`. **Needs:** a multi-node plan, Business/Production or Enterprise/Advanced, Multi AZ.
+  "Read-only nodes" for MySQL (capabilities page); a replica node "can accept READ operations only"
+  (FAQ), and the product page lists "Read-only access to replication nodes" as a key feature. The
+  product page names "Read replica included" on the Enterprise/Advanced plan only;
+  Business/Production's second node is a replica in the FAQ's sense, so the capability is counted on
+  every multi-node plan (PRD #14 decision). A refresh that reads the product page strictly would split
+  this offering into a Business/Production and an Enterprise/Advanced variant, with `read-replicas` on
+  Enterprise/Advanced only.
 - Regions `MIL`, `PAR`: the regions page ticks MySQL in "3-AZ Paris" and "3-AZ Milan"; the backups page lists
   EU-WEST-PAR and EU-SOUTH-MIL as service locations.
 
@@ -387,7 +406,8 @@ tier variant of *Managed MySQL* (tier-variant rule). Pages: <https://www.ovhclou
   page). It survives the loss of a node, not of the zone, so `zone-high-availability` is not claimed.
 - `read-replicas`. **Needs:** a multi-node plan, Business/Production or Enterprise/Advanced. As for
   *Managed MySQL 3-AZ Multi-node*: replica nodes accept reads only (FAQ), and the capability is counted on
-  every multi-node plan although the product page names "Read replica included" on Advanced only.
+  every multi-node plan although the product page names "Read replica included" on
+  Enterprise/Advanced only.
 - Regions `GRA`, `LIM`, `RBX`, `SBG`, `WAW`: as for *Managed MySQL*.
 
 ### Managed PostgreSQL
@@ -433,21 +453,25 @@ tier variant of *Managed PostgreSQL* (tier-variant rule). Pages: <https://www.ov
 
 - `encryption-at-rest` and `point-in-time-restore`: as for *Managed PostgreSQL*; the pages state them for every
   plan, and per engine, not per region.
-- `zone-high-availability`. **Needs:** a multi-node plan, Production or Advanced in "Multi AZ" (the
-  capabilities page's plan overview ticks "High availability" for both). **Scope: zone-level.** The
-  deployment modes page says a multi-node service "is deployed across three independent availability
-  zones, ensuring service continuity even if one zone experiences an outage"; its data is replicated
-  synchronously across the three zones (1-AZ to 3-AZ migration page). The capabilities page gives 99.95%
-  and 99.99% SLAs for the Multi AZ plans.
+- `zone-high-availability`. **Needs:** a multi-node plan, Business/Production or
+  Enterprise/Advanced, Multi AZ (the capabilities page's plan overview ticks "High availability" for
+  both). **Scope: zone-level.** The deployment modes page says a multi-node service "is deployed across
+  three independent availability zones, ensuring service continuity even if one zone experiences an
+  outage"; its data is replicated synchronously across the three zones (1-AZ to 3-AZ migration page).
+  The capabilities page gives 99.95% and 99.99% SLAs for the Multi AZ plans. The reference architecture
+  page
+  (<https://docs.ovhcloud.com/en/guides/public-cloud/cross-functional/deployments-modes-reference-architecture>,
+  row "DBaaS") corroborates it: in an AZ failure "databases and data will remain available".
 - `node-high-availability`: implied by zone level (ADR 0011); failover after a node failure is automatic
   (FAQ).
-- `read-replicas`. **Needs:** a multi-node plan, Production or Advanced in "Multi AZ". "Read-only nodes"
-  for PostgreSQL (capabilities page); a replica node "can accept READ operations only" (FAQ), and the product
-  page lists "Read-only access to replication nodes" as a key feature. The product page names "Read
-  replica included" on the Advanced plan only; Production's second node is a replica in the FAQ's sense,
-  so the capability is counted on every multi-node plan (PRD #14 decision). A refresh that reads the
-  product page strictly would split this offering into a Production and an Advanced variant, with
-  `read-replicas` on Advanced only.
+- `read-replicas`. **Needs:** a multi-node plan, Business/Production or Enterprise/Advanced, Multi AZ.
+  "Read-only nodes" for PostgreSQL (capabilities page); a replica node "can accept READ operations only"
+  (FAQ), and the product page lists "Read-only access to replication nodes" as a key feature. The
+  product page names "Read replica included" on the Enterprise/Advanced plan only;
+  Business/Production's second node is a replica in the FAQ's sense, so the capability is counted on
+  every multi-node plan (PRD #14 decision). A refresh that reads the product page strictly would split
+  this offering into a Business/Production and an Enterprise/Advanced variant, with `read-replicas` on
+  Enterprise/Advanced only.
 - Regions `MIL`, `PAR`: the regions page ticks PostgreSQL in "3-AZ Paris" and "3-AZ Milan"; the backups page lists
   EU-WEST-PAR and EU-SOUTH-MIL as service locations.
 
@@ -474,7 +498,8 @@ tier variant of *Managed PostgreSQL* (tier-variant rule). Pages: <https://www.ov
   page). It survives the loss of a node, not of the zone, so `zone-high-availability` is not claimed.
 - `read-replicas`. **Needs:** a multi-node plan, Business/Production or Enterprise/Advanced. As for
   *Managed PostgreSQL 3-AZ Multi-node*: replica nodes accept reads only (FAQ), and the capability is counted on
-  every multi-node plan although the product page names "Read replica included" on Advanced only.
+  every multi-node plan although the product page names "Read replica included" on
+  Enterprise/Advanced only.
 - Regions `GRA`, `LIM`, `RBX`, `SBG`, `WAW`: as for *Managed PostgreSQL*.
 
 ### Metal Instances
@@ -513,7 +538,10 @@ Infrequent Access classes). Pages: <https://www.ovhcloud.com/en/public-cloud/obj
   against server rack and drive failures", erasure coding ensures "continuity in the event of hardware
   failures by splitting data across multiple disks and servers", and the page's comparison table gives
   *Data Availability* as "protected against server/disk failures". That is continued service through the
-  loss of a server, with no customer action, not only a copy of data. The same table gives "Data center
+  loss of a server, with no customer action, not only a copy of data. "Continuity in the event of
+  hardware failures" is read as continued service (availability), not as recovery of lost data; that is
+  what separates it from the Scaleway snapshot's Object Storage, whose FAQ says only that Scaleway can
+  rebuild the data after a data-centre failure, a recovery, and states no continued service. The same table gives "Data center
   outage risk", and data "may become unavailable" in a data-centre outage, so `zone-high-availability` is
   not claimed.
 - Regions `GRA`, `LIM`, `RBX`, `SBG`, `WAW`: the endpoints page lists `gra`, `de`, `rbx`, `sbg` and `waw` as
@@ -536,7 +564,8 @@ Active Archive, and Cold Archive in Paris only). Pages: <https://www.ovhcloud.co
 - `zone-high-availability`. **Needs:** the default class, Standard (Infrequent Access and Active
   Archive also qualify, each with a 99.99% SLA in 3-AZ regions on the storage class page; Cold Archive
   does not). **Scope: zone-level.** In a 3-AZ region, data "remains available for both read and write
-  operations, even in the event of a zone failure" (deployment modes page). Cold Archive objects must be
+  operations, even in the event of a zone failure" (deployment modes page), and the reference
+  architecture page's "Object Storage ( Standard class )" row says the same. Cold Archive objects must be
   restored before they can be read (storage class page), so that class lacks the capability, and as a
   tier that only lacks capabilities it gets no offering (tier-variant rule).
 - `node-high-availability`: implied by zone level (ADR 0011).
@@ -596,7 +625,7 @@ Active Archive, and Cold Archive in Paris only). Pages: <https://www.ovhcloud.co
 - **The Essential/Discovery plan of MySQL and PostgreSQL in Paris and Milan:** no page read states that
   these engines offer Discovery in the 3-AZ regions. The capabilities page's plan overview
   (<https://docs.ovhcloud.com/en/guides/public-cloud/databases/capabilities>) has "Multi AZ" columns for
-  Production and Advanced only, and the deployment modes page
+  Business/Production and Enterprise/Advanced only, and the deployment modes page
   (<https://docs.ovhcloud.com/en/guides/public-cloud/databases/public-cloud-databases-regions-comparison>)
   describes multi-node services there. So *Managed MySQL* and *Managed PostgreSQL* list the 1-AZ regions
   only, and the former *Managed MySQL 3-AZ* and *Managed PostgreSQL 3-AZ* became *3-AZ Multi-node*
