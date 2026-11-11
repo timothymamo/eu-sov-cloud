@@ -43,7 +43,7 @@ const testJobHead = `  test:
 `
 
 // testSteps are the test job's steps: the whole history with every branch, the
-// guard that the tagged commit is on main (ADR 0014), setup-go without the
+// guard that the tagged commit is on main (ADR 0015), setup-go without the
 // Actions cache, and make test.
 var testSteps = []string{
 	`      # The whole history, with every branch: the guard below needs origin/main.
@@ -52,7 +52,7 @@ var testSteps = []string{
           fetch-depth: 0
           persist-credentials: false
 `,
-	`      # Only a commit on main is released (ADR 0014). Every other job needs
+	`      # Only a commit on main is released (ADR 0015). Every other job needs
       # this one, so a tag on any other commit publishes nothing.
       - name: The tagged commit is on main
         run: |
@@ -114,7 +114,7 @@ var goreleaserSteps = []string{
 
 // imageJobHead is the image job up to its steps: its digest output, the two
 // permissions it needs to push, and no OIDC token.
-const imageJobHead = `  # Builds and pushes the container image to GHCR (ADR 0014), after the GitHub
+const imageJobHead = `  # Builds and pushes the container image to GHCR (ADR 0015), after the GitHub
   # release: a failed GoReleaser publishes no image. It can push, nothing more:
   # no OIDC token, so nothing in it can sign. It builds from the Dockerfile with
   # the build arguments GoReleaser stamps into the release binaries, and
@@ -189,7 +189,7 @@ var imageSteps = []string{
             type=semver,pattern={{major}}.{{minor}},enable=${{ !contains(github.ref_name, '-') }}
 `,
 	`      # Labels come from the Dockerfile alone. BuildKit's own provenance and
-      # SBOM are off: the sign job's attestations replace them (ADR 0014).
+      # SBOM are off: the sign job's attestations replace them (ADR 0015).
       - name: Build and push linux/amd64 and linux/arm64
         id: build
         uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
@@ -576,7 +576,7 @@ func TestReleaseWorkflow(t *testing.T) {
 		},
 
 		// The whole history and the guard that the tagged commit is on main
-		// (ADR 0014): the second step of the test job, before anything runs
+		// (ADR 0015): the second step of the test job, before anything runs
 		// repository code, and exact.
 		{name: "the test checkout without the full history", workflow: in("test", "          fetch-depth: 0\n", ""), wantIn: "fetch-depth"},
 		{name: "no guard step", workflow: steps("test", withoutStep(t, testSteps, "name: The tagged commit is on main")), wantIn: "holds 3 steps, want exactly 4"},

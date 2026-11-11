@@ -21,7 +21,7 @@ jobs:
         with:
           fetch-depth: 0
           persist-credentials: false
-      # Only a commit on main is released (ADR 0014). Every other job needs
+      # Only a commit on main is released (ADR 0015). Every other job needs
       # this one, so a tag on any other commit publishes nothing.
       - name: The tagged commit is on main
         run: |
@@ -67,7 +67,7 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-  # Builds and pushes the container image to GHCR (ADR 0014), after the GitHub
+  # Builds and pushes the container image to GHCR (ADR 0015), after the GitHub
   # release: a failed GoReleaser publishes no image. It can push, nothing more:
   # no OIDC token, so nothing in it can sign. It builds from the Dockerfile with
   # the build arguments GoReleaser stamps into the release binaries, and
@@ -130,7 +130,7 @@ jobs:
             type=semver,pattern={{raw}}
             type=semver,pattern={{major}}.{{minor}},enable=${{ !contains(github.ref_name, '-') }}
       # Labels come from the Dockerfile alone. BuildKit's own provenance and
-      # SBOM are off: the sign job's attestations replace them (ADR 0014).
+      # SBOM are off: the sign job's attestations replace them (ADR 0015).
       - name: Build and push linux/amd64 and linux/arm64
         id: build
         uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0

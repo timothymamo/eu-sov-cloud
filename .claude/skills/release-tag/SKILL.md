@@ -7,7 +7,7 @@ description: Cut a semantic-version release of eu-sov-cloud by tagging main, whi
 
 Releases are built by `.github/workflows/release.yml` when a `vX.Y.Z` tag is pushed: GoReleaser
 publishes the binaries, then the `image`, `sbom` and `sign` jobs the signed container image to
-`ghcr.io/timothymamo/eusov` (ADR 0014). The run's first check fails, and nothing is published, unless
+`ghcr.io/timothymamo/eusov` (ADR 0015). The run's first check fails, and nothing is published, unless
 the tagged commit is on `main`: always tag a commit of `main`.
 
 1. In the repository root, which always stays on `main` (check

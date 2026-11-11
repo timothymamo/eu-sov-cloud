@@ -59,7 +59,7 @@ and smoke-tests it on every pull request; publishing it to a registry is a follo
   need `packages: write`, an identity for signing and a review of the release workflow's closed step
   list (`check.ReleaseWorkflow`). Amended: issue #72 publishes it, from release jobs of their own with
   docker buildx rather than GoReleaser `dockers` or `ko`; see
-  [ADR 0014](0014-publish-the-signed-image-to-ghcr-with-docker-buildx.md).
+  [ADR 0015](0015-publish-the-signed-image-to-ghcr-with-docker-buildx.md).
 
 ## Alternatives considered
 
@@ -96,4 +96,4 @@ and smoke-tests it on every pull request; publishing it to a registry is a follo
 - Live sources will read credentials through the SDK default chain from `-e` variables or a read-only
   mount at `docker run` time; the image never contains them.
 - Follow-up: publish to GHCR from the release, signed, with an SBOM. Done in issue #72:
-  [ADR 0014](0014-publish-the-signed-image-to-ghcr-with-docker-buildx.md).
+  [ADR 0015](0015-publish-the-signed-image-to-ghcr-with-docker-buildx.md).

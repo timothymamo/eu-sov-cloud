@@ -107,7 +107,7 @@ jobs:
 
   # Builds the container image for both release platforms without pushing it, then
   # smoke-tests the amd64 image: a broken Dockerfile fails the pull request. It is
-  # also the dry run of release.yml's image and sbom jobs (ADR 0014): the same latest
+  # also the dry run of release.yml's image and sbom jobs (ADR 0015): the same latest
   # and tag rules for sample tags, the same build settings, and the SBOM of the built
   # image. Pushing, signing and the attestations need write access and an OIDC token,
   # so only a tag runs them.

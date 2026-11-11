@@ -101,7 +101,7 @@ var (
 	}
 
 	// testSteps are the test job's steps: the whole history, the guard that
-	// the tagged commit is on main (ADR 0014) before anything runs repository
+	// the tagged commit is on main (ADR 0015) before anything runs repository
 	// code, and the tests, on a runner of their own.
 	testSteps = []releaseStep{
 		fullCheckoutStep,

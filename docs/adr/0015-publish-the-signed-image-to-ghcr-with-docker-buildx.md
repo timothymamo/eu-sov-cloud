@@ -1,4 +1,4 @@
-# 0014. Publish the signed container image to GHCR from release jobs of their own, with docker buildx
+# 0015. Publish the signed container image to GHCR from release jobs of their own, with docker buildx
 
 - Status: Accepted
 - Date: 2026-11-11

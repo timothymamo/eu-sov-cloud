@@ -89,7 +89,7 @@ Each release publishes a minimal image to `ghcr.io/timothymamo/eusov`: the stati
 [distroless static](https://github.com/GoogleContainerTools/distroless) (CA certificates and a
 non-root user, no shell or package manager), for `linux/amd64` and `linux/arm64`
 ([ADR 0013](docs/adr/0013-ship-eusov-as-a-distroless-container-image.md),
-[ADR 0014](docs/adr/0014-publish-the-signed-image-to-ghcr-with-docker-buildx.md)). It is tagged with
+[ADR 0015](docs/adr/0015-publish-the-signed-image-to-ghcr-with-docker-buildx.md)). It is tagged with
 the release tag (`vX.Y.Z`), `X.Y` and, for the highest release version that is not a pre-release,
 `latest`: a patch to an older line does not move it. Pin a release tag, or better its digest (see
 below); `docker run ghcr.io/timothymamo/eusov:v0.1.0 version` reports that version without its `v`
