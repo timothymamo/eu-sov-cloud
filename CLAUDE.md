@@ -9,8 +9,9 @@ reports what can be moved to an EU cloud provider (**OVHcloud, Scaleway, UpCloud
 have a direct equivalent, which a partial one, which have none, and what blocks the move.
 
 **Status:** walking skeleton. `eusov assess` works offline: it reads an inventory file and assesses it
-against an embedded OVHcloud, Scaleway or UpCloud catalog snapshot, through every layer (PRD #2,
-OVHcloud from PRD #11 and UpCloud from PRD #77, all in `prds/done/`). Live source adapters do not exist
+against an embedded OVHcloud, Scaleway or UpCloud catalog snapshot, through every layer, or compares
+several targets in one report (`--target all` or a list) (PRD #2, OVHcloud from PRD #11, UpCloud from
+PRD #77 and the comparison from PRD #89, all in `prds/done/`). Live source adapters do not exist
 yet. Work is planned as PRDs in `prds/`.
 
 ## Ubiquitous language

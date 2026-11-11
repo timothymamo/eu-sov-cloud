@@ -1,7 +1,7 @@
 # PRD #89: Compare several targets in one assessment
 
-**Status:** Draft. The decisions marked *Proposed* are for the user to accept or change when this PRD's
-pull request is reviewed.
+**Status:** Complete. All three milestones are done; the decisions are recorded in
+[ADR 0016](../../docs/adr/0016-compare-targets-through-a-second-reporter-port-and-use-case.md).
 **Issue:** #89
 
 ## Problem
@@ -44,55 +44,55 @@ All criteria are pinned by tests that run offline under `make test` or `make tes
 
 **Target selection**
 
-- [ ] `--target` accepts one target key, a comma-separated list of keys, or `all`. `all` means every
+- [x] `--target` accepts one target key, a comma-separated list of keys, or `all`. `all` means every
   supported target. Given `--target scaleway,ovhcloud`, the report covers OVHcloud and Scaleway, in sorted
   key order, whatever order they were given in.
-- [ ] Given a list with an unknown key, a repeated key, an empty element (`ovhcloud,,scaleway`, a leading
+- [x] Given a list with an unknown key, a repeated key, an empty element (`ovhcloud,,scaleway`, a leading
   or trailing comma), or `all` together with any other key, the command exits 2. The usage error names
   the bad element and lists the supported targets, sorted. Nothing is read.
-- [ ] Given a single target, the output is byte-identical to today's. The existing single-target e2e
+- [x] Given a single target, the output is byte-identical to today's. The existing single-target e2e
   golden files do not change in this PRD.
-- [ ] A multi-target run needs no credentials or network. The e2e test runs it with an empty environment
+- [x] A multi-target run needs no credentials or network. The e2e test runs it with an empty environment
   and gets the same report.
 
 **Comparison report**
 
-- [ ] The report's title names every target compared, in order. Its header lines give the inventory file
+- [x] The report's title names every target compared, in order. Its header lines give the inventory file
   name and source once, then one line per target with that target's catalog snapshot source and
   retrieval date.
-- [ ] A "Comparison" section comes first, with:
+- [x] A "Comparison" section comes first, with:
   - a summary table, one column per target and one row per fit (`direct`, `partial`, `none`) plus a
     total, holding the counts that target's own summary shows;
   - one table row per resource, in the inventory's order, with the ID, the category, and for each
     target the fit and the best offering (the tie note left out, which the target's own section keeps);
   - a "Blockers on every target" list: each resource that is a blocker on all the targets compared, with
     each target's reason. "None." when there is none.
-- [ ] Then one section per target, in the same order. Each holds that target's summary, resources,
+- [x] Then one section per target, in the same order. Each holds that target's summary, resources,
   required changes and blockers, with the same content and the same row order as that target's
   single-target report, one heading level lower.
-- [ ] The comparison holds no ranking, score, "best target" or recommendation. A test pins that the words
+- [x] The comparison holds no ranking, score, "best target" or recommendation. A test pins that the words
   "best target", "recommend" and "winner" do not appear (the per-resource "best offering" is kept).
-- [ ] Given the same inventory and targets twice, the two reports are byte-identical. Given the targets
+- [x] Given the same inventory and targets twice, the two reports are byte-identical. Given the targets
   in a different order on the command line, the report is the same.
-- [ ] Every value from the inventory or a catalog is escaped as the single-target report escapes it.
+- [x] Every value from the inventory or a catalog is escaped as the single-target report escapes it.
   The comparison table cannot be broken by a resource ID or an offering name, since it renders them
   the same way.
 
 **Errors**
 
-- [ ] If any selected target's catalog fails to load, or the analysis fails for any target, the command
+- [x] If any selected target's catalog fails to load, or the analysis fails for any target, the command
   exits 1 with one error line that names the target, and writes no report (not to stdout, and not to the
   `--output` file).
-- [ ] An inventory is read once per run, not once per target. Pinned with a fake inventory source that
+- [x] An inventory is read once per run, not once per target. Pinned with a fake inventory source that
   counts reads.
 
 **Architecture**
 
-- [ ] `make check` passes, including depguard and `test/architecture`.
-- [ ] The comparison is built from the per-target assessments, and changes none of them. No fit,
+- [x] `make check` passes, including depguard and `test/architecture`.
+- [x] The comparison is built from the per-target assessments, and changes none of them. No fit,
   reason or required change in a target's section differs from that target's single-target report for
   the same inventory. Pinned by an e2e test that compares each section with the single-target golden.
-- [ ] *Review:* the domain's fit rules, the target adapters and their snapshots are unchanged. How the
+- [x] *Review:* the domain's fit rules, the target adapters and their snapshots are unchanged. How the
   application layer runs several catalogs, and how the reporter port takes several assessments, are
   recorded in an ADR (see *Decisions*).
 
@@ -106,10 +106,10 @@ Each milestone ships as one PR, in this order.
    blockers every target shares. Its tests pin the order, the shared blockers and the single read. An
    ADR records how the ports change: either a second reporter port for comparisons, or one port that
    takes one or more assessments. The single-target path still uses it, unchanged. No CLI change.
-2. [ ] **Markdown comparison renderer.** `internal/adapter/report/markdown` renders a comparison as
+2. [x] **Markdown comparison renderer.** `internal/adapter/report/markdown` renders a comparison as
    described under *Comparison report*. Golden files pin a three-target and a two-target report from
    fixed assessments. The single-target report's goldens do not change. Depends on 1.
-3. [ ] **CLI, e2e and docs.** `--target` takes a list or `all`, with the usage errors above. The e2e
+3. [x] **CLI, e2e and docs.** `--target` takes a list or `all`, with the usage errors above. The e2e
    test runs the fixture inventory with `--target all`, compares it with a golden comparison report, and
    checks each target's section against that target's single-target golden. README usage and the
    `CLAUDE.md` status line are updated. Moves this PRD to `prds/done/` and closes #89. Depends on 2.
