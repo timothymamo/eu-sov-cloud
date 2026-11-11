@@ -89,6 +89,16 @@ func TestMap(t *testing.T) {
 	alphaOneCapability := computeOffering("Alpha Compute", taxonomy.IPv6)
 	zuluOneCapability := computeOffering("Zulu Compute", taxonomy.Autoscaling)
 
+	// High availability has two scopes, and the implication between them is data
+	// in the taxonomy that catalog.New applies to offerings only. A zone-level
+	// offering is therefore node-level too, so the offering Map sees is the
+	// expanded one; a node-level offering never becomes zone-level. A resource is
+	// never expanded: it uses exactly the capabilities its inventory lists.
+	zoneOffering := computeOffering("Zulu Compute", taxonomy.IPv6, taxonomy.ZoneHighAvailability)
+	zoneOfferingExpanded := computeOffering("Zulu Compute", taxonomy.IPv6,
+		taxonomy.NodeHighAvailability, taxonomy.ZoneHighAvailability)
+	nodeOffering := computeOffering("Alpha Compute", taxonomy.IPv6, taxonomy.NodeHighAvailability)
+
 	tests := []struct {
 		name      string
 		resource  inventory.Resource
@@ -245,6 +255,55 @@ func TestMap(t *testing.T) {
 			wantReas: []mapping.Reason{
 				{Code: mapping.MissingCapability, Offering: "Alpha Compute", Capability: taxonomy.Autoscaling},
 			},
+		},
+		{
+			// A resource that must keep serving through the loss of one node is
+			// direct with an offering that keeps serving through the loss of a
+			// whole zone.
+			name:      "node level need is met by a zone level offering",
+			resource:  computeResource("i-0123456789abcdef0", taxonomy.IPv6, taxonomy.NodeHighAvailability),
+			offerings: []catalog.Offering{zoneOffering},
+			wantFit:   mapping.Direct,
+			wantCands: []mapping.Candidate{{Offering: zoneOfferingExpanded, Fit: mapping.Direct}},
+			wantReas:  []mapping.Reason{{Code: mapping.AllCapabilities, Offering: "Zulu Compute"}},
+		},
+		{
+			// The implication runs downwards only: a node-level offering does not
+			// keep serving through the loss of a zone, so a zone-level need is
+			// partial, and the one missing capability is the zone level.
+			name:      "zone level need is partial on a node level offering",
+			resource:  computeResource("db-example", taxonomy.ZoneHighAvailability),
+			offerings: []catalog.Offering{nodeOffering},
+			wantFit:   mapping.Partial,
+			wantCands: []mapping.Candidate{{
+				Offering: nodeOffering,
+				Fit:      mapping.Partial,
+				Missing:  []taxonomy.Capability{taxonomy.ZoneHighAvailability},
+			}},
+			wantReas: []mapping.Reason{{
+				Code:       mapping.MissingCapability,
+				Offering:   "Alpha Compute",
+				Capability: taxonomy.ZoneHighAvailability,
+			}},
+		},
+		{
+			// A resource is never expanded: a zone-level resource misses exactly
+			// one capability even from an offering without high availability, so
+			// Required changes names the zone level alone, not the node level too.
+			name:      "a zone level resource misses exactly one capability",
+			resource:  computeResource("db-example", taxonomy.ZoneHighAvailability),
+			offerings: []catalog.Offering{computeOffering("Alpha Compute")},
+			wantFit:   mapping.Partial,
+			wantCands: []mapping.Candidate{{
+				Offering: computeOffering("Alpha Compute"),
+				Fit:      mapping.Partial,
+				Missing:  []taxonomy.Capability{taxonomy.ZoneHighAvailability},
+			}},
+			wantReas: []mapping.Reason{{
+				Code:       mapping.MissingCapability,
+				Offering:   "Alpha Compute",
+				Capability: taxonomy.ZoneHighAvailability,
+			}},
 		},
 		{
 			// MySQL is served by the one offering whose category list has it.

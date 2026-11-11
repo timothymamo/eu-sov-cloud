@@ -205,6 +205,8 @@ func TestCapabilityValues(t *testing.T) {
 		{name: "point in time restore", got: taxonomy.PointInTimeRestore, want: "point-in-time-restore"},
 		{name: "object versioning", got: taxonomy.ObjectVersioning, want: "object-versioning"},
 		{name: "high availability", got: taxonomy.HighAvailability, want: "high-availability"},
+		{name: "node high availability", got: taxonomy.NodeHighAvailability, want: "node-high-availability"},
+		{name: "zone high availability", got: taxonomy.ZoneHighAvailability, want: "zone-high-availability"},
 		{name: "read replicas", got: taxonomy.ReadReplicas, want: "read-replicas"},
 		{name: "autoscaling", got: taxonomy.Autoscaling, want: "autoscaling"},
 		{name: "encryption at rest", got: taxonomy.EncryptionAtRest, want: "encryption-at-rest"},
@@ -235,6 +237,8 @@ func TestParseCapability(t *testing.T) {
 		{name: "point in time restore", in: "point-in-time-restore", want: taxonomy.PointInTimeRestore},
 		{name: "object versioning", in: "object-versioning", want: taxonomy.ObjectVersioning},
 		{name: "high availability", in: "high-availability", want: taxonomy.HighAvailability},
+		{name: "node high availability", in: "node-high-availability", want: taxonomy.NodeHighAvailability},
+		{name: "zone high availability", in: "zone-high-availability", want: taxonomy.ZoneHighAvailability},
 		{name: "read replicas", in: "read-replicas", want: taxonomy.ReadReplicas},
 		{name: "autoscaling", in: "autoscaling", want: taxonomy.Autoscaling},
 		{name: "encryption at rest", in: "encryption-at-rest", want: taxonomy.EncryptionAtRest},
@@ -292,6 +296,43 @@ func TestParseCapabilityRejectsUnknown(t *testing.T) {
 	}
 }
 
+// High availability has two scopes, and the only implication between
+// capabilities is that zone level implies node level: a target that survives the
+// loss of a whole zone survives the loss of one node too. The implication is
+// data in the taxonomy, and catalog.New applies it to offerings only. Nothing
+// implies a stronger level, and nothing else implies anything.
+func TestCapabilityImplies(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name string
+		in   taxonomy.Capability
+		want []taxonomy.Capability
+	}{
+		{
+			name: "zone level implies node level",
+			in:   taxonomy.ZoneHighAvailability,
+			want: []taxonomy.Capability{taxonomy.NodeHighAvailability},
+		},
+		{name: "node level implies nothing", in: taxonomy.NodeHighAvailability, want: nil},
+		// The value retired in a later milestone is an ordinary value here: it
+		// implies nothing, so it never satisfies a scoped need.
+		{name: "high availability implies nothing", in: taxonomy.HighAvailability, want: nil},
+		{name: "unrelated capability implies nothing", in: taxonomy.IPv6, want: nil},
+		{name: "capability outside the vocabulary implies nothing", in: taxonomy.Capability("x"), want: nil},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			if diff := cmp.Diff(tc.want, tc.in.Implies()); diff != "" {
+				t.Errorf("Implies() of %q mismatch (-want +got):\n%s", tc.in, diff)
+			}
+		})
+	}
+}
+
 func TestCapabilities(t *testing.T) {
 	t.Parallel()
 
@@ -301,10 +342,12 @@ func TestCapabilities(t *testing.T) {
 		taxonomy.EncryptionAtRest,
 		taxonomy.HighAvailability,
 		taxonomy.IPv6,
+		taxonomy.NodeHighAvailability,
 		taxonomy.ObjectVersioning,
 		taxonomy.PointInTimeRestore,
 		taxonomy.ReadReplicas,
 		taxonomy.Snapshots,
+		taxonomy.ZoneHighAvailability,
 	}
 
 	if diff := cmp.Diff(want, taxonomy.Capabilities()); diff != "" {
