@@ -89,7 +89,9 @@ func parseAssess(args []string, deps Deps) (assessOptions, error) {
 
 	opts.targets = targets
 
-	if _, ok := deps.Formats[opts.format]; !ok {
+	// A Deps without any format is a wiring mistake that newRunner reports,
+	// not a usage error.
+	if _, ok := deps.Formats[opts.format]; !ok && len(deps.Formats) > 0 {
 		return assessOptions{}, fmt.Errorf("unknown format %s; supported formats: %s",
 			text.Quote(opts.format), strings.Join(formatKeys(deps), ", "))
 	}
@@ -156,7 +158,10 @@ func newRunner(opts assessOptions, deps Deps) (runFunc, error) {
 		return nil, errMissingAdapter
 	}
 
-	format := deps.Formats[opts.format]
+	format, ok := deps.Formats[opts.format]
+	if !ok {
+		return nil, errMissingAdapter
+	}
 
 	if len(opts.targets) == 1 {
 		newCatalog := deps.Targets[opts.targets[0]]
