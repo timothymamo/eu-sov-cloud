@@ -18,8 +18,8 @@
 // region and have snapshots only in the 1-AZ regions, sit beside the product's
 // main offering. Likewise, all of an offering's capabilities hold in one tier
 // (ADR 0011): a plan or class that adds a capability is a variant named after
-// it, such as the Multi-node database plans and Block Storage 3-AZ Regional
-// Classic.
+// it, such as the Multi-node and Multi-node Advanced database plans (read
+// replicas only on the Advanced one) and Block Storage 3-AZ Regional Classic.
 //
 // catalog.json is a target catalog snapshot of schema version 1, the format
 // every target with an embedded snapshot shares (ADR 0007). Source.Catalog and

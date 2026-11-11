@@ -18,7 +18,7 @@
 | ID | Raw type | Category | Fit | Best offering | Reasons |
 |---|---|---|---|---|---|
 | `bucket-example` | `AWS::S3::Bucket` | `storage.object` | direct | `Object Storage` (tie: `Object Storage 3-AZ`) | `Object Storage` offers every capability the resource uses |
-| `db-example` | `AWS::RDS::DBInstance` | `database.postgresql` | direct | `Managed PostgreSQL Multi-node` (tie: `Managed PostgreSQL Multi-node 3-AZ`) | `Managed PostgreSQL Multi-node` offers every capability the resource uses |
+| `db-example` | `AWS::RDS::DBInstance` | `database.postgresql` | direct | `Managed PostgreSQL Multi-node Advanced` (tie: `Managed PostgreSQL Multi-node Advanced 3-AZ`) | `Managed PostgreSQL Multi-node Advanced` offers every capability the resource uses |
 | `fn-example` | `AWS::Lambda::Function` | `serverless.function` | none |  | no offering in the `OVHcloud` catalog for `serverless.function` |
 | `i-0123456789abcdef0` | `AWS::EC2::Instance` | `compute.vm` | direct | `Instances` (tie: `Metal Instances`) | `Instances` offers every capability the resource uses |
 | `misc-example` | `AWS::CloudFormation::CustomResource` | `unclassified` | none |  | not classified |
