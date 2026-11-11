@@ -563,58 +563,78 @@ func TestDepguardPinCatchesMutations(t *testing.T) {
 		t.Fatal("pinnedDepguardRules is empty, so this test would mutate nothing")
 	}
 
-	document := string(readRepositoryFile(t, ".golangci.yml"))
-	lines := strings.Split(document, "\n")
+	mutations := depguardMutations(t, string(readRepositoryFile(t, ".golangci.yml")))
 
-	mutations := 0
+	for _, mutation := range mutations {
+		t.Run(mutation.name, func(t *testing.T) {
+			t.Parallel()
 
-	for _, rule := range pinnedDepguardRules {
-		t.Run(rule.Name, func(t *testing.T) {
-			span := findDepguardRule(t, lines, rule.Name)
-
-			t.Run("rule deleted", func(t *testing.T) {
-				mutations++
-
-				mutated := deleteDepguardLines(lines, span.key, span.end)
-
-				requireMutationReported(t, document, mutated, rule.Name)
-			})
-
-			// The entries are read from the document, not from the pin: a rule
-			// that shares its deny list through an alias has no entry lines of
-			// its own, and the rule it shares them with is mutated on its own.
-			for _, section := range []string{"files", "allow", "deny"} {
-				for i, entry := range depguardEntries(t, lines, span, section) {
-					t.Run(fmt.Sprintf("%s entry %d deleted: %s", section, i, entry.text), func(t *testing.T) {
-						mutations++
-
-						mutated := deleteDepguardLines(lines, entry.from, entry.to)
-
-						requireMutationReported(t, document, mutated, rule.Name)
-					})
-				}
-			}
-
-			for i, entry := range depguardEntries(t, lines, span, "allow") {
-				if !entry.exact() {
-					continue
-				}
-
-				t.Run(fmt.Sprintf("allow entry %d without its $: %s", i, entry.text), func(t *testing.T) {
-					mutations++
-
-					mutated := slices.Clone(lines)
-					mutated[entry.from] = dropDollar(lines[entry.from])
-
-					requireMutationReported(t, document, mutated, rule.Name)
-				})
-			}
+			requireMutationReported(t, mutation.lines, mutation.rule)
 		})
 	}
+}
 
-	if mutations == 0 {
+// depguardMutation is one weakening of the depguard rules: the name of its case,
+// the rule it is about and the mutated lines of .golangci.yml.
+type depguardMutation struct {
+	name  string
+	rule  string
+	lines []string
+}
+
+// depguardMutations builds every weakening of .golangci.yml the pin must catch,
+// before any case runs: each mutation must change the document, and at least one
+// must exist, so no case can pass on nothing.
+func depguardMutations(t *testing.T, document string) []depguardMutation {
+	t.Helper()
+
+	lines := strings.Split(document, "\n")
+
+	var mutations []depguardMutation
+
+	add := func(rule, name string, mutated []string) {
+		t.Helper()
+
+		if strings.Join(mutated, "\n") == document {
+			t.Fatalf("%s: the mutation left .golangci.yml unchanged, so its case would pass on nothing", name)
+		}
+
+		mutations = append(mutations, depguardMutation{name: name, rule: rule, lines: mutated})
+	}
+
+	for _, rule := range pinnedDepguardRules {
+		span := findDepguardRule(t, lines, rule.Name)
+
+		add(rule.Name, rule.Name+": rule deleted",
+			deleteDepguardLines(lines, span.key, span.end))
+
+		// The entries are read from the document, not from the pin: a rule
+		// that shares its deny list through an alias has no entry lines of
+		// its own, and the rule it shares them with is mutated on its own.
+		for _, section := range []string{"files", "allow", "deny"} {
+			for i, entry := range depguardEntries(t, lines, span, section) {
+				add(rule.Name, fmt.Sprintf("%s: %s entry %d deleted: %s", rule.Name, section, i, entry.text),
+					deleteDepguardLines(lines, entry.from, entry.to))
+			}
+		}
+
+		for i, entry := range depguardEntries(t, lines, span, "allow") {
+			if !entry.exact() {
+				continue
+			}
+
+			mutated := slices.Clone(lines)
+			mutated[entry.from] = dropDollar(lines[entry.from])
+
+			add(rule.Name, fmt.Sprintf("%s: allow entry %d without its $: %s", rule.Name, i, entry.text), mutated)
+		}
+	}
+
+	if len(mutations) == 0 {
 		t.Fatal("no mutation was made, so this test would prove nothing")
 	}
+
+	return mutations
 }
 
 // depguardRuleSpan is where one rule sits in the .golangci.yml lines: its key
@@ -778,16 +798,11 @@ func deleteDepguardLines(lines []string, from, to int) []string {
 
 // requireMutationReported fails unless the mutated document either fails to
 // parse or makes PinnedRules report a difference that starts with the rule's
-// name, and fails when the mutation did not change the document at all.
-func requireMutationReported(t *testing.T, document string, mutated []string, rule string) {
+// name. depguardMutations has already refused a mutation that changes nothing.
+func requireMutationReported(t *testing.T, mutated []string, rule string) {
 	t.Helper()
 
-	mutatedDocument := strings.Join(mutated, "\n")
-	if mutatedDocument == document {
-		t.Fatalf("the mutation left .golangci.yml unchanged, so this case would pass on nothing")
-	}
-
-	rules, err := check.DepguardRules([]byte(mutatedDocument))
+	rules, err := check.DepguardRules([]byte(strings.Join(mutated, "\n")))
 	if err != nil {
 		// A mutated document the reader refuses is caught by the check: it
 		// fails rather than reads the rule as the pinned one.
