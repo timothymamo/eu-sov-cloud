@@ -229,10 +229,17 @@ hand-written GCP package, add an entry for it, a probe line only it refuses and 
   decides), the two directories it excludes and its test files, integration tests included. The
   SDK packages an allowed import reaches, and their own dependencies, are exempt, as depguard
   lints no file of a dependency, unless a package no strict rule holds imports one directly. The
-  exemption trusts the import path, which is sound only because the root `go.mod` may hold no
-  `replace` directive (`test/architecture/gomod_test.go`). It reads the strict allow lists only:
-  the lax deny rules (`go-cmp-only-in-tests`, `cloud-sdks-only-in-provider-adapters`) and any
-  third-party import in `cmd/eusov` or `internal/cli` are held by depguard in `make lint` alone.
+  exemption trusts the import path, which is sound only because the root `go.mod` holds no
+  `replace` directive, read with the go command's own parser (`go mod edit -json`), and the
+  repository holds no `go.work`, `go.work.sum` or `vendor/` directory, any of which could otherwise
+  substitute code for an allowed import path (`test/architecture/gomod_test.go`). It reads the
+  strict allow lists only: the lax deny rules (`go-cmp-only-in-tests`,
+  `cloud-sdks-only-in-provider-adapters`) are held by depguard in `make lint` alone. A third-party
+  import in `internal/cli` is refused by depguard alone, whose strict rule there allows only `$gostd`
+  and named module packages; one in `cmd/eusov` is refused by no rule but the lax SDK and go-cmp
+  denies, so a new third-party dependency of the composition root is held only by review of the
+  import and of `go.mod`. That is a known gap: a strict depguard rule for `**/cmd/eusov/**` would
+  close it (a follow-up to issue #79).
   `go list -deps` lists the imports of a held package's tests but not those imported packages
   themselves, so a package only a test imports is checked against the test's allow list, not for
   its own module, directory or non-Go sources.

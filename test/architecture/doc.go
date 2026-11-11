@@ -68,10 +68,18 @@
 // the check exempts them, while a third-party package that a package no
 // strict rule holds imports directly, or that no allow list reaches, is still
 // reported. The exemption reads the strict allow lists only: the lax deny
-// rules (go-cmp-only-in-tests, cloud-sdks-only-in-provider-adapters) and any
-// third-party import in cmd/eusov or internal/cli are held by depguard in make
-// lint alone. It trusts the import path, which TestRootModuleHasNoReplace
-// keeps sound: the root go.mod may replace no module.
+// rules (go-cmp-only-in-tests, cloud-sdks-only-in-provider-adapters) are held
+// by depguard in make lint alone. A third-party import in internal/cli is
+// refused by depguard alone, whose strict rule there allows only $gostd and
+// named module packages. One in cmd/eusov is refused by no rule but the lax
+// SDK and go-cmp denies, so a new third-party dependency of the composition
+// root is held only by review of the import and of go.mod: a known gap that a
+// strict depguard rule for **/cmd/eusov/** would close, left to a follow-up
+// issue. The exemption trusts the import path, which is sound because nothing
+// can substitute other code for an allowed path: TestRootModuleHasNoReplace
+// reads the root go.mod with the go command's own parser (go mod edit -json)
+// and finds no replace, and TestRepositoryHasNoWorkspaceOrVendor finds no
+// go.work, go.work.sum or vendor directory.
 // TestOnlyTheSDKRuleHoldsPrefixEntries keeps prefix entries,
 // which must end in /, to that rule.
 //

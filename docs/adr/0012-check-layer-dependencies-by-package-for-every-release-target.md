@@ -81,13 +81,21 @@ it; so is every package it imports that no in-module package imports directly. d
 file of a dependency, and a real SDK may hold assembly. A third-party package that a package no
 strict rule holds (one outside every directory, or one a rule excludes) imports directly is
 reported, as is one no allow list reaches. The exemption trusts the import path, which is sound only
-because the root `go.mod` may hold no `replace` directive (`TestRootModuleHasNoReplace`): a replace
-would let a fork stand in for a path a prefix entry allows. It reads the strict allow lists only:
+because nothing can substitute other code for a path a prefix entry allows: the root `go.mod` holds
+no `replace` directive, read with the go command's own parser (`go mod edit -json`,
+`TestRootModuleHasNoReplace`), and the repository holds no `go.work`, `go.work.sum` or `vendor/`
+directory (`TestRepositoryHasNoWorkspaceOrVendor`), each of which could otherwise let a fork stand in
+for an allowed import path. It reads the strict allow lists only:
 the lax deny rules, such as `go-cmp-only-in-tests` and `cloud-sdks-only-in-provider-adapters`, are
 held by depguard in `make lint` alone, so a non-test go-cmp import or an SDK import in a new helper
-beside the provider adapters passes this check and fails lint. A third-party import in `cmd/eusov`
-or `internal/cli` is also lint's alone: the layers do not include `cmd/eusov`, `internal/cli`'s
-rule allows `$gostd` and is skipped, and `check.Sources` skips every package outside the module.
+beside the provider adapters passes this check and fails lint. The layers do not include
+`cmd/eusov`, `internal/cli`'s rule allows `$gostd` and is skipped, and `check.Sources` skips every
+package outside the module, so this check holds no third-party import in either. A third-party import
+in `internal/cli` is refused by depguard alone: its strict rule `cli-gets-adapters-from-cmd` allows
+only `$gostd` and named module packages. One in `cmd/eusov` is refused by no rule but the lax SDK and
+go-cmp denies, so a new third-party dependency of the composition root is held only by review of the
+import and of `go.mod`. This is a known gap: a strict depguard rule for `**/cmd/eusov/**` would close
+it, and is left to a follow-up issue, out of scope for #79.
 The check anchors a rule's `**/<dir>/**` and `!**/<dir>/**` at the module root, while depguard
 matches them at any depth of the file path, so a nested path such as
 `internal/adapter/target/x/internal/adapter/source/y` is read differently; an exclusion must lie

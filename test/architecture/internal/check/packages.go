@@ -317,9 +317,13 @@ func decodePackages(r io.Reader) ([]Package, error) {
 // SDK import in a new helper package beside the provider adapters, passes
 // this check where depguard refuses it. Nor does this check speak for the
 // release binary as a whole: its patterns are the layers, not cmd/eusov, and
-// Sources skips every package outside the module, so a third-party import in
-// cmd/eusov, or in internal/cli whose rule allows $gostd and is skipped, is
-// caught by depguard only.
+// Sources skips every package outside the module. A third-party import in
+// internal/cli, whose rule allows $gostd and is skipped here, is refused by
+// depguard alone: that strict rule allows only $gostd and named module
+// packages. One in cmd/eusov is refused by no rule but the lax SDK and go-cmp
+// denies, so a new third-party dependency of the composition root is held
+// only by review of the import and of go.mod. That gap is known: a strict
+// depguard rule for **/cmd/eusov/** would close it (a follow-up to #79).
 func Packages(root, module string, rules []Rule, pkgs []Package) []string {
 	m := newModuleRoot(root, module)
 	rules = sortedAllowLists(rules)
@@ -389,6 +393,14 @@ func Packages(root, module string, rules []Rule, pkgs []Package) []string {
 // list matches it. The check cannot observe that today: go list -deps without
 // -test never lists a package that only a test imports. It is kept for parity
 // with depguard and with packageCheck.imports.
+//
+// refused is keyed by import path, not by importer: a test-only third-party
+// import, in a package no rule holding tests covers, refuses that same path
+// for production code too, should the SDK closure reach it. That fails
+// closed, and cannot happen today (go.mod requires only go-cmp), but the
+// message the path then gets in Packages ("is
+// outside every directory ... the check holds to an allow list") would
+// mislead: the path was refused for a test import, not a production one.
 func allowedThirdParty(m moduleRoot, rules []Rule, pkgs []Package) map[string]bool {
 	byPath := make(map[string]Package, len(pkgs))
 	for _, pkg := range pkgs {
