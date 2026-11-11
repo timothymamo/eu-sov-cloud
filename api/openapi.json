@@ -152,6 +152,9 @@
           },
           "405": {
             "$ref": "#/components/responses/MethodNotAllowed"
+          },
+          "421": {
+            "$ref": "#/components/responses/MisdirectedRequest"
           }
         },
         "operationId": "preflightAssessments"
@@ -232,6 +235,9 @@
           },
           "405": {
             "$ref": "#/components/responses/MethodNotAllowed"
+          },
+          "421": {
+            "$ref": "#/components/responses/MisdirectedRequest"
           }
         },
         "operationId": "preflightTargets"
