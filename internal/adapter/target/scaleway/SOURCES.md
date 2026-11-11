@@ -20,9 +20,13 @@ records where each fact comes from, so the snapshot can be checked and refreshed
   their `.md` form and the product pages. The documentation source was read instead:
   `scaleway/docs-content` `main` was still at commit `e149770a6eacd436b33ef8c36ad40cdff90ebdca`, the
   commit cited below, which issue #15 found identical to the live pages. The URLs cited are the pages
-  that source publishes. The availability page could not be re-read, so no declared region changed,
-  except that the new variant *Kubernetes Kapsule Dedicated* lists the regions its own section gives.
-  This re-verification removed `ipv6` from Serverless Functions and removed Serverless SQL Database
+  that source publishes. The availability page answered HTTP 403 to this re-verification too, at both
+  <https://www.scaleway.com/en/availability/> and the address below. The reviewer of this change read
+  it the same day at <https://www.scaleway.com/en/availability/> (HTTP 200, with the regions in the
+  page's embedded JSON) and found that it agrees with every region the snapshot declares. It has one
+  Kapsule row and no separate row for Dedicated control planes. So no declared region changed, and the
+  new variant *Kubernetes Kapsule Dedicated* lists the regions its own section gives. This
+  re-verification removed `ipv6` from Serverless Functions and removed Serverless SQL Database
   (*Left out on purpose*).
 - **Availability page:** <https://www.scaleway.com/en/product-availability-by-region/>, where every
   offering's regions come from, subject to the API check under *Rules applied*. It has one column per
@@ -96,12 +100,17 @@ records where each fact comes from, so the snapshot can be checked and refreshed
   *Left out on purpose* records the omission with its reason. A product that does not fully serve a
   taxonomy category is not in the snapshot for that category.
 - **Tier-variant rule** (ADR 0011): all of an offering's capabilities hold in **one** tier. The base
-  offering is the product's default tier. A tier that adds a capability is a variant named
-  `<base offering> <tier>`, with its own section below. A tier that only lacks capabilities gets no
-  offering. Here the default tiers are Standalone (Managed Database), Mutualized (Kubernetes Kapsule)
-  and Standard Multi-AZ (Object Storage), and the variants are *Managed Database for PostgreSQL and
-  MySQL High Availability* and *Kubernetes Kapsule Dedicated*. A **Needs:** line names the tier its
-  offering is named after, or the product's default tier.
+  offering is the product's default tier, or where none is stated, its lowest tier: the tier that adds
+  no capability. A tier that adds a capability is a variant named `<base offering> <tier>`, with its
+  own section below. A tier that only lacks capabilities gets no offering. Here the base tiers are
+  Standard Multi-AZ (Object Storage, its stated default), and Standalone (Managed Database) and
+  Mutualized (Kubernetes Kapsule), their products' lowest tiers, since no page names a default for
+  either. The variants are *Managed Database for PostgreSQL and MySQL High Availability* and
+  *Kubernetes Kapsule Dedicated*. A **Needs:** line names the tier its offering is named after, or the
+  base tier.
+- **Tier-variant regions:** a tier variant lists only the regions where a source states that tier, or
+  where the tier's general availability predates the region's opening; the product's availability row
+  alone is not enough.
 - **Scope:** high availability is listed at the level the documentation states in full:
   `node-high-availability` when the offering survives the loss of a node with no manual failover,
   `zone-high-availability` when it keeps serving through the loss of a whole zone. A **Scope:** line on
@@ -177,12 +186,14 @@ Category `kubernetes.managed`. Pages: <https://www.scaleway.com/en/docs/kubernet
 <https://www.scaleway.com/en/docs/kubernetes/faq/>,
 <https://www.scaleway.com/en/docs/kubernetes/reference-content/kubernetes-control-plane-offers/>.
 
-The base offering is the default control-plane tier, **Mutualized**: free and shared, "suitable for
-development, testing, staging environments" (concepts page). The control-plane type is chosen when the
-cluster is created (FAQ).
+The base offering is the lowest control-plane tier, **Mutualized**: a shared control plane that the
+concepts page describes as "suitable for development, testing, staging environments or production
+workloads with standard availability requirements". No page read names a default tier. Mutualized is
+taken as the base because it is the tier that adds no capability; every Dedicated tier adds one. The
+control-plane type is chosen when the cluster is created (FAQ).
 
 - `autoscaling`: pools autoscale between a minimum and maximum node count (concepts *Autoscale*, FAQ).
-  **Needs:** nothing beyond the default tier, Mutualized.
+  **Needs:** nothing beyond the base tier, Mutualized.
 - No high availability: the Mutualized tier runs "1 resilient replica" of the API server and has no SLA
   (control-plane offers page). Its etcd keeps "3 replicas in multi-AZ", which protects the cluster's
   state, not the API server's availability. The Dedicated tiers add high availability, in the variant
@@ -202,7 +213,8 @@ Dedicated control plane, Dedicated 4, 8 or 16, which share the same availability
 <https://www.scaleway.com/en/docs/kubernetes/reference-content/multi-az-clusters/>.
 
 - `autoscaling`: as for the base offering; autoscaling has no tier restriction (concepts *Autoscale*).
-  **Needs:** a Dedicated control plane.
+  **Needs:** nothing beyond this variant's tier, a Dedicated control plane (autoscaling itself has no
+  tier restriction).
 - `node-high-availability`. **Needs:** a Dedicated control plane (Dedicated 4, 8 or 16). The
   control-plane offers page gives these tiers "2 replicas for HA" of the API server, etcd "3 replicas in
   multi-AZ", and a "99.5% uptime" SLA (the Mutualized tier: "1 resilient replica", SLA "N/A"). So the
@@ -213,11 +225,16 @@ Dedicated control plane, Dedicated 4, 8 or 16, which share the same availability
   zone fails globally, the control plane will be unreachable, even if the cluster spans multiple zones.
   This limitation also applies to HA Dedicated control planes." The cluster therefore does not keep
   serving through the loss of every zone, and `zone-high-availability` is not claimed (target rule).
-- Regions `fr-par`, `nl-ams`, `pl-waw`: the changelog entries *Dedicated control plane offers are now
-  available!* (2023-09-06) and *Dedicated control plane offers now available in Warsaw* (2023-12-15).
-  **Milan is left out:** nothing read states Dedicated control planes in Milan. The entry opening MIL-1
-  (2026-03-10) names "Kapsule", not the tier, and the availability page could not be re-read on
-  2026-11-11. Add `it-mil` once a source states it.
+- Regions `fr-par`, `nl-ams`, `pl-waw` (tier-variant regions rule). The changelog entry *Dedicated
+  control plane offers are now available!* (2023-09-06) announces general availability; it names no
+  region and predates Warsaw and Milan. Warsaw has its own entry, *Dedicated control plane offers now
+  available in Warsaw* (2023-12-15). `fr-par` and `nl-ams` are inferred from the GA date and the
+  product's availability row, which marks Kapsule in both. No page read names Paris or Amsterdam for
+  the Dedicated tier.
+  **Milan is left out:** nothing read states Dedicated control planes in Milan, and Milan opened after
+  the GA entry. The entry opening MIL-1 (2026-03-10) names "Kapsule", not the tier, and the
+  availability page has one Kapsule row, with no separate row for Dedicated control planes. Add
+  `it-mil` once a source states it.
 
 ### Managed Database for PostgreSQL and MySQL
 
@@ -227,12 +244,13 @@ features. Pages: <https://www.scaleway.com/en/docs/managed-databases-for-postgre
 <https://www.scaleway.com/en/docs/managed-databases-for-postgresql-and-mysql/how-to/create-a-database/>,
 <https://www.scaleway.com/en/docs/managed-databases-for-postgresql-and-mysql/how-to/manage-read-replicas/>.
 
-The base offering is the default node configuration, **Standalone**: the page *Create a Database
-Instance* offers "High Availability" and "Standalone: creates a standalone database provisioned on a
-single node". The concepts page says a standalone node can be upgraded to High Availability after
-creation, "but not the opposite". The High Availability option is the variant *Managed Database for
-PostgreSQL and MySQL High Availability*. Every capability below has **Needs:** nothing beyond the
-default tier, Standalone.
+The base offering is the lowest node configuration, **Standalone**: the page *Create a Database
+Instance* offers "High Availability", listed first, and "Standalone: creates a standalone database
+provisioned on a single node". No page read names a default. Standalone is taken as the base because
+it is the tier that adds no capability; High Availability adds one. The concepts page says a
+standalone node can be upgraded to High Availability after creation, "but not the opposite". The High
+Availability option is the variant *Managed Database for PostgreSQL and MySQL High Availability*.
+Every capability below has **Needs:** nothing beyond the base tier, Standalone.
 
 - `encryption-at-rest`: LUKS volume encryption, generally available since 2025-01-16 (changelog).
 - `read-replicas`: Read Replicas for PostgreSQL and MySQL Database Instances. The page *Manage Read
@@ -288,8 +306,6 @@ Its `encryption-at-rest`, `read-replicas` and
 Category `storage.object`. Pages: <https://www.scaleway.com/en/docs/object-storage/concepts/>,
 <https://www.scaleway.com/en/docs/object-storage/faq/>.
 
-- `encryption-at-rest`: server-side encryption with SSE-C, SSE-ONE and SSE-KMS (FAQ *How can I encrypt
-  my objects?*).
 The base offering is the default storage class, **Standard Multi-AZ** (S3 class `STANDARD`). The page
 *Object operations* (<https://www.scaleway.com/en/docs/object-storage/api-cli/object-operations/>)
 says: "If no class is specified via the `--storage-class <class>` option, the object is created as
