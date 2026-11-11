@@ -440,7 +440,7 @@ Multi-node* because it adds `read-replicas`. Pages: <https://www.ovhcloud.com/en
 - `read-replicas`. **Needs:** the Enterprise/Advanced plan, the plan this offering is named
   after. The product page names "Read replica included" on the Advanced plan (3 nodes) only. "Read-only
   nodes" for MySQL (capabilities page); a replica node "can accept READ operations only" (FAQ), and the
-  product page lists "Read-only access to replication nodes" as a key feature.
+  product page's key features give "Replication node access" as "Read-only".
 - Regions `GRA`, `LIM`, `RBX`, `SBG`, `WAW`: as for *Managed MySQL*.
 
 ### Managed MySQL Multi-node Advanced 3-AZ
@@ -473,7 +473,7 @@ from *Managed MySQL Multi-node 3-AZ* because it adds `read-replicas`. Pages:
 - `read-replicas`. **Needs:** the Enterprise/Advanced plan, Multi AZ, the plan this offering is named
   after. The product page names "Read replica included" on the Advanced plan (3 nodes) only. "Read-only
   nodes" for MySQL (capabilities page); a replica node "can accept READ operations only" (FAQ), and the
-  product page lists "Read-only access to replication nodes" as a key feature.
+  product page's key features give "Replication node access" as "Read-only".
 - Regions `MIL`, `PAR`: the regions page ticks MySQL in "3-AZ Paris" and "3-AZ Milan"; the backups page lists
   EU-WEST-PAR and EU-SOUTH-MIL as service locations.
 
@@ -590,7 +590,7 @@ Multi-node* because it adds `read-replicas`. Pages: <https://www.ovhcloud.com/en
 - `read-replicas`. **Needs:** the Enterprise/Advanced plan, the plan this offering is named
   after. The product page names "Read replica included" on the Advanced plan (3 nodes) only. "Read-only
   nodes" for PostgreSQL (capabilities page); a replica node "can accept READ operations only" (FAQ), and the
-  product page lists "Read-only access to replication nodes" as a key feature.
+  product page's key features give "Replication node access" as "Read-only".
 - Regions `GRA`, `LIM`, `RBX`, `SBG`, `WAW`: as for *Managed PostgreSQL*.
 
 ### Managed PostgreSQL Multi-node Advanced 3-AZ
@@ -623,7 +623,7 @@ from *Managed PostgreSQL Multi-node 3-AZ* because it adds `read-replicas`. Pages
 - `read-replicas`. **Needs:** the Enterprise/Advanced plan, Multi AZ, the plan this offering is named
   after. The product page names "Read replica included" on the Advanced plan (3 nodes) only. "Read-only
   nodes" for PostgreSQL (capabilities page); a replica node "can accept READ operations only" (FAQ), and the
-  product page lists "Read-only access to replication nodes" as a key feature.
+  product page's key features give "Replication node access" as "Read-only".
 - Regions `MIL`, `PAR`: the regions page ticks PostgreSQL in "3-AZ Paris" and "3-AZ Milan"; the backups page lists
   EU-WEST-PAR and EU-SOUTH-MIL as service locations.
 
