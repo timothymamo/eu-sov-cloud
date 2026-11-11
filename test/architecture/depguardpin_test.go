@@ -249,7 +249,7 @@ var pinnedDepguardRules = []check.DepguardRule{
 		ListMode: "lax",
 		Files: []string{
 			"$all",
-			"!$test",
+			"!**/test/apiparity/**",
 			"!**/cmd/eusov-server/**",
 			"!**/internal/httpapi/**",
 		},

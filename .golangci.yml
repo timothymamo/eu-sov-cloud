@@ -416,14 +416,15 @@ linters:
         # the CLI binary stays offline (PRD #103, the separate-binary
         # decision), and TestAssessPathHasNoNetworkOrCloudSDK in test/e2e fails
         # if it depends on net/http at all; this rule names the reason at the
-        # import. Test files are left out by !$test: the offline parity test
-        # in test/apiparity wires the real adapters into both driving adapters,
-        # as a composition root would.
+        # import. Test files elsewhere are covered too; only test/apiparity is
+        # left out, because its offline parity test wires the real adapters
+        # into both driving adapters, as a composition root would. The
+        # package's own tests are exempt with the package.
         httpapi-imported-only-by-the-server:
           list-mode: lax
           files:
             - "$all"
-            - "!$test"
+            - "!**/test/apiparity/**"
             - "!**/cmd/eusov-server/**"
             - "!**/internal/httpapi/**"
           deny:
