@@ -49,16 +49,16 @@ use `net/http/httptest` and a server on `127.0.0.1`), unless marked *review*.
 
 **JSON report**
 
-- [ ] `eusov assess --format json` prints the assessment as JSON. Its document has a `schemaVersion` of
+- [x] `eusov assess --format json` prints the assessment as JSON. Its document has a `schemaVersion` of
   `1`, and holds the target, the snapshot source and date, the inventory name, the summary counts, and
   every verdict with its fit, best offering, ties, reasons and required changes, as well as blockers.
   This is the same content as the Markdown report, in the same resource order. `--format markdown` is
   the default, and its output is byte-identical to today's.
-- [ ] With several targets (PRD #89), `--format json` prints a comparison document. It holds the
+- [x] With several targets (PRD #89), `--format json` prints a comparison document. It holds the
   per-target assessments and the blockers every target shares.
-- [ ] Golden files pin both documents. The output is byte-identical across runs. A JSON Schema for each
+- [x] Golden files pin both documents. The output is byte-identical across runs. A JSON Schema for each
   document is in the repository, and a test validates the goldens against it.
-- [ ] Every string comes from the inventory or a catalog, and is JSON-encoded, never concatenated.
+- [x] Every string comes from the inventory or a catalog, and is JSON-encoded, never concatenated.
   Hostile values (quotes, backslashes, control characters, invalid UTF-8) produce valid JSON. Pinned by
   a hostile golden.
 
@@ -136,9 +136,17 @@ use `net/http/httptest` and a server on `127.0.0.1`), unless marked *review*.
 
 Each milestone ships as one PR, in this order.
 
-1. [ ] **JSON report v1.** `internal/adapter/report/jsonreport` renders an assessment and a comparison as
+1. [x] **JSON report v1.** `internal/adapter/report/jsonreport` renders an assessment and a comparison as
    versioned JSON, with JSON Schemas, goldens and hostile goldens. `eusov assess --format json|markdown`.
    An ADR records the schema and its versioning, the counterpart of ADR 0006 for inventories. No HTTP yet.
+
+   *Done:* `jsonreport` renders both documents (`schemaVersion` 1), with JSON Schemas under
+   `internal/adapter/report/jsonreport/schema/`, goldens and hostile goldens validated against them,
+   and `--format json` e2e goldens. `eusov assess --format json|markdown` selects the renderer;
+   Markdown stays the default and unchanged. A comparison is validated once, in the domain, for every
+   reporter. The format and its version policy are recorded in
+   [ADR 0018](../docs/adr/0018-version-the-json-report-format-for-the-cli-and-the-api.md).
+
 2. [ ] **HTTP API adapter.** `internal/httpapi`: the routes, request decoding and limits, error shapes,
    content negotiation, headers, and the OpenAPI document, tested with `httptest` and fakes for the use
    cases. An ADR records the API's design, versioning and security model. depguard and
