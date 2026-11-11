@@ -122,10 +122,11 @@ Commands:
 Flags of assess:
   --inventory <file>  The inventory file to assess, in the JSON format of
                       docs/adr/0006. A path: standard input is not supported.
-  --target <targets>  The target to compare with, a comma-separated list of
-                      targets, or all for every target. Supported targets:
-                      %s. Several targets give one report that
-                      compares them, then each target's own report.
+  --target <targets>  One target, a comma-separated list of targets, or all
+                      for every target:
+                      %s.
+                      Several targets give one report that compares them,
+                      then each target's own report.
   --output <file>     Write the report to this file, with mode 0600, instead of
                       standard output. An existing regular file, a symbolic
                       link to one or a dangling link is replaced only once the
