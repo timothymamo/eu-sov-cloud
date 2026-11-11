@@ -535,7 +535,7 @@ func TestDatabaseMultiNodeVariantsServeHighAvailability(t *testing.T) {
 
 			got := mapping.Map(r, cat)
 			if got.Fit != mapping.Direct {
-				t.Errorf("Map() fit = %q, want %q: the 3-AZ Multi-node variant offers %s",
+				t.Errorf("Map() fit = %q, want %q: the Multi-node 3-AZ variant offers %s",
 					got.Fit, mapping.Direct, text.Quote(string(tc.capability)))
 			}
 
