@@ -242,10 +242,17 @@ hand-written GCP package, add an entry for it, a probe line only it refuses and 
   import in `internal/cli` is refused by depguard alone, whose strict rule there allows only `$gostd`
   and named module packages; one in `cmd/eusov` is refused by the strict rule `composition-root`
   (issue #101), which `test/architecture` holds the composition root to on every release target,
-  apart from the shared layer listing.
+  cgo mode and tag set, apart from the shared layer listing, and whose listing must hold no package
+  under the module path from a module other than the main one, since the rule's prefix entry would
+  allow a nested module.
   `go list -deps` lists the imports of a held package's tests but not those imported packages
   themselves, so a package only a test imports is checked against the test's allow list, not for
   its own module, directory or non-Go sources.
+- **Process and environment calls in `cmd/eusov`.** The `composition-root` rule allows `os` and
+  `syscall`, so the composition root could call `os.StartProcess`, `syscall.Exec` or
+  `syscall.ForkExec`, shelling out to a cloud CLI, or `os.Environ` and `os.Getenv`, dumping the
+  environment, and only review catches it (the security audit's LOW-2 on issue #101). A forbidigo
+  group scoped to `cmd/eusov` would close it; that is follow-up work outside issue #101.
 - **Files lint never loads**: a file behind a build tag other than `integration` and `e2e`, a
   `//go:build ignore` helper, and the `testdata`, `_` and `.` directories `./...` skips. `test/lint`
   fails on such a file, and on an imported package in such a directory. A main package there, run

@@ -80,17 +80,22 @@
 // skip of the shared layer listing, since go list -deps ./cmd/eusov/... also
 // lists internal/cli and internal/version, which no rule the check reads holds.
 // TestCompositionRootIsHeldToItsRuleForEveryReleaseTarget holds the real
-// cmd/eusov to it on every release platform, and
+// cmd/eusov to it on every release platform, with cgo off and on and every tag
+// set TestReleaseTargetDependencies reads (cgoModes and tagSets, shared so the
+// two cannot drift), and fails any package of its listing under the module path
+// that does not belong to the main module: the rule's prefix entry would let a
+// module nested under that path in (the security audit's LOW-1).
 // TestCompositionRootRuleHoldsItsProbeForEveryReleaseTarget fails a fixture
-// cmd/eusov that imports a third-party library and a stand-in SDK, while the
-// rule holds its sibling cmd/eusov-server not at all. The exemption trusts the import path, which is sound because nothing
-// can substitute other code for an allowed path: TestRootModuleHasNoReplace
-// reads the root go.mod with the go command's own parser (go mod edit -json)
-// and finds no replace, and TestRepositoryHasNoWorkspaceOrVendor finds no
-// go.work, go.work.sum or vendor directory.
-// TestOnlyTheSDKRuleHoldsPrefixEntries keeps prefix entries,
-// which must end in /, to that rule and to composition-root, whose one prefix
-// entry is the module path.
+// cmd/eusov that imports a third-party library, a stand-in SDK and a nested
+// module under the fixture's own module path, which the main-module assertion
+// must report, while the rule holds its sibling cmd/eusov-server not at all.
+// The exemption trusts the import path, which is sound because nothing can
+// substitute other code for an allowed path: TestRootModuleHasNoReplace reads
+// the root go.mod with the go command's own parser (go mod edit -json) and
+// finds no replace, and TestRepositoryHasNoWorkspaceOrVendor finds no go.work,
+// go.work.sum or vendor directory. TestOnlyNamedRulesHoldPrefixEntries keeps
+// prefix entries, which must end in /, to that rule and to composition-root,
+// whose one prefix entry is the module path.
 //
 // The checks are tests: they run in make test, make check and CI's make cover,
 // with no workflow of their own. They need no network and no credentials.
