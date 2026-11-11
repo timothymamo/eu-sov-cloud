@@ -88,7 +88,7 @@ every goroutine to standard error and exits with code 2.
 The `Dockerfile` builds a minimal image: the static `eusov` binary on
 [distroless static](https://github.com/GoogleContainerTools/distroless) (CA certificates and a
 non-root user, no shell or package manager), for `linux/amd64` and `linux/arm64`
-([ADR 0012](docs/adr/0012-ship-eusov-as-a-distroless-container-image.md)). No image is published to a
+([ADR 0013](docs/adr/0013-ship-eusov-as-a-distroless-container-image.md)). No image is published to a
 registry yet, so build it yourself:
 
 ```bash

@@ -7,7 +7,7 @@ LDFLAGS := -s -w \
 	-X $(PKG)/internal/version.version=$(VERSION) \
 	-X $(PKG)/internal/version.commit=$(COMMIT) \
 	-X $(PKG)/internal/version.date=$(DATE)
-# The container image make image builds (docs/adr/0012-ship-eusov-as-a-distroless-container-image.md).
+# The container image make image builds (docs/adr/0013-ship-eusov-as-a-distroless-container-image.md).
 IMAGE   ?= eusov
 
 # The GOOS/GOARCH pairs the release builds, all with CGO_ENABLED=0. Must match the goos and goarch lists in

@@ -163,7 +163,7 @@ func TestBuildMatchesGoReleaser(t *testing.T) {
 // `go build` starts FROM --platform=$BUILDPLATFORM, so `docker buildx build
 // --platform linux/arm64` compiles the binary on the build host and
 // cross-compiles it for the target, instead of running the whole builder stage
-// under QEMU emulation (docs/adr/0012-ship-eusov-as-a-distroless-container-image.md).
+// under QEMU emulation (docs/adr/0013-ship-eusov-as-a-distroless-container-image.md).
 // The builder is found by the go build it runs rather than by its name, so a
 // renamed or reordered stage is still the one checked.
 func TestBuilderStageCrossCompilesOnBuildPlatform(t *testing.T) {

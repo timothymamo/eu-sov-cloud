@@ -1,4 +1,4 @@
-# eusov as a minimal container image (docs/adr/0012-ship-eusov-as-a-distroless-container-image.md).
+# eusov as a minimal container image (docs/adr/0013-ship-eusov-as-a-distroless-container-image.md).
 #
 #   make image                                   # version, commit and date from git
 #   docker buildx build --platform linux/amd64,linux/arm64 .

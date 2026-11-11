@@ -1,4 +1,4 @@
-# 0012. Ship eusov as a distroless container image, built but not yet published
+# 0013. Ship eusov as a distroless container image, built but not yet published
 
 - Status: Accepted
 - Date: 2026-11-11
