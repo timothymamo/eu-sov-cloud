@@ -63,3 +63,20 @@ type ReportMeta struct {
 type Reporter interface {
 	Report(ctx context.Context, w io.Writer, a assessment.Assessment, meta ReportMeta) error
 }
+
+// ComparisonReporter is the port that renders a comparison of several targets'
+// assessments, for example as Markdown. It is separate from Reporter so that a
+// reporter opts in to comparisons and the single-target path stays unchanged
+// (docs/adr/0016).
+//
+// ReportComparison writes the rendering of c and meta to w. Every value it takes
+// from c or meta is untrusted and must be escaped for the output format. The
+// driving adapter chooses and owns w: ReportComparison neither opens nor closes
+// it.
+//
+// ReportComparison may ignore ctx; Run checks the context before calling it.
+// Output written before an error may be partial; the driving adapter decides
+// what to do with it.
+type ComparisonReporter interface {
+	ReportComparison(ctx context.Context, w io.Writer, c assessment.Comparison, meta ReportMeta) error
+}

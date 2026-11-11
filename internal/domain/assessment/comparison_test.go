@@ -1,0 +1,356 @@
+package assessment_test
+
+import (
+	"slices"
+	"strings"
+	"testing"
+
+	"github.com/google/go-cmp/cmp"
+
+	"github.com/timothymamo/eu-sov-cloud/internal/domain/assessment"
+	"github.com/timothymamo/eu-sov-cloud/internal/domain/catalog"
+	"github.com/timothymamo/eu-sov-cloud/internal/domain/inventory"
+	"github.com/timothymamo/eu-sov-cloud/internal/domain/mapping"
+	"github.com/timothymamo/eu-sov-cloud/internal/domain/taxonomy"
+	"github.com/timothymamo/eu-sov-cloud/internal/testutil"
+)
+
+// The keys a comparison names its targets by: the CLI's keys, not the catalogs'
+// display names, so a test can tell a key from the target name in a reason.
+const (
+	ovhcloudKey = "ovhcloud"
+	scalewayKey = "scaleway"
+	upcloudKey  = "upcloud"
+)
+
+// comparisonInventory is the inventory the comparison tests assess: the one the
+// assessment tests already pin every fit of.
+func comparisonInventory(t *testing.T) inventory.Inventory {
+	t.Helper()
+
+	return newInventory(t, awsResources())
+}
+
+// comparisonCatalog returns the fixture catalog of one target key.
+func comparisonCatalog(t *testing.T, key string) catalog.Catalog {
+	t.Helper()
+
+	switch key {
+	case ovhcloudKey:
+		return testutil.OVHcloudCatalog(t)
+	case scalewayKey:
+		return testutil.ScalewayCatalog(t)
+	case upcloudKey:
+		return testutil.UpCloudCatalog(t)
+	default:
+		t.Fatalf("no fixture catalog for target key %q", key)
+
+		return catalog.Catalog{}
+	}
+}
+
+// comparisonTargets assesses the comparison inventory against the given targets,
+// in the order given: what a caller hands Compare before it sorts.
+func comparisonTargets(t *testing.T, keys ...string) []assessment.TargetAssessment {
+	t.Helper()
+
+	inv := comparisonInventory(t)
+	targets := make([]assessment.TargetAssessment, 0, len(keys))
+
+	for _, key := range keys {
+		targets = append(targets, assessment.TargetAssessment{
+			Key:        key,
+			Assessment: assessment.Assess(inv, comparisonCatalog(t, key)),
+		})
+	}
+
+	return targets
+}
+
+// targetKeys returns the keys of targets or of a comparison's targets, in the
+// order they hold.
+func targetKeys(targets []assessment.TargetAssessment) []string {
+	if len(targets) == 0 {
+		return nil
+	}
+
+	keys := make([]string, 0, len(targets))
+	for _, target := range targets {
+		keys = append(keys, target.Key)
+	}
+
+	return keys
+}
+
+// sortedTargets is the copy of targets Compare must produce: its own, in key
+// order.
+func sortedTargets(targets []assessment.TargetAssessment) []assessment.TargetAssessment {
+	sorted := slices.Clone(targets)
+	slices.SortFunc(sorted, func(a, b assessment.TargetAssessment) int {
+		return strings.Compare(a.Key, b.Key)
+	})
+
+	return sorted
+}
+
+// blockerIDs returns the resource IDs of the shared blockers, in the order they
+// hold.
+func blockerIDs(blockers []assessment.SharedBlocker) []string {
+	if len(blockers) == 0 {
+		return nil
+	}
+
+	ids := make([]string, 0, len(blockers))
+	for _, blocker := range blockers {
+		ids = append(ids, blocker.ResourceID)
+	}
+
+	return ids
+}
+
+// sharedFromBlockers builds the shared blockers a single target's assessment
+// implies: one per blocked resource, in the assessment's order, each carrying
+// that target's reasons for it.
+func sharedFromBlockers(key string, blockers []assessment.Blocker) []assessment.SharedBlocker {
+	var shared []assessment.SharedBlocker
+
+	for _, blocker := range blockers {
+		if n := len(shared); n > 0 && shared[n-1].ResourceID == blocker.ResourceID {
+			shared[n-1].Targets[0].Reasons = append(shared[n-1].Targets[0].Reasons, blocker.Reason)
+
+			continue
+		}
+
+		shared = append(shared, assessment.SharedBlocker{
+			ResourceID: blocker.ResourceID,
+			Targets: []assessment.TargetReasons{
+				{Key: key, Reasons: []mapping.Reason{blocker.Reason}},
+			},
+		})
+	}
+
+	return shared
+}
+
+// TestCompare pins what a comparison of several targets is: one assessment per
+// target in key order, the caller's targets and assessments left as they were,
+// and the blockers every target shares, with each target's own reasons.
+func TestCompare(t *testing.T) {
+	t.Parallel()
+
+	// The comparison's target order, whatever order the caller used.
+	sortedKeys := []string{ovhcloudKey, scalewayKey, upcloudKey}
+
+	t.Run("sorts the targets by key", func(t *testing.T) {
+		t.Parallel()
+
+		tests := []struct {
+			name string
+			gave []string
+		}{
+			{name: "already in key order", gave: []string{ovhcloudKey, scalewayKey, upcloudKey}},
+			{name: "reversed", gave: []string{upcloudKey, scalewayKey, ovhcloudKey}},
+			{name: "in another order", gave: []string{upcloudKey, ovhcloudKey, scalewayKey}},
+		}
+
+		for _, tt := range tests {
+			t.Run(tt.name, func(t *testing.T) {
+				t.Parallel()
+
+				targets := comparisonTargets(t, tt.gave...)
+				before := slices.Clone(targets)
+
+				got := assessment.Compare(targets)
+
+				if diff := cmp.Diff(sortedKeys, targetKeys(got.Targets)); diff != "" {
+					t.Errorf("target keys mismatch (-want +got):\n%s", diff)
+				}
+
+				// The order the targets were given in changes nothing else either.
+				want := assessment.Compare(comparisonTargets(t, sortedKeys...))
+				if diff := cmp.Diff(want, got); diff != "" {
+					t.Errorf("comparison mismatch (-want +got):\n%s", diff)
+				}
+
+				// Compare works on a copy: the caller's slice keeps its order.
+				if diff := cmp.Diff(before, targets); diff != "" {
+					t.Errorf("Compare() changed the caller's targets (-before +after):\n%s", diff)
+				}
+			})
+		}
+	})
+
+	t.Run("leaves every assessment as it was", func(t *testing.T) {
+		t.Parallel()
+
+		targets := comparisonTargets(t, upcloudKey, ovhcloudKey, scalewayKey)
+
+		got := assessment.Compare(targets)
+
+		// The same values the caller handed in, in key order: Compare copies the
+		// assessments and changes none of their fields, not even a verdict.
+		want := sortedTargets(targets)
+		if diff := cmp.Diff(want, got.Targets); diff != "" {
+			t.Errorf("comparison targets mismatch (-want +got):\n%s", diff)
+		}
+	})
+
+	t.Run("reports the blockers every target shares", func(t *testing.T) {
+		t.Parallel()
+
+		targets := comparisonTargets(t, upcloudKey, ovhcloudKey, scalewayKey)
+
+		// A blocker on one target only is not shared: UpCloud serves no PostgreSQL
+		// catalog offering, so db-example is blocked there and nowhere else.
+		upcloud := assessment.Assess(comparisonInventory(t), testutil.UpCloudCatalog(t))
+		if fit := verdictFor(t, upcloud.Verdicts, "db-example").Fit; fit != mapping.None {
+			t.Fatalf("precondition failed: db-example fit on %s = %q, want %q", upcloudKey, fit, mapping.None)
+		}
+
+		got := assessment.Compare(targets)
+
+		// One entry per resource blocked on every target, in resource ID order,
+		// with each target's own reasons in target key order.
+		want := []assessment.SharedBlocker{
+			{
+				ResourceID: "fn-example",
+				Targets: []assessment.TargetReasons{
+					{
+						Key: ovhcloudKey,
+						Reasons: []mapping.Reason{{
+							Code:     mapping.NoOffering,
+							Target:   "OVHcloud",
+							Category: taxonomy.ServerlessFunction,
+						}},
+					},
+					{
+						Key: scalewayKey,
+						Reasons: []mapping.Reason{{
+							Code:     mapping.NoOffering,
+							Target:   "Scaleway",
+							Category: taxonomy.ServerlessFunction,
+						}},
+					},
+					{
+						Key: upcloudKey,
+						Reasons: []mapping.Reason{{
+							Code:     mapping.NoOffering,
+							Target:   "UpCloud",
+							Category: taxonomy.ServerlessFunction,
+						}},
+					},
+				},
+			},
+			{
+				ResourceID: "misc-example",
+				Targets: []assessment.TargetReasons{
+					{Key: ovhcloudKey, Reasons: []mapping.Reason{{Code: mapping.NotClassified}}},
+					{Key: scalewayKey, Reasons: []mapping.Reason{{Code: mapping.NotClassified}}},
+					{Key: upcloudKey, Reasons: []mapping.Reason{{Code: mapping.NotClassified}}},
+				},
+			},
+		}
+
+		if diff := cmp.Diff(want, got.SharedBlockers); diff != "" {
+			t.Errorf("SharedBlockers mismatch (-want +got):\n%s", diff)
+		}
+
+		if diff := cmp.Diff([]string{"fn-example", "misc-example"}, blockerIDs(got.SharedBlockers)); diff != "" {
+			t.Errorf("shared blocker IDs mismatch (-want +got):\n%s", diff)
+		}
+	})
+}
+
+// TestCompareNoTargets pins that comparing nothing is not an error and holds
+// nothing: no assessments, and no shared blockers rather than an empty list.
+func TestCompareNoTargets(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name    string
+		targets []assessment.TargetAssessment
+	}{
+		{name: "nil targets"},
+		{name: "no targets", targets: []assessment.TargetAssessment{}},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			got := assessment.Compare(tt.targets)
+
+			if got.Targets != nil {
+				t.Errorf("Targets = %v, want nil for a comparison of no targets", got.Targets)
+			}
+
+			if got.SharedBlockers != nil {
+				t.Errorf("SharedBlockers = %v, want nil for a comparison of no targets", got.SharedBlockers)
+			}
+		})
+	}
+}
+
+// TestCompareSingleTarget pins that a comparison of one target is that target's
+// own blocked resources: the same resources, in the same order, with the same
+// reasons.
+func TestCompareSingleTarget(t *testing.T) {
+	t.Parallel()
+
+	targets := comparisonTargets(t, scalewayKey)
+
+	want := sharedFromBlockers(scalewayKey, targets[0].Assessment.Blockers)
+	if len(want) == 0 {
+		t.Fatal("precondition failed: the fixture assessment has no blockers")
+	}
+
+	got := assessment.Compare(targets)
+
+	if diff := cmp.Diff(want, got.SharedBlockers); diff != "" {
+		t.Errorf("SharedBlockers mismatch (-want +got):\n%s", diff)
+	}
+
+	if diff := cmp.Diff(targets, got.Targets); diff != "" {
+		t.Errorf("Targets mismatch (-want +got):\n%s", diff)
+	}
+}
+
+// TestCompareNoSharedBlockers pins the nil rule: when no resource is blocked on
+// every target, the comparison holds nil shared blockers, not an empty slice.
+func TestCompareNoSharedBlockers(t *testing.T) {
+	t.Parallel()
+
+	// One object bucket: direct on Scaleway, partial on UpCloud (its object
+	// storage has no versioning), blocked on neither.
+	inv := newInventory(t, []inventory.Resource{
+		{
+			ID:           "bucket-example",
+			RawType:      "AWS::S3::Bucket",
+			Category:     taxonomy.StorageObject,
+			Region:       "eu-west-1",
+			Capabilities: []taxonomy.Capability{taxonomy.ObjectVersioning},
+		},
+	})
+
+	targets := []assessment.TargetAssessment{
+		{Key: scalewayKey, Assessment: assessment.Assess(inv, testutil.ScalewayCatalog(t))},
+		{Key: upcloudKey, Assessment: assessment.Assess(inv, testutil.UpCloudCatalog(t))},
+	}
+
+	for _, target := range targets {
+		if fit := verdictFor(t, target.Assessment.Verdicts, "bucket-example").Fit; fit == mapping.None {
+			t.Fatalf("precondition failed: bucket-example fit on %s = %q, want better than %q",
+				target.Key, fit, mapping.None)
+		}
+	}
+
+	got := assessment.Compare(targets)
+
+	if got.SharedBlockers != nil {
+		t.Errorf("SharedBlockers = %v, want nil when no blocker is shared", got.SharedBlockers)
+	}
+
+	if diff := cmp.Diff([]string{scalewayKey, upcloudKey}, targetKeys(got.Targets)); diff != "" {
+		t.Errorf("target keys mismatch (-want +got):\n%s", diff)
+	}
+}
