@@ -20,15 +20,45 @@ if [[ ! "${branch}" =~ ^(${types})/[0-9]+-[a-z0-9]+(-[a-z0-9]+)*$ ]]; then
   exit 2
 fi
 
+# Every worktree of the repository, read whole before it is searched: git gets SIGPIPE when a reader
+# stops early, and with pipefail that would end this script without a message. One entry per worktree,
+# the main worktree first: a "worktree <path>" line, then lines such as "HEAD <sha>", "branch <ref>" or
+# "detached", and "locked [<reason>]", then a blank line.
+worktrees="$(git worktree list --porcelain)"
+
+# entry <line>: prints the entry that has exactly this line, or nothing. The main worktree's entry gets
+# an extra first line, "main".
+entry() {
+  awk -v want="$1" '
+    BEGIN { RS = ""; FS = "\n" }
+    !found {
+      for (i = 1; i <= NF; i++) if ($i == want) found = 1
+      if (found) { if (NR == 1) print "main"; print }
+    }
+  ' <<<"${worktrees}"
+}
+
 # Resume: a branch that is already checked out keeps its worktree, wherever that is.
-existing="$(git worktree list --porcelain | awk -v want="branch refs/heads/${branch}" '
-  /^worktree / { path = substr($0, 10) }
-  $0 == want   { print path; exit }
-')"
-if [[ -n "${existing}" ]]; then
+found="$(entry "branch refs/heads/${branch}")"
+if [[ -n "${found}" ]]; then
+  existing="$(sed -n 's/^worktree //p' <<<"${found}")"
+  if [[ "${found%%$'\n'*}" == main ]]; then
+    echo "worktree: '${branch}' is checked out in the main checkout, ${existing}, which stays on main" \
+      "and is never a pull request's worktree (CLAUDE.md rule 4); commit any changes there, run" \
+      "'git -C ${existing} switch main', and try again" >&2
+    exit 1
+  fi
   if [[ ! -d "${existing}" ]]; then
-    echo "worktree: '${branch}' is registered at ${existing}, which no longer exists;" \
-      "run 'git worktree prune' and try again" >&2
+    if lock="$(grep -m 1 '^locked' <<<"${found}")"; then
+      reason="${lock#locked}"
+      echo "worktree: '${branch}' is registered at ${existing}, which no longer exists, and the entry is" \
+        "locked${reason:+ (${reason# })}, so 'git worktree prune' keeps it; unless ${existing} is on a disk" \
+        "that is not mounted, run 'git worktree unlock ${existing}', then 'git worktree prune', and try" \
+        "again" >&2
+    else
+      echo "worktree: '${branch}' is registered at ${existing}, which no longer exists;" \
+        "run 'git worktree prune' and try again" >&2
+    fi
     exit 1
   fi
   echo "${existing}"
@@ -45,7 +75,19 @@ fi
 dir="${top}/.worktrees/${branch//\//-}"
 
 if [[ -e "${dir}" ]]; then
-  echo "worktree: ${dir} exists but is not the worktree of '${branch}'; move it out of the way first" >&2
+  held="$(entry "worktree ${dir}")"
+  on="$(sed -n 's#^branch refs/heads/##p' <<<"${held}")"
+  if [[ -z "${held}" ]]; then
+    echo "worktree: ${dir} exists but is not a worktree; look at what it holds, move it out of the way," \
+      "and try again" >&2
+  elif [[ -n "${on}" ]]; then
+    echo "worktree: ${dir} is the worktree of '${on}', not of '${branch}'; it may hold that branch's" \
+      "work, so leave it where it is and report it" >&2
+  else
+    echo "worktree: ${dir} is a worktree on a detached HEAD, not on '${branch}': a rebase or bisect may be" \
+      "in progress there. Leave it where it is; 'git -C ${dir} status' says what is in progress." \
+      "Finish that, and try again" >&2
+  fi
   exit 1
 fi
 
