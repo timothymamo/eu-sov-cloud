@@ -78,10 +78,11 @@ func (s *fakeInventorySource) Inventory(ctx context.Context) (inventory.Inventor
 	return s.inv, s.err
 }
 
-// fakeCatalogSource is an analysis.CatalogSource that returns a fixed catalog
-// and records how often it was called.
+// fakeCatalogSource is an analysis.CatalogSource that returns a fixed catalog or
+// a fixed error and records how often it was called.
 type fakeCatalogSource struct {
 	cat   catalog.Catalog
+	err   error
 	calls int
 }
 
@@ -90,6 +91,10 @@ func (s *fakeCatalogSource) Catalog(ctx context.Context) (catalog.Catalog, error
 
 	if err := ctx.Err(); err != nil {
 		return catalog.Catalog{}, err
+	}
+
+	if s.err != nil {
+		return catalog.Catalog{}, s.err
 	}
 
 	return s.cat, nil

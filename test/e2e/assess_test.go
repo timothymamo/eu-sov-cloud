@@ -1107,3 +1107,206 @@ func spanContent(s string, from, fence int) (content string, next int, ok bool) 
 
 	return "", 0, false
 }
+
+// allKey is the --target value that selects every supported target.
+const allKey = "all"
+
+// comparisonGolden is the report a --target all run of the shared fixture
+// renders: the comparison of the three targets, then each target's section
+// (PRD #89).
+const comparisonGolden = "assess-all.golden"
+
+// TestAssessAllTargets pins the multi-target report end to end: the built
+// binary, run with no environment, compares the fixture inventory with every
+// supported target and writes one comparison report. Its title names every
+// target compared, in the key order the CLI compares them in.
+//
+// The golden is the specification of that report. It is written with -update by
+// the change that adds the comparison output (PRD #89, milestone 3) and reviewed
+// like any other golden file.
+func TestAssessAllTargets(t *testing.T) {
+	t.Parallel()
+
+	got := assess(t, allKey, filepath.Join("testdata", "inventory.json"))
+
+	if got.code != 0 {
+		t.Fatalf("exit code = %d, want 0; stderr = %q", got.code, got.stderr)
+	}
+
+	if got.stderr != "" {
+		t.Errorf("stderr = %q, want empty", got.stderr)
+	}
+
+	testutil.Golden(t, goldenPath(comparisonGolden), []byte(got.stdout))
+
+	checkComparisonTitle(t, got.stdout)
+}
+
+// checkComparisonTitle fails the test unless the report's title names every
+// target's display name, in the order the targets are compared.
+func checkComparisonTitle(t *testing.T, report string) {
+	t.Helper()
+
+	lines := strings.Split(report, "\n")
+	if len(lines) == 0 || !strings.HasPrefix(lines[0], "# ") {
+		t.Fatalf("the report does not start with a title:\n%s", report)
+	}
+
+	title := lines[0]
+	last := -1
+
+	for _, tc := range targets() {
+		i := strings.Index(title, tc.name)
+		if i < 0 {
+			t.Errorf("the report title %q does not name %q", title, tc.name)
+
+			continue
+		}
+
+		if i < last {
+			t.Errorf("the report title %q names %q out of target key order", title, tc.name)
+		}
+
+		last = i
+	}
+}
+
+// TestAssessAllTargetsSectionsMatchSingleTargetReports pins that the comparison
+// changes no assessment: each target's section is that target's single-target
+// report, one heading level lower and without the title and header lines the
+// comparison gives once, with the same content and the same row order.
+func TestAssessAllTargetsSectionsMatchSingleTargetReports(t *testing.T) {
+	t.Parallel()
+
+	inventory := filepath.Join("testdata", "inventory.json")
+
+	all := assess(t, allKey, inventory)
+	if all.code != 0 {
+		t.Fatalf("exit code of --target %s = %d, want 0; stderr = %q", allKey, all.code, all.stderr)
+	}
+
+	for _, tc := range targets() {
+		t.Run(tc.key, func(t *testing.T) {
+			t.Parallel()
+
+			single := assess(t, tc.key, inventory)
+			if single.code != 0 {
+				t.Fatalf("exit code of --target %s = %d, want 0; stderr = %q", tc.key, single.code, single.stderr)
+			}
+
+			want := demotedReportLines(t, single.stdout)
+			got := sectionLines(t, all.stdout, targetSectionHeading(tc.name))
+
+			if diff := cmp.Diff(want, got); diff != "" {
+				t.Errorf("the %q section is not that target's report one heading level lower (-want +got):\n%s",
+					tc.key, diff)
+			}
+		})
+	}
+}
+
+// TestAssessAllMatchesEveryTargetOrder pins that --target all and the same
+// targets named in another order give the same report: the comparison does not
+// depend on the order the targets were selected in.
+func TestAssessAllMatchesEveryTargetOrder(t *testing.T) {
+	t.Parallel()
+
+	inventory := filepath.Join("testdata", "inventory.json")
+
+	all := assess(t, allKey, inventory)
+	if all.code != 0 {
+		t.Fatalf("exit code of --target %s = %d, want 0; stderr = %q", allKey, all.code, all.stderr)
+	}
+
+	named := assess(t, upcloudKey+","+ovhcloudKey+","+scalewayKey, inventory)
+	if named.code != 0 {
+		t.Fatalf("exit code = %d, want 0; stderr = %q", named.code, named.stderr)
+	}
+
+	if diff := cmp.Diff(strings.Split(all.stdout, "\n"), strings.Split(named.stdout, "\n")); diff != "" {
+		t.Errorf("--target %s and the same targets named in another order differ (-all +named):\n%s",
+			allKey, diff)
+	}
+}
+
+// targetSectionHeading returns the heading that starts one target's section of a
+// comparison: the target's display name inside a code span, one heading level
+// below the comparison's own sections.
+func targetSectionHeading(displayName string) string {
+	return "## `" + displayName + "`"
+}
+
+// sectionLines returns the body of the comparison section that starts with
+// heading: every line after the heading, up to the next heading of the same level
+// or higher, with blank lines dropped, because the golden files pin the
+// blank-line layout. The heading itself is left out: it is the title the
+// comparison gives the target's report in place of the single-target title.
+func sectionLines(t *testing.T, report, heading string) []string {
+	t.Helper()
+
+	lines := strings.Split(report, "\n")
+
+	start := slices.Index(lines, heading)
+	if start < 0 {
+		t.Fatalf("the report has no %q section:\n%s", heading, report)
+	}
+
+	end := len(lines)
+
+	for i := start + 1; i < len(lines); i++ {
+		if strings.HasPrefix(lines[i], "## ") {
+			end = i
+
+			break
+		}
+	}
+
+	kept := make([]string, 0, end-start)
+
+	for _, line := range lines[start+1 : end] {
+		if line != "" {
+			kept = append(kept, line)
+		}
+	}
+
+	if len(kept) == 0 {
+		t.Fatalf("the %q section is empty:\n%s", heading, report)
+	}
+
+	return kept
+}
+
+// demotedReportLines turns a single-target report into the body its comparison
+// section must hold: the title and the header lines, which the comparison gives
+// once for every target, are dropped, and every heading moves one level down.
+// Blank lines are dropped, because the golden files pin the blank-line layout.
+func demotedReportLines(t *testing.T, singleTargetReport string) []string {
+	t.Helper()
+
+	lines := strings.Split(singleTargetReport, "\n")
+
+	// The body starts at the report's first section heading: everything before it
+	// is the title and the header lines.
+	start := slices.IndexFunc(lines, func(line string) bool {
+		return strings.HasPrefix(line, "## ")
+	})
+	if start < 0 {
+		t.Fatalf("the single-target report has no section heading:\n%s", singleTargetReport)
+	}
+
+	demoted := make([]string, 0, len(lines)-start)
+
+	for _, line := range lines[start:] {
+		if line == "" {
+			continue
+		}
+
+		if strings.HasPrefix(line, "#") {
+			line = "#" + line
+		}
+
+		demoted = append(demoted, line)
+	}
+
+	return demoted
+}
