@@ -2,6 +2,7 @@ package jsonreport_test
 
 import (
 	"bytes"
+	"errors"
 	"slices"
 	"strings"
 	"testing"
@@ -516,6 +517,42 @@ func TestReportComparisonRefusesMalformedComparison(t *testing.T) {
 				t.Errorf("ReportComparison() wrote %d bytes to the writer, want none:\n%s", out.Len(), out.String())
 			}
 		})
+	}
+}
+
+// TestReportComparisonNoTarget pins that a comparison of no target is an error a
+// renderer reports, not an empty document: ReportComparison writes nothing and
+// the caller decides what to show instead.
+func TestReportComparisonNoTarget(t *testing.T) {
+	t.Parallel()
+
+	var out bytes.Buffer
+
+	err := jsonreport.New().ReportComparison(t.Context(), &out, assessment.Comparison{},
+		analysis.ReportMeta{InventoryName: inventoryFileName})
+	if err == nil {
+		t.Fatalf("ReportComparison() error = nil for a comparison of no target, want an error")
+	}
+
+	if out.Len() != 0 {
+		t.Errorf("ReportComparison() wrote %d bytes to the writer, want none:\n%s", out.Len(), out.String())
+	}
+}
+
+// TestReportComparisonReturnsWriteError pins that a failing writer is reported to
+// the caller, wrapped or as it came, never ignored: the driving adapter decides
+// what to do with a partial document.
+func TestReportComparisonReturnsWriteError(t *testing.T) {
+	t.Parallel()
+
+	writeErr := errors.New("disk is full")
+
+	c := assessment.Compare(assessTargets(t, comparisonInventory(t), threeTargetKeys()))
+
+	err := jsonreport.New().ReportComparison(t.Context(), failingWriter{err: writeErr}, c,
+		analysis.ReportMeta{InventoryName: inventoryFileName})
+	if !errors.Is(err, writeErr) {
+		t.Fatalf("ReportComparison() error = %v, want an error wrapping %v", err, writeErr)
 	}
 }
 

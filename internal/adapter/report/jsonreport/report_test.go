@@ -2,8 +2,10 @@ package jsonreport_test
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
+	"io"
 	"maps"
 	"slices"
 	"strconv"
@@ -881,6 +883,54 @@ func TestReportReturnsWriteError(t *testing.T) {
 		analysis.ReportMeta{InventoryName: inventoryFileName})
 	if !errors.Is(err, writeErr) {
 		t.Fatalf("Report() error = %v, want an error wrapping %v", err, writeErr)
+	}
+}
+
+// TestReportsCancelledContext pins that a cancelled context stops both documents
+// before anything is encoded: the caller gets the cancellation, and the writer
+// never sees a report the caller has stopped waiting for.
+func TestReportsCancelledContext(t *testing.T) {
+	t.Parallel()
+
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+
+	a := assessment.Assess(newInventory(t, sourceName, awsResources()), testutil.ScalewayCatalog(t))
+	c := assessment.Compare(assessTargets(t, comparisonInventory(t), threeTargetKeys()))
+	meta := analysis.ReportMeta{InventoryName: inventoryFileName}
+
+	tests := []struct {
+		name  string
+		write func(io.Writer) error
+	}{
+		{
+			name: "the single-target document",
+			write: func(w io.Writer) error {
+				return jsonreport.New().Report(ctx, w, a, meta)
+			},
+		},
+		{
+			name: "the comparison document",
+			write: func(w io.Writer) error {
+				return jsonreport.New().ReportComparison(ctx, w, c, meta)
+			},
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			var out bytes.Buffer
+
+			if err := tc.write(&out); !errors.Is(err, context.Canceled) {
+				t.Fatalf("%s: error = %v, want an error wrapping context.Canceled", tc.name, err)
+			}
+
+			if out.Len() != 0 {
+				t.Errorf("%s wrote %d bytes to the writer, want none:\n%s", tc.name, out.Len(), out.String())
+			}
+		})
 	}
 }
 
