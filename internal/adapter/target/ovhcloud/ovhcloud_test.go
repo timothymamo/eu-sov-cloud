@@ -245,8 +245,8 @@ func TestCatalogHonoursCancelledContext(t *testing.T) {
 }
 
 // TestCatalogErrorNamesNoOtherTarget pins PRD 11's rule that no error says
-// "Scaleway" when the target is OVHcloud. The Scaleway adapter's own cancelled
-// test pins the other direction.
+// "Scaleway" or "UpCloud" when the target is OVHcloud. The other adapters' own
+// tests pin the other directions.
 func TestCatalogErrorNamesNoOtherTarget(t *testing.T) {
 	t.Parallel()
 
@@ -258,8 +258,10 @@ func TestCatalogErrorNamesNoOtherTarget(t *testing.T) {
 		t.Fatalf("Catalog() with a cancelled context returned no error, want one naming the OVHcloud catalog")
 	}
 
-	if strings.Contains(err.Error(), "Scaleway") {
-		t.Errorf("Catalog() error = %q, want no other target's name in it", err.Error())
+	for _, other := range []string{"Scaleway", "UpCloud"} {
+		if strings.Contains(err.Error(), other) {
+			t.Errorf("Catalog() error = %q, want no other target's name in it, but it names %q", err.Error(), other)
+		}
 	}
 }
 

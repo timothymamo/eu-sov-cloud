@@ -716,6 +716,7 @@ linters:
           files:
             - "**/internal/adapter/target/ovhcloud/**"
             - "**/internal/adapter/target/scaleway/**"
+            - "**/internal/adapter/target/upcloud/**"
             - "!$test"
           allow:
             - context$

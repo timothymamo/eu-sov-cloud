@@ -206,9 +206,9 @@ func checkLayers(
 
 	// A layer `go list` never read would pass the check above without being
 	// looked at, so the directory of every rule must hold a listed package. The
-	// three below are named as well: the rules are read from .golangci.yml, and
+	// four below are named as well: the rules are read from .golangci.yml, and
 	// a rule quietly narrowed would otherwise narrow this guard with it.
-	required := make([]string, 0, len(rules)+3)
+	required := make([]string, 0, len(rules)+4)
 	for _, rule := range rules {
 		required = append(required, rule.Dir)
 	}
@@ -216,6 +216,7 @@ func checkLayers(
 	required = append(required,
 		"internal/adapter/target/ovhcloud",
 		"internal/adapter/target/scaleway",
+		"internal/adapter/target/upcloud",
 		"internal/adapter/internal/jsondoc",
 	)
 
