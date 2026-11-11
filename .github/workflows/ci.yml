@@ -13,19 +13,70 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  lint:
-    name: Lint
+  # Lint type-checks only the files that build for the platform it lints, so every target the release
+  # builds gets a run of its own (issue #39): one per goos/goarch in .goreleaser.yaml with cgo off, which
+  # the cgo "0" entries must match, plus the runner's native run with cgo on, which make test's -race
+  # build compiles.
+  lint-target:
+    name: Lint ${{ matrix.goos }}/${{ matrix.goarch }} cgo=${{ matrix.cgo }}
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { goos: linux, goarch: amd64, cgo: "0" }
+          - { goos: linux, goarch: arm64, cgo: "0" }
+          - { goos: darwin, goarch: amd64, cgo: "0" }
+          - { goos: darwin, goarch: arm64, cgo: "0" }
+          - { goos: windows, goarch: amd64, cgo: "0" }
+          - { goos: windows, goarch: arm64, cgo: "0" }
+          - { goos: linux, goarch: amd64, cgo: "1" }
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+      # cache: false, as the cache key names only the runner OS and go.sum: an entry would save a cache
+      # shared with the Test job that lacks the -race build output Test restores it for.
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: go.mod
+          cache: false
+      # The action downloads the golangci-lint binary for the runner's own platform, whatever GOOS and
+      # GOARCH say. Its cache key names only the runner OS, a 7-day interval and go.mod, so every entry would
+      # restore one shared cache, and an entry of one target can hide another target's issues:
+      # skip-cache leaves each entry the empty cache of its own runner. The build settings are make lint's:
+      # the levels the release builds at, no -tags of the go env file's, no workspace and no experiment.
       - uses: golangci/golangci-lint-action@ba0d7d2ec06a0ea1cb5fa41b2e4a3ab91d21278a # v9.3.0
+        env:
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+          CGO_ENABLED: ${{ matrix.cgo }}
+          GOFLAGS: -mod=readonly
+          GOAMD64: v1
+          GOARM64: v8.0
+          GOWORK: "off"
+          GOEXPERIMENT: ""
         with:
           version: v2.15.0
+          skip-cache: true
+
+  # Lint is a required status check, and a matrix reports one check per entry under its own name: this
+  # job reports the whole matrix as the one Lint check, and fails unless every entry succeeded. It runs
+  # after a failed or skipped entry too, but not in a run cancelled by a newer push.
+  lint:
+    name: Lint
+    needs: lint-target
+    if: ${{ !cancelled() }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Every lint target passed
+        env:
+          RESULT: ${{ needs.lint-target.result }}
+        run: |
+          if [ "$RESULT" != "success" ]; then
+            echo "lint-target finished with result '$RESULT', want 'success'" >&2
+            exit 1
+          fi
 
   test:
     name: Test

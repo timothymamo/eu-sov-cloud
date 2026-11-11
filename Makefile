@@ -8,6 +8,10 @@ LDFLAGS := -s -w \
 	-X $(PKG)/internal/version.commit=$(COMMIT) \
 	-X $(PKG)/internal/version.date=$(DATE)
 
+# The GOOS/GOARCH pairs the release builds, all with CGO_ENABLED=0. Must match the goos and goarch lists in
+# .goreleaser.yaml: test/architecture checks this by running make lint with a fake golangci-lint.
+RELEASE_TARGETS := linux/amd64 linux/arm64 darwin/amd64 darwin/arm64 windows/amd64 windows/arm64
+
 LIMA_INSTANCE ?= eu-sov-cloud
 # The directory the VM mounts: this repository's parent, which must hold nothing but this repository and
 # the worktrees dot-agent-deck's dispatcher creates beside it
@@ -36,10 +40,43 @@ build: ## Build the eusov binary into ./bin
 fmt: ## Format code (gofumpt + goimports via golangci-lint)
 	golangci-lint fmt
 
+# make lint runs golangci-lint natively first, for the host's GOOS/GOARCH with cgo at the host's default (the
+# build make test's -race compiles; it warns when the host's cgo is off, and make test, so make check,
+# refuses such a host), then once per release target with cgo off, and last runs the source rules in
+# test/lint natively. It attempts every run and fails at the end if any of them failed. Each golangci-lint
+# run waits for
+# golangci-lint's lock (--allow-serial-runners) instead of failing while another worktree lints, and sees
+# the same build settings: GOFLAGS=-mod=readonly (a non-empty GOFLAGS also overrides the go env file's, so
+# a -tags of yours cannot take files out of lint), GOAMD64=v1 and GOARM64=v8.0 (the levels the release
+# builds at), GOWORK=off (a go.work in a parent directory would switch the run into workspace mode), and
+# no GOEXPERIMENT. A `go env -w GOEXPERIMENT` value still applies, as an empty variable
+# cannot clear it; CI has none.
+# Each run gets a cache directory of its own, as a cache entry of one target can hide another target's
+# issues: native-<goos>-<goarch>-cgo<0|1> for the native run, named after what it lints so one cache root
+# can serve two hosts (e.g. a macOS host and the Lima VM), and <goos>-<goarch> for a release target. The
+# root is $XDG_CACHE_HOME/eusov/golangci-lint, else ~/.cache/eusov/golangci-lint, outside the repository
+# so worktrees share it; GOLANGCI_LINT_CACHE overrides it. To clear the caches, rm -rf the root.
 .PHONY: lint
-lint: ## Lint, including the architecture (depguard) rules and the source rules in test/lint
-	golangci-lint run
-	go test -count=1 ./test/lint/
+lint: ## Lint natively and for every release target, incl. the architecture (depguard) rules and test/lint
+	@cache="$${GOLANGCI_LINT_CACHE:-$${XDG_CACHE_HOME:-$${HOME:?set HOME or GOLANGCI_LINT_CACHE}/.cache}/eusov/golangci-lint}"; \
+	export GOFLAGS=-mod=readonly GOAMD64=v1 GOARM64=v8.0 GOWORK=off; \
+	unset GOEXPERIMENT; \
+	failed=""; \
+	( unset GOOS GOARCH CGO_ENABLED; \
+		GOOS="$$(go env GOHOSTOS)" && GOARCH="$$(go env GOHOSTARCH)" && export GOOS GOARCH && \
+		cgo="$$(go env CGO_ENABLED)" && \
+		echo "lint: native GOOS=$$GOOS GOARCH=$$GOARCH CGO_ENABLED=$$cgo" && \
+		{ [ "$$cgo" != 0 ] || echo "lint: warning: cgo is off on this host, so its cgo build is not linted" >&2; } && \
+		GOLANGCI_LINT_CACHE="$$cache/native-$$GOOS-$$GOARCH-cgo$$cgo" golangci-lint run --allow-serial-runners \
+	) || failed="$$failed native"; \
+	for target in $(RELEASE_TARGETS); do \
+		goos="$${target%/*}"; goarch="$${target#*/}"; \
+		echo "lint: GOOS=$$goos GOARCH=$$goarch CGO_ENABLED=0"; \
+		GOOS="$$goos" GOARCH="$$goarch" CGO_ENABLED=0 GOLANGCI_LINT_CACHE="$$cache/$$goos-$$goarch" \
+			golangci-lint run --allow-serial-runners || failed="$$failed $$target"; \
+	done; \
+	( unset GOOS GOARCH CGO_ENABLED; go test -count=1 ./test/lint/ ) || failed="$$failed test/lint"; \
+	if [ -n "$$failed" ]; then echo "lint: failed for:$$failed" >&2; exit 1; fi
 
 .PHONY: tidy
 tidy: ## Tidy go.mod and go.sum
