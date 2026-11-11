@@ -93,11 +93,21 @@ func parseSchema(data []byte) (*schema, error) {
 	return root, nil
 }
 
-// parseKeywords parses every keyword of one schema object.
+// parseKeywords parses every keyword of one schema object. A required name the
+// object does not describe is an error: the validator would otherwise check for
+// a key it cannot validate, so a schema that names one is not one it can fully
+// check.
 func (s *schema) parseKeywords(raw map[string]json.RawMessage) error {
 	for _, keyword := range slices.Sorted(maps.Keys(raw)) {
 		if err := s.parseKeyword(keyword, raw[keyword]); err != nil {
 			return err
+		}
+	}
+
+	for _, name := range s.required {
+		if _, ok := s.properties[name]; !ok {
+			return fmt.Errorf("required names %s, which properties does not describe: "+
+				"the schema must describe every key it requires", strconv.Quote(name))
 		}
 	}
 
@@ -613,6 +623,11 @@ func TestJSONSchemaValidatorRefusesUnsupportedSchema(t *testing.T) {
 			want:   "required must be a list",
 		},
 		{
+			name:   "a required name properties does not describe",
+			schema: `{"type":"object","properties":{"id":{"type":"string"}},"required":["id","name"]}`,
+			want:   `required names "name", which properties does not describe`,
+		},
+		{
 			name:   "an invalid pattern",
 			schema: `{"pattern":"["}`,
 			want:   "pattern",
@@ -731,6 +746,83 @@ func checkGoldenAgainstSchema(t *testing.T, path, schemaFile string) {
 
 	for _, problem := range s.validate(document, "$") {
 		t.Errorf("%s does not match schema/%s: %s", path, schemaFile, problem)
+	}
+}
+
+// optionalProperties are the property names a schema may declare without
+// requiring them: the reason object's names, each written only when the reason
+// sets it.
+var optionalProperties = []string{"target", "category", "offering", "capability"}
+
+// TestSchemaObjectsAreClosed pins that both schemas describe every key of every
+// object their documents hold, and no other: an object schema declares
+// additionalProperties false, describes every name it requires, and requires
+// every name it describes, so a document can neither omit a key the format always
+// writes nor add one the validator would not check. The one exception is the
+// reason object's optional names, which the explicit allow list holds.
+func TestSchemaObjectsAreClosed(t *testing.T) {
+	t.Parallel()
+
+	for _, name := range []string{"assessment-v1.schema.json", "comparison-v1.schema.json"} {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			s := readSchema(t, filepath.Join("schema", name))
+
+			// The reason object is the one schema the allow list applies to, by its
+			// place in $defs: an optional name is then the reason object's own name,
+			// never another schema's.
+			reason := s.defs["reason"]
+			if reason == nil {
+				t.Fatalf("the schema holds no reason definition, so the allow list names nothing")
+			}
+
+			optional := map[*schema]bool{reason: true}
+
+			objects := 0
+
+			for i, sub := range s.subschemas() {
+				if !slices.Contains(sub.types, "object") {
+					continue
+				}
+
+				objects++
+
+				where := fmt.Sprintf("subschema %d", i)
+
+				if sub.additional == nil {
+					t.Errorf("%s: additionalProperties is not declared, want false", where)
+				}
+
+				required := make(map[string]bool, len(sub.required))
+
+				for _, requiredName := range sub.required {
+					required[requiredName] = true
+
+					if _, ok := sub.properties[requiredName]; !ok {
+						t.Errorf("%s: required names %s, which properties does not describe",
+							where, strconv.Quote(requiredName))
+					}
+				}
+
+				for _, property := range slices.Sorted(maps.Keys(sub.properties)) {
+					if required[property] {
+						continue
+					}
+
+					if optional[sub] && slices.Contains(optionalProperties, property) {
+						continue
+					}
+
+					t.Errorf("%s: properties declares %s without requiring it, so a document may omit it",
+						where, strconv.Quote(property))
+				}
+			}
+
+			if objects == 0 {
+				t.Fatal("the schema declares no object schema, so nothing was checked")
+			}
+		})
 	}
 }
 
