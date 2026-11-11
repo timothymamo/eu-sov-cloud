@@ -6,6 +6,10 @@
 # Every role runs Claude Code except the tester, which runs pi on DeepSeek V4.1 Flash
 # (docs/adr/0003-pi-with-deepseek-for-the-tester-role.md).
 #
+# Every Claude Code role starts in auto mode. The workers also load
+# .claude/worker-settings.json, which takes away the tools that wait for a human
+# (questions and plan mode); only the orchestrator talks to the user.
+#
 # Reference: https://agent-deck.devopstoolkit.ai/docs/orchestration.md
 
 [[orchestrations]]
@@ -64,7 +68,7 @@ behaviour to pin and the test level.
 
 [[orchestrations.roles]]
 name = "coder"
-command = "claude --model opus --permission-mode auto"
+command = "claude --model opus --permission-mode auto --settings .claude/worker-settings.json"
 description = "Implements features, fixes bugs, refactors Go code; makes the tester's failing tests pass"
 prompt_template = """
 Work only in the worktree named on the task's first line (`Worktree: <path>`): run every non-git command
@@ -104,7 +108,7 @@ Report through `dot-agent-deck work-done`. Never wait on the user and never mess
 
 [[orchestrations.roles]]
 name = "reviewer"
-command = "claude --model opus --permission-mode auto"
+command = "claude --model opus --permission-mode auto --settings .claude/worker-settings.json"
 description = "Reviews changes for correctness, architecture rules, test quality and edge cases; reports findings only"
 prompt_template = """
 Work in the worktree named on the task's first line (`Worktree: <path>`): run every non-git command from
@@ -118,7 +122,7 @@ Report through `dot-agent-deck work-done`. Never wait on the user and never mess
 
 [[orchestrations.roles]]
 name = "auditor"
-command = "claude --model opus --permission-mode auto"
+command = "claude --model opus --permission-mode auto --settings .claude/worker-settings.json"
 description = "Audits changes for security issues: credential handling, read-only cloud access, injection, supply chain"
 prompt_template = """
 Work in the worktree named on the task's first line (`Worktree: <path>`): run every non-git command from
@@ -132,7 +136,7 @@ Report through `dot-agent-deck work-done`. Never wait on the user and never mess
 
 [[orchestrations.roles]]
 name = "releaser"
-command = "claude --model sonnet --permission-mode auto"
+command = "claude --model sonnet --permission-mode auto --settings .claude/worker-settings.json"
 clear = false
 description = "Opens the pull request, waits for CI, reports back; merges and tags releases only when told to. Never modifies source code"
 prompt_template = """

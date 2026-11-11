@@ -1,0 +1,47 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(cd @WORKSPACE@/*)",
+      "Bash(git -C @WORKSPACE@/* status*)",
+      "Bash(git -C @WORKSPACE@/* diff*)",
+      "Bash(git -C @WORKSPACE@/* log*)",
+      "Bash(git -C @WORKSPACE@/* show*)",
+      "Bash(git -C @WORKSPACE@/* rev-parse*)",
+      "Bash(git -C @WORKSPACE@/* rev-list*)",
+      "Bash(git -C @WORKSPACE@/* merge-base*)",
+      "Bash(git -C @WORKSPACE@/* ls-files*)",
+      "Bash(git -C @WORKSPACE@/* grep*)",
+      "Bash(git -C @WORKSPACE@/* branch --show-current)",
+      "Bash(git -C @WORKSPACE@/*/.worktrees/* add *)",
+      "Bash(git -C @WORKSPACE@/*/.worktrees/* commit *)"
+    ]
+  },
+  "autoMode": {
+    "environment": [
+      "$defaults",
+      "Organization: personal open-source project. Primary use: building the eusov Go CLI with a team of agents run by dot-agent-deck. Tasks arrive from the orchestrator role through dot-agent-deck, and workers report back with `dot-agent-deck work-done`. Delegating to the deck's roles is routine, including the tester, which runs pi without approvals by design (docs/adr/0003-pi-with-deepseek-for-the-tester-role.md)",
+      "Host containment: Claude Code runs in a Lima VM (docs/adr/0002-lima-vm-for-agent-isolation.md). The only host path mounted is @WORKSPACE@, which holds the repository and the dot-agent-deck dispatch worktrees beside it (eu-sov-cloud-dispatch-*); all of it is working space. Open internet egress. No cloud credentials and no cloud metadata endpoint",
+      "Repository visibility: github.com/timothymamo/eu-sov-cloud is public",
+      "Source control: github.com/timothymamo/eu-sov-cloud only. Agents push their own feature branches and open pull requests there; git hooks refuse commits and pushes to main",
+      "Trusted internal domains: proxy.golang.org, sum.golang.org, go.dev, pkg.go.dev, api.github.com, raw.githubusercontent.com, www.scaleway.com, www.ovhcloud.com, docs.ovhcloud.com",
+      "Secrets management: the agents' tokens are environment variables loaded from ~/.config/dot-agent-deck/daemon.env. Never read, print or copy them"
+    ],
+    "allow": [
+      "$defaults",
+      "Catalog snapshots: committing target catalog snapshots built from the providers' public catalogs and documentation (Scaleway, OVHcloud), and sanitised fixtures, to this public repository is the project's normal work"
+    ]
+  },
+  "hooks": {
+    "PermissionDenied": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "mkdir -p \"$HOME/.local/state/claude-code\" && jq -c '{time: (now | todate), cwd, tool_name, tool_input, reason}' >> \"$HOME/.local/state/claude-code/permission-denied.jsonl\""
+          }
+        ]
+      }
+    ]
+  }
+}
