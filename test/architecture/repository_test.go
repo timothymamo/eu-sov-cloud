@@ -263,6 +263,7 @@ func checkReleaseBinary(t *testing.T, root string, target check.Target, cgo bool
 	for _, want := range []string{
 		modulePath + "/internal/adapter/target/ovhcloud",
 		modulePath + "/internal/adapter/target/scaleway",
+		modulePath + "/internal/adapter/target/upcloud",
 		modulePath + "/internal/cli",
 	} {
 		if !slices.ContainsFunc(pkgs, func(pkg check.Package) bool { return pkg.ImportPath == want }) {
