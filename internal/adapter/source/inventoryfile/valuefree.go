@@ -43,24 +43,30 @@ func versionValueFree(doc jsondoc.Document) error {
 		return nil
 	}
 
-	return fmt.Errorf("%w: %s is %s, want the integer %d", ErrSchemaVersion, keySchemaVersion, jsonKind(raw[0]), schemaVersion)
+	kind, isNumber := jsonKind(raw[0])
+	if isNumber {
+		// A number here is any but the literal 1, which may still equal 1
+		// (1.0, 1e0): say only that it is not the integer 1.
+		return fmt.Errorf("%w: %s is not the integer %d", ErrSchemaVersion, keySchemaVersion, schemaVersion)
+	}
+
+	return fmt.Errorf("%w: %s is %s, want the integer %d", ErrSchemaVersion, keySchemaVersion, kind, schemaVersion)
 }
 
 // jsonKind names, with its article, the JSON type of the value whose first
-// byte is b; a number is "a number other than 1", the one number it can be
-// here.
-func jsonKind(b byte) string {
+// byte is b, or reports that it is a number.
+func jsonKind(b byte) (string, bool) {
 	switch b {
 	case '{':
-		return "an object"
+		return "an object", false
 	case '[':
-		return "an array"
+		return "an array", false
 	case '"':
-		return "a string"
+		return "a string", false
 	case 't', 'f':
-		return "a boolean"
+		return "a boolean", false
 	default:
-		return "a number other than 1"
+		return "a number", true
 	}
 }
 
