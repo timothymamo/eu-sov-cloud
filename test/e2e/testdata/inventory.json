@@ -7,7 +7,7 @@
       "rawType": "AWS::EC2::Instance",
       "category": "compute.vm",
       "region": "eu-west-1",
-      "capabilities": ["high-availability", "snapshots"]
+      "capabilities": ["node-high-availability", "snapshots"]
     },
     {
       "id": "misc-example",
@@ -27,6 +27,41 @@
       "rawType": "AWS::Lambda::Function",
       "category": "serverless.function",
       "region": "eu-west-1"
+    },
+    {
+      "id": "db-zone-example",
+      "rawType": "AWS::RDS::DBInstance",
+      "category": "database.postgresql",
+      "region": "eu-west-1",
+      "capabilities": ["zone-high-availability"]
+    },
+    {
+      "id": "db-node-example",
+      "rawType": "AWS::RDS::DBInstance",
+      "category": "database.postgresql",
+      "region": "eu-west-1",
+      "capabilities": ["node-high-availability"]
+    },
+    {
+      "id": "cluster-example",
+      "rawType": "AWS::EKS::Cluster",
+      "category": "kubernetes.managed",
+      "region": "eu-west-1",
+      "capabilities": ["node-high-availability"]
+    },
+    {
+      "id": "fn-ipv6-example",
+      "rawType": "AWS::Lambda::Function",
+      "category": "serverless.function",
+      "region": "eu-west-1",
+      "capabilities": ["ipv6"]
+    },
+    {
+      "id": "db-autoscaling-example",
+      "rawType": "AWS::RDS::DBCluster",
+      "category": "database.postgresql",
+      "region": "eu-west-1",
+      "capabilities": ["autoscaling"]
     },
     {
       "id": "db-example",

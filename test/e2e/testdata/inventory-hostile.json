@@ -20,7 +20,7 @@
       "rawType": "<b>",
       "category": "compute.vm",
       "region": "eu-west-1",
-      "capabilities": ["high-availability"]
+      "capabilities": ["node-high-availability"]
     },
     {
       "id": "tick`x",

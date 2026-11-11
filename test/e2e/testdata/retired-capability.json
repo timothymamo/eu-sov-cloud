@@ -1,0 +1,13 @@
+{
+  "schemaVersion": 1,
+  "source": "aws",
+  "resources": [
+    {
+      "id": "db-example",
+      "rawType": "AWS::RDS::DBInstance",
+      "category": "database.postgresql",
+      "region": "eu-west-1",
+      "capabilities": ["high-availability"]
+    }
+  ]
+}

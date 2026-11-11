@@ -497,6 +497,21 @@ func TestAssessErrors(t *testing.T) {
 			inventory:  filepath.Join("testdata", "unknown-category.json"),
 			wantStderr: []string{"i-0123456789abcdef0", "compute.mv"},
 		},
+		{
+			// PRD #14 milestone 4 retires high-availability: the value is refused
+			// by name, never read as one of its replacements, and the error names
+			// the resource, the value and both replacements so the user knows what
+			// to change it to. The quoted forms keep the retired value apart from
+			// `node-high-availability`, which holds it as a substring.
+			name:      "retired high availability capability",
+			inventory: filepath.Join("testdata", "retired-capability.json"),
+			wantStderr: []string{
+				"db-example",
+				`"high-availability"`,
+				`"node-high-availability"`,
+				`"zone-high-availability"`,
+			},
+		},
 	}
 
 	for _, tc := range cases {
