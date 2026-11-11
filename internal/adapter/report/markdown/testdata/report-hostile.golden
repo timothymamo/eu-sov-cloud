@@ -2,7 +2,7 @@
 
 - Inventory file: ``inv|`x`[y](z).json``
 - Source: `# heading`
-- Catalog: ``Evil | `x` <b> [a](b) *s*`` snapshot from `https://example.com/a(b)%0A%E2%80%AE&#8238;x`, retrieved 2026-11-01
+- Catalog: ``Evil | `x` <b> [a](b) *s*`` snapshot from `https://example.com/a(b)*c*_d_~e~f?x=1&y=2%60%5B`, retrieved 2026-11-01
 
 ## Summary
 

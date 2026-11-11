@@ -37,7 +37,7 @@ Hexagonal (ports and adapters). Dependencies point inwards only. See `docs/archi
 |---|---|---|
 | Domain | `internal/domain/{taxonomy,inventory,catalog,mapping,assessment,text}` | Standard library and other domain packages only |
 | Application | `internal/app/analysis` | Domain. Declares the ports (interfaces) it consumes |
-| Adapters | `internal/adapter/source/{inventoryfile,aws,azure,gcp}`, `internal/adapter/target/{ovhcloud,scaleway,upcloud}`, `internal/adapter/report/{markdown,jsonreport}` | Domain, the ports they implement, SDKs |
+| Adapters | `internal/adapter/source/{inventoryfile,aws,azure,gcp}`, `internal/adapter/target/{ovhcloud,scaleway,upcloud}`, `internal/adapter/report/{markdown,jsonreport}`, and `internal/adapter/internal/jsondoc`, the JSON decoder they share | Domain, the ports they implement, SDKs |
 | Driving adapter | `internal/cli` | Application, domain, `internal/version` |
 | Composition root | `cmd/eusov` | Everything; the only place adapters are constructed |
 
