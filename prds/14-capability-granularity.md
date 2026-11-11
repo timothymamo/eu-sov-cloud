@@ -1,6 +1,7 @@
 # PRD #14: Capability granularity: node versus zone high availability, tier-dependent capabilities
 
-**Status:** Draft. The user has not yet chosen an option (see *Decisions and open questions*).
+**Status:** Draft. On 2026-11-11 the user accepted the recommended options, A + E plus F (see
+*Decisions and open questions*).
 **Issue:** #14
 
 ## Problem
@@ -55,7 +56,7 @@ first live source adapter. That adapter is next.
 
 A capability means one thing. A source can tell whether a resource uses it, and a reviewer can check a
 target's claim to it against the documentation. A `direct` verdict never rests on a capability that the
-offering meets only in part, or only in a tier the report does not name. Under the recommended option
+offering meets only in part, or only in a tier the report does not name. Under the accepted options
 (below), the report for an RDS Multi-AZ PostgreSQL instance looks like this:
 - On Scaleway: `partial`, with `zone-high-availability` as a required change.
 - On OVHcloud: `direct`, pointed at a 3-AZ variant.
@@ -64,9 +65,8 @@ offering meets only in part, or only in a tier the report does not name. Under t
 - Every **Scope:** note in the snapshots has either become a capability or become a capability the
   offering does not list.
 
-Reports keep their sections and columns. Neither file format changes version. The user chooses among
-the options. The acceptance criteria and milestones below follow the recommendation. If the user
-chooses differently, this PRD is revised before milestone 1 starts.
+Reports keep their sections and columns. Neither file format changes version. On 2026-11-11 the user
+accepted the recommended options, and the acceptance criteria and milestones below follow them.
 
 ## Scope
 
@@ -241,10 +241,11 @@ any form claims it. Only the definitions and the snapshots change, and no code.
 - **Against overstating:** by construction. The cost is understating: every node-level need is `partial`
   on node-level offerings, and offerings that would fit leave the candidate list.
 
-### Recommendation
+### Recommendation (accepted on 2026-11-11)
 
 **A for scope, E for tiers, and F for direction and compatibility.** B, C and D are deferred until a
-source adapter or a new target shows a gap that these three cannot express.
+source adapter or a new target shows a gap that these three cannot express. The user accepted this
+recommendation on 2026-11-11.
 
 - **A** closes the gap with the largest effect: high availability of managed databases, Kubernetes and
   storage, the services a migration is planned around. It is precise on both sides, the sources already
@@ -265,8 +266,8 @@ source adapter or a new target shows a gap that these three cannot express.
 
 ## Acceptance criteria
 
-These criteria assume the recommendation. All are pinned by tests that run offline under `make test`
-or `make test-e2e`, unless marked *review*.
+These criteria follow the accepted options (A + E, plus F). All are pinned by tests that run offline
+under `make test` or `make test-e2e`, unless marked *review*.
 
 **Vocabulary**
 
@@ -378,33 +379,34 @@ Each milestone ships as one PR. Milestones 2 and 3 depend only on 1, and can run
 
 ## Decisions and open questions
 
-- **Open, for the user: which options.** The recommendation is A for scope, E for tiers, and F for
-  direction and compatibility (*Options*, *Recommendation*). The decision has to come before milestone 1.
-  If the user chooses differently, this PRD's criteria and milestones are revised first, in their own PR.
-- **Open: names.** Proposed: `node-high-availability` and `zone-high-availability`. Alternatives are
-  `high-availability-node` and `high-availability-zone` (they group together in sorted lists), or
-  `multi-zone-high-availability` (the most explicit in a report). Names are hard to change once
-  `discover` writes them.
-- **Open: retire `high-availability`, or narrow it.** A1 (recommended) retires the value, and inventory
-  files that use it are refused with an error that names the replacements. A2 keeps `high-availability`
-  with the meaning "zone level" and adds `node-high-availability`. Old files keep parsing, and their
-  verdicts can only become more conservative. But the bare name keeps inviting the wrong reading, and a
-  report would say that Scaleway's Managed Database "does not offer `high-availability`", although the
-  product calls the feature exactly that.
-- **Open: Scaleway Serverless SQL Database.** The recommendation is to leave it out (F), until a report can
-  say "compatible, with differences". The alternative is a compatibility note that caps its fit at
-  `partial`, which is B's machinery, built for one offering.
-- **Proposed with the recommendation: where the implication lives.** It is data in the taxonomy, and
-  `catalog.New` applies it, so `Offering.Has` answers correctly everywhere: in mapping, in tests and in a
-  future comparison report. A snapshot may list only `zone-high-availability`. Resources are never
-  expanded.
-- **Proposed with the recommendation: retiring a vocabulary value is not a format change, for now.**
+- **Decided (2026-11-11): A for scope, E for tiers, and F for direction and compatibility.** The user
+  accepted the recommendation (*Options*, *Recommendation*). B is the fallback if a later need cannot
+  be expressed with these three. C and D are deferred until a source adapter shows a gap that needs
+  them. Milestone 1's ADR records the decision.
+- **Decided with A: the names `node-high-availability` and `zone-high-availability`.** These are the
+  names option A was accepted with. The alternatives were `high-availability-node` and
+  `high-availability-zone`, which group together in sorted lists, and `multi-zone-high-availability`,
+  the most explicit in a report. Names are hard to change once `discover` writes them, so a change has
+  to come before milestone 1 merges.
+- **Decided with A: `high-availability` is retired, not narrowed.** Inventory files that use it are
+  refused, with an error that names the replacements. The rejected variant, A2, would have kept
+  `high-availability` with the meaning "zone level" and added `node-high-availability`. Old files would
+  have kept parsing, and their verdicts could only have become more conservative. But the bare name
+  would keep inviting the wrong reading, and a report would say that Scaleway's Managed Database "does
+  not offer `high-availability`", although the product calls the feature exactly that.
+- **Decided with F: Scaleway Serverless SQL Database leaves the snapshot**, until a report can say
+  "compatible, with differences". The rejected alternative was a compatibility note that caps its fit
+  at `partial`. That is B's machinery, built for one offering.
+- **Decided with A: where the implication lives.** It is data in the taxonomy, and `catalog.New`
+  applies it, so `Offering.Has` answers correctly everywhere: in mapping, in tests and in a future
+  comparison report. A snapshot may list only `zone-high-availability`. Resources are never expanded.
+- **Decided with A: retiring a vocabulary value is not a format change, for now.**
   The format refers to the vocabulary, and does not fix it. A retired value is refused by name, and is
   never reread, so a bump to `schemaVersion` 2 would add no safety. It would also refuse every existing
   file, including files that do not use the value. Once `eusov discover` writes inventory files, a
   retirement needs a new format version. The ADR amends ADR 0006's version policy to say so. Adding a
   capability stays allowed at version 1.
-- **Proposed with the recommendation: the source rule.** A source adapter claims a capability whenever
+- **Decided with F: the source rule.** A source adapter claims a capability whenever
   the resource may depend on it. Where a capability has levels, the adapter claims the strongest level
   the data does not rule out. A target claims a capability only where its documentation states it in
   full. Uncertainty on either side therefore makes a fit look worse, never better.
@@ -413,11 +415,11 @@ Each milestone ships as one PR. Milestones 2 and 3 depend only on 1, and can run
   later add `region-high-availability` without changing what this PRD decides. Two caveats stay as notes
   in `SOURCES.md`, because they do not break the capabilities' definitions: OVHcloud's cold snapshots on
   Metal Instances, and the limits on IPv6 for Floating IP and Gateway.
-- **Accepted, with the recommendation: understating two cases.** A resource that needs only inbound IPv6
+- **Accepted with F: understating two cases.** A resource that needs only inbound IPv6
   is `partial` on Scaleway Serverless Functions. A PostgreSQL workload that would run on Serverless SQL
   Database is pointed at Managed Database. C or B can recover each case when a source shows that it
   matters.
-- **Accepted, with the recommendation: more ties.** Resources that use none of a tier's capabilities tie
+- **Accepted with E: more ties.** Resources that use none of a tier's capabilities tie
   between the base offering and its variants. An example is "`Kubernetes Kapsule` (tie:
   `Kubernetes Kapsule Dedicated`)". The base offering wins by name. Revisit this together with PRD #2's
   open question on a product-preference order.
