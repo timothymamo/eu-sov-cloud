@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"slices"
+	"strings"
 
 	"github.com/timothymamo/eu-sov-cloud/internal/domain/text"
 )
@@ -22,11 +23,6 @@ const (
 	PointInTimeRestore Capability = "point-in-time-restore"
 	// ObjectVersioning is keeping earlier versions of overwritten or deleted objects.
 	ObjectVersioning Capability = "object-versioning"
-	// HighAvailability is surviving the loss of a node or zone without manual failover.
-	// ADR 0011 retires it in favour of NodeHighAvailability and
-	// ZoneHighAvailability: it is kept only until PRD #14 milestone 4 and must
-	// not be used for new data.
-	HighAvailability Capability = "high-availability"
 	// NodeHighAvailability is the resource keeping serving through the loss of
 	// one node, server or host, without manual failover.
 	NodeHighAvailability Capability = "node-high-availability"
@@ -50,12 +46,18 @@ const (
 // vocabulary.
 var ErrUnknownCapability = errors.New("unknown capability")
 
+// retired maps a value that ADR 0011 removed from the vocabulary to the
+// capabilities that replace it, so the error for it can say what to write
+// instead. It is read-only.
+var retired = map[string][]Capability{
+	"high-availability": {NodeHighAvailability, ZoneHighAvailability},
+}
+
 // capabilities lists every capability, sorted by value. It is read-only.
 var capabilities = []Capability{
 	Autoscaling,
 	DeadLetterQueue,
 	EncryptionAtRest,
-	HighAvailability,
 	IPv6,
 	NodeHighAvailability,
 	ObjectVersioning,
@@ -73,8 +75,20 @@ var implications = map[Capability][]Capability{
 
 // ParseCapability returns the capability whose value is exactly s. It does not
 // trim or fold case: anything else is an error wrapping ErrUnknownCapability.
-// The error quotes s with text.Quote, so it stays short however long s is.
+// The error quotes s with text.Quote, so it stays short however long s is. A
+// retired value is refused too, and its error names the capabilities that
+// replace it.
 func ParseCapability(s string) (Capability, error) {
+	if replacements, ok := retired[s]; ok {
+		quoted := make([]string, len(replacements))
+		for i, r := range replacements {
+			quoted[i] = text.Quote(string(r))
+		}
+
+		return "", fmt.Errorf("%w %s: retired, use %s instead",
+			ErrUnknownCapability, text.Quote(s), strings.Join(quoted, " or "))
+	}
+
 	c := Capability(s)
 	if !slices.Contains(capabilities, c) {
 		return "", fmt.Errorf("%w %s", ErrUnknownCapability, text.Quote(s))
