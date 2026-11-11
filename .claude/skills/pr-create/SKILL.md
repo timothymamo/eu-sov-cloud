@@ -40,4 +40,6 @@ You never modify source code in this flow.
    It refuses when the worktree has uncommitted changes; then report and stop, and never force it.
 10. Still from the root: `gh pr merge <n> --squash --delete-branch`, then confirm the linked issue's state
     matches the PR body (`gh issue view <n> --json state`) and report. If the merge fails, report the
-    error; `make worktree BRANCH=<branch>` brings the worktree back for a fix.
+    error. To bring the worktree back for a fix, run `make worktree BRANCH=<branch>` from the checkout
+    the unit started in, as in step 2 of the `start-work` skill: the repository root, or the dispatch
+    worktree of a dispatched unit, so the worktree comes back where the unit's agents can reach it.

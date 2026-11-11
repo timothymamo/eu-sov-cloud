@@ -106,12 +106,27 @@ start work on an issue or PRD.
   why the VM mounts the workspace rather than the repository
   ([ADR 0008](adr/0008-mount-a-workspace-directory-for-dispatcher-mode.md)).
 - **PRs still get their own worktree.** A dispatched orchestrator follows the `start-work` skill like any
-  other: `make worktree` creates the PR's branch and worktree under the main checkout's `.worktrees/`
-  ([ADR 0004](adr/0004-one-worktree-per-pull-request.md)). The dispatch worktree is only where the
-  unit's agents start; its `agent/dispatch-*` branch never gets commits or a PR.
-- **Cleaning up.** `dot-agent-deck close <unit>` removes the unit's worktree, or keeps it when it has
-  uncommitted changes. `dot-agent-deck worktree list` shows what is left. The `agent/dispatch-*`
-  branches stay; delete them with `git branch -d`.
+  other ([ADR 0004](adr/0004-one-worktree-per-pull-request.md)). Run from the dispatch worktree,
+  `make worktree` creates the PR's branch and worktree under the dispatch worktree's own `.worktrees/`,
+  for example `../eu-sov-cloud-dispatch-<name>/.worktrees/feat-12-short-name`, so the unit's agents
+  never leave their working directory and never stop at a permission prompt
+  ([ADR 0010](adr/0010-create-pull-request-worktrees-inside-the-dispatch-worktree.md)). `.worktrees/` is
+  git-ignored, so the dispatch worktree stays clean. Its `agent/dispatch-*` branch never gets commits or
+  a PR.
+- **Cleaning up, in this order.** First remove each PR worktree inside the unit, which the `pr-create`
+  merge step does: `git -C <main checkout> worktree remove <path>`. Then close the unit, with
+  `dot-agent-deck close <unit>` or by closing its card or tab in the deck (in the TUI `Ctrl+W`, the
+  card's `[Close]` or the tab's `[×]`; in the desktop app **Close agent** or **Close all N roles**). All
+  of them run the same removal: they remove the unit's worktree, or keep it when `git status` there
+  shows uncommitted changes. That check does not see the git-ignored `.worktrees/`, so a unit closed
+  with a PR worktree still inside it loses that worktree, uncommitted changes included, even when the
+  worktree is locked. The branch and its commits survive. `make worktree` then names the commands that
+  clear that worktree's stale entry, `git worktree remove <path>`, after `git worktree unlock <path>`
+  when the entry is locked, and brings the worktree back once they have run. Do not use
+  `git worktree prune`: it clears every stale entry in the repository, including those of healthy
+  worktrees on a disk that is not mounted.
+  `dot-agent-deck worktree list` shows what is left. The `agent/dispatch-*` branches stay; delete them
+  with `git branch -d`.
 
 ### Moving an existing checkout into a workspace
 

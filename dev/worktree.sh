@@ -3,6 +3,16 @@
 # path. Every pull request is built on its own branch in its own worktree under .worktrees/, never on
 # main (docs/adr/0004-one-worktree-per-pull-request.md).
 #
+# The new worktree goes under the .worktrees/ of the checkout this runs in: the main checkout, or a
+# dispatch worktree that dot-agent-deck created beside it, whose agents can then reach it without leaving
+# their working directory (docs/adr/0010-create-pull-request-worktrees-inside-the-dispatch-worktree.md).
+# Run from inside a pull request's worktree, it uses the checkout that holds that worktree, so pull
+# request worktrees are never nested in each other.
+#
+# It prints only a pull request's worktree, a linked worktree directly under a .worktrees/, and refuses
+# anything else in the branch's way. Every command it suggests acts on one named worktree, never on the
+# whole repository.
+#
 # Usage: dev/worktree.sh <type>/<issue>-<slug>   (or: make worktree BRANCH=<type>/<issue>-<slug>)
 set -euo pipefail
 
@@ -13,34 +23,158 @@ if [[ ! "${branch}" =~ ^(${types})/[0-9]+-[a-z0-9]+(-[a-z0-9]+)*$ ]]; then
   echo "<type> is one of: ${types//|/, }" >&2
   exit 2
 fi
+slug="${branch//\//-}"
 
-# The main checkout, also when this runs inside another worktree.
-root="$(dirname "$(git rev-parse --path-format=absolute --git-common-dir)")"
-dir="${root}/.worktrees/${branch//\//-}"
+# Every worktree of the repository, read whole before it is searched: git gets SIGPIPE when a reader
+# stops early, and with pipefail that would end this script without a message. One entry per worktree,
+# the main worktree first: a "worktree <path>" line, then lines such as "HEAD <sha>", "branch <ref>" or
+# "detached", "locked [<reason>]" and "prunable <reason>", then a blank line.
+worktrees="$(git worktree list --porcelain)"
 
-if [[ -e "${dir}" ]]; then
-  current="$(git -C "${dir}" branch --show-current)"
-  if [[ "${current}" != "${branch}" ]]; then
-    echo "worktree: ${dir} exists but is on '${current}', not '${branch}'" >&2
-    exit 1
+# entry <line>: prints the first entry that has exactly this line, or nothing. The main worktree's entry
+# gets an extra first line, "main". The line reaches awk through the environment, because awk -v would
+# expand the backslash escapes in it.
+entry() {
+  want="$1" awk '
+    BEGIN { RS = ""; FS = "\n" }
+    !found {
+      for (i = 1; i <= NF; i++) if ($i == ENVIRON["want"]) found = 1
+      if (found) { if (NR == 1) print "main"; print }
+    }
+  ' <<<"${worktrees}"
+}
+
+# detached_at: prints the first linked worktree on a detached HEAD whose directory is .worktrees/<slug>
+# in any checkout, or nothing.
+detached_at() {
+  suffix="/.worktrees/${slug}" awk '
+    BEGIN { RS = ""; FS = "\n"; suffix = ENVIRON["suffix"] }
+    !found && NR > 1 {
+      path = substr($1, length("worktree ") + 1)
+      if (length(path) > length(suffix) && substr(path, length(path) - length(suffix) + 1) == suffix)
+        for (i = 2; i <= NF; i++) if ($i == "detached") found = 1
+      if (found) print
+    }
+  ' <<<"${worktrees}"
+}
+
+path_of() { sed -n 's/^worktree //p' <<<"$1"; }
+
+refuse() {
+  echo "worktree: $*" >&2
+  exit 1
+}
+
+# refuse_broken <entry>: refuses an entry whose directory no longer exists, that git marks prunable, or
+# whose directory git does not see as that worktree (a locked entry is never marked prunable), and
+# returns for a healthy one. For a missing directory it names the commands that clear that one entry. It
+# never suggests 'git worktree prune', which clears every stale entry of the repository, including those
+# of healthy worktrees on a disk that is not mounted
+# (docs/adr/0008-mount-a-workspace-directory-for-dispatcher-mode.md).
+refuse_broken() {
+  local path quoted reason actual where=''
+  path="$(path_of "$1")"
+  printf -v quoted '%q' "${path}"
+  if [[ -d "${path}" ]]; then
+    actual="$(git -C "${path}" rev-parse --show-toplevel 2>/dev/null || true)"
+    if [[ -z "${actual}" ]]; then
+      where="git commands fail there"
+    elif [[ "${actual}" != "${path}" ]]; then
+      where="git commands run there act on ${actual}"
+    fi
+    if [[ $'\n'"$1" == *$'\n'prunable* ]]; then
+      reason="$(sed -n 's/^prunable *//p' <<<"$1")"
+      refuse "${path} is registered as a worktree, but git marks the entry prunable (${reason:-no reason" \
+        "given})${where:+, and ${where}}. It may still hold work, so leave it where it is and report it"
+    fi
+    if [[ -n "${where}" ]]; then
+      refuse "${path} is registered as a worktree, but ${where}. It may still hold work, so leave it" \
+        "where it is and report it"
+    fi
+    return 0
   fi
-  echo "${dir}"
+  if [[ $'\n'"$1" == *$'\n'locked* ]]; then
+    reason="$(sed -n 's/^locked *//p' <<<"$1")"
+    refuse "${path} is registered as a worktree but no longer exists, and the entry is" \
+      "locked${reason:+ (${reason})}. Unless ${path} is on a disk that is not mounted, run" \
+      "'git worktree unlock ${quoted}', then 'git worktree remove ${quoted}', and try again"
+  fi
+  refuse "${path} is registered as a worktree but no longer exists; run 'git worktree remove ${quoted}'" \
+    "and try again"
+}
+
+# refuse_detached <dir>: refuses the worktree at <dir>, which is on a detached HEAD.
+refuse_detached() {
+  local quoted
+  printf -v quoted '%q' "$1"
+  refuse "$1 is a worktree on a detached HEAD, not on '${branch}': a rebase or bisect may be in progress" \
+    "there, or it was detached by hand, and 'git -C ${quoted} status' says which. It may hold the" \
+    "branch's work, so leave it where it is and report it"
+}
+
+# Resume: a branch that already has a pull request's worktree gets that worktree's path, wherever it is.
+found="$(entry "branch refs/heads/${branch}")"
+if [[ -n "${found}" ]]; then
+  existing="$(path_of "${found}")"
+  if [[ "${found%%$'\n'*}" == main ]]; then
+    refuse "'${branch}' is checked out in the main checkout, ${existing}, which stays on main and is" \
+      "never a pull request's worktree (CLAUDE.md rule 4); leave the main checkout as it is and report it"
+  fi
+  if [[ "$(basename "$(dirname "${existing}")")" != .worktrees ]]; then
+    refuse "'${branch}' is checked out in ${existing}, which is not a pull request worktree (one directly" \
+      "under a .worktrees/); leave it where it is and report it"
+  fi
+  refuse_broken "${found}"
+  echo "${existing}"
   exit 0
 fi
 
+# A worktree on a detached HEAD at .worktrees/<slug>, in any checkout, is this branch's worktree in the
+# middle of a rebase or bisect, or detached by hand. Git refuses a second worktree for a branch that is
+# being rebased or bisected, but not for one detached by hand, so this refuses all of them.
+held="$(detached_at)"
+if [[ -n "${held}" ]]; then
+  refuse_broken "${held}"
+  refuse_detached "$(path_of "${held}")"
+fi
+
+# The checkout this runs in. A linked worktree directly under a .worktrees/ is a pull request's worktree,
+# and stands for the checkout that holds it.
+top="$(git rev-parse --show-toplevel)"
+if [[ "$(git rev-parse --path-format=absolute --git-dir)" != "$(git rev-parse --path-format=absolute --git-common-dir)" &&
+  "$(basename "$(dirname "${top}")")" == ".worktrees" ]]; then
+  top="$(dirname "$(dirname "${top}")")"
+fi
+dir="${top}/.worktrees/${slug}"
+
+if [[ -e "${dir}" ]]; then
+  held="$(entry "worktree ${dir}")"
+  if [[ -z "${held}" ]]; then
+    refuse "${dir} exists but is not a worktree; look at what it holds, move it out of the way, and try" \
+      "again"
+  fi
+  refuse_broken "${held}"
+  on="$(sed -n 's#^branch refs/heads/##p' <<<"${held}")"
+  if [[ -n "${on}" ]]; then
+    refuse "${dir} is the worktree of '${on}', not of '${branch}'; it may hold that branch's work, so" \
+      "leave it where it is and report it"
+  fi
+  refuse_detached "${dir}"
+fi
+
 base=main
-if git -C "${root}" remote get-url origin >/dev/null 2>&1 && git -C "${root}" fetch --quiet --prune origin; then
+if git remote get-url origin >/dev/null 2>&1 && git fetch --quiet --prune origin; then
   base=origin/main
 fi
 
-if git -C "${root}" show-ref --verify --quiet "refs/heads/${branch}"; then
+if git show-ref --verify --quiet "refs/heads/${branch}"; then
   # Resume a local branch.
-  git -C "${root}" worktree add --quiet "${dir}" "${branch}"
-elif git -C "${root}" show-ref --verify --quiet "refs/remotes/origin/${branch}"; then
+  git worktree add --quiet "${dir}" "${branch}"
+elif git show-ref --verify --quiet "refs/remotes/origin/${branch}"; then
   # Resume a branch that was pushed from elsewhere.
-  git -C "${root}" worktree add --quiet --track -b "${branch}" "${dir}" "origin/${branch}"
+  git worktree add --quiet --track -b "${branch}" "${dir}" "origin/${branch}"
 else
   # New work, cut from the latest main. --no-track: the branch must never push to main.
-  git -C "${root}" worktree add --quiet --no-track -b "${branch}" "${dir}" "${base}"
+  git worktree add --quiet --no-track -b "${branch}" "${dir}" "${base}"
 fi
 echo "${dir}"
