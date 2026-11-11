@@ -342,7 +342,7 @@ Each milestone ships as one PR. Milestones 2 and 3 depend only on 1, and can run
    The taxonomy adds `node-high-availability` and `zone-high-availability`. `high-availability` stays
    until milestone 4. Unit tests in `taxonomy`, `catalog` and `mapping`, against test catalogs, pin the
    first three *Vocabulary* criteria. No snapshot changes, so no golden changes.
-2. [ ] **Scaleway snapshot.** In this milestone:
+2. [x] **Scaleway snapshot.** In this milestone:
    - re-verify against the live pages, as issue #15 did, the scope of every high-availability claim,
      Kapsule's included, and replace each claim with its scoped capability;
    - add tier variants: Kapsule with the Dedicated control plane, Managed Database with the High
@@ -412,6 +412,13 @@ Each milestone ships as one PR. Milestones 2 and 3 depend only on 1, and can run
   the resource may depend on it. Where a capability has levels, the adapter claims the strongest level
   the data does not rule out. A target claims a capability only where its documentation states it in
   full. Uncertainty on either side therefore makes a fit look worse, never better.
+- **Decided (milestone 2): Scaleway Object Storage lists no high-availability level.** Its FAQ says
+  that after a data centre failure Scaleway is "still able to rebuild your data and make it
+  accessible". That is recovery, not continuity without manual failover, so the target rule allows
+  neither level. As a consequence, under the source rule an S3 Standard bucket may claim
+  `zone-high-availability`, and it is `partial` on Scaleway. OVHcloud Object Storage is held to the
+  same bar in milestone 3: its 3-AZ documentation states read and write availability through a zone
+  failure.
 - **Note: what is not in this PRD.** Capability versions such as engine versions remain PRD #2's open
   question. Multi-region availability is not covered: an implication chain node < zone < region could
   later add `region-high-availability` without changing what this PRD decides. Two caveats stay as notes
@@ -424,7 +431,13 @@ Each milestone ships as one PR. Milestones 2 and 3 depend only on 1, and can run
 - **Accepted with E: more ties.** Resources that use none of a tier's capabilities tie
   between the base offering and its variants. An example is "`Kubernetes Kapsule` (tie:
   `Kubernetes Kapsule Dedicated`)". The base offering wins by name. Revisit this together with PRD #2's
-  open question on a product-preference order.
+  open question on a product-preference order. A second kind of tie: a resource that needs
+  `zone-high-availability`, on a target whose tiers are all node level. Both tiers miss one
+  capability and tie, and the tie-break by name makes the **lower** tier the best offering
+  (Standalone on Managed Database, Mutualized on Kapsule). Required changes lists only
+  `zone-high-availability`, so the report does not say that the named offering also lacks node level.
+  Revisit this with the product-preference order too. A ranking rule could prefer a candidate that
+  holds the implied lower level.
 - **Note: releases between milestones.** From milestone 1 to milestone 4, the vocabulary accepts
   `high-availability` beside its replacements. A release in that window would ship that mixed state, so
   tag none.
