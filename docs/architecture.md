@@ -73,8 +73,17 @@ the ways code could be hidden from it, and what refuses each:
   files and allow lists and the `pkg` of each deny entry, against a copy in
   `test/architecture/depguardpin_test.go`. Adding, removing or changing a rule means updating
   `pinnedDepguardRules` in the same commit, on purpose, so review sees it as a change to the
-  architecture rules. `TestDepguardPinCatchesMutations` deletes each rule and each entry, and drops the
-  `$` of each exact allow entry, to prove the pin notices.
+  architecture rules. `TestDepguardPinCatchesMutations` proves the pin notices, with 532 mutations of
+  the real file: for every rule it deletes the rule and each of its files, allow and deny entries
+  (every deny entry, a shared list's too), drops the trailing `$` of each exact allow entry, adds an
+  allow entry `os` and a negated files glob, and rewrites, deletes or adds the list-mode. A self-check
+  fails if the walk misses an entry, and a document the reader refuses counts as caught only for the
+  one mutation expected to break it: deleting `app-uses-ports-not-adapters`, which removes the
+  `&app-deny` anchor a later alias reads.
+- Turning depguard off. The pin covers the rules, not whether depguard runs: removing it from
+  `linters.enable`, `linters.default: none`, `linters.disable: [depguard]`, a
+  `linters.exclusions.rules` entry naming it, or `run.tests: false` would switch rules off while every
+  rule stays pinned. That is not pinned yet; issue #81 proposes it.
 
 A cloud SDK is imported only in its provider's adapter package (`source/aws`, `source/azure`,
 `source/gcp`, `target/ovhcloud`, `target/scaleway`, `target/upcloud`): the depguard rule
