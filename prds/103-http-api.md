@@ -162,7 +162,8 @@ Each milestone ships as one PR, in this order.
 
 ## Decisions and open questions
 
-- **Proposed: a separate binary, not `eusov serve`.** The CLI's guarantee, that nothing it reaches can
+- **Proposed: a separate binary, not `eusov serve`** ([ADR 0019](../docs/adr/0019-serve-assessments-over-a-versioned-http-api-from-a-separate-binary.md)
+  records it with the API's design, versioning and security model). The CLI's guarantee, that nothing it reaches can
   open a connection, is pinned by a test, and is worth keeping for users who run it on sensitive
   inventories. A `serve` subcommand would put `net/http` in the CLI's dependencies and end that guarantee.
   A second binary in the same module reuses every package. It costs a second build target and image.

@@ -6,10 +6,11 @@ The decision and its alternatives are in [ADR 0001](adr/0001-hexagonal-architect
 ## Layers and the dependency rule
 
 ```
-            ┌──────────────────────────── cmd/eusov (composition root) ───────────────────────────┐
+            ┌────────────── cmd/eusov, cmd/eusov-server (composition roots) ───────────────────────┐
             │                                                                                      │
             │   internal/cli ──────▶ internal/app/analysis ◀────── internal/adapter/...           │
-            │   (driving adapter)      (use case + ports)          (driven adapters: implement     │
+            │   internal/httpapi ──┘                                                               │
+            │   (driving adapters)     (use case + ports)          (driven adapters: implement     │
             │                                 │                     the ports)                     │
             │                                 ▼                           │                        │
             │                         internal/domain/... ◀───────────────┘                        │
@@ -42,7 +43,20 @@ Arrows are imports. They point inwards only:
   (Cloud read-only rule below).
 - **CLI** (`internal/cli`) turns user input into use-case calls and prints results. No business rules.
   Only `cmd/eusov` imports it.
-- **`cmd/eusov`** is the only place that constructs adapters and injects them.
+- **HTTP API** (`internal/httpapi`) is the second driving adapter, beside the CLI
+  ([ADR 0019](adr/0019-serve-assessments-over-a-versioned-http-api-from-a-separate-binary.md)): it serves
+  the same use cases over `/v1/` and returns an `http.Handler`. Like the CLI it gets every adapter from
+  its composition root through `httpapi.Deps` and imports only the application, the domain,
+  `internal/version` and a named list of standard packages (`httpapi-gets-adapters-from-cmd`), never an
+  adapter, the CLI, `cmd/` or `os`. Strict JSON decoding stays in the adapters, because `jsondoc` is
+  internal to `internal/adapter`: the request body is decoded by the adapter
+  `adapter/request/assessmentrequest` (`request-decoders-parse-bytes`: `errors`, `fmt` and `jsondoc`
+  only, no `net/http`), and the inventory in it by `inventoryfile.FromBytes`, both passed in as function
+  values. Only `cmd/eusov-server` imports it (`httpapi-imported-only-by-the-server`); `cmd/eusov` never
+  does, so the CLI stays offline. `api/openapi.json` (OpenAPI 3.1) describes the API and refers to the
+  JSON report's schemas rather than copying them.
+- **`cmd/eusov`** and **`cmd/eusov-server`** are the composition roots, the only places that construct
+  adapters and inject them: `cmd/eusov` into the CLI, `cmd/eusov-server` into the HTTP API.
 
 The rule is enforced by `depguard` in `.golangci.yml`, so `make lint`, which lints the host natively and
 then every GOOS/GOARCH `.goreleaser.yaml` builds with cgo off, fails on a violating import. These are all
@@ -60,8 +74,8 @@ the ways code could be hidden from it, and what refuses each:
   fails on any Go file the `./...` pattern reaches that is a symlink, git-ignored ones included, as
   deliberate defence in depth.
 - A file name. `test/architecture` checks every directory a strict depguard rule names (the domain, the
-  application layer, the snapshot reader, the adapter helpers, the inventory file reader and the
-  targets that embed a snapshot) package by package, for every platform `.goreleaser.yaml` builds. It
+  application layer, the snapshot reader, the adapter helpers, the inventory file reader, the
+  request decoders, the HTTP API and the targets that embed a snapshot) package by package, for every platform `.goreleaser.yaml` builds. It
   reads those directories from `.golangci.yml`, lists them with `go list` and holds each package to the
   allow list of every rule that covers it, and it holds every package of the module in the release
   binary to Go sources in their own directory, so assembly, cgo, line directives and symlinked
@@ -73,7 +87,7 @@ the ways code could be hidden from it, and what refuses each:
   files and allow lists and the `pkg` of each deny entry, against a copy in
   `test/architecture/depguardpin_test.go`. Adding, removing or changing a rule means updating
   `pinnedDepguardRules` in the same commit, on purpose, so review sees it as a change to the
-  architecture rules. `TestDepguardPinCatchesMutations` proves the pin notices, with 533 mutations of
+  architecture rules. `TestDepguardPinCatchesMutations` proves the pin notices, with 633 mutations of
   the real file: for every rule it deletes the rule and each of its files, allow and deny entries
   (every deny entry, a shared list's too), drops the trailing `$` of each exact allow entry, adds an
   allow entry `os` and a negated files glob, and rewrites, deletes or adds the list-mode. A self-check
