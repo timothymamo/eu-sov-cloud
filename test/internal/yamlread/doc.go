@@ -11,12 +11,13 @@
 // block mapping or sequence, and List, Single, LiteralBlock and Scalar read a
 // value. Along the path it walks and in the values it reads, it refuses
 // everything else (anchors, aliases, merge keys, quoted or upper-case keys,
-// tags, escapes, multi-line flow lists, folded or chomped block scalars, a
+// tags, escapes, multi-line flow lists, a # inside a flow list, where a comment
+// would swallow the closing bracket, folded or chomped block scalars, a
 // repeated key) rather than guess at it; a literal block scalar (|) it reads
 // only where a caller asks for one (LiteralBlock). The values of the keys it
 // steps over are kept whole, by indentation, and never read. Anywhere in the
 // document, comments included, it refuses the characters YAML readers do not
-// agree on (CheckLine).
+// agree on: control characters, U+2028, U+2029 and U+FEFF.
 //
 // The package is internal to test: it is not an API of the module. Its
 // behaviour is pinned by the tests of the packages that read through it,

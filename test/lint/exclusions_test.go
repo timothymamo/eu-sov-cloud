@@ -1,6 +1,7 @@
 package lint_test
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"slices"
@@ -85,12 +86,8 @@ func groupOfText(text string) (string, bool) {
 	return "", false
 }
 
-// exclusionRules reads linters.exclusions.rules from .golangci.yml with the
-// shared line reader of test/internal/yamlread, which refuses what it does not
-// follow rather than guess at it: every rule is a block mapping of plain keys,
-// each key's value one scalar on its line but linters, a list of linter names
-// in flow ([a, b]) or block (- a) form.
-// A rule written another way fails the test, so it is not silently skipped.
+// exclusionRules reads linters.exclusions.rules from .golangci.yml under root
+// through parseExclusionRules, and fails the test when the file holds no rule.
 func exclusionRules(t *testing.T, root string) []exclusionRule {
 	t.Helper()
 
@@ -98,22 +95,9 @@ func exclusionRules(t *testing.T, root string) []exclusionRule {
 	if err != nil {
 		t.Fatal(err)
 	}
-	lines, err := yamlread.SplitLines(config)
+	rules, err := parseExclusionRules(config)
 	if err != nil {
 		t.Fatalf("read .golangci.yml: %v", err)
-	}
-	block, err := yamlread.Walk(lines, "linters", "exclusions", "rules")
-	if err != nil {
-		t.Fatalf("read .golangci.yml: %v", err)
-	}
-	items, err := yamlread.Sequence(block)
-	if err != nil {
-		t.Fatalf("read .golangci.yml: linters: exclusions: rules: %v", err)
-	}
-
-	rules := make([]exclusionRule, 0, len(items))
-	for _, it := range items {
-		rules = append(rules, exclusionRuleOf(t, it))
 	}
 	if len(rules) == 0 {
 		t.Fatal(".golangci.yml holds no exclusion rule")
@@ -121,16 +105,45 @@ func exclusionRules(t *testing.T, root string) []exclusionRule {
 	return rules
 }
 
-// exclusionRuleOf reads one entry of linters.exclusions.rules.
-func exclusionRuleOf(t *testing.T, it yamlread.Item) exclusionRule {
-	t.Helper()
+// parseExclusionRules reads linters.exclusions.rules from doc, a whole
+// .golangci.yml, with the shared line reader of test/internal/yamlread, which
+// refuses what it does not follow rather than guess at it: every rule is a
+// block mapping of plain keys, each key's value one scalar on its line but
+// linters, a list of linter names in flow ([a, b]) or block (- a) form. A rule
+// written another way is an error, so it is never silently skipped.
+func parseExclusionRules(doc []byte) ([]exclusionRule, error) {
+	lines, err := yamlread.SplitLines(doc)
+	if err != nil {
+		return nil, err
+	}
+	block, err := yamlread.Walk(lines, "linters", "exclusions", "rules")
+	if err != nil {
+		return nil, err
+	}
+	items, err := yamlread.Sequence(block)
+	if err != nil {
+		return nil, fmt.Errorf("linters: exclusions: rules: %w", err)
+	}
 
+	rules := make([]exclusionRule, 0, len(items))
+	for _, it := range items {
+		r, err := exclusionRuleOf(it)
+		if err != nil {
+			return nil, err
+		}
+		rules = append(rules, r)
+	}
+	return rules, nil
+}
+
+// exclusionRuleOf reads one entry of linters.exclusions.rules.
+func exclusionRuleOf(it yamlread.Item) (exclusionRule, error) {
 	entries, err := yamlread.Mapping(it.Lines)
 	if err != nil {
-		t.Fatalf(".golangci.yml:%d: an exclusion rule test/lint cannot read: %v", it.Num, err)
+		return exclusionRule{}, fmt.Errorf("line %d: an exclusion rule test/lint cannot read: %w", it.Num, err)
 	}
 	if len(entries) == 0 {
-		t.Fatalf(".golangci.yml:%d: an empty exclusion rule", it.Num)
+		return exclusionRule{}, fmt.Errorf("line %d: an empty exclusion rule", it.Num)
 	}
 
 	r := exclusionRule{line: it.Num, fields: map[string]string{}}
@@ -138,7 +151,7 @@ func exclusionRuleOf(t *testing.T, it yamlread.Item) exclusionRule {
 		if e.Key == "linters" {
 			linters, err := yamlread.List(e)
 			if err != nil {
-				t.Fatalf(".golangci.yml:%d: exclusion rule linters: %v", e.Num, err)
+				return exclusionRule{}, fmt.Errorf("line %d: exclusion rule linters: %w", e.Num, err)
 			}
 			// An empty list names no linter, so it drops every linter's
 			// issues, as a rule with no linters key does.
@@ -149,11 +162,11 @@ func exclusionRuleOf(t *testing.T, it yamlread.Item) exclusionRule {
 		}
 		value, err := yamlread.Single(e)
 		if err != nil {
-			t.Fatalf(".golangci.yml:%d: an exclusion rule key test/lint cannot read: %v", e.Num, err)
+			return exclusionRule{}, fmt.Errorf("line %d: an exclusion rule key test/lint cannot read: %w", e.Num, err)
 		}
 		r.fields[e.Key] = value
 	}
-	return r
+	return r, nil
 }
 
 // exclusionDoc returns a .golangci.yml whose linters.exclusions.rules hold the

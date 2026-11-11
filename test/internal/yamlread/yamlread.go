@@ -51,7 +51,7 @@ func SplitLines(doc []byte) ([]Line, error) {
 		num := i + 1
 		raw = strings.TrimSuffix(raw, "\r")
 
-		if err := CheckLine(raw); err != nil {
+		if err := checkLine(raw); err != nil {
 			return nil, fmt.Errorf("line %d: %w", num, err)
 		}
 
@@ -73,7 +73,7 @@ func SplitLines(doc []byte) ([]Line, error) {
 	return out, nil
 }
 
-// CheckLine refuses invalid UTF-8 and every character that YAML readers do not
+// checkLine refuses invalid UTF-8 and every character that YAML readers do not
 // agree on, wherever it sits on the line: a control character (a tab, a CR not
 // followed by LF, any other C0 control, DEL and the C1 controls, NEL among
 // them), the line and paragraph separators U+2028 and U+2029, and the
@@ -82,7 +82,7 @@ func SplitLines(doc []byte) ([]Line, error) {
 // them inside a comment: a list entry after one would be hidden from the
 // check, not from the tool. Other printable text, non-ASCII included, is
 // accepted.
-func CheckLine(raw string) error {
+func checkLine(raw string) error {
 	if !utf8.ValidString(raw) {
 		return errors.New("invalid UTF-8")
 	}
@@ -122,7 +122,7 @@ func Mapping(lines []Line) ([]Entry, error) {
 
 		if len(entries) > 0 {
 			last := &entries[len(entries)-1]
-			if l.Indent > indent || (IsSequenceEntry(l.Text) && last.Value == "") {
+			if l.Indent > indent || (isSequenceEntry(l.Text) && last.Value == "") {
 				last.Block = append(last.Block, l)
 
 				continue
@@ -165,7 +165,7 @@ func Sequence(lines []Line) ([]Item, error) {
 		case l.Indent > indent:
 			last := &items[len(items)-1]
 			last.Lines = append(last.Lines, l)
-		case !IsSequenceEntry(l.Text):
+		case !isSequenceEntry(l.Text):
 			return nil, fmt.Errorf("line %d: %q is not a sequence entry", l.Num, l.Text)
 		default:
 			it := Item{Num: l.Num}
@@ -237,7 +237,7 @@ func List(e Entry) ([]string, error) {
 			return nil, fmt.Errorf("line %d: %s has a value on its own line and lines below it", e.Num, e.Key)
 		}
 
-		values, err := FlowList(e.Value)
+		values, err := flowList(e.Value)
 		if err != nil {
 			return nil, fmt.Errorf("line %d: %s: %w", e.Num, e.Key, err)
 		}
@@ -286,7 +286,7 @@ func Single(e Entry) (string, error) {
 // chomping and its indentation taken from its first line, from raw, the lines
 // of the document e is in with their line ends removed. It returns the block's
 // lines, that indentation removed, joined by newlines, without the newline
-// after the last one. It reads raw rather than e.block because a block's lines
+// after the last one. It reads raw rather than e.Block because a block's lines
 // are content, not comments: a line in it that starts with # is part of the
 // value, and so is a blank line between two others.
 //
@@ -306,7 +306,7 @@ func LiteralBlockLeadingHashes(raw []string, e Entry) (string, error) {
 	return readLiteralBlock(raw, e, true)
 }
 
-// readLiteralBlock is literalBlock, with lines starting with # at the block's
+// readLiteralBlock is LiteralBlock, with lines starting with # at the block's
 // indentation accepted before its first content line when leadingHashes.
 func readLiteralBlock(raw []string, e Entry, leadingHashes bool) (string, error) {
 	if e.Value != "|" {
@@ -354,9 +354,11 @@ func readLiteralBlock(raw []string, e Entry, leadingHashes bool) (string, error)
 	return strings.Join(out, "\n"), nil
 }
 
-// FlowList reads a flow list written on one line, [a, b], whose entries are
-// scalars.
-func FlowList(text string) ([]string, error) {
+// flowList reads a flow list written on one line, [a, b], whose entries are
+// scalars. It refuses a # before the list's closing bracket: a comment runs to
+// the end of the line, so a bracket after it would not close the list, and a #
+// inside an entry is refused with it rather than told apart from one.
+func flowList(text string) ([]string, error) {
 	if !strings.HasPrefix(text, "[") {
 		return nil, fmt.Errorf("%q is not a list", text)
 	}
@@ -364,6 +366,10 @@ func FlowList(text string) ([]string, error) {
 	end := strings.IndexByte(text, ']')
 	if end < 0 {
 		return nil, fmt.Errorf("%q does not close its list on the same line", text)
+	}
+
+	if strings.ContainsRune(text[:end], '#') {
+		return nil, fmt.Errorf("%q has a # inside its list, which this reader does not follow", text)
 	}
 
 	if rest := strings.TrimSpace(text[end+1:]); rest != "" && !strings.HasPrefix(rest, "#") {
@@ -446,7 +452,7 @@ func KeyValue(text string) (key, value string, ok bool) {
 		}
 
 		key = text[:i]
-		if !IsPlainKey(key) {
+		if !isPlainKey(key) {
 			return "", "", false
 		}
 
@@ -461,13 +467,13 @@ func KeyValue(text string) (key, value string, ok bool) {
 	return "", "", false
 }
 
-// IsPlainKey reports whether key is a key this reader takes as written:
+// isPlainKey reports whether key is a key this reader takes as written:
 // lower-case ASCII letters, digits, _, . and -, starting with a letter, digit
 // or _. An upper-case letter is refused: golangci-lint reads its configuration
 // keys without regard to case, so List-Mode would be list-mode to it, and
 // Domain-Is-Pure a repeat of domain-is-pure, where this reader compares keys
 // as written.
-func IsPlainKey(key string) bool {
+func isPlainKey(key string) bool {
 	if key == "" || key[0] == '.' || key[0] == '-' {
 		return false
 	}
@@ -481,8 +487,8 @@ func IsPlainKey(key string) bool {
 	return true
 }
 
-// IsSequenceEntry reports whether text starts a block sequence entry.
-func IsSequenceEntry(text string) bool {
+// isSequenceEntry reports whether text starts a block sequence entry.
+func isSequenceEntry(text string) bool {
 	return text == "-" || strings.HasPrefix(text, "- ")
 }
 
