@@ -30,12 +30,12 @@
 // with the go command's own parser (TestRootModuleHasNoReplace), and the
 // repository holds no go.work, go.work.sum or vendor directory
 // (TestRepositoryHasNoWorkspaceOrVendor), any of which could otherwise
-// substitute code for an allowed import path. A package only a test imports is not
-// listed by go list -deps, so it is not placed itself. Sources holds every
-// package of the module, layer or not, to the rules that do not depend on a
-// rule: it must belong to the main module, sit in the directory its import
-// path names with symlinks resolved, and hold no cgo, C, assembly or other
-// non-Go source.
+// substitute code for an allowed import path. A package only a test imports
+// is not listed by go list -deps, so it is not placed itself. Sources holds
+// every package of the module, layer or not, to the rules that do not depend
+// on a rule: it must belong to the main module, sit in the directory its
+// import path names with symlinks resolved, and hold no cgo, C, assembly or
+// other non-Go source.
 // FindLineDirectives reports every line directive in a Go file git tracks or
 // would add under a root, and every symlink among those files.
 // StrayReleaseFiles and ReleaseWorkflow pin that the release builds what the

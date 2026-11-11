@@ -398,9 +398,10 @@ func Packages(root, module string, rules []Rule, pkgs []Package) []string {
 // import, in a package no rule holding tests covers, refuses that same path
 // for production code too, should the SDK closure reach it. That fails
 // closed, and cannot happen today (go.mod requires only go-cmp), but the
-// message the path then gets in Packages ("is
-// outside every directory ... the check holds to an allow list") would
-// mislead: the path was refused for a test import, not a production one.
+// message Packages then gives the path
+// ("is outside every directory ... the check holds to an allow list")
+// would mislead: the path was refused for a test import, not a production
+// one.
 func allowedThirdParty(m moduleRoot, rules []Rule, pkgs []Package) map[string]bool {
 	byPath := make(map[string]Package, len(pkgs))
 	for _, pkg := range pkgs {
