@@ -131,11 +131,14 @@ func TestPanicReleasesTheSlot(t *testing.T) {
 // TestBodyReadTimeoutReleasesTheSlot pins the timeout on reading a request
 // body: a client that announces a body and then stalls neither holds the
 // assessment slot nor the server forever. It reads and then stops, the handler
-// ends the read at the deadline and answers, and the next client's assessment
-// runs, so a stalled request costs one timeout and not the whole API.
+// ends the read at the deadline and answers 400 invalid_request asking for the
+// connection to close and then closing it, and the next client's assessment
+// runs, so a stalled request costs one timeout and one connection, not the
+// whole API (internal/httpapi/doc.go, ADR 0019).
 //
 // The test uses a real connection, because a read deadline lives on the
-// connection of the server, not on a recorded request.
+// connection of the server, not on a recorded request, and because only the
+// connection shows that the server closed it after the answer.
 func TestBodyReadTimeoutReleasesTheSlot(t *testing.T) {
 	t.Parallel()
 
@@ -164,11 +167,23 @@ func TestBodyReadTimeoutReleasesTheSlot(t *testing.T) {
 		t.Fatalf("writing the stalled request: %v", err)
 	}
 
-	status, closed := stalledAnswer(t, conn)
+	answer, rec := stalledAnswer(t, conn)
 
-	if !closed && status != http.StatusBadRequest && status != http.StatusRequestTimeout {
-		t.Errorf("the stalled request was answered %d, want the connection closed or a 400/408", status)
+	if answer.StatusCode != http.StatusBadRequest {
+		t.Fatalf("the stalled request was answered %d, want %d; body: %q",
+			answer.StatusCode, http.StatusBadRequest, rec.Body.String())
 	}
+
+	requireHardeningHeaders(t, rec)
+	decodeError(t, rec, "invalid_request")
+
+	// The answer announces the close and the server performs it: a request
+	// that goes on holding an open connection leaks one per stalled body.
+	if !answer.Close {
+		t.Error("the answer to the stalled body does not ask for the connection to close, want resp.Close == true")
+	}
+
+	requireClosedConnection(t, conn)
 
 	// Waiting for the deadline is the behaviour under test, so client B polls
 	// until the slot is free: a handler that keeps it makes the deadline fail.
@@ -208,10 +223,18 @@ func TestBodyReadTimeoutReleasesTheSlot(t *testing.T) {
 	}
 }
 
-// stalledAnswer reads client A's answer within the settle bound and returns its
-// status, or reports that the connection was closed instead. It fails the test
-// when the server neither answers nor closes within the bound.
-func stalledAnswer(t *testing.T, conn net.Conn) (int, bool) {
+// closeBound is how long the test waits for the server to close client A's
+// connection after its answer: long enough that a slow machine never trips it,
+// short enough that a server which keeps the connection open fails the test
+// rather than hanging it.
+const closeBound = 5 * time.Second
+
+// stalledAnswer reads client A's answer within the settle bound, with its body,
+// and returns the response and a recorder carrying the same status, headers and
+// body, so the test can hold the answer to the documented error shape. It fails
+// the test when the server neither answers nor closes within the bound, because
+// the documented answer is 400 invalid_request, not a bare close.
+func stalledAnswer(t *testing.T, conn net.Conn) (*http.Response, *httptest.ResponseRecorder) {
 	t.Helper()
 
 	if err := conn.SetReadDeadline(time.Now().Add(settle)); err != nil {
@@ -222,16 +245,61 @@ func stalledAnswer(t *testing.T, conn net.Conn) (int, bool) {
 
 	switch {
 	case err == nil:
-		defer func() { _ = resp.Body.Close() }()
-
-		_, _ = io.Copy(io.Discard, resp.Body)
-
-		return resp.StatusCode, false
 	case errors.Is(err, io.EOF), errors.Is(err, io.ErrUnexpectedEOF), errors.Is(err, net.ErrClosed):
-		return 0, true
+		t.Fatalf("the stalled request's connection was closed without an answer, want %d invalid_request",
+			http.StatusBadRequest)
 	default:
 		t.Fatalf("reading the stalled request's answer: %v", err)
+	}
 
-		return 0, false
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		t.Fatalf("reading the stalled request's answer body: %v", err)
+	}
+
+	_ = resp.Body.Close()
+
+	rec := httptest.NewRecorder()
+	rec.Code = resp.StatusCode
+
+	for name, values := range resp.Header {
+		rec.Header()[name] = values
+	}
+
+	rec.Body.Write(body)
+
+	return resp, rec
+}
+
+// requireClosedConnection pins that the server closed conn after answering: the
+// next reads return io.EOF, or a closed-connection error, within closeBound. A
+// read still waiting at the deadline is a connection the server keeps open,
+// which the test calls broken.
+func requireClosedConnection(t *testing.T, conn net.Conn) {
+	t.Helper()
+
+	if err := conn.SetReadDeadline(time.Now().Add(closeBound)); err != nil {
+		t.Fatalf("setting the read deadline: %v", err)
+	}
+
+	var buf [1]byte
+
+	for {
+		_, err := conn.Read(buf[:])
+
+		var timeout net.Error
+
+		switch {
+		case err == nil:
+			// The answer carried bytes past its body: keep reading until the
+			// connection closes.
+			continue
+		case errors.As(err, &timeout) && timeout.Timeout():
+			t.Fatalf("the server did not close the connection within %s of answering the stalled body",
+				closeBound)
+		case err != nil:
+			// io.EOF, net.ErrClosed, a reset: the connection is closed.
+			return
+		}
 	}
 }
