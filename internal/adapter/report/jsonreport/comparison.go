@@ -50,7 +50,8 @@ type targetReasons struct {
 // The output depends on c and meta only. ReportComparison encodes the whole
 // document before writing it to w in one call; a write error is returned,
 // wrapped. When ctx is already done it writes nothing and returns ctx.Err(). A
-// comparison of no target is an error, and nothing is written.
+// comparison of no target, or one that fails assessment.Comparison.Validate,
+// is an error, and nothing is written.
 func (*Reporter) ReportComparison(ctx context.Context, w io.Writer, c assessment.Comparison, meta analysis.ReportMeta) error {
 	if err := ctx.Err(); err != nil {
 		return err
@@ -58,6 +59,10 @@ func (*Reporter) ReportComparison(ctx context.Context, w io.Writer, c assessment
 
 	if len(c.Targets) == 0 {
 		return fmt.Errorf("render json comparison: the comparison holds no target")
+	}
+
+	if err := c.Validate(); err != nil {
+		return fmt.Errorf("render json comparison: %w", err)
 	}
 
 	targets := make([]targetEntry, 0, len(c.Targets))
