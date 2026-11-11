@@ -18,7 +18,7 @@
   },
   "resources": [
     {
-      "id": "i-\"1\"\\x\n\t\u0000\u001b\u2028\u003c/script\u003e�",
+      "id": "i-\"1\"\\x\n\t\u0000\u001b\u2028\u2029\u003c/script\u003e\u0026x�",
       "rawType": "AWS::\"X\"\\Y\t\u0000\u001b\u2028\u003c/script\u003e�",
       "category": "cat\"\\\n\t\u0000\u001b\u2028\u003c/script\u003e�",
       "region": "eu-\"west\"\\1\n\u0000\u001b\u2028\u003c/script\u003e�",

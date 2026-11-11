@@ -558,10 +558,11 @@ func TestReportComparisonReturnsWriteError(t *testing.T) {
 
 // hostileComparisonKeys are the hostile comparison's target keys: the document
 // writes each one as targets[].key and as a shared blocker target's key, so a key
-// is a value like any other.
+// is a value like any other. The first also carries a paragraph separator and an
+// ampersand, the characters JSON escapes besides < and >.
 func hostileComparisonKeys() []string {
 	return []string{
-		"a\"\\\n\t\x00\x1b\u2028</script>\xff",
+		"a\"\\\n\t\x00\x1b\u2028\u2029</script>&\xff",
 		"k\"ey\x00\x1b\u2028</script>\xff",
 		"z<z|`\n\x1b\xff",
 	}
@@ -705,6 +706,7 @@ func TestReportComparisonHostileValues(t *testing.T) {
 
 	testutil.Golden(t, "testdata/comparison-hostile.golden", got)
 	checkDocument(t, got)
+	checkJSONEscapes(t, got)
 
 	document := decodeJSON(t, got)
 

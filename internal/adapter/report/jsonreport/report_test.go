@@ -638,11 +638,12 @@ func TestReportWritesEmptyValues(t *testing.T) {
 }
 
 // The hostile fixture: every value the document shows carries a quote, a
-// backslash, a control character, a line ending, a tab, a line separator, an
-// HTML end tag and a byte that is not valid UTF-8, so a report that concatenated
-// strings instead of JSON-encoding them would not be valid JSON. The domain
-// constructors refuse several of these values, so the assessment is built by
-// hand, as the Markdown reporter's escaping tests build theirs.
+// backslash, a control character, a line ending, a tab, a line separator, a
+// paragraph separator, an HTML end tag, an ampersand and a byte that is not valid
+// UTF-8, so a report that concatenated strings instead of JSON-encoding them
+// would not be valid JSON. The domain constructors refuse several of these
+// values, so the assessment is built by hand, as the Markdown reporter's escaping
+// tests build theirs.
 var (
 	// hostileInventoryName is the inventory's base name as the run reports it.
 	hostileInventoryName = "inv\"\\\n\t\x00\x1b\u2028</script>\xff.json"
@@ -653,8 +654,9 @@ var (
 	// hostileSourceURL is the catalog snapshot's source.
 	hostileSourceURL = "https://example.com/a\"b\\c\nd\te\x00\x1b\u2028</script>\xff"
 	// hostileID, hostileRawType and hostileRegion are the direct resource's
-	// values.
-	hostileID      = "i-\"1\"\\x\n\t\x00\x1b\u2028</script>\xff"
+	// values. hostileID also carries a paragraph separator and an ampersand, the
+	// characters JSON escapes besides < and >.
+	hostileID      = "i-\"1\"\\x\n\t\x00\x1b\u2028\u2029</script>&x\xff"
 	hostileRawType = "AWS::\"X\"\\Y\t\x00\x1b\u2028</script>\xff"
 	hostileRegion  = "eu-\"west\"\\1\n\x00\x1b\u2028</script>\xff"
 	// hostileOffering is the best offering's name, and hostileTie the name of the
@@ -762,6 +764,7 @@ func TestReportHostileValues(t *testing.T) {
 
 	testutil.Golden(t, "testdata/report-hostile.golden", got)
 	checkDocument(t, got)
+	checkJSONEscapes(t, got)
 
 	document := decodeJSON(t, got)
 
@@ -931,6 +934,26 @@ func TestReportsCancelledContext(t *testing.T) {
 				t.Errorf("%s wrote %d bytes to the writer, want none:\n%s", tc.name, out.Len(), out.String())
 			}
 		})
+	}
+}
+
+// checkJSONEscapes asserts that the document holds the escaped form of the
+// characters a reader could act on and never the raw character: the golden is
+// read by a browser and a log reader as well as by a JSON parser, so U+2029 and &
+// must reach it as the escapes encoding/json writes.
+func checkJSONEscapes(t *testing.T, out []byte) {
+	t.Helper()
+
+	for _, escaped := range []string{`\u2029`, `\u0026`} {
+		if !bytes.Contains(out, []byte(escaped)) {
+			t.Errorf("the document does not hold the escape %s:\n%s", escaped, out)
+		}
+	}
+
+	for _, raw := range []string{"\u2029", "&"} {
+		if bytes.Contains(out, []byte(raw)) {
+			t.Errorf("the document holds the raw character %q:\n%s", raw, out)
+		}
 	}
 }
 

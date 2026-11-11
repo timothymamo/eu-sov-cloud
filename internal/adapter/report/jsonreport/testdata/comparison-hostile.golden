@@ -5,7 +5,7 @@
   "source": "aws\"\\\n\t\u0000\u001b\u2028\u003c/script\u003e�",
   "targets": [
     {
-      "key": "a\"\\\n\t\u0000\u001b\u2028\u003c/script\u003e�",
+      "key": "a\"\\\n\t\u0000\u001b\u2028\u2029\u003c/script\u003e\u0026�",
       "target": {
         "name": "Evil \"target\" \\ \t\u0000\u001b\u2028\u003c/script\u003e�",
         "snapshot": {
@@ -21,7 +21,7 @@
       },
       "resources": [
         {
-          "id": "i-\"1\"\\x\n\t\u0000\u001b\u2028\u003c/script\u003e�",
+          "id": "i-\"1\"\\x\n\t\u0000\u001b\u2028\u2029\u003c/script\u003e\u0026x�",
           "rawType": "AWS::\"X\"\\Y\t\u0000\u001b\u2028\u003c/script\u003e�",
           "category": "cat\"\\\n\t\u0000\u001b\u2028\u003c/script\u003e�",
           "region": "eu-\"west\"\\1\n\u0000\u001b\u2028\u003c/script\u003e�",
@@ -55,7 +55,7 @@
           "requiredChanges": []
         },
         {
-          "id": "i-\"1\"\\x\n\t\u0000\u001b\u2028\u003c/script\u003e�-v",
+          "id": "i-\"1\"\\x\n\t\u0000\u001b\u2028\u2029\u003c/script\u003e\u0026x�-v",
           "rawType": "AWS::\"X\"\\Y\t\u0000\u001b\u2028\u003c/script\u003e�",
           "category": "compute.vm",
           "region": "eu-\"west\"\\1\n\u0000\u001b\u2028\u003c/script\u003e�",
@@ -74,7 +74,7 @@
       ],
       "blockers": [
         {
-          "resourceId": "i-\"1\"\\x\n\t\u0000\u001b\u2028\u003c/script\u003e�",
+          "resourceId": "i-\"1\"\\x\n\t\u0000\u001b\u2028\u2029\u003c/script\u003e\u0026x�",
           "reason": {
             "code": "no-offering",
             "text": "no offering in the Evil \"target\" \\ \t\u0000\u001b\u2028\u003c/script\u003e� catalog for cat\"\\\n\t\u0000\u001b\u2028\u003c/script\u003e�",
@@ -108,7 +108,7 @@
       },
       "resources": [
         {
-          "id": "i-\"1\"\\x\n\t\u0000\u001b\u2028\u003c/script\u003e�",
+          "id": "i-\"1\"\\x\n\t\u0000\u001b\u2028\u2029\u003c/script\u003e\u0026x�",
           "rawType": "AWS::\"X\"\\Y\t\u0000\u001b\u2028\u003c/script\u003e�",
           "category": "cat\"\\\n\t\u0000\u001b\u2028\u003c/script\u003e�",
           "region": "eu-\"west\"\\1\n\u0000\u001b\u2028\u003c/script\u003e�",
@@ -142,7 +142,7 @@
           "requiredChanges": []
         },
         {
-          "id": "i-\"1\"\\x\n\t\u0000\u001b\u2028\u003c/script\u003e�-v",
+          "id": "i-\"1\"\\x\n\t\u0000\u001b\u2028\u2029\u003c/script\u003e\u0026x�-v",
           "rawType": "AWS::\"X\"\\Y\t\u0000\u001b\u2028\u003c/script\u003e�",
           "category": "compute.vm",
           "region": "eu-\"west\"\\1\n\u0000\u001b\u2028\u003c/script\u003e�",
@@ -164,7 +164,7 @@
       ],
       "blockers": [
         {
-          "resourceId": "i-\"1\"\\x\n\t\u0000\u001b\u2028\u003c/script\u003e�",
+          "resourceId": "i-\"1\"\\x\n\t\u0000\u001b\u2028\u2029\u003c/script\u003e\u0026x�",
           "reason": {
             "code": "no-offering",
             "text": "no offering in the Evil \"target\" \\ \t\u0000\u001b\u2028\u003c/script\u003e� catalog for cat\"\\\n\t\u0000\u001b\u2028\u003c/script\u003e�",
@@ -198,7 +198,7 @@
       },
       "resources": [
         {
-          "id": "i-\"1\"\\x\n\t\u0000\u001b\u2028\u003c/script\u003e�",
+          "id": "i-\"1\"\\x\n\t\u0000\u001b\u2028\u2029\u003c/script\u003e\u0026x�",
           "rawType": "AWS::\"X\"\\Y\t\u0000\u001b\u2028\u003c/script\u003e�",
           "category": "cat\"\\\n\t\u0000\u001b\u2028\u003c/script\u003e�",
           "region": "eu-\"west\"\\1\n\u0000\u001b\u2028\u003c/script\u003e�",
@@ -232,7 +232,7 @@
           "requiredChanges": []
         },
         {
-          "id": "i-\"1\"\\x\n\t\u0000\u001b\u2028\u003c/script\u003e�-v",
+          "id": "i-\"1\"\\x\n\t\u0000\u001b\u2028\u2029\u003c/script\u003e\u0026x�-v",
           "rawType": "AWS::\"X\"\\Y\t\u0000\u001b\u2028\u003c/script\u003e�",
           "category": "compute.vm",
           "region": "eu-\"west\"\\1\n\u0000\u001b\u2028\u003c/script\u003e�",
@@ -250,7 +250,7 @@
       ],
       "blockers": [
         {
-          "resourceId": "i-\"1\"\\x\n\t\u0000\u001b\u2028\u003c/script\u003e�",
+          "resourceId": "i-\"1\"\\x\n\t\u0000\u001b\u2028\u2029\u003c/script\u003e\u0026x�",
           "reason": {
             "code": "no-offering",
             "text": "no offering in the Evil \"target\" \\ \t\u0000\u001b\u2028\u003c/script\u003e� catalog for cat\"\\\n\t\u0000\u001b\u2028\u003c/script\u003e�",
@@ -266,7 +266,7 @@
           }
         },
         {
-          "resourceId": "i-\"1\"\\x\n\t\u0000\u001b\u2028\u003c/script\u003e�-v",
+          "resourceId": "i-\"1\"\\x\n\t\u0000\u001b\u2028\u2029\u003c/script\u003e\u0026x�-v",
           "reason": {
             "code": "reason\"\\\n\t\u0000\u001b\u2028\u003c/script\u003e�",
             "text": "reason\"\\\n\t\u0000\u001b\u2028\u003c/script\u003e�"
@@ -280,7 +280,7 @@
       "resourceId": "fn\"\\\n\t\u0000\u001b\u2028\u003c/script\u003e�",
       "targets": [
         {
-          "key": "a\"\\\n\t\u0000\u001b\u2028\u003c/script\u003e�",
+          "key": "a\"\\\n\t\u0000\u001b\u2028\u2029\u003c/script\u003e\u0026�",
           "reasons": [
             {
               "code": "not-classified",
@@ -309,10 +309,10 @@
       ]
     },
     {
-      "resourceId": "i-\"1\"\\x\n\t\u0000\u001b\u2028\u003c/script\u003e�",
+      "resourceId": "i-\"1\"\\x\n\t\u0000\u001b\u2028\u2029\u003c/script\u003e\u0026x�",
       "targets": [
         {
-          "key": "a\"\\\n\t\u0000\u001b\u2028\u003c/script\u003e�",
+          "key": "a\"\\\n\t\u0000\u001b\u2028\u2029\u003c/script\u003e\u0026�",
           "reasons": [
             {
               "code": "no-offering",
