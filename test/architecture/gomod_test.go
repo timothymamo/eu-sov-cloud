@@ -1,20 +1,16 @@
 package architecture_test
 
 import (
-	"strings"
+	"encoding/json"
+	"errors"
+	"io/fs"
+	"os"
+	"os/exec"
+	"path/filepath"
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
 )
-
-// replaceDirective is a replace directive a go.mod file holds.
-type replaceDirective struct {
-	// Line is the line of go.mod the directive is on, counted from 1.
-	Line int
-	// Text is the directive without its comment. A replace block's entries
-	// are reported one by one, as the directives they are.
-	Text string
-}
 
 // TestRootModuleHasNoReplace pins the auditor's M1 finding: a replace directive
 // in the root go.mod lets a fork or a local copy stand in for an import the
@@ -25,83 +21,76 @@ type replaceDirective struct {
 func TestRootModuleHasNoReplace(t *testing.T) {
 	t.Parallel()
 
-	goMod := readRepositoryFile(t, "go.mod")
-
-	for _, directive := range replaceDirectives(goMod) {
-		t.Errorf("go.mod:%d: %s: a replace directive puts code no rule vetted where an allow entry allows an import by prefix",
-			directive.Line, directive.Text)
+	for _, replace := range goModReplaces(t, repositoryRoot(t)) {
+		t.Errorf("go.mod holds the replace directive %s: it puts code no rule vetted where an allow entry allows an import by prefix",
+			replace)
 	}
 }
 
-// TestReplaceDirectives pins the parser TestRootModuleHasNoReplace trusts, over
-// go.mod text written here: a single-line replace directive, a block of them,
-// and the three lines that are none - a comment, a word a comment holds, and a
-// module path that merely holds the word.
-func TestReplaceDirectives(t *testing.T) {
+// TestGoModReplaces pins the check TestRootModuleHasNoReplace trusts, over
+// go.mod files written here: a single-line replace directive, a block of them,
+// a local directory in place of a module, and the three spellings a hand
+// scanner misses - a bare carriage return after the word, with and without a
+// block, and a CRLF file - all of which the go command reads as the directives
+// they are. The two lines that are none, a module path that merely holds the
+// word and a go.mod with no replace at all, hold none.
+func TestGoModReplaces(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
 		name  string
 		goMod string
-		want  []replaceDirective
+		want  []string
 	}{
 		{
 			name:  "a go.mod holding no replace directive holds none",
 			goMod: "module example.com/m\n\ngo 1.27.4\n\nrequire (\n\texample.com/lib v1.0.0\n)\n",
 		},
 		{
-			name:  "a single-line replace directive is found with its line",
-			goMod: "module example.com/m\n\nreplace example.com/lib => example.com/fork v1.2.3\n",
-			want:  []replaceDirective{{Line: 3, Text: "replace example.com/lib => example.com/fork v1.2.3"}},
+			name:  "a module path that merely holds the word is no directive",
+			goMod: "module example.com/m\n\nrequire example.com/replace v1.0.0\n",
 		},
 		{
-			name:  "a replace directive's trailing comment is not part of it",
-			goMod: "module example.com/m\n\nreplace example.com/lib => ./vendor/lib // pinned by hand\n",
-			want:  []replaceDirective{{Line: 3, Text: "replace example.com/lib => ./vendor/lib"}},
+			name:  "a single-line replace directive is found",
+			goMod: "module example.com/m\n\nreplace example.com/lib => example.com/fork v1.2.3\n",
+			want:  []string{"example.com/lib => example.com/fork v1.2.3"},
+		},
+		{
+			name:  "a local directory in place of a module is found",
+			goMod: "module example.com/m\n\nreplace example.com/lib => ../fork\n",
+			want:  []string{"example.com/lib => ../fork"},
 		},
 		{
 			name: "a replace block's directives are found one by one",
 			goMod: "module example.com/m\n\nreplace (\n\texample.com/lib => example.com/fork v1.2.3\n" +
 				"\texample.com/other => ../other\n)\n",
-			want: []replaceDirective{
-				{Line: 4, Text: "example.com/lib => example.com/fork v1.2.3"},
-				{Line: 5, Text: "example.com/other => ../other"},
+			want: []string{
+				"example.com/lib => example.com/fork v1.2.3",
+				"example.com/other => ../other",
 			},
 		},
 		{
-			name: "a replace block's comment is no directive and does not open a second block",
-			goMod: "module example.com/m\n\nreplace (\n\t// nothing is pinned by hand yet\n)\n\n" +
-				"require example.com/lib v1.0.0\n",
-		},
-		{
-			name: "a replace in a comment is no directive",
-			goMod: "module example.com/m\n\n// replace example.com/lib => example.com/fork v1.2.3\n" +
-				"//replace (\nrequire example.com/lib v1.0.0 // replace is only mentioned here\n",
-		},
-		{
-			name:  "a module path that merely holds the word is no directive",
-			goMod: "module example.com/m\n\nrequire example.com/replace v1.0.0\n",
-		},
-		{
-			// The go.mod lexer reads a bare carriage return as whitespace, so
-			// the go command applies this directive.
+			// The go.mod lexer reads a bare carriage return as whitespace,
+			// so the go command applies this directive.
 			name:  "a bare carriage return after the word does not hide a single-line replace",
 			goMod: "module example.com/m\n\nreplace\rexample.com/lib => example.com/fork v1.2.3\n",
-			want:  []replaceDirective{{Line: 3, Text: "replace example.com/lib => example.com/fork v1.2.3"}},
+			want:  []string{"example.com/lib => example.com/fork v1.2.3"},
 		},
 		{
+			// The same carriage return also separates the word from the
+			// parenthesis that opens the block.
 			name: "a bare carriage return after the word does not hide a replace block",
 			goMod: "module example.com/m\n\nreplace\r(\n\texample.com/lib => example.com/fork v1.2.3\n" +
 				"\texample.com/other => ../other\n)\n",
-			want: []replaceDirective{
-				{Line: 4, Text: "example.com/lib => example.com/fork v1.2.3"},
-				{Line: 5, Text: "example.com/other => ../other"},
+			want: []string{
+				"example.com/lib => example.com/fork v1.2.3",
+				"example.com/other => ../other",
 			},
 		},
 		{
 			name:  "a CRLF file's replace directive is found",
 			goMod: "module example.com/m\r\n\r\nreplace example.com/lib => example.com/fork v1.2.3\r\n",
-			want:  []replaceDirective{{Line: 3, Text: "replace example.com/lib => example.com/fork v1.2.3"}},
+			want:  []string{"example.com/lib => example.com/fork v1.2.3"},
 		},
 	}
 
@@ -109,78 +98,111 @@ func TestReplaceDirectives(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 
-			if diff := cmp.Diff(tc.want, replaceDirectives([]byte(tc.goMod))); diff != "" {
-				t.Errorf("replaceDirectives(-want +got):\n%s", diff)
+			dir := t.TempDir()
+
+			if err := os.WriteFile(filepath.Join(dir, "go.mod"), []byte(tc.goMod), 0o600); err != nil {
+				t.Fatalf("write go.mod: %v", err)
+			}
+
+			if diff := cmp.Diff(tc.want, goModReplaces(t, dir)); diff != "" {
+				t.Errorf("goModReplaces(-want +got):\n%s", diff)
 			}
 		})
 	}
 }
 
-// replaceDirectives returns the replace directives goMod holds: a single-line
-// one, and every directive of a replace (...) block. It reads go.mod's syntax
-// closely enough for a guard that fails on any replace directive: the first
-// word of a line names the directive, so require example.com/replace v1.0.0 is
-// no directive; // starts a comment, which runs to the end of its line, so
-// neither the line one starts nor the rest of a line one trails is read; and a
-// block ends at the line holding its closing parenthesis. A block's entries are
-// reported as the directives they are.
-//
-// Two forms it does not handle, neither of which a go command writes: a //
-// inside a quoted module path, which no real path holds, and a block whose
-// closing parenthesis shares a line with the last entry.
-func replaceDirectives(goMod []byte) []replaceDirective {
-	var (
-		found   []replaceDirective
-		inBlock bool
-	)
+// TestRepositoryHasNoWorkspaceOrVendor pins the reviewer's N2 finding and the
+// auditor's LOW one: a replace directive is not the only way to put unvetted
+// code where an allow entry allows an import by prefix. A committed vendor
+// directory wins over the module cache, and a go.work or go.work.sum file,
+// which .gitignore keeps out of git, makes a directory outside the module stand
+// in for a path under it. The release builds the main module alone, so none of
+// them may exist, tracked or untracked: the check reads the file system, not
+// git ls-files, because go.work is ignored and a force-added vendor directory
+// is what a look at git ls-files would not have to catch.
+func TestRepositoryHasNoWorkspaceOrVendor(t *testing.T) {
+	t.Parallel()
 
-	for i, raw := range strings.Split(string(goMod), "\n") {
-		line := strings.TrimSpace(commentless(raw))
-		if line == "" {
-			continue
-		}
+	root := repositoryRoot(t)
 
+	// vendor/ is a directory, so any one of them counts: a vendor directory
+	// holding no modules.txt is what a half-finished go mod vendor leaves
+	// behind, and a single go build -mod=vendor would read it.
+	for _, name := range []string{"go.work", "go.work.sum", "vendor"} {
+		_, err := os.Stat(filepath.Join(root, name))
 		switch {
-		case inBlock && line == ")":
-			inBlock = false
-		case inBlock:
-			found = append(found, replaceDirective{Line: i + 1, Text: line})
-		case !isReplaceDirective(line):
-		default:
-			if rest := strings.TrimSpace(line[len("replace"):]); rest == "(" {
-				inBlock = true
+		case err == nil:
+			t.Errorf("%s exists at the repository root: it puts code no rule vetted where an allow entry allows an import by prefix, and the release builds the main module alone",
+				name)
+		case !errors.Is(err, fs.ErrNotExist):
+			t.Errorf("stat %s: %v", name, err)
+		}
+	}
+}
 
-				continue
-			}
+// goModReplaces returns the replace directives the go command reads from the
+// go.mod in dir, each as "old => new" with the version of a module
+// replacement, in the order go.mod holds them. It asks the go command rather
+// than parsing the file: go.mod's lexer reads a bare carriage return as
+// whitespace, so replace\rexample.com/lib => ... and replace\r( + entries +
+// ) are directives the go command applies, and a hand scanner that reads only
+// a space, a tab or a parenthesis after the word reports neither.
+func goModReplaces(t *testing.T, dir string) []string {
+	t.Helper()
 
-			found = append(found, replaceDirective{Line: i + 1, Text: line})
+	cmd := exec.CommandContext(t.Context(), "go", "mod", "edit", "-json")
+	cmd.Dir = dir
+	// No toolchain, proxy or workspace of the developer's may decide what
+	// the go command reads: the guard is about the file, and the check runs
+	// offline.
+	cmd.Env = makeEnv(map[string]string{
+		"GOFLAGS":     "-mod=readonly",
+		"GOWORK":      "off",
+		"GOPROXY":     "off",
+		"GOTOOLCHAIN": "local",
+	})
+
+	out, err := cmd.Output()
+	if err != nil {
+		t.Fatalf("go mod edit -json in %s: %v", dir, err)
+	}
+
+	var parsed struct {
+		Replace []struct {
+			Old moduleRef
+			New moduleRef
 		}
 	}
 
-	return found
-}
-
-// isReplaceDirective reports whether line, trimmed and without its comment,
-// starts with the replace directive: the word alone, or the word followed by
-// the space, tab or parenthesis that separates it from what it holds. A word
-// the word only starts, as replacement, is no directive.
-func isReplaceDirective(line string) bool {
-	rest, ok := strings.CutPrefix(line, "replace")
-	if !ok {
-		return false
+	if err := json.Unmarshal(out, &parsed); err != nil {
+		t.Fatalf("decode go mod edit -json in %s: %v", dir, err)
 	}
 
-	if rest == "" {
-		return true
+	replaces := make([]string, 0, len(parsed.Replace))
+
+	for _, replace := range parsed.Replace {
+		replaces = append(replaces, replace.Old.String()+" => "+replace.New.String())
 	}
 
-	return rest[0] == ' ' || rest[0] == '\t' || rest[0] == '('
+	if len(replaces) == 0 {
+		return nil
+	}
+
+	return replaces
 }
 
-// commentless returns line without the comment it trails, and empty for a line
-// that is nothing but a comment.
-func commentless(line string) string {
-	text, _, _ := strings.Cut(line, "//")
+// moduleRef is a module path and, for a module replacement, the version it
+// names. A directory replacement names a path alone.
+type moduleRef struct {
+	Path    string
+	Version string
+}
 
-	return text
+// String renders the reference as go.mod writes it.
+func (ref moduleRef) String() string {
+	if ref.Version == "" {
+		return ref.Path
+	}
+
+	return ref.Path + " " + ref.Version
 }

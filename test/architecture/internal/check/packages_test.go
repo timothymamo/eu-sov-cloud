@@ -436,8 +436,9 @@ func TestPackages(t *testing.T) {
 			// exempt what a package no strict rule holds imports as well: the
 			// exempt set is seeded only by imports of packages the rules hold.
 			// smithy-go is flagged, as a third-party package no allowed import
-			// reaches; the package that imports it is in no directory the rules
-			// hold, so it stays placed and unflagged, as it is above.
+			// reaches; the package that imports it directly is one the rule
+			// excludes, so it is placed and unflagged, and no strict rule holds
+			// its import.
 			name:        "a package no strict rule holds cannot pull in the SDK's closure unreported",
 			rules:       sdkRulesWithExcludes,
 			pkgs:        []check.Package{awsImportsSDKPackage, sdkPackage, sdkDependency, inventoryfileImportsSDKClosure},
