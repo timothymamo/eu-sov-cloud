@@ -57,6 +57,12 @@
 // run --allow-serial-runners, and TestCILintMatrixCoversEveryReleaseTarget
 // wants only version and skip-cache in the golangci-lint step's with: block.
 //
+// TestCloudAdapterSDKRuleIsChecked pins that the SDK-only rule,
+// cloud-adapters-reach-the-cloud-through-the-sdk, is no skip (issue #79): the
+// check reads its SDK-root prefix entries, the two directories it excludes and
+// its test files, and TestCloudAdapterSDKRuleHoldsItsProbeForEveryReleaseTarget
+// fails a fixture adapter that imports net/http on every release platform.
+//
 // The checks are tests: they run in make test, make check and CI's make cover,
 // with no workflow of their own. They need no network and no credentials.
 package architecture

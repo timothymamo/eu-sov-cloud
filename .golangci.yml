@@ -72,8 +72,9 @@ linters:
         #
         # test/architecture reads every strict rule's files: and allow: lists
         # and checks the rule package by package (ADR 0012): write a strict
-        # rule's directories as "**/<dir>/**" with "!$test", or give it a
-        # reasoned skip there.
+        # rule's directories as "**/<dir>/**", whole directories it takes out
+        # as "!**/<dir>/**", and "!$test" unless it holds test files, or give
+        # it a reasoned skip there. An allow entry without $ is a prefix.
         #
         # test/architecture also pins every rule here whole
         # (TestDepguardRulesArePinned, issue #80): list-mode, files, allow and

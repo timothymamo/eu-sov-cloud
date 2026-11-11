@@ -222,11 +222,13 @@ hand-written GCP package, add an entry for it, a probe line only it refuses and 
 
 ### Gaps that remain
 
-- **No package check of the source adapters' imports.** `test/architecture` (ADR 0012) skips
-  `cloud-adapters-reach-the-cloud-through-the-sdk` (`skippedStrictRules`): its files cover every
-  directory under `internal/adapter/source` but two, and its allow list names SDK roots as prefixes,
-  neither of which a package-by-package list can say. depguard holds it, in `make lint` and CI, for
-  the host and every release target.
+- **Packages only a test imports are not placed.** `test/architecture` (ADR 0012) holds
+  `cloud-adapters-reach-the-cloud-through-the-sdk` package by package on every release target,
+  as depguard does in `make lint` and CI (issue #79): its SDK-root prefix entries, the two
+  directories it excludes and its test files, integration tests included. `go list -deps` lists
+  the imports of a held package's tests but not those imported packages themselves, so a package
+  only a test imports is checked against the test's allow list, not for its own module, directory
+  or non-Go sources.
 - **Files lint never loads**: a file behind a build tag other than `integration` and `e2e`, a
   `//go:build ignore` helper, and the `testdata`, `_` and `.` directories `./...` skips. `test/lint`
   fails on such a file, and on an imported package in such a directory. A main package there, run

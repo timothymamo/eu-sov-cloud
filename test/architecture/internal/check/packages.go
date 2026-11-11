@@ -31,6 +31,14 @@ type Package struct {
 	Module     *Module
 	Imports    []string
 
+	// The imports of the package's _test.go files: those of package p
+	// (TestImports) and those of the external test package p_test
+	// (XTestImports), for the files the build tags select. go list -deps
+	// fills them for the packages its patterns match; a package only a test
+	// imports is not itself listed.
+	TestImports  []string
+	XTestImports []string
+
 	// The sources other than Go files that go list reports: what they call,
 	// no import rule sees.
 	CgoFiles     []string
@@ -61,15 +69,23 @@ type listError struct {
 }
 
 // Rule holds the packages in one directory of the module, and every directory
-// below it, to an allow list of imports.
+// below it but those it excludes, to an allow list of imports.
 type Rule struct {
 	// Name is the depguard rule the allow list is read from, named in every
 	// message the rule earns.
 	Name string
 	// Dir is the directory, slash-separated and relative to the module root.
 	Dir string
-	// Allow are the import paths the packages may import, each exactly.
-	Allow []string
+	// Excludes are directories, written like Dir, that the rule does not
+	// hold, with every directory below them: the negated globs of its files:
+	// list.
+	Excludes []string
+	// Tests is set when the rule holds test files too: their imports
+	// (TestImports and XTestImports) are held to the allow list as well.
+	Tests bool
+	// Allow are the entries the imports are held to, each exact or a prefix
+	// as depguard reads it.
+	Allow []AllowEntry
 }
 
 // inheritedEnv are the variables go list takes from the environment the check
@@ -270,7 +286,14 @@ func decodePackages(r io.Reader) ([]Package, error) {
 //   - import nothing the allow list of any rule whose directory covers it does
 //     not hold. Every covering rule applies, not only the one with the longest
 //     directory, as depguard holds a file to every rule whose globs match it;
-//     each refusing rule earns its own message, naming the rule.
+//     each refusing rule earns its own message, naming the rule. A rule that
+//     holds test files holds the imports of the package's _test.go files too.
+//
+// A package under a directory a rule excludes is not held by that rule: it is
+// checked against the rules that do hold it, and when none does, it is still
+// placed (module, sources, directory) but neither its imports nor its being
+// outside every directory are reported, since the rule's files: list names
+// its directory, only to take it out.
 //
 // Unlike Sources, it flags a package outside the module path too: the
 // patterns it is given are the layers, so every package they reach outside
@@ -289,12 +312,16 @@ func Packages(root, module string, rules []Rule, pkgs []Package) []string {
 
 		rel, inModule := m.rel(pkg.ImportPath)
 
-		var covering []Rule
+		var (
+			covering []Rule
+			excluded bool
+		)
+
 		if inModule {
-			covering = rulesFor(rules, rel)
+			covering, excluded = rulesFor(rules, rel)
 		}
 
-		if len(covering) != 0 {
+		if len(covering) != 0 || excluded {
 			c.placement(m, rel)
 
 			for _, rule := range covering {
@@ -460,30 +487,73 @@ func (c *packageCheck) directory(m moduleRoot, rel string) {
 	}
 }
 
-// imports flags every import the rule's allow list does not hold.
+// imports flags every import the rule's allow list does not hold: the
+// package's own and, when the rule holds test files, its test files'. An
+// import named by more than one of them earns one message.
 func (c *packageCheck) imports(rule Rule) {
 	holder := "the allow list for " + rule.Dir
 	if rule.Name != "" {
 		holder = "the allow list of depguard rule " + rule.Name + " for " + rule.Dir
 	}
 
-	for _, imp := range c.pkg.Imports {
-		if !slices.Contains(rule.Allow, imp) {
-			c.report("imports %s, which %s does not hold", imp, holder)
+	type importGroup struct {
+		imports []string
+		where   string
+	}
+
+	groups := []importGroup{{imports: c.pkg.Imports}}
+
+	if rule.Tests {
+		groups = append(groups,
+			importGroup{imports: c.pkg.TestImports, where: " in a test file"},
+			importGroup{imports: c.pkg.XTestImports, where: " in an external test file"},
+		)
+	}
+
+	seen := make(map[string]bool)
+
+	for _, g := range groups {
+		for _, imp := range g.imports {
+			if seen[imp] {
+				continue
+			}
+
+			seen[imp] = true
+
+			if !slices.ContainsFunc(rule.Allow, func(e AllowEntry) bool { return e.allows(imp) }) {
+				c.report("imports %s%s, which %s does not hold", imp, g.where, holder)
+			}
 		}
 	}
 }
 
 // rulesFor returns every rule whose directory holds rel, a path relative to
-// the module, in the order of rules.
-func rulesFor(rules []Rule, rel string) []Rule {
-	var covering []Rule
+// the module, in the order of rules, and whether a rule whose directory covers
+// rel takes it out with one of its exclusions.
+func rulesFor(rules []Rule, rel string) ([]Rule, bool) {
+	var (
+		covering []Rule
+		excluded bool
+	)
 
 	for _, rule := range rules {
-		if rel == rule.Dir || strings.HasPrefix(rel, rule.Dir+"/") {
-			covering = append(covering, rule)
+		if !under(rel, rule.Dir) {
+			continue
 		}
+
+		if slices.ContainsFunc(rule.Excludes, func(dir string) bool { return under(rel, dir) }) {
+			excluded = true
+
+			continue
+		}
+
+		covering = append(covering, rule)
 	}
 
-	return covering
+	return covering, excluded
+}
+
+// under reports whether rel is dir or a directory below it.
+func under(rel, dir string) bool {
+	return rel == dir || strings.HasPrefix(rel, dir+"/")
 }

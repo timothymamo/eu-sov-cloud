@@ -6,7 +6,11 @@
 // cgo off or on and with a set of build tags, in an environment built from an
 // allow list so that nothing outside its arguments changes the listing.
 // Packages holds each package of the module to the allow list of every
-// depguard rule whose directory covers it; Sources holds every package of the
+// depguard rule whose directory covers it and does not exclude it, exact and
+// prefix entries read as depguard reads them, and, for a rule that holds test
+// files, the imports of its _test.go files too (issue #79). A package only a
+// test imports is not listed by go list -deps, so it is not placed itself.
+// Sources holds every package of the
 // module, layer or not, to the rules that do not depend on a rule: it must
 // belong to the main module, sit in the directory its import path names with
 // symlinks resolved, and hold no cgo, C, assembly or other non-Go source.
