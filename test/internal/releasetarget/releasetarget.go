@@ -1,16 +1,18 @@
-package check
+package releasetarget
 
 import (
 	"errors"
 	"fmt"
 	"slices"
 	"strings"
+
+	"github.com/timothymamo/eu-sov-cloud/test/internal/yamlread"
 )
 
-// ReleaseMain is the main package the release builds: ReleaseTargets refuses a
+// Main is the main package the release builds: Read refuses a
 // .goreleaser.yaml that builds another, and the repository test lists the
 // packages of the release binary from it.
-const ReleaseMain = "./cmd/eusov"
+const Main = "./cmd/eusov"
 
 // Target is one platform the release builds.
 type Target struct {
@@ -18,7 +20,7 @@ type Target struct {
 	GOARCH string
 }
 
-// ReleaseTargets returns the platforms a .goreleaser.yaml document builds: the
+// Read returns the platforms a .goreleaser.yaml document builds: the
 // goos x goarch product of its one build, sorted by GOOS then GOARCH.
 //
 // It fails closed, and holds the document to the keys the check knows cannot
@@ -41,8 +43,8 @@ type Target struct {
 //     and goarch must be non-empty lists of GOOS and GOARCH names, in flow
 //     ([a, b]) or block (- a) form. A template ({{) in goos, goarch or flags
 //     is refused.
-func ReleaseTargets(goreleaser []byte) ([]Target, error) {
-	lines, err := splitLines(goreleaser)
+func Read(goreleaser []byte) ([]Target, error) {
+	lines, err := yamlread.SplitLines(goreleaser)
 	if err != nil {
 		return nil, fmt.Errorf("read .goreleaser.yaml: %w", err)
 	}
@@ -52,7 +54,7 @@ func ReleaseTargets(goreleaser []byte) ([]Target, error) {
 		return nil, fmt.Errorf("read .goreleaser.yaml: %w", err)
 	}
 
-	builds, err := sequence(block)
+	builds, err := yamlread.Sequence(block)
 	if err != nil {
 		return nil, fmt.Errorf("read .goreleaser.yaml: builds: %w", err)
 	}
@@ -63,7 +65,7 @@ func ReleaseTargets(goreleaser []byte) ([]Target, error) {
 
 	targets, err := buildTargets(builds[0])
 	if err != nil {
-		return nil, fmt.Errorf("read .goreleaser.yaml: the build at line %d: %w", builds[0].num, err)
+		return nil, fmt.Errorf("read .goreleaser.yaml: the build at line %d: %w", builds[0].Num, err)
 	}
 
 	return targets, nil
@@ -71,16 +73,16 @@ func ReleaseTargets(goreleaser []byte) ([]Target, error) {
 
 // topLevel checks every top-level key of the document and returns the lines
 // of builds.
-func topLevel(lines []line) ([]line, error) {
-	entries, err := mapping(lines)
+func topLevel(lines []yamlread.Line) ([]yamlread.Line, error) {
+	entries, err := yamlread.Mapping(lines)
 	if err != nil {
 		return nil, err
 	}
 
-	var builds []line
+	var builds []yamlread.Line
 
 	for _, e := range entries {
-		switch e.key {
+		switch e.Key {
 		case "version", "project_name", "archives", "checksum", "changelog", "release":
 			// The format version, the project's name, and how the built
 			// binaries are packed, summed, announced and published: none
@@ -89,9 +91,9 @@ func topLevel(lines []line) ([]line, error) {
 		case "before":
 			err = checkBefore(e)
 		case "builds":
-			builds, err = blockValue(e, "builds")
+			builds, err = yamlread.BlockValue(e, "builds")
 		default:
-			err = fmt.Errorf("line %d: top-level key %s may change what the release compiles, and the check does not read it", e.num, e.key)
+			err = fmt.Errorf("line %d: top-level key %s may change what the release compiles, and the check does not read it", e.Num, e.Key)
 		}
 
 		if err != nil {
@@ -108,29 +110,29 @@ func topLevel(lines []line) ([]line, error) {
 
 // checkBefore refuses a before section that holds anything but the hook
 // go mod tidy.
-func checkBefore(before entry) error {
-	block, err := blockValue(before, "before")
+func checkBefore(before yamlread.Entry) error {
+	block, err := yamlread.BlockValue(before, "before")
 	if err != nil {
 		return err
 	}
 
-	entries, err := mapping(block)
+	entries, err := yamlread.Mapping(block)
 	if err != nil {
 		return fmt.Errorf("before: %w", err)
 	}
 
 	for _, e := range entries {
-		if e.key != "hooks" {
-			return fmt.Errorf("line %d: before: key %s may change what the release compiles, and the check does not read it", e.num, e.key)
+		if e.Key != "hooks" {
+			return fmt.Errorf("line %d: before: key %s may change what the release compiles, and the check does not read it", e.Num, e.Key)
 		}
 
-		hooks, err := list(e)
+		hooks, err := yamlread.List(e)
 		if err != nil {
 			return fmt.Errorf("before: %w", err)
 		}
 
 		if !slices.Equal(hooks, []string{"go mod tidy"}) {
-			return fmt.Errorf("line %d: before: hooks are %q, want exactly [go mod tidy]: a hook runs before the build and could rewrite what it compiles", e.num, hooks)
+			return fmt.Errorf("line %d: before: hooks are %q, want exactly [go mod tidy]: a hook runs before the build and could rewrite what it compiles", e.Num, hooks)
 		}
 	}
 
@@ -139,8 +141,8 @@ func checkBefore(before entry) error {
 
 // buildTargets returns the goos x goarch product of one build, sorted, after
 // checking every key the build holds.
-func buildTargets(build item) ([]Target, error) {
-	entries, err := mapping(build.lines)
+func buildTargets(build yamlread.Item) ([]Target, error) {
+	entries, err := yamlread.Mapping(build.Lines)
 	if err != nil {
 		return nil, err
 	}
@@ -151,22 +153,22 @@ func buildTargets(build item) ([]Target, error) {
 	)
 
 	for _, e := range entries {
-		switch e.key {
+		switch e.Key {
 		case "id", "binary", "ldflags":
 			// They name the build and its binary, and set link-time values:
 			// none selects the files a package compiles.
 		case "main":
-			mainPkg, err = single(e)
+			mainPkg, err = yamlread.Single(e)
 		case "env":
-			env, err = list(e)
+			env, err = yamlread.List(e)
 		case "flags":
-			flags, err = list(e)
+			flags, err = yamlread.List(e)
 		case "goos":
-			goos, err = list(e)
+			goos, err = yamlread.List(e)
 		case "goarch":
-			goarch, err = list(e)
+			goarch, err = yamlread.List(e)
 		default:
-			return nil, fmt.Errorf("line %d: key %s may change what the release compiles, and the check does not read it", e.num, e.key)
+			return nil, fmt.Errorf("line %d: key %s may change what the release compiles, and the check does not read it", e.Num, e.Key)
 		}
 
 		if err != nil {
@@ -174,8 +176,8 @@ func buildTargets(build item) ([]Target, error) {
 		}
 	}
 
-	if mainPkg != ReleaseMain {
-		return nil, fmt.Errorf("main is %q, want %s, the package the check lists as the release binary", mainPkg, ReleaseMain)
+	if mainPkg != Main {
+		return nil, fmt.Errorf("main is %q, want %s, the package the check lists as the release binary", mainPkg, Main)
 	}
 
 	if !slices.Equal(env, []string{"CGO_ENABLED=0"}) {

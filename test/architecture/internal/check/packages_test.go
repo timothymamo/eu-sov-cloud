@@ -8,6 +8,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/timothymamo/eu-sov-cloud/test/internal/releasetarget"
+
 	"github.com/google/go-cmp/cmp"
 
 	"github.com/timothymamo/eu-sov-cloud/test/architecture/internal/check"
@@ -708,7 +710,7 @@ func TestPackagesHoldTheTestFilesOfTheTestdataModule(t *testing.T) {
 
 			rules = append(rules, excludedSourceDirRule())
 
-			pkgs, err := check.ListPackages(t.Context(), root, check.Target{GOOS: "linux", GOARCH: "amd64"}, false, tc.tags, patterns...)
+			pkgs, err := check.ListPackages(t.Context(), root, releasetarget.Target{GOOS: "linux", GOARCH: "amd64"}, false, tc.tags, patterns...)
 			if err != nil {
 				t.Fatalf("ListPackages(%s, %v, tags=%v): %v", sourceProbeModule, patterns, tc.tags, err)
 			}

@@ -52,17 +52,27 @@
 // exclusion rule that drops forbidigo issues: it names forbidigo alone, its
 // text matches only one group's quoted msg, and the rules of each group are
 // exactly those it states: none for cloud-read-only, and for domain-is-pure
-// one path and one path-except.
+// one path and one path-except. It reads linters.exclusions.rules with
+// test/internal/yamlread, the strict line reader test/architecture reads
+// .golangci.yml with, so a rule written in a way it does not follow fails.
 //
 // TestLintLoadsEveryGoFile and TestLintVisitsEveryImportedPackage keep every
 // Go file within lint's reach. Lint loads, for the host and every release
 // target of .goreleaser.yaml, what builds with the tags e2e and integration,
 // and ./... skips testdata, _ and . directories, so a file behind another build
 // tag, or an imported package in a skipped directory, would run unchecked, with
-// real credentials in an integration test. The tests run the go command,
-// offline, for linux on amd64 only, so a file only for another release platform
-// fails TestLintLoadsEveryGoFile, though lint checks it, until the test lists
-// that platform too.
+// real credentials in an integration test. The tests run the go command
+// offline. TestLintLoadsEveryGoFile reads the release targets from
+// .goreleaser.yaml with test/internal/releasetarget, the reader
+// test/architecture holds the release to, and counts a file as loaded when the
+// go command loads it for any of them with cgo off and the baseline GOAMD64
+// and GOARM64 levels, as the release builds them; a file only for one release
+// platform passes, and a platform the release gains is one the test holds
+// files to. A file only a cgo build compiles is refused on purpose: the
+// release builds with CGO_ENABLED=0, and only the release targets count
+// toward loaded, not make lint's native run with cgo on, which the release
+// never ships. TestUnloadedGoFilesProbe pins
+// its helper on a probe module (testdata/platformprobe).
 //
 // TestNoInterfaceDeclaresACloudWrite and TestNoTypeHidesACloudSDKType close
 // what forbidigo's cloud-read-only group cannot see. An interface a cloud

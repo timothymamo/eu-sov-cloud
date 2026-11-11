@@ -12,7 +12,7 @@ import (
 
 	"github.com/google/go-cmp/cmp"
 
-	"github.com/timothymamo/eu-sov-cloud/test/architecture/internal/check"
+	"github.com/timothymamo/eu-sov-cloud/test/internal/releasetarget"
 )
 
 // ciMatrixEntry matches one entry of the lint-target matrix as the workflow
@@ -76,13 +76,13 @@ func TestCILintMatrixCoversEveryReleaseTarget(t *testing.T) {
 		t.Fatalf("read .goreleaser.yaml: %v", err)
 	}
 
-	targets, err := check.ReleaseTargets(goreleaser)
+	targets, err := releasetarget.Read(goreleaser)
 	if err != nil {
-		t.Fatalf("ReleaseTargets(.goreleaser.yaml): %v", err)
+		t.Fatalf("releasetarget.Read(.goreleaser.yaml): %v", err)
 	}
 
 	if len(targets) == 0 {
-		t.Fatal("ReleaseTargets(.goreleaser.yaml) returned no target, so this test would pin nothing")
+		t.Fatal("releasetarget.Read(.goreleaser.yaml) returned no target, so this test would pin nothing")
 	}
 
 	wantRelease := make([]string, 0, len(targets))

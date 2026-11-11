@@ -11,7 +11,9 @@
 // .goreleaser.yaml builds and how it publishes the GitHub release, the strict depguard rules of .golangci.yml, the
 // packages go list reports for the layers and for the release binary, and
 // every Go file under the root. The code lives in internal/check, so no
-// package outside test/architecture can import it.
+// package outside test/architecture can import it. The release platforms are
+// read by test/internal/releasetarget and the YAML by test/internal/yamlread,
+// which test/lint shares, so both packages read one list with one reader.
 //
 // Two of the tests hold the lint runs to the release platforms (issue #39).
 // TestMakeLintRunsEveryReleaseTarget runs make lint with a fake golangci-lint

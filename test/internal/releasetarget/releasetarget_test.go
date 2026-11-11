@@ -1,40 +1,42 @@
-package check_test
+package releasetarget_test
 
 import (
+	_ "embed"
 	"strings"
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
 
-	"github.com/timothymamo/eu-sov-cloud/test/architecture/internal/check"
+	"github.com/timothymamo/eu-sov-cloud/test/internal/releasetarget"
 )
 
 // The .goreleaser.yaml documents below are hand-written copies of this
-// repository's build, cut down to the keys ReleaseTargets reads. The build has
+// repository's build, cut down to the keys Read reads. The build has
 // one build, CGO_ENABLED=0, and three goos by two goarch: six platforms, which
 // is the list every case below compares against or breaks.
-const (
+//
+// buildFlow and buildReal live in testdata, as files: the tests of
+// test/architecture/internal/check add a release section to the same two
+// documents, so there is one copy of each to keep in step with the release.
+var (
 	// buildFlow writes the goos and goarch lists in flow form, as
 	// .goreleaser.yaml does.
-	buildFlow = `version: 2
+	//
+	//go:embed testdata/flow.goreleaser.yaml
+	buildFlow string
 
-project_name: eusov
+	// buildReal is a snapshot of the shape of this repository's
+	// .goreleaser.yaml: before hooks, archives, checksum and changelog around
+	// one build. It is not a copy of that file. The check may refuse a
+	// top-level key that could change what the release builds, so a document
+	// of this shape must stay accepted; test/architecture/repository_test.go
+	// checks the real .goreleaser.yaml itself.
+	//
+	//go:embed testdata/real.goreleaser.yaml
+	buildReal string
+)
 
-builds:
-  - id: eusov
-    main: ./cmd/eusov
-    binary: eusov
-    env:
-      - CGO_ENABLED=0
-    flags:
-      - -trimpath
-    goos: [linux, darwin, windows]
-    goarch: [amd64, arm64]
-
-archives:
-  - formats: [tar.gz]
-`
-
+const (
 	// buildBlock writes the same lists in block form.
 	buildBlock = `version: 2
 
@@ -63,48 +65,6 @@ builds:
     env: [CGO_ENABLED=0]
     goos: [linux, darwin, windows]
     goarch: [amd64, arm64]
-`
-
-	// buildReal is this repository's .goreleaser.yaml in the shape the release
-	// document really has: before hooks, archives, checksum and changelog
-	// around one build. The check may refuse a top-level key that could change
-	// what the release builds, so the document the release actually builds
-	// from must stay accepted, character for character.
-	buildReal = `version: 2
-
-project_name: eusov
-
-before:
-  hooks:
-    - go mod tidy
-
-builds:
-  - id: eusov
-    main: ./cmd/eusov
-    binary: eusov
-    env:
-      - CGO_ENABLED=0
-    flags:
-      - -trimpath
-    ldflags:
-      - -s -w
-      - -X github.com/timothymamo/eu-sov-cloud/internal/version.version={{ .Version }}
-      - -X github.com/timothymamo/eu-sov-cloud/internal/version.commit={{ .ShortCommit }}
-      - -X github.com/timothymamo/eu-sov-cloud/internal/version.date={{ .Date }}
-    goos: [linux, darwin, windows]
-    goarch: [amd64, arm64]
-
-archives:
-  - formats: [tar.gz]
-    format_overrides:
-      - goos: windows
-        formats: [zip]
-
-checksum:
-  name_template: checksums.txt
-
-changelog:
-  use: github
 `
 
 	// buildCgoOn turns cgo on: a release build that would link the host's C
@@ -350,6 +310,15 @@ func buildDoc(lines string) string {
 		"    goos: [linux, darwin, windows]\n    goarch: [amd64, arm64]\n"
 }
 
+// buildLists returns a .goreleaser.yaml with one build whose goos and goarch
+// lists are exactly the two lines given, each already indented under the
+// build's dash: for a case about a list itself rather than about the keys
+// around it.
+func buildLists(goos, goarch string) string {
+	return "version: 2\n\nbuilds:\n  - id: eusov\n    main: ./cmd/eusov\n    env:\n      - CGO_ENABLED=0\n" +
+		goos + "\n" + goarch + "\n"
+}
+
 // buildWithComment returns buildReal with comment added as a comment line
 // above project_name. The reader skips comments, so a character the check must
 // refuse is the only reason a case using it fails.
@@ -357,15 +326,15 @@ func buildWithComment(comment string) string {
 	return strings.Replace(buildReal, "project_name: eusov", comment+"\nproject_name: eusov", 1)
 }
 
-// TestReleaseTargets pins the platform list the release builds: every goos x
+// TestRead pins the platform list the release builds: every goos x
 // goarch pair of this repository's one build, sorted by GOOS then GOARCH, and
 // an error for every document the check cannot read the whole list from.
-func TestReleaseTargets(t *testing.T) {
+func TestRead(t *testing.T) {
 	t.Parallel()
 
 	// allSix is the goos x goarch product of buildFlow and buildBlock, sorted
 	// by GOOS then GOARCH.
-	allSix := []check.Target{
+	allSix := []releasetarget.Target{
 		{GOOS: "darwin", GOARCH: "amd64"},
 		{GOOS: "darwin", GOARCH: "arm64"},
 		{GOOS: "linux", GOARCH: "amd64"},
@@ -377,7 +346,7 @@ func TestReleaseTargets(t *testing.T) {
 	tests := []struct {
 		name       string
 		goreleaser string
-		want       []check.Target
+		want       []releasetarget.Target
 		wantErr    bool
 	}{
 		{
@@ -549,6 +518,20 @@ func TestReleaseTargets(t *testing.T) {
 			goreleaser: buildRepeatedGoos,
 			wantErr:    true,
 		},
+
+		// A ' #' starts a comment, and a comment runs to the end of the line:
+		// a closing bracket inside one does not close the list, so the document
+		// never says which platforms the release builds.
+		{
+			name:       "a goos flow list whose closing bracket sits in a comment is refused",
+			goreleaser: buildLists("    goos: [linux # ]", "    goarch: [amd64, arm64]"),
+			wantErr:    true,
+		},
+		{
+			name:       "a goarch flow list whose closing bracket sits in a comment is refused",
+			goreleaser: buildLists("    goos: [linux, darwin, windows]", "    goarch: [amd64 # ]"),
+			wantErr:    true,
+		},
 		{
 			name:       "an anchored env list is refused",
 			goreleaser: buildAnchoredEnv,
@@ -619,22 +602,22 @@ func TestReleaseTargets(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 
-			got, err := check.ReleaseTargets([]byte(tc.goreleaser))
+			got, err := releasetarget.Read([]byte(tc.goreleaser))
 
 			if tc.wantErr {
 				if err == nil {
-					t.Fatalf("ReleaseTargets() = %v, nil; want an error", got)
+					t.Fatalf("Read() = %v, nil; want an error", got)
 				}
 
 				return
 			}
 
 			if err != nil {
-				t.Fatalf("ReleaseTargets(): %v", err)
+				t.Fatalf("Read(): %v", err)
 			}
 
 			if diff := cmp.Diff(tc.want, got); diff != "" {
-				t.Errorf("ReleaseTargets() mismatch (-want +got):\n%s", diff)
+				t.Errorf("Read() mismatch (-want +got):\n%s", diff)
 			}
 		})
 	}

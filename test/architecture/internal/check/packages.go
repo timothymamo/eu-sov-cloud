@@ -14,6 +14,8 @@ import (
 	"runtime"
 	"slices"
 	"strings"
+
+	"github.com/timothymamo/eu-sov-cloud/test/internal/releasetarget"
 )
 
 // Module is the module a package belongs to, as go list reports it.
@@ -153,7 +155,7 @@ var inheritedEnv = []string{
 // It returns an error when the command fails, with its standard error, or
 // when any package it lists is incomplete or has an error of its own or in a
 // dependency.
-func ListPackages(ctx context.Context, dir string, target Target, cgo bool, tags []string, patterns ...string) ([]Package, error) {
+func ListPackages(ctx context.Context, dir string, target releasetarget.Target, cgo bool, tags []string, patterns ...string) ([]Package, error) {
 	args := []string{"list", "-deps"}
 	args = append(args, "-json="+strings.Join(listFields(reflect.TypeFor[listedPackage]()), ","))
 
@@ -186,7 +188,7 @@ func ListPackages(ctx context.Context, dir string, target Target, cgo bool, tags
 
 // listEnv returns the environment go list runs with in dir: the variables of
 // inheritedEnv that are set, PWD, and the settings the check fixes.
-func listEnv(dir string, target Target, cgo bool) ([]string, error) {
+func listEnv(dir string, target releasetarget.Target, cgo bool) ([]string, error) {
 	env := make([]string, 0, len(inheritedEnv)+8)
 
 	// os.LookupEnv ignores case on Windows, where PATH is often spelt Path.

@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"slices"
 	"strings"
+
+	"github.com/timothymamo/eu-sov-cloud/test/internal/yamlread"
 )
 
 // releaseWorkflowName is the one workflow that may publish: ReleaseWorkflow
@@ -41,7 +43,7 @@ func WorkflowPrivileges(name string, src []byte) []string {
 		return nil
 	}
 
-	lines, err := splitLines(src)
+	lines, err := yamlread.SplitLines(src)
 	if err != nil {
 		return []string{fmt.Sprintf("%s: read the workflow: %v", name, err)}
 	}
@@ -50,7 +52,7 @@ func WorkflowPrivileges(name string, src []byte) []string {
 		return []string{fmt.Sprintf("%s: the workflow is empty, so this check cannot tell what it may do", name)}
 	}
 
-	top, err := mapping(lines)
+	top, err := yamlread.Mapping(lines)
 	if err != nil {
 		return []string{fmt.Sprintf("%s: read the workflow: %v", name, err)}
 	}
@@ -60,7 +62,7 @@ func WorkflowPrivileges(name string, src []byte) []string {
 	declared := false
 
 	for _, e := range top {
-		switch e.key {
+		switch e.Key {
 		case "on":
 			messages = append(messages, tagTriggers(name, e)...)
 		case "permissions":
@@ -81,15 +83,15 @@ func WorkflowPrivileges(name string, src []byte) []string {
 
 // tagTriggers returns a message when e, the workflow's on:, holds a push: of
 // tags (or tags-ignore, which runs on every other tag), or one of tagEvents.
-func tagTriggers(name string, e entry) []string {
-	if e.value != "" {
+func tagTriggers(name string, e yamlread.Entry) []string {
+	if e.Value != "" {
 		// on: push or on: [push, pull_request]: a push of branches and tags
 		// alike.
-		events, err := list(e)
+		events, err := yamlread.List(e)
 		if err != nil {
 			var one string
 
-			one, err = single(e)
+			one, err = yamlread.Single(e)
 			events = []string{one}
 		}
 
@@ -98,48 +100,48 @@ func tagTriggers(name string, e entry) []string {
 		}
 
 		if slices.Contains(events, "push") {
-			return []string{fmt.Sprintf("%s: line %d: on: %s runs on a push of any tag; only %s may run on a tag", name, e.num, e.value, releaseWorkflowName)}
+			return []string{fmt.Sprintf("%s: line %d: on: %s runs on a push of any tag; only %s may run on a tag", name, e.Num, e.Value, releaseWorkflowName)}
 		}
 
 		for _, event := range events {
 			if slices.Contains(tagEvents, event) {
-				return []string{fmt.Sprintf("%s: line %d: on: %s runs on %s, which a tag may start; only %s may run on a tag", name, e.num, e.value, event, releaseWorkflowName)}
+				return []string{fmt.Sprintf("%s: line %d: on: %s runs on %s, which a tag may start; only %s may run on a tag", name, e.Num, e.Value, event, releaseWorkflowName)}
 			}
 		}
 
 		return nil
 	}
 
-	triggers, err := mapping(e.block)
+	triggers, err := yamlread.Mapping(e.Block)
 	if err != nil {
 		return []string{fmt.Sprintf("%s: read on: %v", name, err)}
 	}
 
 	for _, trigger := range triggers {
-		if slices.Contains(tagEvents, trigger.key) {
-			return []string{fmt.Sprintf("%s: line %d: on: %s runs the workflow for a tag; only %s may run on a tag", name, trigger.num, trigger.key, releaseWorkflowName)}
+		if slices.Contains(tagEvents, trigger.Key) {
+			return []string{fmt.Sprintf("%s: line %d: on: %s runs the workflow for a tag; only %s may run on a tag", name, trigger.Num, trigger.Key, releaseWorkflowName)}
 		}
 
-		if trigger.key != "push" {
+		if trigger.Key != "push" {
 			continue
 		}
 
-		if trigger.value != "" {
-			return []string{fmt.Sprintf("%s: line %d: on: push is %q, which this check does not read and which may run on a tag; only %s may run on a tag", name, trigger.num, trigger.value, releaseWorkflowName)}
+		if trigger.Value != "" {
+			return []string{fmt.Sprintf("%s: line %d: on: push is %q, which this check does not read and which may run on a tag; only %s may run on a tag", name, trigger.Num, trigger.Value, releaseWorkflowName)}
 		}
 
-		push, err := mapping(trigger.block)
+		push, err := yamlread.Mapping(trigger.Block)
 		if err != nil {
 			return []string{fmt.Sprintf("%s: read on: push: %v", name, err)}
 		}
 
 		if len(push) == 0 {
-			return []string{fmt.Sprintf("%s: line %d: on: push runs on a push of any tag; only %s may run on a tag", name, trigger.num, releaseWorkflowName)}
+			return []string{fmt.Sprintf("%s: line %d: on: push runs on a push of any tag; only %s may run on a tag", name, trigger.Num, releaseWorkflowName)}
 		}
 
 		for _, p := range push {
-			if p.key == "tags" || p.key == "tags-ignore" {
-				return []string{fmt.Sprintf("%s: line %d: on: push: %s runs the workflow on a tag; only %s may", name, p.num, p.key, releaseWorkflowName)}
+			if p.Key == "tags" || p.Key == "tags-ignore" {
+				return []string{fmt.Sprintf("%s: line %d: on: push: %s runs the workflow on a tag; only %s may", name, p.Num, p.Key, releaseWorkflowName)}
 			}
 		}
 	}
@@ -149,8 +151,8 @@ func tagTriggers(name string, e entry) []string {
 
 // jobPermissions returns a message for every publishing permission of every
 // job of e, the workflow's jobs:.
-func jobPermissions(name string, e entry) []string {
-	jobs, err := mapping(e.block)
+func jobPermissions(name string, e yamlread.Entry) []string {
+	jobs, err := yamlread.Mapping(e.Block)
 	if err != nil {
 		return []string{fmt.Sprintf("%s: read jobs: %v", name, err)}
 	}
@@ -158,16 +160,16 @@ func jobPermissions(name string, e entry) []string {
 	var messages []string
 
 	for _, job := range jobs {
-		keys, err := mapping(job.block)
+		keys, err := yamlread.Mapping(job.Block)
 		if err != nil {
-			messages = append(messages, fmt.Sprintf("%s: read jobs: %s: %v", name, job.key, err))
+			messages = append(messages, fmt.Sprintf("%s: read jobs: %s: %v", name, job.Key, err))
 
 			continue
 		}
 
 		for _, k := range keys {
-			if k.key == "permissions" {
-				messages = append(messages, publishingPermissions(name, k, "jobs: "+job.key+": permissions")...)
+			if k.Key == "permissions" {
+				messages = append(messages, publishingPermissions(name, k, "jobs: "+job.Key+": permissions")...)
 			}
 		}
 	}
@@ -177,23 +179,23 @@ func jobPermissions(name string, e entry) []string {
 
 // publishingPermissions returns a message for e, a permissions: at path,
 // when it is write-all or grants a publishing scope write.
-func publishingPermissions(name string, e entry, path string) []string {
-	if e.value != "" {
-		if len(e.block) != 0 {
-			return []string{fmt.Sprintf("%s: line %d: %s has a value on its line and lines below it", name, e.num, path)}
+func publishingPermissions(name string, e yamlread.Entry, path string) []string {
+	if e.Value != "" {
+		if len(e.Block) != 0 {
+			return []string{fmt.Sprintf("%s: line %d: %s has a value on its line and lines below it", name, e.Num, path)}
 		}
 
-		switch e.value {
+		switch e.Value {
 		case "{}", "read-all":
 			return nil
 		case "write-all":
-			return []string{fmt.Sprintf("%s: line %d: %s is write-all, which grants %s write; only %s may", name, e.num, path, strings.Join(publishingScopes, ", "), releaseWorkflowName)}
+			return []string{fmt.Sprintf("%s: line %d: %s is write-all, which grants %s write; only %s may", name, e.Num, path, strings.Join(publishingScopes, ", "), releaseWorkflowName)}
 		default:
-			return []string{fmt.Sprintf("%s: line %d: %s is %q, which this check does not read; write a block mapping", name, e.num, path, e.value)}
+			return []string{fmt.Sprintf("%s: line %d: %s is %q, which this check does not read; write a block mapping", name, e.Num, path, e.Value)}
 		}
 	}
 
-	scopes, err := mapping(e.block)
+	scopes, err := yamlread.Mapping(e.Block)
 	if err != nil {
 		return []string{fmt.Sprintf("%s: read %s: %v", name, path, err)}
 	}
@@ -201,7 +203,7 @@ func publishingPermissions(name string, e entry, path string) []string {
 	var messages []string
 
 	for _, scope := range scopes {
-		value, err := single(scope)
+		value, err := yamlread.Single(scope)
 		if err != nil {
 			messages = append(messages, fmt.Sprintf("%s: %s: %v", name, path, err))
 
@@ -209,8 +211,8 @@ func publishingPermissions(name string, e entry, path string) []string {
 		}
 
 		for _, publishing := range publishingScopes {
-			if scope.key == publishing && value != "read" && value != "none" {
-				messages = append(messages, fmt.Sprintf("%s: line %d: %s: %s is %s; only %s may publish to a registry, mint an OIDC identity or store attestations", name, scope.num, path, scope.key, value, releaseWorkflowName))
+			if scope.Key == publishing && value != "read" && value != "none" {
+				messages = append(messages, fmt.Sprintf("%s: line %d: %s: %s is %s; only %s may publish to a registry, mint an OIDC identity or store attestations", name, scope.Num, path, scope.Key, value, releaseWorkflowName))
 			}
 		}
 	}

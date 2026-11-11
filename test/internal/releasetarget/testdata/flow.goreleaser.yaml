@@ -1,0 +1,17 @@
+version: 2
+
+project_name: eusov
+
+builds:
+  - id: eusov
+    main: ./cmd/eusov
+    binary: eusov
+    env:
+      - CGO_ENABLED=0
+    flags:
+      - -trimpath
+    goos: [linux, darwin, windows]
+    goarch: [amd64, arm64]
+
+archives:
+  - formats: [tar.gz]

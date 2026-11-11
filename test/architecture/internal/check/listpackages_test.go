@@ -11,6 +11,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/timothymamo/eu-sov-cloud/test/internal/releasetarget"
+
 	"github.com/timothymamo/eu-sov-cloud/test/architecture/internal/check"
 )
 
@@ -117,7 +119,7 @@ func TestListPackagesIgnoresTheEnvironment(t *testing.T) {
 func assertNoSneakyImport(t *testing.T, dir string) {
 	t.Helper()
 
-	pkgs, err := check.ListPackages(t.Context(), dir, check.Target{GOOS: "linux", GOARCH: "amd64"}, false, nil, "./a")
+	pkgs, err := check.ListPackages(t.Context(), dir, releasetarget.Target{GOOS: "linux", GOARCH: "amd64"}, false, nil, "./a")
 	if err != nil {
 		t.Fatalf("ListPackages(%s, ./a): %v", dir, err)
 	}
@@ -139,7 +141,7 @@ func assertNoSneakyImport(t *testing.T, dir string) {
 func assertNoExperimentImport(t *testing.T, dir string) {
 	t.Helper()
 
-	pkgs, err := check.ListPackages(t.Context(), dir, check.Target{GOOS: "linux", GOARCH: "amd64"}, false, nil, "./b")
+	pkgs, err := check.ListPackages(t.Context(), dir, releasetarget.Target{GOOS: "linux", GOARCH: "amd64"}, false, nil, "./b")
 	if err != nil {
 		t.Fatalf("ListPackages(%s, ./b): %v", dir, err)
 	}
@@ -280,7 +282,7 @@ func TestListPackagesUsesTheTagsItIsGiven(t *testing.T) {
 
 	dir := fixtureDir(t, taggedModule)
 
-	pkgs, err := check.ListPackages(t.Context(), dir, check.Target{GOOS: "linux", GOARCH: "amd64"}, false, []string{"sneaky"}, "./a")
+	pkgs, err := check.ListPackages(t.Context(), dir, releasetarget.Target{GOOS: "linux", GOARCH: "amd64"}, false, []string{"sneaky"}, "./a")
 	if err != nil {
 		t.Fatalf("ListPackages(%s, ./a, tags=sneaky): %v", dir, err)
 	}
@@ -314,7 +316,7 @@ func TestListPackagesFetchesNothing(t *testing.T) {
 		t.Run(setting.name+" does not reach go list", func(t *testing.T) {
 			t.Setenv(setting.name, setting.value)
 
-			_, err := check.ListPackages(t.Context(), dir, check.Target{GOOS: "linux", GOARCH: "amd64"}, false, nil, "./p")
+			_, err := check.ListPackages(t.Context(), dir, releasetarget.Target{GOOS: "linux", GOARCH: "amd64"}, false, nil, "./p")
 			if err == nil {
 				t.Fatalf("ListPackages(%s, ./p) = nil error; want an error: no module provides example.invalid/dep", dir)
 			}
@@ -354,7 +356,7 @@ func TestListPackagesRefusesABrokenDependency(t *testing.T) {
 
 	dir := fixtureDir(t, brokenModule)
 
-	pkgs, err := check.ListPackages(t.Context(), dir, check.Target{GOOS: "linux", GOARCH: "amd64"}, false, nil, "./b")
+	pkgs, err := check.ListPackages(t.Context(), dir, releasetarget.Target{GOOS: "linux", GOARCH: "amd64"}, false, nil, "./b")
 	if err == nil {
 		t.Fatalf("ListPackages(%s, ./b) = %v, nil; want an error for an import no module provides", dir, importPaths(pkgs))
 	}

@@ -3,6 +3,8 @@ package check
 import (
 	"errors"
 	"fmt"
+
+	"github.com/timothymamo/eu-sov-cloud/test/internal/yamlread"
 )
 
 // GitHubRelease checks how a .goreleaser.yaml document publishes the GitHub
@@ -16,18 +18,18 @@ import (
 // default publishes every tag as a normal release, and so is any other key in
 // it: make_latest, for one, would override what prerelease: auto decides.
 func GitHubRelease(goreleaser []byte) error {
-	lines, err := splitLines(goreleaser)
+	lines, err := yamlread.SplitLines(goreleaser)
 	if err != nil {
 		return fmt.Errorf("read .goreleaser.yaml: %w", err)
 	}
 
-	entries, err := mapping(lines)
+	entries, err := yamlread.Mapping(lines)
 	if err != nil {
 		return fmt.Errorf("read .goreleaser.yaml: %w", err)
 	}
 
 	for _, e := range entries {
-		if e.key == "release" {
+		if e.Key == "release" {
 			if err := checkRelease(e); err != nil {
 				return fmt.Errorf("read .goreleaser.yaml: %w", err)
 			}
@@ -41,28 +43,28 @@ func GitHubRelease(goreleaser []byte) error {
 
 // checkRelease refuses a release section that holds anything but
 // prerelease: auto.
-func checkRelease(release entry) error {
-	block, err := blockValue(release, "release")
+func checkRelease(release yamlread.Entry) error {
+	block, err := yamlread.BlockValue(release, "release")
 	if err != nil {
 		return err
 	}
 
-	entries, err := mapping(block)
+	entries, err := yamlread.Mapping(block)
 	if err != nil {
 		return fmt.Errorf("release: %w", err)
 	}
 
-	if len(entries) != 1 || entries[0].key != "prerelease" {
-		return fmt.Errorf("line %d: release holds %d keys, want exactly prerelease: any other key may change which release GitHub shows as the latest", release.num, len(entries))
+	if len(entries) != 1 || entries[0].Key != "prerelease" {
+		return fmt.Errorf("line %d: release holds %d keys, want exactly prerelease: any other key may change which release GitHub shows as the latest", release.Num, len(entries))
 	}
 
-	value, err := single(entries[0])
+	value, err := yamlread.Single(entries[0])
 	if err != nil {
 		return fmt.Errorf("release: %w", err)
 	}
 
 	if value != "auto" {
-		return fmt.Errorf("line %d: release.prerelease is %q, want auto, so a pre-release tag is a GitHub pre-release", entries[0].num, value)
+		return fmt.Errorf("line %d: release.prerelease is %q, want auto, so a pre-release tag is a GitHub pre-release", entries[0].Num, value)
 	}
 
 	return nil

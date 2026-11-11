@@ -1,14 +1,15 @@
 package lint_test
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"slices"
-	"strconv"
-	"strings"
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
+
+	"github.com/timothymamo/eu-sov-cloud/test/internal/yamlread"
 )
 
 // forbidigoTags are the tags of forbidigo's groups, each of which starts the
@@ -85,11 +86,8 @@ func groupOfText(text string) (string, bool) {
 	return "", false
 }
 
-// exclusionRules reads linters.exclusions.rules from .golangci.yml line by
-// line, as every rule there is written: "- <key>: <scalar>" opens a rule at
-// six spaces, its other keys follow at eight, and linters is a block list at
-// ten. A line in the list that fits none of these fails the test, so a rule
-// written another way is not silently skipped.
+// exclusionRules reads linters.exclusions.rules from .golangci.yml under root
+// through parseExclusionRules, and fails the test when the file holds no rule.
 func exclusionRules(t *testing.T, root string) []exclusionRule {
 	t.Helper()
 
@@ -97,42 +95,9 @@ func exclusionRules(t *testing.T, root string) []exclusionRule {
 	if err != nil {
 		t.Fatal(err)
 	}
-	lines := strings.Split(string(config), "\n")
-	start := -1
-	for i := range lines {
-		if lines[i] == "    rules:" && sectionOf(lines, i) == "linters" && parentOf(lines, i) == "  exclusions:" {
-			start = i + 1
-			break
-		}
-	}
-	if start < 0 {
-		t.Fatal(".golangci.yml holds no linters.exclusions.rules")
-	}
-
-	var rules []exclusionRule
-	inLinters := false
-	for i := start; i < len(lines); i++ {
-		line := lines[i]
-		trimmed := strings.TrimSpace(line)
-		if trimmed == "" || strings.HasPrefix(trimmed, "#") {
-			continue
-		}
-		indent := len(line) - len(strings.TrimLeft(line, " "))
-		if indent < 6 {
-			break
-		}
-		switch {
-		case indent == 6 && strings.HasPrefix(trimmed, "- "):
-			rules = append(rules, exclusionRule{line: i + 1, fields: map[string]string{}})
-			inLinters = setRuleKey(t, &rules[len(rules)-1], i+1, strings.TrimPrefix(trimmed, "- "))
-		case indent == 8 && len(rules) > 0:
-			inLinters = setRuleKey(t, &rules[len(rules)-1], i+1, trimmed)
-		case indent == 10 && inLinters && strings.HasPrefix(trimmed, "- "):
-			r := &rules[len(rules)-1]
-			r.linters = append(r.linters, yamlScalar(t, i+1, strings.TrimPrefix(trimmed, "- ")))
-		default:
-			t.Fatalf(".golangci.yml:%d: an exclusion rule line test/lint cannot read: %q", i+1, line)
-		}
+	rules, err := parseExclusionRules(config)
+	if err != nil {
+		t.Fatalf("read .golangci.yml: %v", err)
 	}
 	if len(rules) == 0 {
 		t.Fatal(".golangci.yml holds no exclusion rule")
@@ -140,72 +105,245 @@ func exclusionRules(t *testing.T, root string) []exclusionRule {
 	return rules
 }
 
-// setRuleKey sets the key on line kv of rule r, and reports whether it opens
-// the linters list.
-func setRuleKey(t *testing.T, r *exclusionRule, line int, kv string) bool {
-	t.Helper()
-
-	key, value, ok := strings.Cut(kv, ":")
-	value = strings.TrimSpace(value)
-	if !ok || key == "" || strings.ContainsAny(key, " \t") {
-		t.Fatalf(".golangci.yml:%d: an exclusion rule line test/lint cannot read: %q", line, kv)
+// parseExclusionRules reads linters.exclusions.rules from doc, a whole
+// .golangci.yml, with the shared line reader of test/internal/yamlread, which
+// refuses what it does not follow rather than guess at it: every rule is a
+// block mapping of plain keys, each key's value one scalar on its line but
+// linters, a list of linter names in flow ([a, b]) or block (- a) form. A rule
+// written another way is an error, so it is never silently skipped.
+func parseExclusionRules(doc []byte) ([]exclusionRule, error) {
+	lines, err := yamlread.SplitLines(doc)
+	if err != nil {
+		return nil, err
 	}
-	if _, dup := r.fields[key]; dup || (key == "linters" && r.linters != nil) {
-		t.Fatalf(".golangci.yml:%d: exclusion rule key %s set twice", line, key)
+	block, err := yamlread.Walk(lines, "linters", "exclusions", "rules")
+	if err != nil {
+		return nil, err
 	}
-	if key == "linters" {
-		if value != "" {
-			t.Fatalf(".golangci.yml:%d: write linters as a block list, one linter a line", line)
-		}
-		r.linters = []string{}
-		return true
+	items, err := yamlread.Sequence(block)
+	if err != nil {
+		return nil, fmt.Errorf("linters: exclusions: rules: %w", err)
 	}
-	r.fields[key] = yamlScalar(t, line, value)
-	return false
-}
 
-// yamlScalar unquotes a single-quoted, double-quoted or plain YAML scalar.
-func yamlScalar(t *testing.T, line int, s string) string {
-	t.Helper()
-
-	switch {
-	case len(s) >= 2 && s[0] == '\'' && s[len(s)-1] == '\'':
-		return strings.ReplaceAll(s[1:len(s)-1], "''", "'")
-	case len(s) >= 2 && s[0] == '"' && s[len(s)-1] == '"':
-		v, err := strconv.Unquote(s)
+	rules := make([]exclusionRule, 0, len(items))
+	for _, it := range items {
+		r, err := exclusionRuleOf(it)
 		if err != nil {
-			t.Fatalf(".golangci.yml:%d: double-quoted scalar %s: %v", line, s, err)
+			return nil, err
 		}
-		return v
-	case s == "" || strings.ContainsAny(s[:1], `'"[{&*!|>%@`+"`") || strings.Contains(s, " #"):
-		t.Fatalf(".golangci.yml:%d: a scalar test/lint cannot read: %q", line, s)
+		rules = append(rules, r)
 	}
-	return s
+	return rules, nil
 }
 
-// sectionOf returns the top-level key above line i.
-func sectionOf(lines []string, i int) string {
-	for ; i >= 0; i-- {
-		if l := lines[i]; l != "" && l[0] != ' ' && l[0] != '#' {
-			return strings.TrimSuffix(l, ":")
-		}
+// exclusionRuleOf reads one entry of linters.exclusions.rules.
+func exclusionRuleOf(it yamlread.Item) (exclusionRule, error) {
+	entries, err := yamlread.Mapping(it.Lines)
+	if err != nil {
+		return exclusionRule{}, fmt.Errorf("line %d: an exclusion rule test/lint cannot read: %w", it.Num, err)
 	}
-	return ""
-}
+	if len(entries) == 0 {
+		return exclusionRule{}, fmt.Errorf("line %d: an empty exclusion rule", it.Num)
+	}
 
-// parentOf returns the nearest line above line i indented less than it, which
-// is not a comment.
-func parentOf(lines []string, i int) string {
-	indent := len(lines[i]) - len(strings.TrimLeft(lines[i], " "))
-	for j := i - 1; j >= 0; j-- {
-		l := lines[j]
-		trimmed := strings.TrimSpace(l)
-		if trimmed == "" || strings.HasPrefix(trimmed, "#") {
+	r := exclusionRule{line: it.Num, fields: map[string]string{}}
+	for _, e := range entries {
+		if e.Key == "linters" {
+			linters, err := yamlread.List(e)
+			if err != nil {
+				return exclusionRule{}, fmt.Errorf("line %d: exclusion rule linters: %w", e.Num, err)
+			}
+			// An empty list names no linter, so it drops every linter's
+			// issues, as a rule with no linters key does.
+			if len(linters) > 0 {
+				r.linters = linters
+			}
 			continue
 		}
-		if len(l)-len(strings.TrimLeft(l, " ")) < indent {
-			return l
+		value, err := yamlread.Single(e)
+		if err != nil {
+			return exclusionRule{}, fmt.Errorf("line %d: an exclusion rule key test/lint cannot read: %w", e.Num, err)
 		}
+		r.fields[e.Key] = value
 	}
-	return ""
+	return r, nil
+}
+
+// exclusionDoc returns a .golangci.yml whose linters.exclusions.rules hold the
+// lines rules, each already indented under the rules key: the keys
+// parseExclusionRules walks, so a case of TestParseExclusionRules below holds
+// nothing but the rules it is about. Its first rule starts on line 4.
+func exclusionDoc(rules string) string {
+	return "linters:\n  exclusions:\n    rules:\n" + rules
+}
+
+// exclusionDocTrailingKeys closes the rules block with a top-level key of its
+// own. A case whose one rule is a key with no value at all needs it: a rules
+// key with no entry below it is a document no caller accepts, so without a key
+// after the rules there would be nothing to read the empty entry from.
+const exclusionDocTrailingKeys = "\nissues:\n  max-issues-per-linter: 0\n"
+
+// TestParseExclusionRules pins parseExclusionRules, the seam that reads
+// linters.exclusions.rules from .golangci.yml: exclusionRules reads the file
+// and hands the document to it, so a rule no test reads from disk is still
+// read here.
+//
+// golangci-lint matches a rule that names no linter against every linter, so an
+// empty linters list must never be read as "not a forbidigo rule". It is read
+// as a rule that names no linter (nil linters), not as an error: the reader
+// says what the document says, and TestForbidigoExclusionsDropOneGroup is what
+// rejects such a rule, with a message that says why.
+//
+// Every other way of writing a rule that this reader does not follow is an
+// error rather than a guess, so a rule is never silently skipped: a repeated
+// key, an upper-case key, a block scalar, a double-quoted text with an escape,
+// an anchor or an alias, a single-quoted text that doubles a quote to escape
+// it (which YAML would unescape, and this reader refuses to decode), and a
+// closing bracket inside a comment, which a comment swallows.
+func TestParseExclusionRules(t *testing.T) {
+	t.Parallel()
+
+	// ruleLine is the line of the one rule of a document exclusionDoc builds.
+	const ruleLine = 4
+
+	tests := []struct {
+		name    string
+		config  string
+		want    []exclusionRule
+		wantErr bool
+	}{
+		{
+			name:   "a linters list in block form names its one linter",
+			config: exclusionDoc("      - linters:\n          - forbidigo\n"),
+			want: []exclusionRule{{
+				line:    ruleLine,
+				fields:  map[string]string{},
+				linters: []string{"forbidigo"},
+			}},
+		},
+		{
+			name:   "a linters list in flow form names every linter in it, in order",
+			config: exclusionDoc("      - linters: [forbidigo, gosec]\n"),
+			want: []exclusionRule{{
+				line:    ruleLine,
+				fields:  map[string]string{},
+				linters: []string{"forbidigo", "gosec"},
+			}},
+		},
+		{
+			name: "a rule reads every key and the linters together",
+			config: exclusionDoc(`      - linters: [forbidigo]
+        path: _test\.go$
+        text: 'because "domain-is-pure: [^"]*"$'
+`),
+			want: []exclusionRule{{
+				line: ruleLine,
+				fields: map[string]string{
+					"path": `_test\.go$`,
+					"text": `because "domain-is-pure: [^"]*"$`,
+				},
+				linters: []string{"forbidigo"},
+			}},
+		},
+
+		// A rule that names no linter matches every linter's issues, forbidigo's
+		// included: the reader reports it as naming none, never as a rule that
+		// names one or as no rule at all.
+		{
+			name:   "an empty linters flow list names no linter",
+			config: exclusionDoc("      - linters: []\n"),
+			want: []exclusionRule{{
+				line:   ruleLine,
+				fields: map[string]string{},
+			}},
+		},
+		{
+			name:   "an empty linters key names no linter",
+			config: exclusionDoc("      - linters:\n") + exclusionDocTrailingKeys,
+			want: []exclusionRule{{
+				line:   ruleLine,
+				fields: map[string]string{},
+			}},
+		},
+		{
+			name:   "a rule with no linters key names no linter",
+			config: exclusionDoc("      - path: _test\\.go$\n"),
+			want: []exclusionRule{{
+				line:   ruleLine,
+				fields: map[string]string{"path": `_test\.go$`},
+			}},
+		},
+
+		// Every other way of writing a rule is refused, not guessed at.
+		{
+			name:    "a repeated key is an error",
+			config:  exclusionDoc("      - linters: [forbidigo]\n        text: 'a'\n        text: 'b'\n"),
+			wantErr: true,
+		},
+		{
+			name:    "an upper-case key is an error",
+			config:  exclusionDoc("      - linters: [forbidigo]\n        Text: 'a'\n"),
+			wantErr: true,
+		},
+		{
+			name:    "a literal block scalar text is an error",
+			config:  exclusionDoc("      - linters: [forbidigo]\n        text: |\n          because a tag: x$\n"),
+			wantErr: true,
+		},
+		{
+			name: "a double-quoted text with an escape is an error",
+			config: exclusionDoc(`      - linters: [forbidigo]
+        text: "because \"x\"$"
+`),
+			wantErr: true,
+		},
+		{
+			name:    "an anchored text is an error",
+			config:  exclusionDoc("      - linters: [forbidigo]\n        text: &t 'a'\n"),
+			wantErr: true,
+		},
+		{
+			name:    "an aliased text is an error",
+			config:  exclusionDoc("      - linters: [forbidigo]\n        text: *t\n"),
+			wantErr: true,
+		},
+		{
+			// YAML reads 'it''s' as it's; this reader refuses to decode the
+			// escape rather than keep the quotes it does not decode.
+			name:    "a single-quoted text with '' escaping is an error",
+			config:  exclusionDoc("      - linters: [forbidigo]\n        text: 'it''s'\n"),
+			wantErr: true,
+		},
+		{
+			// A comment runs to the end of the line, so the bracket in it does
+			// not close the list.
+			name:    "a bracket in a comment inside a linters flow list is an error",
+			config:  exclusionDoc("      - linters: [forbidigo # ]\n"),
+			wantErr: true,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			got, err := parseExclusionRules([]byte(tc.config))
+
+			if tc.wantErr {
+				if err == nil {
+					t.Fatalf("parseExclusionRules() = %v, nil; want an error", got)
+				}
+
+				return
+			}
+
+			if err != nil {
+				t.Fatalf("parseExclusionRules(): %v", err)
+			}
+
+			if diff := cmp.Diff(tc.want, got, cmp.AllowUnexported(exclusionRule{})); diff != "" {
+				t.Errorf("parseExclusionRules() mismatch (-want +got):\n%s", diff)
+			}
+		})
+	}
 }

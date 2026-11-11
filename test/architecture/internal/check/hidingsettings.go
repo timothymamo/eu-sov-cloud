@@ -5,6 +5,8 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+
+	"github.com/timothymamo/eu-sov-cloud/test/internal/yamlread"
 )
 
 // architectureLinters are the linters the architecture rules depend on:
@@ -107,19 +109,19 @@ var exclusionsPresets = []string{"comments", "std-error-handling", "common-false
 // It fails closed: an error wherever the line reader refuses the document, and
 // wherever a setting it reads is not the shape it expects.
 func HidingSettings(golangci []byte) ([]string, error) {
-	lines, err := splitLines(golangci)
+	lines, err := yamlread.SplitLines(golangci)
 	if err != nil {
 		return nil, fmt.Errorf("read .golangci.yml: %w", err)
 	}
 
-	top, err := mapping(lines)
+	top, err := yamlread.Mapping(lines)
 	if err != nil {
 		return nil, fmt.Errorf("read .golangci.yml: %w", err)
 	}
 
 	var messages []string
 
-	for _, read := range []func([]entry) ([]string, error){topSettings, runSettings, issuesSettings, lintersSettings} {
+	for _, read := range []func([]yamlread.Entry) ([]string, error){topSettings, runSettings, issuesSettings, lintersSettings} {
 		found, err := read(top)
 		if err != nil {
 			return nil, err
@@ -132,10 +134,10 @@ func HidingSettings(golangci []byte) ([]string, error) {
 }
 
 // child returns the entry of entries with key, if any.
-func child(entries []entry, key string) (entry, bool) {
-	i := slices.IndexFunc(entries, func(e entry) bool { return e.key == key })
+func child(entries []yamlread.Entry, key string) (yamlread.Entry, bool) {
+	i := slices.IndexFunc(entries, func(e yamlread.Entry) bool { return e.Key == key })
 	if i < 0 {
-		return entry{}, false
+		return yamlread.Entry{}, false
 	}
 
 	return entries[i], true
@@ -143,18 +145,18 @@ func child(entries []entry, key string) (entry, bool) {
 
 // childMapping returns the block mapping below the entry of entries with key,
 // with false when there is no such entry.
-func childMapping(entries []entry, key, path string) ([]entry, bool, error) {
+func childMapping(entries []yamlread.Entry, key, path string) ([]yamlread.Entry, bool, error) {
 	e, ok := child(entries, key)
 	if !ok {
 		return nil, false, nil
 	}
 
-	block, err := blockValue(e, path)
+	block, err := yamlread.BlockValue(e, path)
 	if err != nil {
 		return nil, false, fmt.Errorf("read %s: %w", path, err)
 	}
 
-	m, err := mapping(block)
+	m, err := yamlread.Mapping(block)
 	if err != nil {
 		return nil, false, fmt.Errorf("read %s: %w", path, err)
 	}
@@ -164,12 +166,12 @@ func childMapping(entries []entry, key, path string) ([]entry, bool, error) {
 
 // unknownKeys returns a message for every entry whose key is not in known,
 // naming it as prefix followed by the key.
-func unknownKeys(entries []entry, known []string, prefix string) []string {
+func unknownKeys(entries []yamlread.Entry, known []string, prefix string) []string {
 	var messages []string
 
 	for _, e := range entries {
-		if !slices.Contains(known, e.key) {
-			messages = append(messages, fmt.Sprintf("line %d: %s%s is a setting this check does not know, so it may hide issues: remove it, or teach the check what it does", e.num, prefix, e.key))
+		if !slices.Contains(known, e.Key) {
+			messages = append(messages, fmt.Sprintf("line %d: %s%s is a setting this check does not know, so it may hide issues: remove it, or teach the check what it does", e.Num, prefix, e.Key))
 		}
 	}
 
@@ -178,7 +180,7 @@ func unknownKeys(entries []entry, known []string, prefix string) []string {
 
 // topSettings refuses a top-level key the check does not know and a version
 // that is missing or not "2".
-func topSettings(top []entry) ([]string, error) {
+func topSettings(top []yamlread.Entry) ([]string, error) {
 	messages := unknownKeys(top, topKeys, "")
 
 	e, ok := child(top, "version")
@@ -186,13 +188,13 @@ func topSettings(top []entry) ([]string, error) {
 		return append(messages, `version is missing, so the document may hold settings in a shape this check does not read: set it to "2"`), nil
 	}
 
-	value, err := single(e)
+	value, err := yamlread.Single(e)
 	if err != nil {
 		return nil, fmt.Errorf("read version: %w", err)
 	}
 
 	if value != "2" {
-		messages = append(messages, fmt.Sprintf(`line %d: version is %s, so the document may hold settings in a shape this check does not read: set it to "2"`, e.num, value))
+		messages = append(messages, fmt.Sprintf(`line %d: version is %s, so the document may hold settings in a shape this check does not read: set it to "2"`, e.Num, value))
 	}
 
 	return messages, nil
@@ -201,7 +203,7 @@ func topSettings(top []entry) ([]string, error) {
 // runSettings refuses a run key the check does not know, a run.tests that is
 // not true, which keeps every linter, depguard and forbidigo among them, from
 // every _test.go file, and a run.issues-exit-code outside 1..125.
-func runSettings(top []entry) ([]string, error) {
+func runSettings(top []yamlread.Entry) ([]string, error) {
 	run, ok, err := childMapping(top, "run", "run")
 	if err != nil || !ok {
 		return nil, err
@@ -210,24 +212,24 @@ func runSettings(top []entry) ([]string, error) {
 	messages := unknownKeys(run, runKeys, "run.")
 
 	if e, ok := child(run, "tests"); ok {
-		value, err := single(e)
+		value, err := yamlread.Single(e)
 		if err != nil {
 			return nil, fmt.Errorf("read run.tests: %w", err)
 		}
 
 		if value != "true" {
-			messages = append(messages, fmt.Sprintf("line %d: run.tests is %s, which keeps %s from every test file: remove it or set it to true", e.num, value, linterNames()))
+			messages = append(messages, fmt.Sprintf("line %d: run.tests is %s, which keeps %s from every test file: remove it or set it to true", e.Num, value, linterNames()))
 		}
 	}
 
 	if e, ok := child(run, "issues-exit-code"); ok {
-		value, err := single(e)
+		value, err := yamlread.Single(e)
 		if err != nil {
 			return nil, fmt.Errorf("read run.issues-exit-code: %w", err)
 		}
 
 		if code, err := strconv.Atoi(value); err != nil || code < 1 || code > 125 {
-			messages = append(messages, fmt.Sprintf("line %d: run.issues-exit-code is %s, outside Go's portable exit range 1..125, and a value that wraps to 0 lets lint exit 0 while it prints issues: remove it or set it to 1", e.num, value))
+			messages = append(messages, fmt.Sprintf("line %d: run.issues-exit-code is %s, outside Go's portable exit range 1..125, and a value that wraps to 0 lets lint exit 0 while it prints issues: remove it or set it to 1", e.Num, value))
 		}
 	}
 
@@ -236,7 +238,7 @@ func runSettings(top []entry) ([]string, error) {
 
 // issuesSettings refuses every issues key that is not set to a value that
 // reports every issue, and every key it does not know.
-func issuesSettings(top []entry) ([]string, error) {
+func issuesSettings(top []yamlread.Entry) ([]string, error) {
 	issues, ok, err := childMapping(top, "issues", "issues")
 	if err != nil || !ok {
 		return nil, err
@@ -245,26 +247,26 @@ func issuesSettings(top []entry) ([]string, error) {
 	var messages []string
 
 	for _, e := range issues {
-		allowed, known := issuesAllowed[e.key]
+		allowed, known := issuesAllowed[e.Key]
 		if !known {
-			messages = append(messages, unknownKeys([]entry{e}, nil, "issues.")...)
+			messages = append(messages, unknownKeys([]yamlread.Entry{e}, nil, "issues.")...)
 
 			continue
 		}
 
 		if allowed == nil {
-			messages = append(messages, fmt.Sprintf("line %d: issues.%s reports only some of the issues lint finds: remove it", e.num, e.key))
+			messages = append(messages, fmt.Sprintf("line %d: issues.%s reports only some of the issues lint finds: remove it", e.Num, e.Key))
 
 			continue
 		}
 
-		value, err := single(e)
+		value, err := yamlread.Single(e)
 		if err != nil {
-			return nil, fmt.Errorf("read issues.%s: %w", e.key, err)
+			return nil, fmt.Errorf("read issues.%s: %w", e.Key, err)
 		}
 
 		if !slices.Contains(allowed, value) {
-			messages = append(messages, fmt.Sprintf("line %d: issues.%s is %s, which reports only some of the issues lint finds: remove it or set it to %s", e.num, e.key, value, allowed[0]))
+			messages = append(messages, fmt.Sprintf("line %d: issues.%s is %s, which reports only some of the issues lint finds: remove it or set it to %s", e.Num, e.Key, value, allowed[0]))
 		}
 	}
 
@@ -275,7 +277,7 @@ func issuesSettings(top []entry) ([]string, error) {
 // linters.default other than standard or all, depguard or forbidigo missing
 // from linters.enable or in linters.disable, and the exclusions that hide
 // issues.
-func lintersSettings(top []entry) ([]string, error) {
+func lintersSettings(top []yamlread.Entry) ([]string, error) {
 	lintersEntry, ok := child(top, "linters")
 	if !ok {
 		return []string{
@@ -292,13 +294,13 @@ func lintersSettings(top []entry) ([]string, error) {
 	messages := unknownKeys(linters, lintersKeys, "linters.")
 
 	if e, ok := child(linters, "default"); ok {
-		value, err := single(e)
+		value, err := yamlread.Single(e)
 		if err != nil {
 			return nil, fmt.Errorf("read linters.default: %w", err)
 		}
 
 		if !slices.Contains(lintersDefaults, value) {
-			messages = append(messages, fmt.Sprintf("line %d: linters.default is %s, which may leave out linters the standard set runs: use standard or all", e.num, value))
+			messages = append(messages, fmt.Sprintf("line %d: linters.default is %s, which may leave out linters the standard set runs: use standard or all", e.Num, value))
 		}
 	}
 
@@ -318,17 +320,17 @@ func lintersSettings(top []entry) ([]string, error) {
 	for _, linter := range architectureLinters {
 		switch {
 		case !hasEnable:
-			messages = append(messages, fmt.Sprintf("line %d: linters.enable is missing, so %s never runs", lintersEntry.num, linter))
+			messages = append(messages, fmt.Sprintf("line %d: linters.enable is missing, so %s never runs", lintersEntry.Num, linter))
 		case !slices.Contains(enabled, linter):
-			messages = append(messages, fmt.Sprintf("line %d: linters.enable does not list %s, so %s never runs", enableEntry.num, linter, linter))
+			messages = append(messages, fmt.Sprintf("line %d: linters.enable does not list %s, so %s never runs", enableEntry.Num, linter, linter))
 		}
 
 		if slices.Contains(disabled, linter) {
-			messages = append(messages, fmt.Sprintf("line %d: linters.disable lists %s, so %s never runs", disableEntry.num, linter, linter))
+			messages = append(messages, fmt.Sprintf("line %d: linters.disable lists %s, so %s never runs", disableEntry.Num, linter, linter))
 		}
 	}
 
-	exclusions, err := exclusionsSettings(lintersEntry.num, linters)
+	exclusions, err := exclusionsSettings(lintersEntry.Num, linters)
 	if err != nil {
 		return nil, err
 	}
@@ -337,13 +339,13 @@ func lintersSettings(top []entry) ([]string, error) {
 }
 
 // optionalList reads the list at key of entries, nil when there is none.
-func optionalList(entries []entry, key, path string) ([]string, error) {
+func optionalList(entries []yamlread.Entry, key, path string) ([]string, error) {
 	e, ok := child(entries, key)
 	if !ok {
 		return nil, nil
 	}
 
-	values, err := list(e)
+	values, err := yamlread.List(e)
 	if err != nil {
 		return nil, fmt.Errorf("read %s: %w", path, err)
 	}
@@ -356,7 +358,7 @@ func optionalList(entries []entry, key, path string) ([]string, error) {
 // or a key of linters.exclusions it does not know, and the rules that hide
 // issues of depguard or forbidigo. lintersLine is the line of the linters key,
 // for the message when linters.exclusions is missing.
-func exclusionsSettings(lintersLine int, linters []entry) ([]string, error) {
+func exclusionsSettings(lintersLine int, linters []yamlread.Entry) ([]string, error) {
 	exclusionsEntry, ok := child(linters, "exclusions")
 	if !ok {
 		return []string{generatedMessage(lintersLine, generatedMissing)}, nil
@@ -370,41 +372,41 @@ func exclusionsSettings(lintersLine int, linters []entry) ([]string, error) {
 	messages := unknownKeys(exclusions, exclusionsKeys, "linters.exclusions.")
 
 	if _, ok := child(exclusions, "generated"); !ok {
-		messages = append(messages, generatedMessage(exclusionsEntry.num, generatedMissing))
+		messages = append(messages, generatedMessage(exclusionsEntry.Num, generatedMissing))
 	}
 
 	for _, e := range exclusions {
-		path := "linters.exclusions." + e.key
+		path := "linters.exclusions." + e.Key
 
-		switch e.key {
+		switch e.Key {
 		case "generated":
-			value, err := single(e)
+			value, err := yamlread.Single(e)
 			if err != nil {
 				return nil, fmt.Errorf("read %s: %w", path, err)
 			}
 
 			if value != "disable" {
-				messages = append(messages, generatedMessage(e.num, "is "+value))
+				messages = append(messages, generatedMessage(e.Num, "is "+value))
 			}
 		case "presets":
-			values, err := list(e)
+			values, err := yamlread.List(e)
 			if err != nil {
 				return nil, fmt.Errorf("read %s: %w", path, err)
 			}
 
 			for _, preset := range values {
 				if !slices.Contains(exclusionsPresets, preset) {
-					messages = append(messages, fmt.Sprintf("line %d: %s holds %s, a preset this check does not know, so it may hide issues: remove it", e.num, path, preset))
+					messages = append(messages, fmt.Sprintf("line %d: %s holds %s, a preset this check does not know, so it may hide issues: remove it", e.Num, path, preset))
 				}
 			}
 		case "paths", "paths-except":
-			values, err := list(e)
+			values, err := yamlread.List(e)
 			if err != nil {
 				return nil, fmt.Errorf("read %s: %w", path, err)
 			}
 
 			if len(values) != 0 {
-				messages = append(messages, fmt.Sprintf("line %d: %s drops every issue of every linter, %s included, in the files it selects: exclude by rule, for named linters", e.num, path, linterNames()))
+				messages = append(messages, fmt.Sprintf("line %d: %s drops every issue of every linter, %s included, in the files it selects: exclude by rule, for named linters", e.Num, path, linterNames()))
 			}
 		case "rules":
 			found, err := exclusionRules(e)
@@ -433,16 +435,16 @@ func generatedHides() string {
 
 // exclusionRules refuses every linters.exclusions.rules entry that drops
 // depguard's issues or every forbidigo issue on its path.
-func exclusionRules(e entry) ([]string, error) {
+func exclusionRules(e yamlread.Entry) ([]string, error) {
 	const path = "linters.exclusions.rules"
 
 	// blockValue would refuse an empty block too, where an empty rules key is
 	// an empty list and hides nothing, so only its first check is repeated.
-	if e.value != "" {
-		return nil, fmt.Errorf("line %d: %s has %q on its own line, want a block below it", e.num, path, e.value)
+	if e.Value != "" {
+		return nil, fmt.Errorf("line %d: %s has %q on its own line, want a block below it", e.Num, path, e.Value)
 	}
 
-	items, err := sequence(e.block)
+	items, err := yamlread.Sequence(e.Block)
 	if err != nil {
 		return nil, fmt.Errorf("read %s: %w", path, err)
 	}
@@ -450,12 +452,12 @@ func exclusionRules(e entry) ([]string, error) {
 	var messages []string
 
 	for _, it := range items {
-		fields, err := mapping(it.lines)
+		fields, err := yamlread.Mapping(it.Lines)
 		if err != nil {
-			return nil, fmt.Errorf("line %d: read an entry of %s: %w", it.num, path, err)
+			return nil, fmt.Errorf("line %d: read an entry of %s: %w", it.Num, path, err)
 		}
 
-		found, err := exclusionRule(it.num, fields)
+		found, err := exclusionRule(it.Num, fields)
 		if err != nil {
 			return nil, err
 		}
@@ -471,16 +473,16 @@ func exclusionRules(e entry) ([]string, error) {
 // one, names no linter or holds a key this check does not know. It refuses
 // only a missing or empty text: test/lint (TestForbidigoExclusionsDropOneGroup)
 // pins the exact form a forbidigo text must have.
-func exclusionRule(num int, fields []entry) ([]string, error) {
+func exclusionRule(num int, fields []yamlread.Entry) ([]string, error) {
 	const path = "linters.exclusions.rules"
 
 	var messages []string
 
 	for _, f := range fields {
-		switch f.key {
+		switch f.Key {
 		case "path", "path-except", "text", "source", "linters":
 		default:
-			messages = append(messages, fmt.Sprintf("line %d: an entry of %s has key %s, which this check does not know, so it may hide issues of %s", f.num, path, f.key, linterNames()))
+			messages = append(messages, fmt.Sprintf("line %d: an entry of %s has key %s, which this check does not know, so it may hide issues of %s", f.Num, path, f.Key, linterNames()))
 		}
 	}
 
@@ -493,7 +495,7 @@ func exclusionRule(num int, fields []entry) ([]string, error) {
 
 	if e, ok := child(fields, "text"); ok {
 		// scalar reads a quoted empty text as "", the form refused below.
-		text, err = single(e)
+		text, err = yamlread.Single(e)
 		if err != nil {
 			return nil, fmt.Errorf("line %d: read the text of an entry of %s: %w", num, path, err)
 		}

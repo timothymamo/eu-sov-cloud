@@ -1,6 +1,8 @@
 package check_test
 
 import (
+	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/timothymamo/eu-sov-cloud/test/architecture/internal/check"
@@ -12,6 +14,9 @@ import (
 // other document is refused.
 func TestGitHubRelease(t *testing.T) {
 	t.Parallel()
+
+	buildFlow := goreleaserFixture(t, "flow")
+	buildReal := goreleaserFixture(t, "real")
 
 	tests := []struct {
 		name       string
@@ -127,4 +132,21 @@ func TestGitHubRelease(t *testing.T) {
 			}
 		})
 	}
+}
+
+// goreleaserFixture returns the .goreleaser.yaml document name of
+// test/internal/releasetarget/testdata, a snapshot of the shape of this
+// repository's .goreleaser.yaml (before hooks, archives, checksum and
+// changelog around one build) that releasetarget.Read accepts, so a case here
+// only adds a release section to a build the release-target reader reads.
+// test/architecture/repository_test.go checks the real .goreleaser.yaml itself.
+func goreleaserFixture(t *testing.T, name string) string {
+	t.Helper()
+
+	doc, err := os.ReadFile(filepath.Join("..", "..", "..", "internal", "releasetarget", "testdata", name+".goreleaser.yaml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	return string(doc)
 }

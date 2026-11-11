@@ -236,7 +236,7 @@ func TestAllowList(t *testing.T) {
 			wantErr: true,
 		},
 
-		// The character rules are the same as the ones ReleaseTargets holds
+		// The character rules are the same as the ones releasetarget.Read holds
 		// the release document to: no two YAML readers agree on what the
 		// characters that look like line breaks do.
 		{
