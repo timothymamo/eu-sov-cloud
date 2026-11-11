@@ -1173,8 +1173,12 @@ func checkComparisonTitle(t *testing.T, report string) {
 
 // TestAssessAllTargetsSectionsMatchSingleTargetReports pins that the comparison
 // changes no assessment: each target's section is that target's single-target
-// report, one heading level lower and without the title and header lines the
-// comparison gives once, with the same content and the same row order.
+// golden report, one heading level lower and without the title and header lines
+// the comparison gives once, with the same content and the same row order. It
+// compares with the golden file, not with a report the same binary renders at
+// test time, so the comparison cannot agree with the single-target report by
+// both being wrong in the same way: TestAssessReport holds each golden to what
+// the binary prints.
 func TestAssessAllTargetsSectionsMatchSingleTargetReports(t *testing.T) {
 	t.Parallel()
 
@@ -1189,12 +1193,14 @@ func TestAssessAllTargetsSectionsMatchSingleTargetReports(t *testing.T) {
 		t.Run(tc.key, func(t *testing.T) {
 			t.Parallel()
 
-			single := assess(t, tc.key, inventory)
-			if single.code != 0 {
-				t.Fatalf("exit code of --target %s = %d, want 0; stderr = %q", tc.key, single.code, single.stderr)
+			// The path is the calling test's own golden file, a constant in testdata,
+			// never anything the test reads at run time.
+			single, err := os.ReadFile(goldenPath(tc.golden))
+			if err != nil {
+				t.Fatalf("read the golden report of %s: %v", tc.key, err)
 			}
 
-			want := demotedReportLines(t, single.stdout)
+			want := demotedReportLines(t, string(single))
 			got := sectionLines(t, all.stdout, targetSectionHeading(tc.name))
 
 			if diff := cmp.Diff(want, got); diff != "" {
