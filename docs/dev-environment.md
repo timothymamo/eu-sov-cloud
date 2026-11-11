@@ -54,6 +54,9 @@ dot-agent-deck publishes Linux arm64 and amd64 builds and is documented to run o
    make vm-shell              # shell inside the VM, at the repository path
    ```
 
+   The VM has 4 CPUs, 16 GiB of memory and a 40 GiB disk (`dev/lima.yaml`), enough for all six roles to
+   run `make check` at once. Leave the Mac enough free memory to run it.
+
 ### Inside the VM, once
 
 ```bash
@@ -93,6 +96,15 @@ make vm-up && make deck    # the TUI attaches to the daemon service
 Tool versions are pinned in `dev/lima.yaml` under `param:`, and Renovate opens a PR when a new version
 is released. A VM keeps the template it was created with, so after merging a version bump recreate it
 (`make vm-delete vm-up vm-env`) and repeat the once-only steps above.
+
+The same goes for the VM's size: `make vm-up` starts an existing VM with the CPUs, memory and disk it
+was created with. To resize it without recreating it, keeping its tools, login and configuration:
+
+```bash
+make vm-stop
+limactl edit --tty=false --memory=16 eu-sov-cloud   # memory in GiB; --cpus and --disk work the same way
+make vm-up
+```
 
 ## Dispatcher mode
 
