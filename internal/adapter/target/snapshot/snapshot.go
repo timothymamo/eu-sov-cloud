@@ -1,16 +1,12 @@
 package snapshot
 
 import (
-	"bytes"
-	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
-	"strconv"
 	"strings"
 	"time"
-	"unicode/utf8"
 
+	"github.com/timothymamo/eu-sov-cloud/internal/adapter/internal/jsondoc"
 	"github.com/timothymamo/eu-sov-cloud/internal/domain/catalog"
 	"github.com/timothymamo/eu-sov-cloud/internal/domain/taxonomy"
 	"github.com/timothymamo/eu-sov-cloud/internal/domain/text"
@@ -32,8 +28,9 @@ var (
 	// not one JSON object, a key that is unknown, not spelt exactly or repeated,
 	// a field that is missing, null or of the wrong JSON type, a string that
 	// escapes a lone surrogate, a retrieval date that is not a YYYY-MM-DD date,
-	// or a declared region that is blank, not valid text (text.Validate) or
-	// declared twice.
+	// or a declared region that is blank, not valid text (text.Validate),
+	// declared twice, not a region code (ASCII letters and digits in groups
+	// joined by single hyphens) or equal to another ignoring ASCII case.
 	ErrDecode = errors.New("not a valid catalog document")
 	// ErrSchemaVersion is returned for a document whose schemaVersion is missing
 	// or is not a version this package reads.
@@ -83,7 +80,7 @@ func Parse(data []byte) (Document, error) {
 
 	for i, o := range doc.offerings {
 		for _, region := range o.regions {
-			if _, ok := declared[region]; !ok {
+			if !isDeclared(declared, region) {
 				return Document{}, fmt.Errorf(
 					"%w: offering %s is available in region %s, which the regions list does not declare",
 					ErrUndeclaredRegion, text.Quote(o.name), text.Quote(region))
@@ -142,168 +139,44 @@ const (
 )
 
 // documentKeys and offeringKeys list the keys of the document object and of an
-// offering object, every one of them required. They are never modified; a key's
-// index is its bit in the mask walker.object keeps of the keys an object has.
+// offering object, every one of them required: the format has no optional
+// field. They are never modified.
 var (
-	documentKeys = [...]string{keySchemaVersion, keyTarget, keySourceURL, keyRetrievedOn, keyRegions, keyOfferings}
-	offeringKeys = [...]string{keyName, keyCategories, keyCapabilities, keyRegions}
+	documentKeys = []jsondoc.Key{
+		{Name: keySchemaVersion, Required: true},
+		{Name: keyTarget, Required: true},
+		{Name: keySourceURL, Required: true},
+		{Name: keyRetrievedOn, Required: true},
+		{Name: keyRegions, Required: true},
+		{Name: keyOfferings, Required: true},
+	}
+	offeringKeys = []jsondoc.Key{
+		{Name: keyName, Required: true},
+		{Name: keyCategories, Required: true},
+		{Name: keyCapabilities, Required: true},
+		{Name: keyRegions, Required: true},
+	}
 )
 
-// decode reads data as a snapshot of schema version 1, in this order: at most
-// MaxDocumentBytes; UTF-8 without a byte order mark; one JSON value, which is an
-// object; schemaVersion 1, found before any other key or value is checked, so a
-// document of another version is refused for its version alone; then, token by
-// token, every key exact, known and not repeated, every field present, not null
-// and of its JSON type, and no string that escapes a lone surrogate.
+// decode reads data as a snapshot of schema version 1 through the shared strict
+// decoder (jsondoc), in this order: at most MaxDocumentBytes; UTF-8 without a
+// byte order mark; one JSON value, which is an object; schemaVersion 1
+// (jsondoc.Document.Version), found before any other key or value is checked,
+// so a document of another version is refused for its version alone; then,
+// token by token (walk), every key exact, known and not repeated, every field
+// present, not null and of its JSON type, and no string that escapes a lone
+// surrogate.
 func decode(data []byte) (document, error) {
-	if len(data) > MaxDocumentBytes {
-		return document{}, fmt.Errorf("%w: the document is %d bytes, more than the limit of %d",
-			ErrDecode, len(data), MaxDocumentBytes)
-	}
-
-	if err := checkEncoding(data); err != nil {
-		return document{}, err
-	}
-
-	if !json.Valid(data) {
-		return document{}, fmt.Errorf("%w: %s", ErrDecode, syntaxReason(data))
-	}
-
-	// json.Valid has refused a document that is only white space.
-	if start := skipSpace(data, 0); data[start] != '{' {
-		return document{}, fmt.Errorf("%w: the document is %s, not a JSON object", ErrDecode, kindOf(data[start]))
-	}
-
-	raw, misspelt, err := newWalker(data).findVersion()
+	doc, err := jsondoc.Open(data, MaxDocumentBytes, ErrDecode)
 	if err != nil {
 		return document{}, err
 	}
 
-	if err := checkVersion(raw, misspelt); err != nil {
+	if err := doc.Version(keySchemaVersion, schemaVersion, ErrSchemaVersion); err != nil {
 		return document{}, err
 	}
 
-	return newWalker(data).document()
-}
-
-// checkEncoding refuses data that is not UTF-8 text without a byte order mark,
-// as the inventory file reader does (ADR 0006). The JSON decoder reads a byte
-// that is not UTF-8, inside a string, as U+FFFD and reports nothing, so the
-// document's own bytes are checked before any decoding. A byte order mark is
-// named whatever its encoding: the UTF-8 one is valid UTF-8 but no JSON, and the
-// UTF-16 ones would otherwise be reported as a byte that is not UTF-8.
-func checkEncoding(data []byte) error {
-	for _, bom := range byteOrderMarks {
-		if bytes.HasPrefix(data, []byte(bom)) {
-			return fmt.Errorf("%w: the document starts with a byte order mark; save it as UTF-8 without one",
-				ErrDecode)
-		}
-	}
-
-	if !utf8.Valid(data) {
-		return fmt.Errorf("%w: the document is not valid UTF-8 at %s", ErrDecode, position(data, invalidUTF8(data)))
-	}
-
-	return nil
-}
-
-// byteOrderMarks are U+FEFF encoded as UTF-8, UTF-16LE and UTF-16BE. They are
-// never modified.
-var byteOrderMarks = [...]string{"\xef\xbb\xbf", "\xff\xfe", "\xfe\xff"}
-
-// invalidUTF8 returns the index of the first byte of data that is not valid
-// UTF-8, or len(data) if there is none.
-func invalidUTF8(data []byte) int {
-	for i := 0; i < len(data); {
-		r, size := utf8.DecodeRune(data[i:])
-		if r == utf8.RuneError && size == 1 {
-			return i
-		}
-
-		i += size
-	}
-
-	return len(data)
-}
-
-// syntaxReason says why data, which json.Valid refused, is not one JSON value,
-// in the package's own words.
-//
-// It reads data again with a json.Decoder, which tells a document that is empty
-// or ends early from one with a wrong byte or with data after the value. Only the
-// error path pays for it.
-func syntaxReason(data []byte) string {
-	dec := json.NewDecoder(bytes.NewReader(data))
-
-	var value json.RawMessage
-
-	err := dec.Decode(&value)
-
-	var syntaxErr *json.SyntaxError
-
-	switch {
-	case errors.Is(err, io.EOF):
-		return "the document is empty"
-	case errors.Is(err, io.ErrUnexpectedEOF):
-		return "the document ends in the middle of a JSON value"
-	case errors.As(err, &syntaxErr):
-		// The offset counts the character the decoder refused, every byte of
-		// it: step back to its first byte.
-		at := int(syntaxErr.Offset) - 1
-		for at > 0 && !utf8.RuneStart(data[at]) {
-			at--
-		}
-
-		return "malformed JSON at " + position(data, at)
-	}
-
-	// The first value is well formed, so what json.Valid refused comes after it.
-	return "unexpected data after the first JSON value at " + position(data, skipSpace(data, int(dec.InputOffset())))
-}
-
-// checkVersion checks the raw schemaVersion of a document: present, not null,
-// and exactly the integer this package reads, spelt as such: 1.0 and "1" are not
-// it. misspelt is a top-level key that differs from schemaVersion only in case,
-// or "", and is named when the version is missing.
-func checkVersion(raw []byte, misspelt string) error {
-	switch string(raw) {
-	case strconv.Itoa(schemaVersion):
-		return nil
-	case "", "null":
-		if misspelt != "" {
-			return fmt.Errorf("%w: schemaVersion is missing, want the integer %d (keys are exact: %s is not schemaVersion)",
-				ErrSchemaVersion, schemaVersion, text.Quote(misspelt))
-		}
-
-		return fmt.Errorf("%w: schemaVersion is missing, want the integer %d", ErrSchemaVersion, schemaVersion)
-	}
-
-	return fmt.Errorf("%w: schemaVersion is %s, want the integer %d", ErrSchemaVersion, describeVersion(raw), schemaVersion)
-}
-
-// describeVersion names a schemaVersion value that is not the one this package
-// reads: an integer written in its own form as itself, any other number as
-// written through text.Quote (-0, 1.0 and 1e0 are not shown as 0 or 1, values the
-// document does not hold), a string by its value through text.Quote, and any
-// other JSON value by its type. raw is one non-empty, well-formed JSON value.
-func describeVersion(raw []byte) string {
-	if n, err := strconv.Atoi(string(raw)); err == nil && strconv.Itoa(n) == string(raw) {
-		return string(raw)
-	}
-
-	switch kind := kindOf(raw[0]); kind {
-	case "a string":
-		var s string
-		if err := json.Unmarshal(raw, &s); err == nil {
-			return "the string " + text.Quote(s)
-		}
-
-		return kind
-	case "a number":
-		return "the number " + text.Quote(string(raw))
-	default:
-		return kind
-	}
+	return walk(doc.Walker())
 }
 
 // parseDate reads the retrieval date of a document: a YYYY-MM-DD calendar date,
@@ -318,11 +191,14 @@ func parseDate(raw string) (time.Time, error) {
 	return date, nil
 }
 
-// declaredRegions checks the regions a document declares, each non-blank, valid
-// text and declared once, and returns them as a set, so an offering's regions
-// are each checked in constant time however many regions are declared.
-func declaredRegions(regions []string) (map[string]struct{}, error) {
-	set := make(map[string]struct{}, len(regions))
+// declaredRegions checks the regions a document declares, each in this order:
+// non-blank, valid text, a region code (isRegionCode), and not equal to a
+// region declared before it, exactly or ignoring ASCII case. It returns them as
+// a map from the code in ASCII lower case to the code as declared, so each
+// check, and each offering region later (isDeclared), takes constant time
+// however many regions are declared.
+func declaredRegions(regions []string) (map[string]string, error) {
+	declared := make(map[string]string, len(regions))
 
 	for i, region := range regions {
 		if strings.TrimSpace(region) == "" {
@@ -335,59 +211,76 @@ func declaredRegions(regions []string) (map[string]struct{}, error) {
 				ErrDecode, text.Quote(region), i, err)
 		}
 
-		if _, dup := set[region]; dup {
-			return nil, fmt.Errorf("%w: region %s is declared more than once (again at regions[%d])",
-				ErrDecode, text.Quote(region), i)
+		if !isRegionCode(region) {
+			return nil, fmt.Errorf("%w: declared region %s (regions[%d]) is not a region code: "+
+				"ASCII letters and digits in groups joined by single hyphens", ErrDecode, text.Quote(region), i)
 		}
 
-		set[region] = struct{}{}
+		key := asciiLower(region)
+
+		if earlier, dup := declared[key]; dup {
+			if earlier == region {
+				return nil, fmt.Errorf("%w: region %s is declared more than once (again at regions[%d])",
+					ErrDecode, text.Quote(region), i)
+			}
+
+			return nil, fmt.Errorf("%w: declared region %s (regions[%d]) is region %s again: region codes are compared ignoring case",
+				ErrDecode, text.Quote(region), i, text.Quote(earlier))
+		}
+
+		declared[key] = region
 	}
 
-	return set, nil
+	return declared, nil
 }
 
-// kindOf names, with its article, the JSON type of the value whose first byte
-// is b.
-func kindOf(b byte) string {
-	switch b {
-	case '{':
-		return "an object"
-	case '[':
-		return "an array"
-	case '"':
-		return "a string"
-	case 't', 'f':
-		return "a boolean"
-	case 'n':
-		return "null"
-	default:
-		return "a number"
-	}
+// isDeclared reports whether region is one of declared, the map declaredRegions
+// returns, spelt as the document declares it.
+func isDeclared(declared map[string]string, region string) bool {
+	spelling, ok := declared[asciiLower(region)]
+
+	return ok && spelling == region
 }
 
-// position says where byte i of data is, as a reader of the document looks it
-// up: "line L, column C", both counted from 1, the line by line feeds and the
-// column in characters, so a tab or a multi-byte character counts once. data up
-// to i is valid UTF-8 wherever position is used.
-func position(data []byte, i int) string {
-	before := data[:min(max(i, 0), len(data))]
-	line := bytes.Count(before, []byte{'\n'}) + 1
-	column := utf8.RuneCount(before[bytes.LastIndexByte(before, '\n')+1:]) + 1
+// isRegionCode reports whether s is a region code: ASCII letters and digits in
+// one or more groups joined by single hyphens, ^[A-Za-z0-9]+(-[A-Za-z0-9]+)*$.
+// fr-par, GRA and eu-central-1 are region codes. A look-alike letter (the
+// Cyrillic р of fr-раr), any space, an underscore, a dot and a hyphen at an end
+// or after another are not: such a code would declare a region no reader can
+// tell from a real one.
+func isRegionCode(s string) bool {
+	// afterHyphen starts true, so a code that is empty or starts with a hyphen
+	// is refused like one that ends with a hyphen.
+	afterHyphen := true
 
-	return fmt.Sprintf("line %d, column %d", line, column)
-}
-
-// skipSpace returns the index of the first byte of data at or after i that is
-// not JSON white space, or len(data).
-func skipSpace(data []byte, i int) int {
-	for i < len(data) && isSpace(data[i]) {
-		i++
+	for i := range len(s) {
+		switch b := s[i]; {
+		case b == '-' && !afterHyphen:
+			afterHyphen = true
+		case 'a' <= b && b <= 'z', 'A' <= b && b <= 'Z', '0' <= b && b <= '9':
+			afterHyphen = false
+		default:
+			return false
+		}
 	}
 
-	return min(i, len(data))
+	return !afterHyphen
 }
 
-// isSpace reports whether b is JSON white space (RFC 8259, section 2).
-func isSpace(b byte) bool {
-	return b == ' ' || b == '\t' || b == '\n' || b == '\r'
+// asciiLower returns s with its ASCII upper-case letters in lower case, and s
+// itself when it has none, so the usual lower-case code costs no allocation.
+func asciiLower(s string) string {
+	i := strings.IndexFunc(s, func(r rune) bool { return 'A' <= r && r <= 'Z' })
+	if i < 0 {
+		return s
+	}
+
+	b := []byte(s)
+	for j := i; j < len(b); j++ {
+		if 'A' <= b[j] && b[j] <= 'Z' {
+			b[j] += 'a' - 'A'
+		}
+	}
+
+	return string(b)
 }

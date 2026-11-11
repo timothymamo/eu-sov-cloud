@@ -15,6 +15,15 @@ const MaxLen = 2048
 // quoteRunes is how many runes of a value Quote keeps before truncating it.
 const quoteRunes = 128
 
+// pathHeadRunes and pathTailRunes are how many runes QuotePath keeps from the
+// start and from the end of a value longer than quoteRunes. Together they are
+// quoteRunes, and the tail is the longer part: the end of a path is its base
+// name, which says which file it is.
+const (
+	pathHeadRunes = 32
+	pathTailRunes = quoteRunes - pathHeadRunes
+)
+
 // ErrInvalid is returned for free text that is not valid.
 var ErrInvalid = errors.New("invalid text")
 
@@ -88,7 +97,8 @@ func disallowed(r rune) bool {
 // 128 runes, and the quoted prefix is followed by its original length, as in
 // "aaaa"...(8388608 bytes), so the result stays short however long s is: at
 // most 128 escaped runes of up to 10 bytes each, the quotes and the suffix. Each
-// invalid byte of s counts as one rune.
+// invalid byte of s counts as one rune. QuotePath keeps both ends of a long
+// value instead, for a file path.
 func Quote(s string) string {
 	n := 0
 	for i := range s {
@@ -100,4 +110,43 @@ func Quote(s string) string {
 	}
 
 	return strconv.Quote(s)
+}
+
+// QuotePath is Quote for a file path, whose end says more than its middle. A
+// path of at most 128 runes is quoted exactly as Quote quotes it. A longer one
+// keeps its first 32 runes and its last 96, each quoted, with "..." between
+// them and the original length after them, in the shape
+// "<first 32 runes>"..."<last 96 runes>"(4096 bytes), so the base name of a
+// deep path survives where Quote would cut it off. Each invalid byte of s
+// counts as one rune, as in Quote, and the result is as short and as safe to
+// print as Quote's: no rune of s reaches it unescaped.
+func QuotePath(s string) string {
+	runes := 0
+	head := len(s)
+
+	for i := range s {
+		if runes == pathHeadRunes {
+			head = i
+		}
+
+		runes++
+	}
+
+	if runes <= quoteRunes {
+		return strconv.Quote(s)
+	}
+
+	// The tail starts at rune runes-pathTailRunes, which is past the head.
+	tail, n := 0, 0
+	for i := range s {
+		if n == runes-pathTailRunes {
+			tail = i
+
+			break
+		}
+
+		n++
+	}
+
+	return strconv.Quote(s[:head]) + "..." + strconv.Quote(s[tail:]) + "(" + strconv.Itoa(len(s)) + " bytes)"
 }

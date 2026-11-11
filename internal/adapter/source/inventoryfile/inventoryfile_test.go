@@ -210,6 +210,38 @@ func TestInventoryContract(t *testing.T) {
 	sourcetest.Run(t, inventoryfile.New(validPath), wantValidInventory(t))
 }
 
+// TestInventoryReadsNullAsAbsent pins the null policy ADR 0006 gives the
+// optional fields: a resource whose rawType, region and capabilities are null is
+// the same resource as one whose JSON leaves those keys out. The policy is the
+// inventory reader's own - the shared decoder refuses a null no format asks for -
+// so it is pinned here, on the inventory that comes out.
+func TestInventoryReadsNullAsAbsent(t *testing.T) {
+	t.Parallel()
+
+	withNulls := `{"schemaVersion":1,"source":"aws","resources":[` +
+		`{"id":"i-0123456789abcdef0","rawType":null,"category":"compute.vm",` +
+		`"region":null,"capabilities":null}]}`
+	withoutKeys := `{"schemaVersion":1,"source":"aws","resources":[` +
+		`{"id":"i-0123456789abcdef0","category":"compute.vm"}]}`
+
+	read := func(document string) inventory.Inventory {
+		t.Helper()
+
+		return inventoryOf(t, writeFile(t, t.TempDir(), document))
+	}
+
+	want := read(withoutKeys)
+	got := read(withNulls)
+
+	if diff := cmp.Diff(want.Source(), got.Source()); diff != "" {
+		t.Errorf("Source() of the document with nulls differs (-want +got):\n%s", diff)
+	}
+
+	if diff := cmp.Diff(want.Resources(), got.Resources()); diff != "" {
+		t.Errorf("Resources() of the document with nulls differ (-want +got):\n%s", diff)
+	}
+}
+
 // Documents that are written by the test instead of installed as fixtures.
 //
 // A fixture cannot hold them reliably: an editor, a formatter or a git filter
@@ -268,6 +300,15 @@ const (
 	// misspeltSchemaVersionDocument capitalises the top-level schemaVersion key,
 	// so the exact key the format declares is missing.
 	misspeltSchemaVersionDocument = `{"SchemaVersion":1,"source":"aws","resources":[]}`
+	// nullSourceDocument spells the source as null, which ADR 0006 reads as an
+	// absent field: the domain refuses the empty source, not the decoder.
+	nullSourceDocument = `{"schemaVersion":1,"source":null,"resources":[]}`
+	// nullResourcesDocument spells resources as null: the one field whose null is
+	// not an absent value.
+	nullResourcesDocument = `{"schemaVersion":1,"source":"aws","resources":null}`
+	// nullSchemaVersionDocument spells the version as null, which is a missing
+	// version: there is no default.
+	nullSchemaVersionDocument = `{"schemaVersion":null,"source":"aws","resources":[]}`
 	// capabilityNumberDocument puts the number 42 where a capability, a string,
 	// belongs.
 	capabilityNumberDocument = `{"schemaVersion":1,"source":"aws","resources":[` +
@@ -551,6 +592,28 @@ func TestInventoryErrors(t *testing.T) {
 			wantPosition: "line 1, column 56",
 		},
 		{
+			// A multi-byte character where the next key belongs is malformed
+			// JSON, and the JSON decoder counts the rune's last byte: the message
+			// must place the character at its first byte, which is line 3's
+			// column 2.
+			name:         "malformed two-byte character where a key is expected",
+			path:         generated("{\n \"schemaVersion\": 1,\n é\n}"),
+			wantErr:      []error{inventoryfile.ErrDecode},
+			wantMentions: [][]string{{"malformed JSON"}},
+			wantPosition: "line 3, column 2",
+			wantAbsent:   []string{"column 3"},
+		},
+		{
+			// The same for a character of three bytes: the step back to the
+			// first byte of the rune covers every byte of it.
+			name:         "malformed three-byte character where a key is expected",
+			path:         generated("{\n \"schemaVersion\": 1,\n €\n}"),
+			wantErr:      []error{inventoryfile.ErrDecode},
+			wantMentions: [][]string{{"malformed JSON"}},
+			wantPosition: "line 3, column 2",
+			wantAbsent:   []string{"column 4"},
+		},
+		{
 			// JSON spells a character outside the BMP as a pair of escaped
 			// surrogates. A surrogate escape on its own names no character, and a
 			// decoder that accepts it writes U+FFFD into the id instead.
@@ -594,20 +657,29 @@ func TestInventoryErrors(t *testing.T) {
 			wantMentions: [][]string{{"schemaVersion"}},
 		},
 		{
-			name:         "missing schema version",
-			path:         fixture("no-schema-version.json"),
-			wantErr:      []error{inventoryfile.ErrSchemaVersion},
-			wantMentions: [][]string{{"schemaVersion"}, {"0", "absent", "missing", "not set", "not present"}},
+			// The version error is worded once, by the shared decoder, so both
+			// readers say a version is an integer: a document without a version is
+			// missing the integer 1, not a bare 1.
+			name:    "missing schema version",
+			path:    fixture("no-schema-version.json"),
+			wantErr: []error{inventoryfile.ErrSchemaVersion},
+			wantMentions: [][]string{
+				{"schemaVersion"},
+				{"0", "absent", "missing", "not set", "not present"},
+				{"schemaVersion is missing, want the integer 1"},
+			},
 		},
 		{
 			// The exact key is missing, so the file is refused for its version,
 			// never for a field the version it claims has: the key that was meant
 			// is named, quoted, and the sentinel says it is about the version.
-			name:         "schema version key misspelt",
-			path:         generated(misspeltSchemaVersionDocument),
-			wantErr:      []error{inventoryfile.ErrSchemaVersion},
-			wantNotErr:   []error{inventoryfile.ErrDecode},
-			wantMentions: [][]string{{"schemaVersion"}},
+			name:       "schema version key misspelt",
+			path:       generated(misspeltSchemaVersionDocument),
+			wantErr:    []error{inventoryfile.ErrSchemaVersion},
+			wantNotErr: []error{inventoryfile.ErrDecode},
+			// The wording is the shared decoder's, and the key that was meant is
+			// still named.
+			wantMentions: [][]string{{"schemaVersion"}, {"schemaVersion is missing, want the integer 1"}},
 			wantQuoted:   []string{"SchemaVersion"},
 		},
 		{
@@ -628,6 +700,30 @@ func TestInventoryErrors(t *testing.T) {
 			name:    "empty source",
 			path:    fixture("empty-source.json"),
 			wantErr: []error{inventory.ErrEmptySource},
+		},
+		{
+			// ADR 0006: null is the same as an absent field, so a null source is the
+			// domain's empty source, never a decode failure.
+			name:       "null source",
+			path:       generated(nullSourceDocument),
+			wantErr:    []error{inventory.ErrEmptySource},
+			wantNotErr: []error{inventoryfile.ErrDecode},
+		},
+		{
+			// resources is the one field a null is not absent for: it is a value of
+			// the wrong type, refused where it is, as the array it should be.
+			name:         "null resources",
+			path:         generated(nullResourcesDocument),
+			wantErr:      []error{inventoryfile.ErrDecode},
+			wantMentions: [][]string{{"resources"}, {"line 1, column "}},
+			wantQuoted:   []string{"resources"},
+		},
+		{
+			// A null version is a missing version: there is no default.
+			name:       "null schema version",
+			path:       generated(nullSchemaVersionDocument),
+			wantErr:    []error{inventoryfile.ErrSchemaVersion},
+			wantNotErr: []error{inventoryfile.ErrDecode},
 		},
 		{
 			name: "file larger than MaxFileSize",
@@ -756,6 +852,60 @@ func TestInventoryErrors(t *testing.T) {
 				t.Errorf("Inventory() error = %q, want it not to pass the OS error for the path through unquoted", msg)
 			}
 		})
+	}
+}
+
+// TestInventoryErrorKeepsLongPathBaseName pins that an error quotes a path
+// longer than 128 runes with both of its ends, not only its start: the base name
+// is what says which file failed, and a deep checkout path must not hide it. The
+// quoted form is text.QuotePath's: the first 32 runes, an ellipsis, the last 96
+// runes, then the original byte length. It is written out here because this
+// package's tests must compile while text.QuotePath does not exist yet - an
+// undefined function would hide every other failure in the table above.
+func TestInventoryErrorKeepsLongPathBaseName(t *testing.T) {
+	t.Parallel()
+
+	const base = "inventory-long-path.json"
+
+	// The file does not exist, so the long directory is only joined, never made.
+	path := filepath.Join(t.TempDir(), strings.Repeat("d", 150), base)
+
+	// The path is ASCII, so its runes are its bytes, and 32 + 96 is the number of
+	// runes the quoted form keeps.
+	if len(path) <= 128 {
+		t.Fatalf("the test path is %d bytes, want more than 128", len(path))
+	}
+
+	wantQuoted := strconv.Quote(path[:32]) + "..." + strconv.Quote(path[len(path)-96:]) +
+		"(" + strconv.Itoa(len(path)) + " bytes)"
+
+	_, err := inventoryfile.New(path).Inventory(t.Context())
+	if err == nil {
+		t.Fatalf("Inventory() for %s returned no error, want one wrapping %v", text.Quote(path), inventoryfile.ErrRead)
+	}
+
+	if !errors.Is(err, inventoryfile.ErrRead) {
+		t.Errorf("Inventory() error = %v, want it to wrap %v", err, inventoryfile.ErrRead)
+	}
+
+	msg := err.Error()
+
+	if !strings.Contains(msg, wantQuoted) {
+		t.Errorf("Inventory() error = %q, want it to name the file through text.QuotePath(path) = %s", msg, wantQuoted)
+	}
+
+	// text.Quote keeps the first 128 runes only, so its form of the path loses the
+	// base name: the error must not hold that form any more.
+	if truncated := text.Quote(path); strings.Contains(msg, truncated) {
+		t.Errorf("Inventory() error = %q, want it without text.Quote(path) = %s", msg, truncated)
+	}
+
+	if !strings.Contains(msg, base+`"`) {
+		t.Errorf("Inventory() error = %q, want it to keep the base name %s", msg, text.Quote(base))
+	}
+
+	if strings.ContainsAny(msg, "\r\n") {
+		t.Errorf("Inventory() error = %q, want a single line", msg)
 	}
 }
 

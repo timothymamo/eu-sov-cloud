@@ -25,7 +25,10 @@ Arrows are imports. They point inwards only:
 - **Application** (`internal/app/analysis`) orchestrates a use case and declares the interfaces (ports)
   it needs, next to where they are consumed. It never imports an adapter.
 - **Adapters** (`internal/adapter/...`) implement ports. Each cloud SDK is confined to one adapter
-  package, and its types are translated to domain types at the boundary.
+  package, and its types are translated to domain types at the boundary. Helpers that adapters share
+  live in `internal/adapter/internal/`: every adapter that reads a JSON document (the inventory file,
+  the target catalog snapshots) decodes it through the strict decoder `adapter/internal/jsondoc`
+  ([ADR 0009](adr/0009-decode-adapter-json-documents-through-one-strict-decoder.md)).
 - **CLI** (`internal/cli`) turns user input into use-case calls and prints results. No business rules.
 - **`cmd/eusov`** is the only place that constructs adapters and injects them.
 
