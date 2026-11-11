@@ -15,7 +15,7 @@ base:
 
 vmType: vz
 cpus: 4
-memory: 8GiB
+memory: 16GiB
 disk: 40GiB
 
 # Deliberately empty: host mounts come only from `--mount-only` in the Makefile.

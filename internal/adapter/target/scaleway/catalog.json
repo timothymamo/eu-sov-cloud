@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "target": "Scaleway",
   "sourceURL": "https://www.scaleway.com/en/docs/",
-  "retrievedOn": "2026-11-10",
+  "retrievedOn": "2026-11-11",
   "regions": ["fr-par", "it-mil", "nl-ams", "pl-waw"],
   "offerings": [
     {
@@ -26,19 +26,31 @@
     {
       "name": "Kubernetes Kapsule",
       "categories": ["kubernetes.managed"],
-      "capabilities": ["autoscaling", "high-availability"],
+      "capabilities": ["autoscaling"],
       "regions": ["fr-par", "it-mil", "nl-ams", "pl-waw"]
+    },
+    {
+      "name": "Kubernetes Kapsule Dedicated",
+      "categories": ["kubernetes.managed"],
+      "capabilities": ["autoscaling", "node-high-availability"],
+      "regions": ["fr-par", "nl-ams", "pl-waw"]
     },
     {
       "name": "Managed Database for PostgreSQL and MySQL",
       "categories": ["database.mysql", "database.postgresql"],
-      "capabilities": ["encryption-at-rest", "high-availability", "read-replicas", "snapshots"],
+      "capabilities": ["encryption-at-rest", "read-replicas", "snapshots"],
+      "regions": ["fr-par", "nl-ams", "pl-waw"]
+    },
+    {
+      "name": "Managed Database for PostgreSQL and MySQL High Availability",
+      "categories": ["database.mysql", "database.postgresql"],
+      "capabilities": ["encryption-at-rest", "node-high-availability", "read-replicas", "snapshots"],
       "regions": ["fr-par", "nl-ams", "pl-waw"]
     },
     {
       "name": "Object Storage",
       "categories": ["storage.object"],
-      "capabilities": ["encryption-at-rest", "high-availability", "object-versioning"],
+      "capabilities": ["encryption-at-rest", "object-versioning"],
       "regions": ["fr-par", "it-mil", "nl-ams", "pl-waw"]
     },
     {
@@ -50,14 +62,8 @@
     {
       "name": "Serverless Functions",
       "categories": ["serverless.function"],
-      "capabilities": ["autoscaling", "ipv6"],
-      "regions": ["fr-par", "nl-ams", "pl-waw"]
-    },
-    {
-      "name": "Serverless SQL Database",
-      "categories": ["database.postgresql"],
       "capabilities": ["autoscaling"],
-      "regions": ["fr-par"]
+      "regions": ["fr-par", "nl-ams", "pl-waw"]
     }
   ]
 }

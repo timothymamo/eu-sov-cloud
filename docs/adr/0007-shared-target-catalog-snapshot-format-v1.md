@@ -222,8 +222,9 @@ both use is issue #13.
     later included, and the contract suite `targettest`. A target cannot decode its snapshot on its own
     and skip the rules above, and a JSON decode in `targettest` would be the second reader this ADR
     rules out. Only `_test.go` files may decode JSON.
-  - `adapters-are-built-in-cmd` stops one adapter importing another. It allows the shared adapter
-    helpers under `internal/adapter/internal/` and, by an entry of its own, this reader
+  - `adapters-are-built-in-cmd` stops one adapter importing another. It allows each shared adapter
+    helper under `internal/adapter/internal/` by name, ending in `$` (issues #49, #50), and, by an
+    entry of its own, this reader
     (`internal/adapter/target/snapshot$`): a target adapter that imports it imports a shared
     adapter-layer reader, not another adapter. The reader stays where it is rather than under
     `internal/adapter/internal/`, beside the targets whose `catalog.json` its tests check. An allow
