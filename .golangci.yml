@@ -274,10 +274,13 @@ linters:
         #
         # The allow entry for internal/adapter/internal/ admits every helper
         # package added there, and this rule says nothing about what a helper
-        # imports. So every helper package added under internal/adapter/internal/
-        # needs a strict allow-list rule of its own, as jsondoc has
-        # (jsondoc-parses-bytes), or an adapter that must stay offline could
-        # reach I/O through it.
+        # imports. adapter-helpers-do-no-io holds every helper there to no I/O,
+        # unless the helper is excluded from it by name. A helper under a
+        # testdata or _ directory is never linted, and the entry admits it too,
+        # so every adapter that must stay offline names the helpers it imports,
+        # each ending in $, in a strict rule of its own:
+        # inventory-file-reader-reads-one-file, target-snapshot-reader-parses-bytes
+        # and embedded-snapshot-targets-stay-offline.
         adapters-are-built-in-cmd:
           list-mode: lax
           files:
@@ -387,6 +390,71 @@ linters:
           deny:
             - pkg: encoding/json
               desc: read the snapshot through internal/adapter/target/snapshot, which decodes through jsondoc (ADR 0007, ADR 0009)
+        # The helpers adapters share live in internal/adapter/internal/
+        # (adapters-are-built-in-cmd), and an adapter that must stay offline
+        # may name one in its own allow list. So a helper does no I/O unless
+        # that is decided: every package there, a helper added later included,
+        # may import only what is listed under allow, the standard packages
+        # the helpers use that do no I/O and the project packages they use,
+        # each ending in $ so it covers that package only. Add a standard
+        # package only when a helper needs it, never one that does I/O. A
+        # helper that needs I/O is a decision of its own: it gets a strict
+        # rule of its own, its directory is excluded here by name, and no
+        # adapter that must stay offline names it. A helper may also have a
+        # tighter rule of its own, as jsondoc has (jsondoc-parses-bytes); a
+        # file must pass every rule that covers it, so loosening that rule
+        # does not loosen this one. The glob ends in /** so it also matches
+        # the files directly in each helper's directory.
+        #
+        # make lint runs on ./..., which skips testdata directories and
+        # directories whose name starts with _, so a helper placed there is
+        # never linted, by this rule or any other. That is why an adapter that
+        # must stay offline names each helper it imports, ending in $, in a
+        # strict rule of its own, rather than relying on this rule alone.
+        #
+        # An allowed package can still hold a function that does I/O, which an
+        # import rule cannot see: fmt$ is allowed for fmt.Errorf and
+        # fmt.Sprintf, and a helper must not call fmt.Print* (which writes to
+        # stdout). Review holds that line.
+        #
+        # The allow list already refuses every package below; these entries
+        # only say why. They have no $, so each also covers its subpackages:
+        # os covers os/exec, os/signal and os/user, and net covers net/http.
+        adapter-helpers-do-no-io:
+          list-mode: strict
+          files:
+            - "**/internal/adapter/internal/**"
+            - "!$test"
+          allow:
+            - bytes$
+            - encoding/json$
+            - errors$
+            - fmt$
+            - io$
+            - slices$
+            - strconv$
+            - strings$
+            - unicode$
+            - unicode/utf16$
+            - unicode/utf8$
+            - github.com/timothymamo/eu-sov-cloud/internal/domain/text$
+          deny:
+            - pkg: io/fs
+              desc: a shared adapter helper does no I/O; one that reads files needs a rule of its own
+            - pkg: io/ioutil
+              desc: a shared adapter helper does no I/O; one that reads files needs a rule of its own
+            - pkg: net
+              desc: a shared adapter helper makes no network call; one that does needs a rule of its own
+            - pkg: os
+              desc: a shared adapter helper reads no file and no environment; one that does needs a rule of its own
+            - pkg: plugin
+              desc: a shared adapter helper loads no code
+            - pkg: runtime/cgo
+              desc: a shared adapter helper calls no C code
+            - pkg: syscall
+              desc: a shared adapter helper makes no system call
+            - pkg: unsafe
+              desc: a shared adapter helper needs no unsafe code
         # The strict JSON decoder adapters share (ADR 0009) parses the bytes it
         # is given: it opens no file, makes no network call and imports no
         # adapter, so a reader that decodes through it stays as offline as its
@@ -467,16 +535,46 @@ linters:
         # target-snapshot-reader-parses-bytes; this rule holds the adapters
         # that embed a snapshot to it. List each such target here. The globs
         # end in /** so they match the files directly in each package and any
-        # subpackage added later. The deny entries have no $, so each also
-        # covers its subpackages: os covers os/exec, os/signal and os/user, and
-        # net covers net/http and net/http/httptest. A target that calls its
-        # provider's API is not listed.
+        # subpackage added later. A target that calls its provider's API is
+        # not listed.
+        #
+        # An import rule sees direct imports only, so the target's imports are
+        # a strict allow list, and the guarantee holds through every package
+        # it names: the standard packages it uses, each ending in $ so it
+        # covers that package only, and each project package it imports, also
+        # ending in $. Name a project package only when a strict rule of its
+        # own keeps it offline: target-snapshot-reader-parses-bytes holds the
+        # reader, which reaches jsondoc, held by jsondoc-parses-bytes and
+        # adapter-helpers-do-no-io, and domain-is-pure holds the domain
+        # packages. adapters-are-built-in-cmd allows every helper under
+        # internal/adapter/internal/, but this rule admits only the helpers it
+        # names. A prefix entry would not do, here or there: make lint runs on
+        # ./..., which skips testdata directories and directories whose name
+        # starts with _, so a helper placed there is never linted, and a
+        # prefix would let the target import it.
+        #
+        # context$ is for the context Catalog takes, embed$ for //go:embed and
+        # fmt$ for fmt.Errorf. An allowed package can still hold a function
+        # that does I/O, which an import rule cannot see: the target must not
+        # call fmt.Print* (which writes to stdout). Review holds that line.
+        #
+        # The allow list already refuses every package below; these entries
+        # only say why. They have no $, so each also covers its subpackages:
+        # os covers os/exec, os/signal and os/user, and net covers net/http
+        # and net/http/httptest.
         embedded-snapshot-targets-stay-offline:
-          list-mode: lax
+          list-mode: strict
           files:
             - "**/internal/adapter/target/ovhcloud/**"
             - "**/internal/adapter/target/scaleway/**"
             - "!$test"
+          allow:
+            - context$
+            - embed$
+            - fmt$
+            - github.com/timothymamo/eu-sov-cloud/internal/adapter/target/snapshot$
+            - github.com/timothymamo/eu-sov-cloud/internal/domain/catalog$
+            - github.com/timothymamo/eu-sov-cloud/internal/domain/text$
           deny:
             - pkg: io/fs
               desc: an embedded-snapshot target reads only its embedded bytes

@@ -13,8 +13,11 @@
 // keeps encoding/json out of every package here, the snapshot reader included,
 // which decodes through jsondoc (ADR 0009), so a provider cannot decode its
 // snapshot on its own. The lint rule
-// embedded-snapshot-targets-stay-offline keeps io/fs, io/ioutil, net, os,
-// plugin, syscall and unsafe, with their subpackages, out of every provider
-// that serves an embedded snapshot, so it reads only the bytes it embeds; a
-// provider that starts serving one is added to that rule by name.
+// embedded-snapshot-targets-stay-offline holds every provider that serves an
+// embedded snapshot to a strict allow list: the standard packages it uses
+// (context, embed, fmt), the snapshot reader and the domain packages it
+// builds the catalog with, each named exactly. So it reads only the bytes it
+// embeds, and every package it imports is held offline by a rule of its own;
+// a shared adapter helper is allowed only once the rule names it. A provider
+// that starts serving an embedded snapshot is added to that rule by name.
 package target

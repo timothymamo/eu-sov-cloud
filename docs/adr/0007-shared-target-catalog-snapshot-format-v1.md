@@ -231,12 +231,16 @@ both use is issue #13.
     that is not a `_test.go` file, `cmd/eusov` included. A source adapter, a reporter, `internal/config`
     and the CLI have no snapshot to read, and the composition root gets each catalog through the target
     adapter it constructs.
-  - `embedded-snapshot-targets-stay-offline` denies `io/fs`, `io/ioutil`, `net`, `os`, `plugin`,
-    `syscall` and `unsafe`, each with its subpackages, to every file of a target that serves an embedded
-    snapshot (OVHcloud and Scaleway) that is not a `_test.go` file. Such a target reads only the bytes it
-    embeds, so with the reader held to parsing packages the whole path from embedded bytes to catalog
-    stays offline. The targets are named one by one, because a target that calls its provider's API
-    needs the network: a new embedded-snapshot target is added to the rule. An import rule cannot see a
-    call through an allowed package, so review holds that line, as for the reader.
+  - `embedded-snapshot-targets-stay-offline` limits every file of a target that serves an embedded
+    snapshot (OVHcloud and Scaleway) that is not a `_test.go` file to a strict allow list: `context`,
+    `embed`, `fmt`, the reader and the domain packages `catalog` and `text`, each ending in `$`. Such a
+    target reads only the bytes it embeds, and every project package it imports is held offline by a
+    strict rule of its own, so the whole path from embedded bytes to catalog stays offline. A shared
+    adapter helper under `internal/adapter/internal/` is allowed only once the rule names it: an import
+    rule sees direct imports only, and a helper under a `testdata` or `_` directory is never linted
+    (issue #42). It still denies `io/fs`, `io/ioutil`, `net`, `os`, `plugin`, `syscall` and `unsafe` by
+    name, so the reason is given. The targets are named one by one, because a target that calls its
+    provider's API needs the network: a new embedded-snapshot target is added to the rule. An import
+    rule cannot see a call through an allowed package, so review holds that line, as for the reader.
 - The embedded snapshot is parsed on every `Catalog` and `Regions` call. That is cheap at a few
   kilobytes, and it keeps the adapter free of package-level state.
