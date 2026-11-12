@@ -83,7 +83,8 @@ jobs:
           # Runs limactl validate on <template> and prints its log. Lima's messages quote the template, so
           # a line of it could read as a workflow command (::add-mask::, ::stop-commands::, ::error ...): the
           # log is printed between ::stop-commands:: markers with a random token, so the runner runs none of
-          # it. The job's own ::error lines are all outside that region. An empty line is skipped; a line
+          # it. Nothing the job prints outside that region carries template, log or .expect text: its own
+          # lines name only files, and only once their names are checked. An empty line is skipped; a line
           # that is not a JSON object is printed as it is, as an unparsed one.
           validate() { # <template>
             local token
@@ -103,14 +104,14 @@ jobs:
           accepted() {
             [ "${status}" -eq 0 ] && jq -Rse '[split("\n")[] | select(. != "")
               | ((fromjson? | objects) // {level: "unparsed"}) | .level]
-              | all(. == "info" or . == "debug" or . == "trace")' <<<"${log}" >/dev/null
+              | all(. == "info" or . == "debug" or . == "trace")' <<<"${log}" >/dev/null 2>&1
           }
           # Whether the last log holds <text>, as a fixed string, in a message or an error. Matched on the
           # decoded fields, not the JSON line, where Lima's quotes are escaped.
           logged() { # <text>
             jq -Rse --arg want "$1" '[split("\n")[] | select(. != "")
               | ((fromjson? | objects) // {msg: .}) | .msg, .error | select(. != null)
-              | tostring | contains($want)] | any' <<<"${log}" >/dev/null
+              | tostring | contains($want)] | any' <<<"${log}" >/dev/null 2>&1
           }
           failed=0
           echo "dev/lima.yaml, which Lima must accept:"
@@ -136,16 +137,29 @@ jobs:
               failed=1
               continue
             fi
+            # Regular files only: a symlink would point limactl, or the read of the .expect, at any file
+            # on the runner.
+            if [ ! -f "${template}" ] || [ -L "${template}" ]; then
+              echo "::error file=${template}::${template} must be a regular file, not a symlink or anything else"
+              failed=1
+              continue
+            fi
             expect="${template%.yaml}.expect"
             expected=""
-            if [ -f "${expect}" ]; then
-              expected="$(<"${expect}")"
-            fi
-            # One line, so it can neither start a workflow command in the log nor end an annotation early.
-            if [ -z "${expected}" ] || [[ "${expected}" == *[$'\r\n']* ]]; then
-              echo "::error file=${template}::${expect} is missing, empty or more than one line: it must hold the text Lima's refusal of ${template} contains"
+            if [ -L "${expect}" ] || { [ -e "${expect}" ] && [ ! -f "${expect}" ]; }; then
+              echo "::error file=${template}::${expect} must be a regular file, not a symlink or anything else"
               failed=1
-              expected=""
+            else
+              if [ -f "${expect}" ]; then
+                # An unreadable .expect reads as empty, so the error below names it.
+                expected="$(<"${expect}")" || expected=""
+              fi
+              # One line, so it can neither start a workflow command in the log nor match across lines.
+              if [ -z "${expected}" ] || [[ "${expected}" == *[$'\r\n']* ]]; then
+                echo "::error file=${template}::${expect} is missing, unreadable, empty or more than one line: it must hold the text Lima's refusal of ${template} contains"
+                failed=1
+                expected=""
+              fi
             fi
             echo "${template}, which Lima must refuse:"
             validate "${template}"
@@ -155,10 +169,9 @@ jobs:
             elif [ -z "${expected}" ]; then
               : # Refused, but for a reason nothing pins: already an error above.
             elif logged "${expected}"; then
-              echo "  refused with ${expected}, as it must be"
+              echo "  refused with the text ${expect} holds, as it must be"
             else
-              # % is the one character of a one-line message an annotation would decode.
-              echo "::error file=${template}::limactl validate refuses ${template}, but not with ${expected//%/%25} (${expect}): it is refused for another reason"
+              echo "::error file=${template}::limactl validate refuses ${template}, but its log above does not contain the text ${expect} holds: it is refused for another reason"
               failed=1
             fi
           done
