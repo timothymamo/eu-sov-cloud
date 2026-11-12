@@ -1,19 +1,7 @@
 {
   "permissions": {
     "allow": [
-      "Bash(cd @WORKSPACE@/*)",
-      "Bash(git -C @WORKSPACE@/* status*)",
-      "Bash(git -C @WORKSPACE@/* diff*)",
-      "Bash(git -C @WORKSPACE@/* log*)",
-      "Bash(git -C @WORKSPACE@/* show*)",
-      "Bash(git -C @WORKSPACE@/* rev-parse*)",
-      "Bash(git -C @WORKSPACE@/* rev-list*)",
-      "Bash(git -C @WORKSPACE@/* merge-base*)",
-      "Bash(git -C @WORKSPACE@/* ls-files*)",
-      "Bash(git -C @WORKSPACE@/* grep*)",
-      "Bash(git -C @WORKSPACE@/* branch --show-current)",
-      "Bash(git -C @WORKSPACE@/*/.worktrees/* add *)",
-      "Bash(git -C @WORKSPACE@/*/.worktrees/* commit *)"
+      "Bash(cd @WORKSPACE@/*)"
     ]
   },
   "autoMode": {
