@@ -13,6 +13,7 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"unicode"
 
 	"github.com/google/go-cmp/cmp"
 
@@ -25,6 +26,7 @@ const (
 	goModName          = "go.mod"
 	goreleaserName     = ".goreleaser.yaml"
 	versionPackagePath = "github.com/timothymamo/eu-sov-cloud/internal/version"
+	mainPackage        = "./cmd/eusov"
 )
 
 // TestBuilderGoVersionMatchesGoMod pins that the builder stage is the golang
@@ -105,13 +107,19 @@ func TestEveryBaseImageIsDigestPinned(t *testing.T) {
 // environment prefix: an assignment moved to another instruction, or mentioned
 // only in a comment or a flag value, does not build anything and must not
 // satisfy the check.
+//
+// The command line is read as a whole, not searched for strings: parseBuildCommand
+// holds it to the release env followed directly by `go build`, and the go build
+// to the three flags .goreleaser.yaml gives it. A stray flag such as -mod=mod,
+// a command between the prefix and the build, or a variable assigned twice would
+// build with settings the release does not use, so each of them is refused
+// rather than left to a mention somewhere in the text.
 func TestBuildMatchesGoReleaser(t *testing.T) {
 	t.Parallel()
 
 	settings := parseBuildSettings(t, readRepoFile(t, goreleaserName))
 	build := goBuildRun(t, readRepoFile(t, dockerfileName))
-	command := build.arguments()
-	buildEnv := commandEnv(command)
+	command := parseBuildCommand(t, build)
 
 	// The env entries are releasetarget.Env(), the list releasetarget.Read
 	// holds every build's env to (issue #102): cgo off, so nothing links a C
@@ -139,18 +147,22 @@ func TestBuildMatchesGoReleaser(t *testing.T) {
 			continue
 		}
 
-		if tc.list == "env" {
-			if !slices.Contains(buildEnv, tc.setting) {
-				t.Errorf("%s:%d: the RUN instruction that runs `go build` sets the environment prefix %q, which does not name %q, so the image and the release are built differently; %s sets it for the release binary, and an assignment on another instruction, in a comment or in a flag value does not build anything",
-					dockerfileName, build.line, strings.Join(buildEnv, " "), tc.setting, goreleaserName)
+		switch tc.list {
+		case "env":
+			if !slices.Contains(command.env, tc.setting) {
+				t.Errorf("%s:%d: the RUN instruction that runs `go build` sets the environment prefix %q, which does not assign %q, so the image and the release are built differently; %s sets it for the release binary, and an assignment on another instruction, in a comment or in a flag value does not build anything",
+					dockerfileName, build.line, strings.Join(command.env, " "), tc.setting, goreleaserName)
 			}
-
-			continue
-		}
-
-		if !strings.Contains(command, tc.setting) {
-			t.Errorf("%s:%d: the RUN instruction that runs `go build` does not pass %q, which %s sets for the release binary, so the image and the release are built differently",
-				dockerfileName, build.line, tc.setting, goreleaserName)
+		case "flags":
+			if !slices.Contains(command.flags, tc.setting) {
+				t.Errorf("%s:%d: the RUN instruction that runs `go build` does not pass %q, which %s sets for the release binary, so the image and the release are built differently",
+					dockerfileName, build.line, tc.setting, goreleaserName)
+			}
+		default:
+			if !strings.Contains(command.ldflags, tc.setting) {
+				t.Errorf("%s:%d: the RUN instruction that runs `go build` passes the linker flags %q, which do not hold %q, so the image and the release are built differently",
+					dockerfileName, build.line, command.ldflags, tc.setting)
+			}
 		}
 	}
 
@@ -165,22 +177,50 @@ func TestBuildMatchesGoReleaser(t *testing.T) {
 
 	for _, prefix := range prefixes {
 		flag := "-X " + prefix
-		if !strings.Contains(command, flag) {
-			t.Errorf("%s:%d: the RUN instruction that runs `go build` does not pass the linker flag %q, which %s sets for the release binary; the image must take the value from a build arg, so only the part up to the = is compared",
-				dockerfileName, build.line, flag, goreleaserName)
+		if !strings.Contains(command.ldflags, flag) {
+			t.Errorf("%s:%d: the RUN instruction that runs `go build` does not pass the linker flag %q in its -ldflags value %q, which %s sets for the release binary; the image must take the value from a build arg, so only the part up to the = is compared",
+				dockerfileName, build.line, flag, command.ldflags, goreleaserName)
 		}
 	}
 
-	if !strings.Contains(command, "./cmd/eusov") {
-		t.Errorf("%s:%d: the RUN instruction that runs `go build` does not compile ./cmd/eusov, the main package %s builds the release binary from",
-			dockerfileName, build.line, goreleaserName)
+	if command.pkg != mainPackage {
+		t.Errorf("%s:%d: the RUN instruction that runs `go build` builds %q, want %s, the main package %s builds the release binary from",
+			dockerfileName, build.line, command.pkg, mainPackage, goreleaserName)
+	}
+
+	// The prefix may name no other variable, and must assign each name exactly
+	// once. The go command takes the last value a variable is assigned, so
+	// `GOFLAGS=-mod=readonly GOFLAGS=-mod=mod` would build with modules on the
+	// write side while the check above still finds the readonly entry, and a
+	// name the test does not know, such as GOEXPERIMENT or GOTOOLCHAIN, would
+	// change the build in a way the release env was never reviewed for.
+	wantNames := make([]string, 0, len(releasetarget.Env())+2)
+	for _, setting := range releasetarget.Env() {
+		name, _, _ := strings.Cut(setting, "=")
+		wantNames = append(wantNames, name)
+	}
+
+	wantNames = append(wantNames, "GOOS", "GOARCH")
+
+	gotNames := make([]string, 0, len(command.env))
+	for _, setting := range command.env {
+		name, _, _ := strings.Cut(setting, "=")
+		gotNames = append(gotNames, name)
+	}
+
+	slices.Sort(wantNames)
+	slices.Sort(gotNames)
+
+	if diff := cmp.Diff(wantNames, gotNames); diff != "" {
+		t.Errorf("%s:%d: the environment prefix %q assigns the names %q, want those of releasetarget.Env() plus GOOS and GOARCH (-want +got):\n%s\nwant exactly one assignment per name and no other variable: a name assigned twice keeps the last value, so the build would use a value the release env does not give",
+			dockerfileName, build.line, strings.Join(command.env, " "), gotNames, diff)
 	}
 
 	for _, tc := range []struct{ env, buildArg string }{
 		{env: "GOOS", buildArg: "TARGETOS"},
 		{env: "GOARCH", buildArg: "TARGETARCH"},
 	} {
-		if !usesBuildArg(command, tc.env, tc.buildArg) {
+		if !usesBuildArg(command.env, tc.env, tc.buildArg) {
 			t.Errorf("%s:%d: the RUN instruction that runs `go build` does not set %s from %s (as $%s or ${%s}), so docker buildx --platform builds every platform for the builder's own",
 				dockerfileName, build.line, tc.env, tc.buildArg, tc.buildArg, tc.buildArg)
 		}
@@ -805,13 +845,115 @@ func goBuildRun(t *testing.T, dockerfile string) instruction {
 	return instruction{}
 }
 
+// buildCommand is the command of the one RUN instruction that builds the
+// image's binary, read the way a shell reads it: the environment assignments
+// in front of it, the flags the go build itself carries, the value of its
+// -ldflags flag and the package it builds.
+type buildCommand struct {
+	env     []string
+	flags   []string
+	ldflags string
+	pkg     string
+}
+
+// parseBuildCommand reads the command of the RUN instruction that runs
+// `go build` and holds it to the release build: the environment prefix must be
+// followed directly by `go build`, and the go build may carry only -trimpath,
+// -ldflags with the internal/version stamps and -o with the binary's path, then
+// the package ./cmd/eusov.
+//
+// It fails the test rather than reporting a mismatch: a command line that is
+// not shaped like the release build is not the thing the caller set out to
+// compare with .goreleaser.yaml, so the caller cannot say anything useful about
+// the settings it would read from it.
+func parseBuildCommand(t *testing.T, build instruction) buildCommand {
+	t.Helper()
+
+	env, args := commandEnv(t, build.arguments())
+
+	// The assignments apply to the one command they prefix. In
+	// `CGO_ENABLED=0 GOWORK=off GOFLAGS=-mod=readonly true && go build ...`,
+	// or after a ; or a |, they apply to true and the build runs without
+	// them, which is what this test must not accept however the rest of the
+	// line reads.
+	if len(args) < 2 || args[0] != "go" || args[1] != "build" {
+		t.Fatalf("%s:%d: the environment prefix %q is followed by %q, not by `go build`: an assignment applies to the one command it prefixes, so a shell operator or another command between them leaves the build without the release env; want `%s go build ...`",
+			dockerfileName, build.line, strings.Join(env, " "), strings.Join(args, " "), strings.Join(env, " "))
+	}
+
+	rest := args[2:]
+	if len(rest) == 0 {
+		t.Fatalf("%s:%d: the command runs `go build` with no flag and no package: want -trimpath, -ldflags <value> and -o <path>, then %s",
+			dockerfileName, build.line, mainPackage)
+	}
+
+	command := buildCommand{env: env, pkg: rest[len(rest)-1]}
+	seen := make(map[string]struct{}, 3)
+
+	// Only the three flags .goreleaser.yaml gives the build, so a flag the
+	// release does not pass cannot override the release env: -mod=mod and
+	// -mod=vendor override GOFLAGS, -tags and -gcflags change what is
+	// compiled, and -buildvcs writes information the release binary does not
+	// carry. releasetarget.Read refuses every one of them in the release's
+	// flags list.
+	for i := 0; i < len(rest)-1; i++ {
+		field := rest[i]
+
+		name, value, takesValue := field, "", false
+
+		switch {
+		case field == "-trimpath":
+		case field == "-ldflags", field == "-o":
+			takesValue = true
+		case strings.HasPrefix(field, "-ldflags="):
+			name, value = "-ldflags", strings.TrimPrefix(field, "-ldflags=")
+		default:
+			t.Fatalf("%s:%d: the command passes %q to `go build`: want only -trimpath, -ldflags <value> and -o <path>, then %s. Any other flag, such as -mod=mod or -tags, overrides the release env or changes what is compiled",
+				dockerfileName, build.line, field, mainPackage)
+		}
+
+		if _, twice := seen[name]; twice {
+			t.Fatalf("%s:%d: the command passes %s to `go build` twice: want it at most once, so a later value cannot quietly override the one checked here",
+				dockerfileName, build.line, name)
+		}
+
+		seen[name] = struct{}{}
+
+		if takesValue {
+			if i+1 >= len(rest)-1 {
+				t.Fatalf("%s:%d: the %s flag has no value: want `%s <value>`, and %s as the last field, the package the build compiles",
+					dockerfileName, build.line, name, name, mainPackage)
+			}
+
+			i++
+			value = rest[i]
+		}
+
+		if name == "-ldflags" {
+			command.ldflags = value
+		}
+
+		command.flags = append(command.flags, name)
+	}
+
+	return command
+}
+
 // commandEnv returns the environment assignments at the front of a RUN
-// instruction's command: the NAME=value fields after the leading --mount (or
-// other --) flags and an optional env, up to the command itself. Only these
-// assignments apply to the command; one written on another instruction, in a
-// comment or inside a flag value does not.
-func commandEnv(command string) []string {
-	fields := strings.Fields(command)
+// instruction's command and the fields after them: the NAME=value fields after
+// the leading --mount (or other --) flags and an optional env, up to the
+// command itself. Only these assignments apply to the command; one written on
+// another instruction, in a comment or inside a flag value does not.
+//
+// A value must be written unquoted, because commandFields keeps the quotation
+// marks in the field: GOFLAGS="-mod=readonly" reads as the value
+// `"-mod=readonly"`, which equals no setting of the release env, so the caller
+// refuses it. The check fails closed rather than unquoting a value it does not
+// know into one it accepts.
+func commandEnv(t *testing.T, command string) (env, args []string) {
+	t.Helper()
+
+	fields := commandFields(t, command)
 
 	for len(fields) > 0 && strings.HasPrefix(fields[0], "--") {
 		fields = fields[1:]
@@ -821,17 +963,62 @@ func commandEnv(command string) []string {
 		fields = fields[1:]
 	}
 
-	var env []string
-	for _, field := range fields {
-		name, _, isAssignment := strings.Cut(field, "=")
+	for len(fields) > 0 {
+		name, _, isAssignment := strings.Cut(fields[0], "=")
 		if !isAssignment || !isEnvName(name) {
 			break
 		}
 
-		env = append(env, field)
+		env = append(env, fields[0])
+		fields = fields[1:]
 	}
 
-	return env
+	return env, fields
+}
+
+// commandFields splits a RUN instruction's command into fields the way a shell
+// would, except that it keeps the quote characters in the field: a quoted value
+// reads as the quoted text, so a caller that compares it with an unquoted
+// setting refuses it rather than unquoting a value it has not read. A quote the
+// command never closes fails the test, since no shell could run the command.
+func commandFields(t *testing.T, command string) []string {
+	t.Helper()
+
+	var (
+		fields     []string
+		field      strings.Builder
+		quote      rune
+		insideMark bool
+	)
+
+	for _, r := range command {
+		switch {
+		case insideMark:
+			field.WriteRune(r)
+			insideMark = r != quote
+		case r == '"' || r == '\'':
+			quote, insideMark = r, true
+			field.WriteRune(r)
+		case unicode.IsSpace(r):
+			if field.Len() > 0 {
+				fields = append(fields, field.String())
+				field.Reset()
+			}
+		default:
+			field.WriteRune(r)
+		}
+	}
+
+	if insideMark {
+		t.Fatalf("%s: the command %q has an unclosed %c, so no shell could run it and this test cannot read its fields",
+			dockerfileName, command, quote)
+	}
+
+	if field.Len() > 0 {
+		fields = append(fields, field.String())
+	}
+
+	return fields
 }
 
 // isEnvName reports whether name is a shell variable name: a letter or an
@@ -889,11 +1076,12 @@ func isDebugBaseImage(image string) bool {
 	return strings.Contains(strings.ToLower(baseImageTag(image)), "debug")
 }
 
-// usesBuildArg reports whether the build reads env (GOOS, GOARCH) from the
-// buildx platform argument, as GOOS=$TARGETOS or GOOS=${TARGETOS}.
-func usesBuildArg(dockerfile, env, buildArg string) bool {
-	return strings.Contains(dockerfile, env+"=$"+buildArg) ||
-		strings.Contains(dockerfile, env+"=${"+buildArg+"}")
+// usesBuildArg reports whether the environment prefix sets env to the buildx
+// platform argument, as GOOS=$TARGETOS or GOOS=${TARGETOS}. The whole
+// assignment is compared, so a GOOS that reads anything else is not accepted.
+func usesBuildArg(env []string, name, buildArg string) bool {
+	return slices.Contains(env, name+"=$"+buildArg) ||
+		slices.Contains(env, name+"=${"+buildArg+"}")
 }
 
 // parseBuildSettings reads the env, flags and ldflags lists of .goreleaser.yaml
