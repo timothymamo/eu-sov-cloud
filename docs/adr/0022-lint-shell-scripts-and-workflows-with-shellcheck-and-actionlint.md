@@ -38,15 +38,41 @@ codes and give a reason.**
   (`SHELLCHECK_VERSION`, `SHELLCHECK_SHA256`), installs that binary and puts it first on the PATH.
   `test/architecture`'s `TestShellcheckPinsAgree` holds the two pins equal, and one Renovate group
   moves them together.
-- **actionlint** is a `tool` directive in `go.mod`, run as `go tool actionlint`. go.sum and the Go
-  checksum database verify it, the gomod manager already bumps it, and it needs no download step in CI
-  or in the VM: any Go install runs it. actionlint hands every `run:` script to the shellcheck on the
-  PATH, so CI and the VM check workflow scripts with the pinned shellcheck too.
+- **actionlint** is a `tool` directive in `tools/go.mod`, a module of its own
+  (`github.com/timothymamo/shift2eu/tools`) beside the product's, run by `dev/actionlint.sh` as
+  `go tool -modfile=tools/go.mod actionlint`. `tools/go.sum` and the Go checksum database verify it,
+  Renovate's gomod manager finds `tools/go.mod` by its default file pattern and bumps it, and it needs
+  no download step in CI or in the VM: any Go install runs it. Its own module keeps its twelve
+  requirements (actionlint and its dependencies, such as `fatih/color`, `robfig/cron`,
+  `go.yaml.in/yaml/v4` at a release candidate and `golang.org/x/sys`) out of the shipped module's
+  minimal version selection: they never raise a version the product builds with, never appear in its
+  `go list -m all`, and Renovate's bumps of them never touch `go.mod`. `go.mod` and `go.sum` require
+  only what the product and its tests import. A nested module is outside `./...`, so `make test`,
+  `make lint`'s golangci-lint runs and GoReleaser's `go mod tidy -diff` never see it; CI's Test job
+  checks it is tidy with `go -C tools mod tidy -diff`.
+- **actionlint uses the pinned shellcheck, or fails.** actionlint hands every `run:` script to
+  shellcheck, and when it cannot run the one it is given it logs that the check is disabled and passes.
+  `dev/actionlint.sh` therefore resolves `command -v shellcheck`, fails with `shellcheck is not
+  installed: re-provision the VM or see docs/contributing/development.md` when there is none, and passes
+  actionlint `-shellcheck=<that path>`; `dev/shellcheck.sh` fails the same way. actionlint v1.7.12
+  already runs shellcheck with `--norc` (`rule_shellcheck.go`), so no rc file reaches the workflow
+  scripts either.
+- **govulncheck** scans the product with `govulncheck ./...`, which never reaches the tools module, and
+  `make vuln` and the Security workflow scan actionlint separately with
+  `govulncheck -C tools github.com/rhysd/actionlint/cmd/actionlint`. A vulnerability there reaches only
+  the developer's and CI's lint run, never a release binary, but a lint tool still parses untrusted
+  workflow text, so it is kept clean: `tools/go.mod` raises `golang.org/x/sys` above the version
+  actionlint asks for, past GO-2026-5024.
 - **What shellcheck checks:** `dev/shellcheck.sh` takes the list from `git ls-files`, never from a
   hand-written list. A script is a tracked file whose name ends in `.sh`, or whose first line is a
   shebang that runs `sh` or `bash`, directly or through `env`. That is the rule `test/lint`'s
   `IsShellScript` states, and `TestMakeLintRunsEveryReleaseTarget` fails when the two pick different
   files. A new script is checked without any edit.
+- **No rc file: `--norc`.** shellcheck otherwise reads `.shellcheckrc` from each script's directory and
+  every parent, then `~/.shellcheckrc` or `$XDG_CONFIG_HOME/shellcheckrc`. Any of them can disable a
+  check, so a developer's run could report less than CI's. `dev/shellcheck.sh` runs
+  `shellcheck --norc --severity=style -- <scripts>`, `--` so no file name is read as an option, and
+  `test/lint` refuses a tracked `.shellcheckrc`, `shellcheckrc` or `.github/actionlint.y*ml`.
 - **Severity: `--severity=style`**, every finding, which is shellcheck's default, stated so it cannot
   drift. The word splitting the issue names, SC2086, is only `info`, as is SC2016. A
   `--severity=warning` run would let through exactly the class of bug that motivated this. With every
@@ -54,7 +80,10 @@ codes and give a reason.**
 - **Findings are fixed, not silenced.** Where a check cannot be satisfied, the line carries
   `# shellcheck disable=SCnnnn # reason`. `test/lint`'s `TestTrackedShellScriptsNameTheirShellcheckCodes`
   refuses a directive without a code of the form `SC` and four digits (`all` included) or without a
-  reason on the same line, as nolintlint does for `//nolint`.
+  reason on the same line, as nolintlint does for `//nolint`. It reads a comment wherever the shell
+  starts one, at any `#` that begins a word (the line start, after a blank, or after `;`, `&`, `|`,
+  `(` or `)`), and `TestTrackedWorkflowsNameTheirShellcheckCodes` holds the workflows' `run:` scripts,
+  which actionlint hands to shellcheck, to the same rule.
 - **Where they run:** once in `make lint`, after the golangci-lint runs and before `test/lint`, through
   the same `failed=` accounting. Neither depends on the release target, so neither runs once per
   target. In CI they run in a job of their own, not as steps of the `lint-target` matrix, which would
@@ -71,10 +100,12 @@ codes and give a reason.**
   tool that cannot share the VM's. The packages lag behind releases and differ between Ubuntu
   versions.
 - **actionlint from a pinned release with SHA-256 digests,** like shellcheck. That needs a download
-  step and digests in two places. The `go tool` directive is verified by go.sum and needs neither. Its
-  cost is twelve indirect requirements in `go.mod` (actionlint and its dependencies, such as
-  `fatih/color`, `robfig/cron` and `golang.org/x/sys`). No package of the module imports them, so the
-  release binaries, depguard and govulncheck's scan of `./...` never see them.
+  step and digests in two places. The `go tool` directive is verified by go.sum and needs neither.
+- **actionlint as a `tool` directive in the product's `go.mod`,** run as `go tool actionlint`. Simpler,
+  but its twelve indirect requirements would join the shipped module's minimal version selection, show
+  in `go list -m all` and in Renovate's indirect bumps, and govulncheck's scan of `./...` would still
+  never cover them: a pre-release `go.yaml.in/yaml/v4` and a `golang.org/x/sys` with a known
+  vulnerability sat in the product's module graph for no product reason.
 - **No actionlint.** shellcheck alone would leave the `run:` scripts, the bulk of the release logic,
   unlinted, and nothing would check `${{ }}` expressions and contexts.
 
@@ -82,11 +113,15 @@ codes and give a reason.**
 
 - A shell script or a workflow change that shellcheck or actionlint refuses fails `make lint`, so
   `make check`, and the required `Lint` check.
-- Running `make lint` locally now needs shellcheck on the PATH: `docs/contributing/development.md`
-  says how to install the pinned version. actionlint needs nothing beyond Go.
+- Running `make lint` locally now needs shellcheck on the PATH, or it fails saying so:
+  `docs/contributing/development.md` says how to install the pinned version, and a VM created before
+  this change is recreated (`docs/dev-environment.md`). actionlint needs nothing beyond Go.
+- The repository holds a second Go module, `tools/`. `make tidy` tidies both; a Go toolchain bump moves
+  both `go` directives.
 - A shellcheck bump arrives as one Renovate PR for `dev/lima.yaml`, its `lima-invalid` copies and
   `ci.yml`, and it fixes any new finding in the same PR. shellcheck releases carry no signature or
   attestation, so a digest can be checked only against the asset GitHub serves. CI's `lint-shell` job
-  does that on every run.
+  does that for the amd64 asset on every run; the arm64 digest is checked only when a VM is
+  provisioned, and `vm-tools.yml` does not check shellcheck.
 - The Lima VM's own provisioning scripts in `dev/lima.yaml` are YAML strings, not tracked scripts, so
   they are not linted. Extracting them would be a separate change.
