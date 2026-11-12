@@ -9,9 +9,8 @@ import (
 )
 
 // GitHubRelease checks how a .goreleaser.yaml document publishes the GitHub
-// release: its top-level release section must hold exactly draft: true and
-// prerelease: auto, in that order, and may add replace_existing_draft: true
-// after them.
+// release: its top-level release section must hold exactly draft: true,
+// prerelease: auto and replace_existing_draft: true, in that order.
 //
 //   - draft: true (issue #156): goreleaser uploads every asset to a draft and
 //     leaves it a draft, and release.yml's publish job publishes it last,
@@ -25,8 +24,9 @@ import (
 //     gets no X.Y and no latest tag for a pre-release (ADR 0015).
 //   - replace_existing_draft: true: a re-run of a failed goreleaser job
 //     deletes the draft the failed run left for the tag and starts a new one,
-//     rather than leave two drafts for one tag. GitHub finds no draft by its
-//     tag, so without it goreleaser creates a second one.
+//     rather than leave two drafts for one tag. GitHub's release by tag
+//     (GetReleaseByTag) skips drafts, so without it goreleaser creates a
+//     second one, and the publish job may publish the incomplete first.
 //
 // It fails closed: a missing release section is refused, because goreleaser's
 // default publishes every tag as a normal release, and so is any other key or
@@ -54,19 +54,19 @@ func GitHubRelease(goreleaser []byte) error {
 		}
 	}
 
-	return errors.New("read .goreleaser.yaml: no release section, want release: draft: true and prerelease: auto: goreleaser's default publishes a pre-release tag as a normal release, the latest one, and publishes the assets before they are attested")
+	return errors.New("read .goreleaser.yaml: no release section, want release: draft: true, prerelease: auto and replace_existing_draft: true: goreleaser's default publishes a pre-release tag as a normal release, the latest one, and publishes the assets before they are attested")
 }
 
 // releaseKeys are the keys of the release section, in order, each with the
-// one plain value it must have; the last may be left out.
+// one plain value it must have.
 var releaseKeys = []struct{ key, value string }{
 	{"draft", "true"},
 	{"prerelease", "auto"},
 	{"replace_existing_draft", "true"},
 }
 
-// checkRelease refuses a release section that holds anything but draft: true
-// and prerelease: auto, optionally followed by replace_existing_draft: true.
+// checkRelease refuses a release section that holds anything but draft: true,
+// prerelease: auto and replace_existing_draft: true, in that order.
 func checkRelease(release yamlread.Entry) error {
 	block, err := yamlread.BlockValue(release, "release")
 	if err != nil {
@@ -78,8 +78,8 @@ func checkRelease(release yamlread.Entry) error {
 		return fmt.Errorf("release: %w", err)
 	}
 
-	if len(entries) < len(releaseKeys)-1 || len(entries) > len(releaseKeys) {
-		return fmt.Errorf("line %d: release holds %d keys, want exactly draft: true and prerelease: auto, and optionally replace_existing_draft: true: any other key may change which release GitHub shows as the latest or publish it before its archives are attested", release.Num, len(entries))
+	if len(entries) != len(releaseKeys) {
+		return fmt.Errorf("line %d: release holds %d keys, want exactly draft: true, prerelease: auto and replace_existing_draft: true: a missing replace_existing_draft leaves a re-run two drafts for one tag, and any other key may change which release GitHub shows as the latest or publish it before its archives are attested", release.Num, len(entries))
 	}
 
 	for i, e := range entries {
