@@ -45,7 +45,11 @@
 // SHIFT2EU_LINT_PROBES=require, which make lint and every entry of CI's
 // lint-target matrix (the Lint check) set. Only CI fails on a golangci-lint
 // version other than the pinned one; elsewhere the probe runs and logs a
-// warning. TestCloudReadOnlyPatterns and
+// warning. A probe with no forbidigo tag runs depguard alone:
+// TestAdaptersBuiltInCmdProbe (testdata/adaptersbuiltincmd) imports an adapter
+// from each subtree of internal/adapter in a package outside the composition
+// roots and must be refused by adapters-are-built-in-cmd, so a deny entry
+// shadowed by another, as in issue #119, fails. TestCloudReadOnlyPatterns and
 // TestCloudReadOnlyPackages check the group's allowlist patterns, read from
 // .golangci.yml, against lists of write and read names and of import paths,
 // without golangci-lint. TestForbidigoExclusionsDropOneGroup checks every

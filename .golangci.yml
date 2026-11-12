@@ -159,10 +159,16 @@ linters:
             # application layer: adapters do I/O behind the ports. The allow
             # list already refuses everything below; these entries only say
             # why. depguard prefix-matches, so net/http also covers
-            # net/http/httptest and every other net/http/* package. With the
-            # strict allow list the application layer gets only what is
-            # listed, even a pure package such as net/netip; an import that no
-            # entry here names is refused with depguard's generic message.
+            # net/http/httptest and every other net/http/* package. net$ and
+            # os$ end in $ and cover that package only: depguard compares an
+            # import with the one entry that sorts nearest before it, so a
+            # bare net or os would be a strict prefix of net/http or os/exec
+            # and never decide an import under them, and each subpackage it
+            # means is named instead (issue #119; test/architecture,
+            # TestDepguardEntriesShadowNothing). With the strict allow list the
+            # application layer gets only what is listed, even a pure package
+            # such as net/netip; an import that no entry here names is refused
+            # with depguard's generic message.
             - pkg: net/http
               desc: the application layer makes no HTTP calls; an adapter behind a port does
             - pkg: net/rpc
@@ -171,7 +177,7 @@ linters:
               desc: the application layer sends no mail; an adapter behind a port does
             - pkg: net/mail
               desc: the application layer parses no mail; an adapter behind a port does
-            - pkg: net
+            - pkg: net$
               desc: the application layer has no network access; an adapter behind a port does
             - pkg: os/exec
               desc: the application layer starts no processes
@@ -179,7 +185,7 @@ linters:
               desc: the application layer looks up no OS users; the driving adapter passes what it needs through the ports
             - pkg: os/signal
               desc: the application layer handles no OS signals; the driving adapter cancels the context instead
-            - pkg: os
+            - pkg: os$
               desc: the application layer has no OS access (files, environment); the driving adapter passes what it needs through the ports
         # The application layer's tests use fakes, not adapters, and keep the
         # same deny list. They are left out of the strict rule above because
@@ -376,21 +382,29 @@ linters:
         # entry: make lint runs on ./..., which skips testdata directories and
         # directories whose name starts with _, so a helper placed there is
         # never linted, and a prefix entry would let every adapter import it
+        # (issues #49 and #50).
         #
-        # Known gap: depguard (v2.2.1) does not report this rule's deny
-        # entries today. It compares an import only with the one list entry
+        # The deny list names each subtree of internal/adapter (internal/,
+        # report/, request/, source/, target/) rather than internal/adapter/
+        # once. depguard (v2.2.1) compares an import only with the one entry
         # that sorts nearest before it, as a prefix unless the entry ends in
-        # $. Sorted, internal/adapter/ comes before internal/adapter/internal/,
-        # and every real adapter subpackage (report/, request/, source/,
-        # target/) sorts after internal/, so it is compared only with
-        # internal/adapter/internal/ and nothing fires. No probe in test/lint
-        # or test/architecture covers the rule (it is lax with $all, which
-        # check.RuleDirs skips). Fixing it is a follow-up of its own (ADR
-        # 0019, docs/architecture.md).
-        # (issues #49 and #50). The deny entry for internal/adapter/internal/
-        # is longer than the one for internal/adapter/, so it gives the
-        # reason for a helper not named here. Every adapter that must stay
-        # offline also names the helpers it imports, each ending in $, in a
+        # $, so no entry may be a strict prefix of another: with internal/
+        # adapter/ beside internal/adapter/internal/, every adapter under
+        # report/, request/, source/ or target/ sorts after internal/, was
+        # compared with that entry alone, and the rule reported nothing
+        # (issue #119). Siblings never shadow each other. A new subtree
+        # under internal/adapter would match no entry and escape the rule, so
+        # test/architecture fails on an entry of internal/adapter that is not
+        # a directory with a deny entry of its own here
+        # (TestAdaptersBuiltInCmdNamesEveryAdapterSubtree), and on any entry
+        # that is a strict prefix of another in the same list
+        # (TestDepguardEntriesShadowNothing). test/lint runs depguard on a
+        # probe that imports an adapter from each subtree
+        # (TestAdaptersBuiltInCmdProbe).
+        #
+        # The deny entry for internal/adapter/internal/ gives the reason for a
+        # helper not named here. Every adapter that must stay offline also
+        # names the helpers it imports, each ending in $, in a
         # strict rule of its own: inventory-file-reader-reads-one-file,
         # request-decoders-parse-bytes, target-snapshot-reader-parses-bytes,
         # embedded-snapshot-targets-stay-offline and reporters-stay-offline.
@@ -411,7 +425,13 @@ linters:
           deny:
             - pkg: github.com/timothymamo/shift2eu/internal/adapter/internal/
               desc: an adapter imports only the shared helpers named in adapters-are-built-in-cmd; name a new helper there first (a helper under a testdata or _ directory is never linted) (ADR 0009)
-            - pkg: github.com/timothymamo/shift2eu/internal/adapter/
+            - pkg: github.com/timothymamo/shift2eu/internal/adapter/report/
+              desc: adapters are constructed only in cmd/shift2eu and cmd/shift2eu-server
+            - pkg: github.com/timothymamo/shift2eu/internal/adapter/request/
+              desc: adapters are constructed only in cmd/shift2eu and cmd/shift2eu-server
+            - pkg: github.com/timothymamo/shift2eu/internal/adapter/source/
+              desc: adapters are constructed only in cmd/shift2eu and cmd/shift2eu-server
+            - pkg: github.com/timothymamo/shift2eu/internal/adapter/target/
               desc: adapters are constructed only in cmd/shift2eu and cmd/shift2eu-server
         # Dependencies point inwards only: the composition root imports the
         # driving adapter, and nothing imports the composition root. So no
@@ -1002,8 +1022,12 @@ linters:
         # Review holds that line; a forbidigo rule (issue #43) could.
         #
         # The allow list already refuses every package below; these entries
-        # only say why. They have no $, so each also covers its subpackages:
-        # os covers os/exec, os/signal and os/user, and net covers net/http.
+        # only say why. Those without $ also cover their subpackages: net
+        # covers net/http. os$ covers os alone, and os/exec, os/signal and
+        # os/user are named, because depguard compares an import with the one
+        # entry that sorts nearest before it: a bare os would be a strict
+        # prefix of os/exec and decide nothing under it (issue #119; test/
+        # architecture, TestDepguardEntriesShadowNothing).
         reporters-stay-offline:
           list-mode: strict
           files:
@@ -1028,7 +1052,11 @@ linters:
               desc: a reporter sends nothing over the network; it writes only to the io.Writer it is given
             - pkg: os/exec
               desc: a reporter runs no program; it writes only to the io.Writer it is given
-            - pkg: os
+            - pkg: os/signal
+              desc: a reporter handles no OS signal; it writes only to the io.Writer it is given
+            - pkg: os/user
+              desc: a reporter looks up no OS user; it writes only to the io.Writer it is given
+            - pkg: os$
               desc: a reporter reads no file and no environment; it writes only to the io.Writer it is given
             - pkg: plugin
               desc: a reporter loads no code
