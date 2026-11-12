@@ -282,9 +282,8 @@ linters:
         # constructs without importing the SDK itself.
         #
         # The rule holds cmd/eusov only. A glob segment matches no "/", so
-        # **/cmd/eusov/** does not match a sibling such as cmd/eusov-server.
-        # A future cmd/eusov-server (PRD #103) gets a sibling rule written the
-        # same way, with its own files: entry and the packages it needs.
+        # **/cmd/eusov/** does not match a sibling such as cmd/eusov-server,
+        # which has a sibling rule of its own, server-composition-root.
         composition-root:
           list-mode: strict
           files:
@@ -305,10 +304,57 @@ linters:
               desc: a cloud SDK lives only in its provider's adapter
             - pkg: google.golang.org/api
               desc: a cloud SDK lives only in its provider's adapter
-        # Adapters are constructed only in the composition root. No other
+        # The HTTP API's composition root (PRD #103, ADR 0019), the sibling of
+        # composition-root and written the same way: it constructs the
+        # adapters, hands them to internal/httpapi and runs the http.Server
+        # around it (flags, the token, timeouts, the access log, the graceful
+        # shutdown). Its imports are a strict allow list of the module's own
+        # packages and the standard packages it needs, each ending in $; no
+        # third-party package, no cloud SDK and no os/exec, which
+        # TestServerPathHasNoCloudSDKOrProcess (test/e2e) also pins for the
+        # whole dependency tree. Add a standard package only when
+        # cmd/eusov-server needs it, beside the pin in test/architecture.
+        server-composition-root:
+          list-mode: strict
+          files:
+            - "**/cmd/eusov-server/**"
+            - "!$test"
+          allow:
+            - context$
+            - errors$
+            - flag$
+            - fmt$
+            - io$
+            - log$
+            - math$
+            - net$
+            - net/http$
+            - os$
+            - os/signal$
+            - runtime$
+            - runtime/debug$
+            - slices$
+            - strconv$
+            - strings$
+            - sync$
+            - syscall$
+            - time$
+            - github.com/timothymamo/eu-sov-cloud/
+          deny:
+            - pkg: github.com/aws/aws-sdk-go-v2
+              desc: a cloud SDK lives only in its provider's adapter; the server takes inventory documents, never credentials (ADR 0019)
+            - pkg: github.com/Azure/azure-sdk-for-go
+              desc: a cloud SDK lives only in its provider's adapter; the server takes inventory documents, never credentials (ADR 0019)
+            - pkg: cloud.google.com/go
+              desc: a cloud SDK lives only in its provider's adapter; the server takes inventory documents, never credentials (ADR 0019)
+            - pkg: google.golang.org/api
+              desc: a cloud SDK lives only in its provider's adapter; the server takes inventory documents, never credentials (ADR 0019)
+        # Adapters are constructed only in the composition roots, cmd/eusov
+        # and cmd/eusov-server (ADR 0019), which the rule excludes. No other
         # production package, adapters included, imports an adapter: one
-        # adapter never builds or calls another, and internal/config or the
-        # CLI get adapters only through what cmd/eusov passes in. An adapter's
+        # adapter never builds or calls another, and internal/config, the CLI
+        # or the HTTP API get adapters only through what their composition
+        # root passes in. An adapter's
         # tests may import its contract suite (contract-suites-only-in-tests).
         # Helpers shared by adapters live in internal/adapter/internal/ (the
         # JSON decoder jsondoc, ADR 0009): they build no adapter, so adapters may
@@ -330,6 +376,17 @@ linters:
         # entry: make lint runs on ./..., which skips testdata directories and
         # directories whose name starts with _, so a helper placed there is
         # never linted, and a prefix entry would let every adapter import it
+        #
+        # Known gap: depguard (v2.2.1) does not report this rule's deny
+        # entries today. It compares an import only with the one list entry
+        # that sorts nearest before it, as a prefix unless the entry ends in
+        # $. Sorted, internal/adapter/ comes before internal/adapter/internal/,
+        # and every real adapter subpackage (report/, request/, source/,
+        # target/) sorts after internal/, so it is compared only with
+        # internal/adapter/internal/ and nothing fires. No probe in test/lint
+        # or test/architecture covers the rule (it is lax with $all, which
+        # check.RuleDirs skips). Fixing it is a follow-up of its own (ADR
+        # 0019, docs/architecture.md).
         # (issues #49 and #50). The deny entry for internal/adapter/internal/
         # is longer than the one for internal/adapter/, so it gives the
         # reason for a helper not named here. Every adapter that must stay
@@ -347,6 +404,7 @@ linters:
             - "$all"
             - "!$test"
             - "!**/cmd/eusov/**"
+            - "!**/cmd/eusov-server/**"
           allow:
             - github.com/timothymamo/eu-sov-cloud/internal/adapter/internal/jsondoc$
             - github.com/timothymamo/eu-sov-cloud/internal/adapter/target/snapshot$
@@ -354,7 +412,7 @@ linters:
             - pkg: github.com/timothymamo/eu-sov-cloud/internal/adapter/internal/
               desc: an adapter imports only the shared helpers named in adapters-are-built-in-cmd; name a new helper there first (a helper under a testdata or _ directory is never linted) (ADR 0009)
             - pkg: github.com/timothymamo/eu-sov-cloud/internal/adapter/
-              desc: adapters are constructed only in cmd/eusov
+              desc: adapters are constructed only in cmd/eusov and cmd/eusov-server
         # Dependencies point inwards only: the composition root imports the
         # driving adapter, and nothing imports the composition root. So no
         # production package other than cmd/eusov and the CLI's own packages

@@ -91,6 +91,16 @@ func targets() []targetCase {
 // binaryPath is the eusov binary every test runs, built once by TestMain.
 var binaryPath string
 
+// serverBinaryPath is the eusov-server binary the server tests run, built beside
+// eusov by TestMain. serverBuildErr holds why it could not be built, which the
+// server tests report: the CLI's own tests say whether the CLI works even when
+// the server does not build, so one binary's build failure cannot hide the
+// other's results.
+var (
+	serverBinaryPath string
+	serverBuildErr   error
+)
+
 // emptyEnv runs the binary with no environment at all. The assess command needs
 // no credentials, no HOME and no TMPDIR: the inventory path comes from the
 // argument, the catalog is embedded and --output writes next to its destination.
@@ -125,6 +135,13 @@ func buildAndRun(m *testing.M) (int, error) {
 	build := exec.Command("go", "build", "-trimpath", "-o", binaryPath, filepath.Join("..", "..", "cmd", "eusov"))
 	if out, err := build.CombinedOutput(); err != nil {
 		return 0, fmt.Errorf("build eusov: %w\n%s", err, out)
+	}
+
+	serverBinaryPath = filepath.Join(dir, "eusov-server")
+
+	server := exec.Command("go", "build", "-trimpath", "-o", serverBinaryPath, filepath.Join("..", "..", "cmd", "eusov-server"))
+	if out, err := server.CombinedOutput(); err != nil {
+		serverBuildErr = fmt.Errorf("build eusov-server: %w\n%s", err, out)
 	}
 
 	return m.Run(), nil

@@ -32,7 +32,8 @@ const (
 var skippedStrictRules = map[string]string{
 	"cli-gets-adapters-from-cmd": "it allows $gostd, which depguard expands to one prefix entry per top-level directory of GOROOT/src, so no allow list of package-by-package imports can say what it means",
 	"e2e-is-black-box":           "test/e2e holds test files only, so go list -deps reaches no package of it: it is no layer of the production packages the check holds, and a package only a test file imports is never listed at all",
-	compositionRootRule:          "go list -deps ./cmd/eusov/... lists the composition root's whole dependency tree, internal/cli and internal/version included, and no rule the check reads holds those (internal/cli's own rule allows $gostd and is skipped), so listing the composition root beside the other layers would flag them as outside every directory the check holds. TestCompositionRootIsHeldToItsRuleForEveryReleaseTarget holds cmd/eusov to this rule's allow list instead, on every release target",
+	compositionRootRule:          "go list -deps ./cmd/eusov/... lists the composition root's whole dependency tree, internal/cli and internal/version included, and no rule the check reads holds those (internal/cli's own rule allows $gostd and is skipped), so listing the composition root beside the other layers would flag them as outside every directory the check holds. TestCompositionRootRulesAreHeldToTheirRuleForEveryReleaseTarget holds cmd/eusov to this rule's allow list instead, on every release target",
+	serverCompositionRootRule:    "go list -deps ./cmd/eusov-server/... lists the server's whole dependency tree, the target adapters and the report adapters included, and the lax rule adapters-are-built-in-cmd holds those, which the check does not read, so listing the server's root beside the layers would flag them as outside every directory the check holds. TestCompositionRootRulesAreHeldToTheirRuleForEveryReleaseTarget holds cmd/eusov-server to this rule's allow list instead, on every release target",
 }
 
 // sdkRule is the strict depguard rule that holds every cloud source adapter, and
@@ -61,14 +62,78 @@ const compositionRootDir = "cmd/eusov"
 // to import needs an entry in .golangci.yml, in the pin and here.
 var compositionRootStds = []string{"context", "os", "os/signal", "syscall"}
 
+// serverCompositionRootRule is the strict depguard rule that holds the second
+// composition root, cmd/eusov-server, and nothing beside it (PRD #103, milestone
+// 3): it is written the way composition-root is, with a files: list naming its
+// own directory and its own allow list, so the two roots cannot widen each
+// other's imports.
+const serverCompositionRootRule = "server-composition-root"
+
+// serverCompositionRootDir is the directory the server-composition-root rule
+// holds.
+const serverCompositionRootDir = "cmd/eusov-server"
+
+// serverCompositionRootStds are the standard packages the server imports: context
+// for the run and its shutdown, flag for the flags, fmt and io for the stderr a
+// run writes its errors and its access log to, log for the access log and the
+// server's own error log, math for the memory limit debug.SetMemoryLimit reports
+// when GOMEMLIMIT is unset (math.MaxInt64), net and net/http for the listener and
+// the server, os for os.Args, os.Exit and the token file, os/signal and syscall
+// for SIGTERM and SIGINT, runtime and runtime/debug for the CPU count and the
+// memory limit, slices, strconv, strings and sync for the flags, the token and
+// the allowed hosts, and time for the server's timeouts. A standard package the
+// server starts to import needs an entry in .golangci.yml, in the pin and here.
+var serverCompositionRootStds = []string{
+	"context",
+	"errors",
+	"flag",
+	"fmt",
+	"io",
+	"log",
+	"math",
+	"net",
+	"net/http",
+	"os",
+	"os/signal",
+	"runtime",
+	"runtime/debug",
+	"slices",
+	"strconv",
+	"strings",
+	"sync",
+	"syscall",
+	"time",
+}
+
+// compositionRoot is one composition root of the module: the strict depguard rule
+// that holds it, the directory the rule holds, and the standard packages the
+// binary imports, each allowed exactly as its rule writes it.
+type compositionRoot struct {
+	rule string
+	dir  string
+	stds []string
+}
+
+// compositionRoots returns the composition roots, in the order .golangci.yml
+// holds their rules: cmd/eusov (issue #101) and cmd/eusov-server (PRD #103,
+// milestone 3). Each is held by a rule of its own, written the same way, so a
+// third-party import in either is refused by a strict allow list rather than by
+// review alone. A third root gets a row here and a rule beside the other two.
+func compositionRoots() []compositionRoot {
+	return []compositionRoot{
+		{rule: compositionRootRule, dir: compositionRootDir, stds: compositionRootStds},
+		{rule: serverCompositionRootRule, dir: serverCompositionRootDir, stds: serverCompositionRootStds},
+	}
+}
+
 // prefixEntryRules are the strict rules whose allow list may hold a prefix
 // entry, each named on purpose: the SDK-only rule names the roots of the cloud
-// SDKs, whose every package an adapter may reach its cloud through, and the
-// composition-root rule names the module path, whose every package main may
-// import (issue #101). Every other strict rule names the packages it allows one
-// by one, where an entry that lost its trailing $ is a widening the reviewer
-// must see (os$ -> os allows os/exec) rather than a prefix.
-var prefixEntryRules = []string{sdkRule, compositionRootRule}
+// SDKs, whose every package an adapter may reach its cloud through, and the two
+// composition-root rules name the module path, whose every package main may
+// import (issue #101, PRD #103). Every other strict rule names the packages it
+// allows one by one, where an entry that lost its trailing $ is a widening the
+// reviewer must see (os$ -> os allows os/exec) rather than a prefix.
+var prefixEntryRules = []string{sdkRule, compositionRootRule, serverCompositionRootRule}
 
 // sdkRuleExcludes are the directories the SDK-only rule's files: list takes out
 // of it with negated globs: the inventory-file reader holds a rule of its own,
@@ -672,23 +737,24 @@ func TestCloudAdapterSDKRuleHoldsItsSDKProbeForEveryReleaseTarget(t *testing.T) 
 	}
 }
 
-// TestCompositionRootRuleIsChecked pins that cmd/eusov, the composition root, is
-// held by a strict rule of its own (issue #101): one whose files: list names the
-// composition root and no sibling beside it, whose allow list is the module path
-// as the one prefix entry, so main may import any package of the module, and the
-// standard packages it imports today, each exact, so no third-party package gets
-// in. Before it, a new dependency of main was refused by no rule but the lax
-// cloud-sdks-only-in-provider-adapters and go-cmp-only-in-tests denies, so it was
-// held by review of the import and of go.mod alone: the gap issue #79 left, and
-// ADR 0012 records.
+// TestCompositionRootRulesAreChecked pins that each composition root of the
+// module is held by a strict rule of its own: one whose files: list names that
+// root and no sibling beside it, whose allow list is the module path as the one
+// prefix entry, so main may import any package of the module, and the standard
+// packages the binary imports today, each exact, so no third-party package gets
+// in. Before cmd/eusov's rule, a new dependency of main was refused by no rule but
+// the lax cloud-sdks-only-in-provider-adapters and go-cmp-only-in-tests denies, so
+// it was held by review of the import and of go.mod alone: the gap issue #79 left,
+// and ADR 0012 records. cmd/eusov-server (PRD #103, milestone 3) gets the same
+// rule, written the same way, when the server binary arrives.
 //
-// The rule is a reasoned skip of the shared layer listing
-// (skippedStrictRules): go list -deps ./cmd/eusov/... reaches internal/cli and
-// internal/version, which no rule the check reads holds, so the listing would
-// flag them. This test reads the rule itself, and
-// TestCompositionRootIsHeldToItsRuleForEveryReleaseTarget holds cmd/eusov to it
-// on every platform the release builds.
-func TestCompositionRootRuleIsChecked(t *testing.T) {
+// Each rule is a reasoned skip of the shared layer listing (skippedStrictRules):
+// go list -deps on a composition root lists its whole dependency tree, packages
+// no rule the check reads holds, so the listing would flag them. This test reads
+// each rule itself, and
+// TestCompositionRootRulesAreHeldToTheirRuleForEveryReleaseTarget holds each root
+// to its own rule on every platform the release builds.
+func TestCompositionRootRulesAreChecked(t *testing.T) {
 	t.Parallel()
 
 	golangci := readRepositoryFile(t, ".golangci.yml")
@@ -698,125 +764,69 @@ func TestCompositionRootRuleIsChecked(t *testing.T) {
 		t.Fatalf("StrictRules(.golangci.yml): %v", err)
 	}
 
-	if !slices.Contains(strict, compositionRootRule) {
-		t.Fatalf("StrictRules(.golangci.yml) = %v, want it to hold %s: no other rule refuses a third-party import in cmd/eusov", strict, compositionRootRule)
+	if len(compositionRoots()) == 0 {
+		t.Fatal("compositionRoots() returned no root, so this test would check nothing")
 	}
 
-	if reason, skipped := skippedStrictRules[compositionRootRule]; !skipped || reason == "" {
-		t.Errorf("%s must be a reasoned skip of the shared layer listing, and is not: go list -deps %s lists internal/cli and internal/version, which no rule the check reads holds", compositionRootRule, "./"+compositionRootDir+"/...")
-	}
+	for _, root := range compositionRoots() {
+		t.Run(root.rule, func(t *testing.T) {
+			t.Parallel()
 
-	files, err := check.RuleDirs(golangci, compositionRootRule)
-	if err != nil {
-		t.Fatalf("RuleDirs(.golangci.yml, %q): %v", compositionRootRule, err)
-	}
-
-	if diff := cmp.Diff([]string{compositionRootDir}, files.Dirs); diff != "" {
-		t.Errorf("RuleDirs(.golangci.yml, %q).Dirs mismatch (-want +got):\n%s: the rule holds the composition root and nothing beside it, so a sibling cmd/eusov-server gets a rule of its own, written the same way", compositionRootRule, diff)
-	}
-
-	if len(files.Excludes) != 0 {
-		t.Errorf("RuleDirs(.golangci.yml, %q).Excludes = %v, want none: the composition root has no directory under it to take out", compositionRootRule, files.Excludes)
-	}
-
-	allow, err := check.AllowList(golangci, compositionRootRule)
-	if err != nil {
-		t.Fatalf("AllowList(.golangci.yml, %q): %v", compositionRootRule, err)
-	}
-
-	var exact, prefixes []string
-
-	for _, entry := range allow {
-		if entry.Prefix {
-			prefixes = append(prefixes, entry.Path)
-
-			continue
-		}
-
-		exact = append(exact, entry.Path)
-	}
-
-	if diff := cmp.Diff(sortedCopy(compositionRootStds), sortedCopy(exact)); diff != "" {
-		t.Errorf("AllowList(.golangci.yml, %q) exact entries mismatch (-want +got):\n%s: these are the standard packages cmd/eusov imports today, and the only packages outside the module it may import", compositionRootRule, diff)
-	}
-
-	if diff := cmp.Diff([]string{modulePath + "/"}, prefixes); diff != "" {
-		t.Errorf("AllowList(.golangci.yml, %q) prefix entries mismatch (-want +got):\n%s: the one prefix entry is the module's own path, so main may import any package of the module and no third-party package", compositionRootRule, diff)
-	}
-}
-
-// TestCompositionRootIsHeldToItsRuleForEveryReleaseTarget holds the real
-// cmd/eusov to the allow list of the rule read from .golangci.yml, on every
-// platform the release builds, with cgo off and on and with the e2e and
-// integration files off and on, as TestReleaseTargetDependencies reads them: the
-// package must be listed, so a run that read nothing of it cannot pass, it must
-// import nothing the list refuses, and every package the listing reaches under
-// the module path must belong to the main module, since the rule's one prefix
-// entry is that path (the security audit's LOW-1, issue #101). The rule is
-// skipped by the shared layer listing (see skippedStrictRules), so this test
-// reads the packages the rule holds and no other: they are the composition
-// root's own, and every other package of the module is held by the rule of its
-// layer in TestReleaseTargetDependencies.
-func TestCompositionRootIsHeldToItsRuleForEveryReleaseTarget(t *testing.T) {
-	t.Parallel()
-
-	golangci := readRepositoryFile(t, ".golangci.yml")
-
-	targets, err := releasetarget.Read(readRepositoryFile(t, ".goreleaser.yaml"))
-	if err != nil {
-		t.Fatalf("releasetarget.Read(.goreleaser.yaml): %v", err)
-	}
-
-	if len(targets) == 0 {
-		t.Fatal("releasetarget.Read(.goreleaser.yaml) returned no target, so the check below would run on nothing")
-	}
-
-	rules := rulesOf(t, golangci, compositionRootRule)
-	root := repositoryRoot(t)
-
-	want := modulePath + "/" + compositionRootDir
-
-	for _, target := range targets {
-		for _, cgo := range cgoModes {
-			for _, tags := range tagSets {
-				t.Run(fmt.Sprintf("%s/%s/%s/%s", target.GOOS, target.GOARCH, cgo.name, tags.name), func(t *testing.T) {
-					t.Parallel()
-
-					pkgs, err := check.ListPackages(t.Context(), root, target, cgo.enabled, tags.tags, "./"+compositionRootDir+"/...")
-					if err != nil {
-						t.Fatalf("ListPackages(%v, ./%s/..., cgo=%t, tags=%v): %v", target, compositionRootDir, cgo.enabled, tags.tags, err)
-					}
-
-					// A module added under the module path would be listed under that
-					// path and the rule's prefix entry would allow its packages, so
-					// the listing must not hold one.
-					if messages := mainModuleMessages(modulePath, pkgs); len(messages) != 0 {
-						t.Errorf("go list -deps ./%s/... (%v, cgo=%t, tags=%v) listed %d package(s) under %s that belong to no main module, which the rule's prefix entry would allow:\n%s",
-							compositionRootDir, target, cgo.enabled, tags.tags, len(messages), modulePath, strings.Join(messages, "\n"))
-					}
-
-					held := heldByRules(modulePath, rules, pkgs)
-
-					if !slices.ContainsFunc(held, func(pkg check.Package) bool { return pkg.ImportPath == want }) {
-						t.Fatalf("go list did not list %s, so the check below would read nothing of the composition root", want)
-					}
-
-					if messages := check.Packages(root, modulePath, rules, held); len(messages) != 0 {
-						t.Errorf("Packages(cmd/eusov, %v, cgo=%t, tags=%v) flagged %d package(s), want none: the composition root imports only the standard packages its rule names and the module's own packages:\n%s",
-							target, cgo.enabled, tags.tags, len(messages), strings.Join(messages, "\n"))
-					}
-				})
+			if !slices.Contains(strict, root.rule) {
+				t.Fatalf("StrictRules(.golangci.yml) = %v, want it to hold %s: no other rule refuses a third-party import in %s", strict, root.rule, root.dir)
 			}
-		}
+
+			if reason, skipped := skippedStrictRules[root.rule]; !skipped || reason == "" {
+				t.Errorf("%s must be a reasoned skip of the shared layer listing, and is not: go list -deps ./%s/... lists packages no rule the check reads holds", root.rule, root.dir)
+			}
+
+			files, err := check.RuleDirs(golangci, root.rule)
+			if err != nil {
+				t.Fatalf("RuleDirs(.golangci.yml, %q): %v", root.rule, err)
+			}
+
+			if diff := cmp.Diff([]string{root.dir}, files.Dirs); diff != "" {
+				t.Errorf("RuleDirs(.golangci.yml, %q).Dirs mismatch (-want +got):\n%s: the rule holds %s and nothing beside it, so each root gets a rule of its own rather than one widened glob", root.rule, diff, root.dir)
+			}
+
+			if len(files.Excludes) != 0 {
+				t.Errorf("RuleDirs(.golangci.yml, %q).Excludes = %v, want none: the composition root has no directory under it to take out", root.rule, files.Excludes)
+			}
+
+			allow, err := check.AllowList(golangci, root.rule)
+			if err != nil {
+				t.Fatalf("AllowList(.golangci.yml, %q): %v", root.rule, err)
+			}
+
+			var exact, prefixes []string
+
+			for _, entry := range allow {
+				if entry.Prefix {
+					prefixes = append(prefixes, entry.Path)
+
+					continue
+				}
+
+				exact = append(exact, entry.Path)
+			}
+
+			if diff := cmp.Diff(sortedCopy(root.stds), sortedCopy(exact)); diff != "" {
+				t.Errorf("AllowList(.golangci.yml, %q) exact entries mismatch (-want +got):\n%s: these are the standard packages %s imports today, and the only packages outside the module it may import", root.rule, diff, root.dir)
+			}
+
+			if diff := cmp.Diff([]string{modulePath + "/"}, prefixes); diff != "" {
+				t.Errorf("AllowList(.golangci.yml, %q) prefix entries mismatch (-want +got):\n%s: the one prefix entry is the module's own path, so main may import any package of the module and no third-party package", root.rule, diff)
+			}
+		})
 	}
 }
 
 // mainModuleMessages returns one message per package of pkgs whose import path
 // is module or under it and that does not belong to the main module, named
-// module. A nested module under that path is such a package: the
-// composition-root rule allows the module path as a prefix entry, so the listing
-// must be shown to hold none, or a module added under it would be let in unseen
-// (the security audit's LOW-1, issue #101).
+// module. A nested module under that path is such a package: a composition-root
+// rule allows the module path as a prefix entry, so the listing must be shown to
+// hold none, or a module added under it would be let in unseen (the security
+// audit's LOW-1, issue #101).
 func mainModuleMessages(module string, pkgs []check.Package) []string {
 	var messages []string
 
@@ -836,30 +846,19 @@ func mainModuleMessages(module string, pkgs []check.Package) []string {
 	return messages
 }
 
-// TestCompositionRootRuleHoldsItsProbeForEveryReleaseTarget is the issue's probe
-// (issue #101), one per platform the release builds: a fixture module whose
-// cmd/eusov imports a third-party library and a cloud SDK, as a composition root
-// must not, fails the package check with the rule read from .golangci.yml. The
-// fixture's cmd/eusov also imports the standard packages cmd/eusov imports today,
-// so an allow list that lost one of them fails here as well.
-//
-// The fixture's cmd/eusov-server imports the same third-party library, and the
-// rule holds it not at all: a sibling gets a rule of its own (PRD #103), written
-// the same way, so a glob widened to **/cmd/** or a rule whose directory is cmd
-// fails here.
-//
-// The fixture's cmd/eusov also imports a nested module, example.com/cmdprobe/nested,
-// whose path is under the probe's module path: the listing must report it as a
-// package that is not the main module, so the assertion the real cmd/eusov gets
-// in TestCompositionRootIsHeldToItsRuleForEveryReleaseTarget cannot pass by
-// reading nothing (the security audit's LOW-1, issue #101). The rule's prefix
-// entry is the real module path, so the probe's nested import is refused by the
-// allow list as well: in the real repository that one entry would allow it,
-// which is why the listing needs the main-module assertion beside the rule.
-//
-// The fixture's stand-in modules are local directories its go.mod replaces, so
-// the listing needs no network and no go.sum entry, as sdkprobe's do.
-func TestCompositionRootRuleHoldsItsProbeForEveryReleaseTarget(t *testing.T) {
+// TestCompositionRootRulesAreHeldToTheirRuleForEveryReleaseTarget holds each real
+// composition root to the allow list of its rule read from .golangci.yml, on every
+// platform the release builds, with cgo off and on and with the e2e and
+// integration files off and on, as TestReleaseTargetDependencies reads them: the
+// package must be listed, so a run that read nothing of it cannot pass, it must
+// import nothing the list refuses, and every package the listing reaches under the
+// module path must belong to the main module, since each rule's one prefix entry is
+// that path (the security audit's LOW-1, issue #101). The rules are skipped by the
+// shared layer listing (see skippedStrictRules), so this test reads the packages
+// each rule holds and no other: they are the composition root's own, and every
+// other package of the module is held by the rule of its layer in
+// TestReleaseTargetDependencies.
+func TestCompositionRootRulesAreHeldToTheirRuleForEveryReleaseTarget(t *testing.T) {
 	t.Parallel()
 
 	golangci := readRepositoryFile(t, ".golangci.yml")
@@ -870,87 +869,208 @@ func TestCompositionRootRuleHoldsItsProbeForEveryReleaseTarget(t *testing.T) {
 	}
 
 	if len(targets) == 0 {
-		t.Fatal("releasetarget.Read(.goreleaser.yaml) returned no target, so the probe below would run on nothing")
+		t.Fatal("releasetarget.Read(.goreleaser.yaml) returned no target, so the check below would run on nothing")
 	}
 
-	rules := rulesOf(t, golangci, compositionRootRule)
+	if len(compositionRoots()) == 0 {
+		t.Fatal("compositionRoots() returned no root, so this test would check nothing")
+	}
 
-	root, err := filepath.Abs(filepath.FromSlash("testdata/cmdprobe"))
+	root := repositoryRoot(t)
+
+	for _, rootCase := range compositionRoots() {
+		rules := rulesOf(t, golangci, rootCase.rule)
+		want := modulePath + "/" + rootCase.dir
+
+		for _, target := range targets {
+			for _, cgo := range cgoModes {
+				for _, tags := range tagSets {
+					t.Run(fmt.Sprintf("%s/%s/%s/%s/%s", rootCase.rule, target.GOOS, target.GOARCH, cgo.name, tags.name), func(t *testing.T) {
+						t.Parallel()
+
+						pkgs, err := check.ListPackages(t.Context(), root, target, cgo.enabled, tags.tags, "./"+rootCase.dir+"/...")
+						if err != nil {
+							t.Fatalf("ListPackages(%v, ./%s/..., cgo=%t, tags=%v): %v", target, rootCase.dir, cgo.enabled, tags.tags, err)
+						}
+
+						// A module added under the module path would be listed under that
+						// path and the rule's prefix entry would allow its packages, so
+						// the listing must not hold one.
+						if messages := mainModuleMessages(modulePath, pkgs); len(messages) != 0 {
+							t.Errorf("go list -deps ./%s/... (%v, cgo=%t, tags=%v) listed %d package(s) under %s that belong to no main module, which the rule's prefix entry would allow:\n%s",
+								rootCase.dir, target, cgo.enabled, tags.tags, len(messages), modulePath, strings.Join(messages, "\n"))
+						}
+
+						held := heldByRules(modulePath, rules, pkgs)
+
+						if !slices.ContainsFunc(held, func(pkg check.Package) bool { return pkg.ImportPath == want }) {
+							t.Fatalf("go list did not list %s, so the check below would read nothing of the composition root", want)
+						}
+
+						if messages := check.Packages(root, modulePath, rules, held); len(messages) != 0 {
+							t.Errorf("Packages(%s, %v, cgo=%t, tags=%v) flagged %d package(s), want none: the composition root imports only the standard packages its rule names and the module's own packages:\n%s",
+								rootCase.dir, target, cgo.enabled, tags.tags, len(messages), strings.Join(messages, "\n"))
+						}
+					})
+				}
+			}
+		}
+	}
+}
+
+// compositionRootProbe is one probe of the composition-root rules (issue #101,
+// PRD #103): the rule the probe is held to, the fixture package that rule holds,
+// the sibling fixture package it must not hold, and the imports it must refuse for
+// the package it holds.
+type compositionRootProbe struct {
+	root compositionRoot
+	// probePkg is the fixture package root.rule holds.
+	probePkg string
+	// siblingPkg is the other fixture composition root, which root.rule holds not
+	// at all: a rule widened to **/cmd/** or one whose directory is cmd fails here.
+	siblingPkg string
+	// wantRefused lists the imports of probePkg the rule must refuse, in the order
+	// the check reports them by import path.
+	wantRefused []string
+	// wantMainModuleMessages is set on the probe that imports a nested module under
+	// the fixture's module path: the listing must report exactly one package that is
+	// not the main module, so the assertion the real roots get cannot pass by reading
+	// nothing (the security audit's LOW-1, issue #101).
+	wantMainModuleMessages bool
+}
+
+// TestCompositionRootRulesHoldTheirProbesForEveryReleaseTarget is the issue's probe
+// (issue #101), one per platform the release builds and one per composition root: a
+// fixture module whose composition roots import a third-party library and a cloud
+// SDK, as a composition root must not, fails the package check with the rule read
+// from .golangci.yml.
+//
+// The fixture's cmd/eusov also imports the standard packages cmd/eusov imports today
+// and a nested module, example.com/cmdprobe/nested, whose path is under the probe's
+// module path: the listing must report it as a package that is not the main module.
+// The fixture's cmd/eusov-server imports the standard packages the server needs, the
+// same third-party library and the same cloud SDK, so an allow list that lost a
+// package or a deny list that lost a cloud SDK fails here as well. Each rule holds
+// its own root and no sibling: the paths in this table are the ones each rule must
+// hold.
+//
+// The fixture's stand-in modules are local directories its go.mod replaces, so the
+// listing needs no network and no go.sum entry, as sdkprobe's do.
+func TestCompositionRootRulesHoldTheirProbesForEveryReleaseTarget(t *testing.T) {
+	t.Parallel()
+
+	const (
+		probeModule = "example.com/cmdprobe"
+		probeDir    = "testdata/cmdprobe"
+		loggingPkg  = "example.com/logging"
+		sdkPkg      = "github.com/aws/aws-sdk-go-v2/service/ec2"
+		nestedPkg   = probeModule + "/nested"
+		cliPkg      = probeModule + "/cmd/eusov"
+		serverPkg   = probeModule + "/cmd/eusov-server"
+	)
+
+	roots := compositionRoots()
+
+	if len(roots) != 2 {
+		t.Fatalf("compositionRoots() = %v, want the two roots the cmdprobe fixture stands in for", roots)
+	}
+
+	probes := []compositionRootProbe{
+		{
+			root:                   roots[0],
+			probePkg:               cliPkg,
+			siblingPkg:             serverPkg,
+			wantRefused:            []string{loggingPkg, nestedPkg, sdkPkg},
+			wantMainModuleMessages: true,
+		},
+		{
+			root:        roots[1],
+			probePkg:    serverPkg,
+			siblingPkg:  cliPkg,
+			wantRefused: []string{loggingPkg, sdkPkg},
+		},
+	}
+
+	golangci := readRepositoryFile(t, ".golangci.yml")
+
+	targets, err := releasetarget.Read(readRepositoryFile(t, ".goreleaser.yaml"))
+	if err != nil {
+		t.Fatalf("releasetarget.Read(.goreleaser.yaml): %v", err)
+	}
+
+	if len(targets) == 0 {
+		t.Fatal("releasetarget.Read(.goreleaser.yaml) returned no target, so the probes below would run on nothing")
+	}
+
+	root, err := filepath.Abs(filepath.FromSlash(probeDir))
 	if err != nil {
 		t.Fatalf("resolve the probe module: %v", err)
 	}
 
-	const (
-		probeModule = "example.com/cmdprobe"
-		probePkg    = probeModule + "/cmd/eusov"
-		siblingPkg  = probeModule + "/cmd/eusov-server"
-		nestedPkg   = probeModule + "/nested"
-		loggingPkg  = "example.com/logging"
-		sdkPkg      = "github.com/aws/aws-sdk-go-v2/service/ec2"
-	)
+	for _, probe := range probes {
+		rules := rulesOf(t, golangci, probe.root.rule)
 
-	for _, target := range targets {
-		t.Run(target.GOOS+"/"+target.GOARCH, func(t *testing.T) {
-			t.Parallel()
+		for _, target := range targets {
+			t.Run(probe.root.rule+"/"+target.GOOS+"/"+target.GOARCH, func(t *testing.T) {
+				t.Parallel()
 
-			pkgs, err := check.ListPackages(t.Context(), root, target, false, nil, "./cmd/...")
-			if err != nil {
-				t.Fatalf("ListPackages(cmdprobe, %v): %v", target, err)
-			}
-
-			// Each is listed, so a run that read nothing of it cannot pass. The
-			// nested module's package is listed because the probe's cmd/eusov
-			// imports it, as an import of a module under the composition root's
-			// own path would be.
-			for _, want := range []string{probePkg, siblingPkg, nestedPkg} {
-				if !slices.ContainsFunc(pkgs, func(pkg check.Package) bool { return pkg.ImportPath == want }) {
-					t.Fatalf("ListPackages(cmdprobe, %v) did not list %s, so the check below would read nothing of it", target, want)
+				pkgs, err := check.ListPackages(t.Context(), root, target, false, nil, "./cmd/...")
+				if err != nil {
+					t.Fatalf("ListPackages(cmdprobe, %v): %v", target, err)
 				}
-			}
 
-			// The nested module is under the probe's module path and belongs to
-			// the main module not at all, so the check the real listing gets must
-			// report it and nothing else.
-			moduleMessages := mainModuleMessages(probeModule, pkgs)
-
-			if len(moduleMessages) != 1 {
-				t.Fatalf("mainModuleMessages(cmdprobe, %v) reported %d package(s), want exactly the fixture's nested module:\n%s",
-					target, len(moduleMessages), strings.Join(moduleMessages, "\n"))
-			}
-
-			for _, want := range []string{nestedPkg, "want the main module " + probeModule} {
-				if !strings.Contains(moduleMessages[0], want) {
-					t.Errorf("message %q does not name %q", moduleMessages[0], want)
+				// Each is listed, so a run that read nothing of it cannot pass.
+				for _, want := range []string{probe.probePkg, probe.siblingPkg} {
+					if !slices.ContainsFunc(pkgs, func(pkg check.Package) bool { return pkg.ImportPath == want }) {
+						t.Fatalf("ListPackages(cmdprobe, %v) did not list %s, so the check below would read nothing of it", target, want)
+					}
 				}
-			}
 
-			held := heldByRules(probeModule, rules, pkgs)
+				if probe.wantMainModuleMessages {
+					moduleMessages := mainModuleMessages(probeModule, pkgs)
 
-			heldPaths := make([]string, 0, len(held))
-			for _, pkg := range held {
-				heldPaths = append(heldPaths, pkg.ImportPath)
-			}
+					if len(moduleMessages) != 1 {
+						t.Fatalf("mainModuleMessages(cmdprobe, %v) reported %d package(s), want exactly the fixture's nested module:\n%s",
+							target, len(moduleMessages), strings.Join(moduleMessages, "\n"))
+					}
 
-			if diff := cmp.Diff([]string{probePkg}, heldPaths); diff != "" {
-				t.Fatalf("the rule holds these packages of the probe (-want +got):\n%s: it holds the composition root and no sibling beside it", diff)
-			}
-
-			messages := check.Packages(root, probeModule, rules, held)
-
-			if len(messages) != 3 {
-				t.Fatalf("Packages(cmdprobe, %v) flagged %d package(s), want exactly the probe's third-party and cloud SDK imports and its nested module, whose path the rule's prefix entry (the real module path) does not match:\n%s",
-					target, len(messages), strings.Join(messages, "\n"))
-			}
-
-			for _, imp := range []string{loggingPkg, sdkPkg, nestedPkg} {
-				if !slices.ContainsFunc(messages, func(message string) bool {
-					return strings.Contains(message, probePkg+": imports "+imp) && strings.Contains(message, compositionRootRule)
-				}) {
-					t.Errorf("no message names the import %s of %s under the rule %s, want it refused:\n%s",
-						imp, probePkg, compositionRootRule, strings.Join(messages, "\n"))
+					for _, want := range []string{nestedPkg, "want the main module " + probeModule} {
+						if !strings.Contains(moduleMessages[0], want) {
+							t.Errorf("message %q does not name %q", moduleMessages[0], want)
+						}
+					}
 				}
-			}
-		})
+
+				held := heldByRules(probeModule, rules, pkgs)
+
+				heldPaths := make([]string, 0, len(held))
+				for _, pkg := range held {
+					heldPaths = append(heldPaths, pkg.ImportPath)
+				}
+
+				if diff := cmp.Diff([]string{probe.probePkg}, heldPaths); diff != "" {
+					t.Fatalf("the %s rule holds these packages of the probe (-want +got):\n%s: it holds its own composition root and no sibling beside it",
+						probe.root.rule, diff)
+				}
+
+				messages := check.Packages(root, probeModule, rules, held)
+
+				if len(messages) != len(probe.wantRefused) {
+					t.Fatalf("Packages(cmdprobe, %v) under %s flagged %d package(s), want exactly %v:\n%s",
+						target, probe.root.rule, len(messages), probe.wantRefused, strings.Join(messages, "\n"))
+				}
+
+				for _, imp := range probe.wantRefused {
+					if !slices.ContainsFunc(messages, func(message string) bool {
+						return strings.Contains(message, probe.probePkg+": imports "+imp) &&
+							strings.Contains(message, probe.root.rule)
+					}) {
+						t.Errorf("no message names the import %s of %s under the rule %s, want it refused:\n%s",
+							imp, probe.probePkg, probe.root.rule, strings.Join(messages, "\n"))
+					}
+				}
+			})
+		}
 	}
 }
 
