@@ -15,6 +15,8 @@ import (
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
+
+	"github.com/timothymamo/eu-sov-cloud/test/internal/releasetarget"
 )
 
 const (
@@ -103,25 +105,23 @@ func TestBuildMatchesGoReleaser(t *testing.T) {
 	settings := parseBuildSettings(t, readRepoFile(t, goreleaserName))
 	dockerfile := joinedInstructions(dockerfileInstructions(t, readRepoFile(t, dockerfileName)))
 
-	// The env entries are the ones test/internal/releasetarget.Env names, which
-	// releasetarget.Read holds the builds entry to (issue #102): cgo off, so
-	// nothing links a C library; GOWORK=off, so no go.work in a parent directory
-	// puts the build in workspace mode; and GOFLAGS=-mod=readonly, so the build
-	// never rewrites go.mod, go.sum or a vendor tree. They are listed here rather
-	// than read from Env so a missing setting is reported against the document
-	// and the Dockerfile, in this package, and not as a build failure of the
-	// package that will export them.
-	settingsToMatch := []struct {
-		setting string
-		list    string
-		in      []string
-	}{
-		{setting: "CGO_ENABLED=0", list: "env", in: settings.env},
-		{setting: "GOWORK=off", list: "env", in: settings.env},
-		{setting: "GOFLAGS=-mod=readonly", list: "env", in: settings.env},
-		{setting: "-trimpath", list: "flags", in: settings.flags},
-		{setting: "-s -w", list: "ldflags", in: settings.ldflags},
+	// The env entries are releasetarget.Env(), the list releasetarget.Read
+	// holds every build's env to (issue #102): cgo off, so nothing links a C
+	// library; GOWORK=off, so no go.work in a parent directory puts the build in
+	// workspace mode; and GOFLAGS=-mod=readonly, so the build never rewrites
+	// go.mod, go.sum or a vendor tree. They are read from Env rather than
+	// listed here, so the reader and this test stay in step by construction: a
+	// setting added to the release env is checked against the image's build
+	// without a second edit that could be forgotten.
+	settingsToMatch := make([]buildSetting, 0, len(releasetarget.Env())+2)
+	for _, setting := range releasetarget.Env() {
+		settingsToMatch = append(settingsToMatch, buildSetting{setting: setting, list: "env", in: settings.env})
 	}
+
+	settingsToMatch = append(settingsToMatch,
+		buildSetting{setting: "-trimpath", list: "flags", in: settings.flags},
+		buildSetting{setting: "-s -w", list: "ldflags", in: settings.ldflags},
+	)
 
 	for _, tc := range settingsToMatch {
 		if !slices.Contains(tc.in, tc.setting) {
@@ -553,6 +553,16 @@ type buildSettings struct {
 	env     []string
 	flags   []string
 	ldflags []string
+}
+
+// buildSetting is one setting the image's build must carry: the value, the
+// .goreleaser.yaml list it belongs to, and the items of that list the test read
+// from the document, so a setting the document itself dropped is reported as
+// the document's gap rather than the image's.
+type buildSetting struct {
+	setting string
+	list    string
+	in      []string
 }
 
 // repoRoot returns the module root: the first directory above the directory the
