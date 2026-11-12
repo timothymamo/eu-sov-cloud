@@ -63,7 +63,7 @@ func TestAdaptersBuiltInCmdNamesEveryAdapterSubtree(t *testing.T) {
 
 		if want := adapterModulePrefix + name + "/"; !slices.Contains(deny, want) {
 			t.Errorf(".golangci.yml: adapters-are-built-in-cmd has no deny entry %q, so an import of a package under "+
-				"internal/adapter/%s from outside the composition roots is not refused; add the entry, and to "+
+				"internal/adapter/%s from outside the composition roots is not refused; add the entry there and to "+
 				"pinnedDepguardRules (issue #119)", want, name)
 		}
 	}
