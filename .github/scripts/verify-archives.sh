@@ -9,7 +9,9 @@
 # must be a regular file or a directory: a symbolic link, hard link or device fails the run too. Every built platform has one archive of each, and checksums.txt lists and
 # matches every archive. checksums.txt also lists, exactly once, shift2eu-server_openapi.json, the bundled
 # OpenAPI document the release publishes beside the archives (issue #139), with the sha256 of the
-# committed api/openapi.bundled.json, and a copy GoReleaser puts in dist/, if any, must match it too.
+# committed api/openapi.bundled.json. A copy in dist/ must match it too, a defensive guard only: GoReleaser
+# v2.20.1 copies neither checksum nor release extra files into dist/, and the release pipe does not run in
+# a snapshot, so today there is none.
 # It then mirrors release.yml's hand-over of the archives to attest-archives
 # (issues #156 and #163): the files its patterns pick must pass sha256sum -c checksums.txt, and the
 # subjects they attest must be exactly the archives and checksums.txt, which must also be exactly what
@@ -143,6 +145,9 @@ if [ "$(grep -c . <<<"${bundle_lines}")" != 1 ]; then
 elif [ "${bundle_lines%% *}" != "${want_sum}" ]; then
   problem "checksums.txt lists ${bundle_asset} with ${bundle_lines%% *}, want ${want_sum}, the sha256 of ${bundle}"
 fi
+# A defensive guard: GoReleaser v2.20.1 copies neither checksum.extra_files nor release.extra_files into
+# dist/, and the release pipe does not run in a snapshot, so no copy exists today. Should a later
+# GoReleaser put one there, it must still be the committed file.
 if [ -e "${dist}/${bundle_asset}" ] && [ "$(sha256sum "${dist}/${bundle_asset}" | cut -d' ' -f1)" != "${want_sum}" ]; then
   problem "${dist}/${bundle_asset} is not ${bundle}"
 fi
