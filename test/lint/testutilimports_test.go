@@ -15,14 +15,18 @@ import (
 // The group refuses os.Getenv, os.LookupEnv, os.ExpandEnv, os.Environ,
 // os.Setenv, os.Unsetenv, os.Clearenv and os.StartProcess: every read of a named
 // variable, the whole environment, every write of one, and the process start that
-// takes an environment. It holds for files under internal/testutil/ only, which
-// its linters.exclusions.rules say and TestForbidigoExclusionsDropOneGroup checks.
+// takes an environment. It refuses os.UserHomeDir, os.UserConfigDir,
+// os.UserCacheDir and os.TempDir as well (issue #144's review, finding S1): each
+// locates a directory from an unnamed variable, so a helper that builds the path
+// to ~/.config/dot-agent-deck/daemon.env or ~/.aws/credentials and reads it never
+// names one. It holds for files under internal/testutil/ only, which its
+// linters.exclusions.rules say and TestForbidigoExclusionsDropOneGroup checks.
 const testutilNoEnvTag = "testutil-no-env"
 
-// testutilNoEnvRefused lists every name the group must refuse: the seven calls
-// the issue names, and os.ExpandEnv, which reads the named variables a string
-// interleaves. A name is refused when an entry of the group matches its pkg and
-// its rendered name; the wording of a msg is not pinned here, the tag is.
+// testutilNoEnvRefused lists every name the group must refuse: these calls, and
+// os.ExpandEnv, which reads the named variables a string interleaves. A name is
+// refused when an entry of the group matches its pkg and its rendered name; the
+// wording of a msg is not pinned here, the tag is.
 var testutilNoEnvRefused = []rootName{
 	{"os", "os.Getenv"},
 	{"os", "os.LookupEnv"},
@@ -32,14 +36,19 @@ var testutilNoEnvRefused = []rootName{
 	{"os", "os.Unsetenv"},
 	{"os", "os.Clearenv"},
 	{"os", "os.StartProcess"},
+	{"os", "os.UserHomeDir"},
+	{"os", "os.UserConfigDir"},
+	{"os", "os.UserCacheDir"},
+	{"os", "os.TempDir"},
 }
 
 // testutilNoEnvAllowed are names no testutil-no-env entry may refuse: what the
 // helpers really do, which is why os is allowed at all (the golden files are
 // read, written and made room for), the process names that are no call on a
 // variable, the names that only extend a refused one (os.Getenvs, os.LookupEnvs,
-// os.ExpandEnvs, os.Setenvs, os.StartProcesses) and catch a pattern that lost its
-// $, and a package named os elsewhere, which is no helper of this module's.
+// os.ExpandEnvs, os.Setenvs, os.StartProcesses, os.UserHomeDirs,
+// os.UserConfigDirs, os.UserCacheDirs, os.TempDirs) and catch a pattern that lost
+// its $, and a package named os elsewhere, which is no helper of this module's.
 var testutilNoEnvAllowed = []rootName{
 	{"os", "os.ReadFile"},
 	{"os", "os.WriteFile"},
@@ -52,6 +61,10 @@ var testutilNoEnvAllowed = []rootName{
 	{"os", "os.ExpandEnvs"},
 	{"os", "os.Setenvs"},
 	{"os", "os.StartProcesses"},
+	{"os", "os.UserHomeDirs"},
+	{"os", "os.UserConfigDirs"},
+	{"os", "os.UserCacheDirs"},
+	{"os", "os.TempDirs"},
 	{"example.com/otheros", "os.Getenv"},
 }
 
@@ -71,9 +84,10 @@ var testutilNoEnvAllowed = []rootName{
 // helpers make, and the rule must keep allowing them.
 //
 // forbidigo's group testutil-no-env refuses the calls an import rule cannot see
-// (env.go): the environment reads and writes and os.StartProcess, each on a line
-// whose want names the group's tag. Every entry of the group must refuse a line,
-// and no issue may land on a line without a want.
+// (env.go): the environment reads and writes, os.StartProcess and the four
+// lookups that locate a directory from an unnamed variable, each on a line whose
+// want names the group's tag. Every entry of the group must refuse a line, and
+// no issue may land on a line without a want.
 //
 // make lint runs this probe with SHIFT2EU_LINT_PROBES=require on the host, and
 // every entry of CI's lint-target matrix runs the step that sets it.

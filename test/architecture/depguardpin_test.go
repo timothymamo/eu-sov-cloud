@@ -122,11 +122,14 @@ var pinnedDepguardRules = []check.DepguardRule{
 		// else. The standard packages are exactly the ones the application
 		// layer's tests import today (issue #144's review, finding B1): bytes,
 		// context, which the use case takes, errors, io, slices, strings, sync
-		// for a fake's mutex, and testing. Every one of them is pure, and the
-		// domain's pure list (domain-is-pure above) names them all; the five
-		// beyond it are the extras
+		// for a fake's mutex, and testing. Every one of them is pure:
+		// errors, slices and strings are on the domain's pure list
+		// (domain-is-pure above), and the five beyond it (bytes, context, io,
+		// sync, testing) are the extras
 		// TestAppTestsRuleAllowsOnlyPurePackagesAndItsExtras holds, each with
-		// the reason a test gives. The domain's fmt, time, net/netip, net/url,
+		// the reason a test gives; that test fails when an extra is no entry
+		// of this allow list or is one the domain's list already names, so the
+		// extras cannot go stale. The domain's fmt, time, net/netip, net/url,
 		// strconv, unicode and unicode/utf8 are deliberately not here: the
 		// application layer's tests import none of them, and fmt and time can
 		// print to stdout, read stdin and read zoneinfo files and the clock,
@@ -1405,6 +1408,11 @@ const appTestsThirdParty = "github.com/google/go-cmp/cmp"
 // be an exact entry — a prefix entry would allow every package under it and
 // would let a look-alike in — and each must be one the domain allows or one of
 // the extras.
+//
+// So that the extras cannot go stale, each of them must also be an exact entry of
+// the rule's allow list and no entry of domain-is-pure: an extra a package of the
+// layer stops importing, or one the domain's list starts to name, is dropped from
+// appTestsExtras in the same commit.
 func TestAppTestsRuleAllowsOnlyPurePackagesAndItsExtras(t *testing.T) {
 	t.Parallel()
 
@@ -1484,5 +1492,26 @@ func TestAppTestsRuleAllowsOnlyPurePackagesAndItsExtras(t *testing.T) {
 
 		t.Errorf("app-tests-use-fakes-not-adapters allows %s, which domain-is-pure does not name and appTestsExtras does not hold (it holds %s): the application layer's tests may import the domain's pure packages and those extras and nothing else; drop the entry from .golangci.yml and pinnedDepguardRules in the same commit, or add it to appTestsExtras with the reason a test needs it",
 			strings.Join(refused, ", "), strings.Join(names, ", "))
+	}
+
+	// The other direction, so the extras cannot go stale: an extra the rule no
+	// longer allows is one the layer's tests stopped importing, and one the
+	// domain's list names is no extra at all.
+	allowed := make(map[string]bool, len(tests))
+
+	for _, entry := range tests {
+		if !entry.Prefix {
+			allowed[entry.Path] = true
+		}
+	}
+
+	for _, extra := range appTestsExtras {
+		if !allowed[extra.path] {
+			t.Errorf("appTestsExtras names %s, which is no exact allow entry of app-tests-use-fakes-not-adapters: drop it from appTestsExtras, and from .golangci.yml and pinnedDepguardRules if the rule no longer allows it", extra.path)
+		}
+
+		if purePaths[extra.path] {
+			t.Errorf("appTestsExtras names %s, which domain-is-pure already allows: it is no extra, so drop it from appTestsExtras", extra.path)
+		}
 	}
 }
