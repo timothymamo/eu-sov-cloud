@@ -695,14 +695,16 @@ func TestActionlintScriptRefusesAConfigFile(t *testing.T) {
 			}
 
 			config := filepath.Join(work, filepath.FromSlash(tc.config))
+
+			var createErr error
 			if tc.link {
-				err = os.Symlink(filepath.Join(work, "missing.yaml"), config)
+				createErr = os.Symlink(filepath.Join(work, "missing.yaml"), config)
 			} else {
-				err = os.WriteFile(config, []byte("self-hosted-runner:\n  labels: []\n"), 0o600)
+				createErr = os.WriteFile(config, []byte("self-hosted-runner:\n  labels: []\n"), 0o600)
 			}
 
-			if err != nil {
-				t.Fatalf("create %s: %v", tc.config, err)
+			if createErr != nil {
+				t.Fatalf("create %s: %v", tc.config, createErr)
 			}
 
 			writeFakeGo(t, fakeDir)

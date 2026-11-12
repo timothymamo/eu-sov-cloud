@@ -3,13 +3,13 @@
 # docs/adr/0022-lint-shell-scripts-and-workflows-with-shellcheck-and-actionlint.md).
 #
 # actionlint is the version tools/go.mod pins, a module of its own so its requirements never join the
-# shipped module's (ADR 0022), built by the go command for the host. It hands every run: script to the
-# shellcheck binary, and runs it with --norc (rule_shellcheck.go in actionlint v1.7.12), so no .shellcheckrc
-# changes what it reports; the shellcheck it starts inherits this environment, and --norc does not stop
-# SHELLCHECK_OPTS, whose words shellcheck puts before its own arguments, so the script unsets it. Given a
-# shellcheck it cannot run, actionlint disables that check and still passes, so this script resolves
-# shellcheck first, fails loudly without it, and hands actionlint the path it found: the pinned
-# shellcheck make lint and CI put on the PATH (dev/lima.yaml, ci.yml).
+# shipped module's (ADR 0022), built by the go command for the host. It hands every run: script to
+# the shellcheck binary, and runs it with --norc (rule_shellcheck.go in actionlint v1.7.12), so no
+# .shellcheckrc changes what it reports; the shellcheck it starts inherits this environment, and --norc
+# does not stop SHELLCHECK_OPTS, whose words shellcheck puts before its own arguments, so the script
+# unsets it. Given a shellcheck it cannot run, actionlint disables that check and still passes, so this
+# script resolves the shellcheck first, fails loudly without it, and hands actionlint the path it
+# found: the pinned one make lint and CI put on the PATH (dev/lima.yaml, ci.yml).
 #
 # actionlint reads .github/actionlint.yaml or .github/actionlint.yml whenever one exists, tracked or not,
 # and such a file can ignore whole rules, so an untracked one would make a native run report less than
