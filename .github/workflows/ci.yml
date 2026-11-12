@@ -72,7 +72,8 @@ jobs:
   # scripts to the same shellcheck (issue #164, ADR 0022), as make lint runs them. Neither depends on the
   # target, so they run once, in a job of their own that the Lint check needs. shellcheck is the release
   # dev/lima.yaml pins, at the same version and SHA-256 (test/architecture holds the two pins equal), never
-  # the runner's preinstalled one; actionlint is the tool go.mod pins, verified by go.sum.
+  # the runner's preinstalled one; actionlint is the tool tools/go.mod pins, verified by tools/go.sum, a
+  # module of its own so its requirements stay out of the shipped module's (ADR 0022).
   lint-shell:
     name: Lint shell scripts and workflows
     runs-on: ubuntu-latest
@@ -112,7 +113,8 @@ jobs:
           mkdir -p "${RUNNER_TEMP}/shellcheck-bin"
           install -m 0755 "${RUNNER_TEMP}/${name}/shellcheck" "${RUNNER_TEMP}/shellcheck-bin/shellcheck"
           echo "${RUNNER_TEMP}/shellcheck-bin" >> "${GITHUB_PATH}"
-      # The pinned shellcheck must be the one on the PATH: actionlint runs whichever it finds there.
+      # The pinned shellcheck must be the one on the PATH: dev/shellcheck.sh runs it, and dev/actionlint.sh
+      # hands actionlint its path, failing when there is none rather than letting actionlint skip it.
       - name: shellcheck the tracked shell scripts
         run: |
           set -euo pipefail
@@ -123,7 +125,7 @@ jobs:
           shellcheck --version
           dev/shellcheck.sh
       - name: actionlint the workflows
-        run: go tool actionlint
+        run: dev/actionlint.sh
 
   # Lint is a required status check, and a matrix reports one check per entry under its own name: this
   # job reports the whole matrix, and lint-shell, as the one Lint check, and fails unless every entry and
@@ -160,7 +162,9 @@ jobs:
         with:
           go-version-file: go.mod
       - name: go.mod is tidy
-        run: go mod tidy -diff
+        run: |
+          go mod tidy -diff
+          go -C tools mod tidy -diff
       - name: Unit and contract tests
         run: make cover
       - name: Build

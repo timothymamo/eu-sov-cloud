@@ -78,12 +78,20 @@ exit 0
 `
 
 // wantActionlintArgs is the whole argument list of the go call that runs
-// actionlint: the version go.mod pins, on .github/workflows, its default.
-const wantActionlintArgs = "tool actionlint"
+// actionlint when shellcheck is the shellcheck on PATH: the version tools/go.mod
+// pins, a module of its own (ADR 0022), on .github/workflows, its default, with
+// shellcheck named by the path dev/actionlint.sh found. Given a shellcheck it
+// cannot run, actionlint switches its shellcheck check off and still passes, so
+// the script resolves the path itself and fails without one.
+func wantActionlintArgs(shellcheck string) string {
+	return "tool -modfile=tools/go.mod actionlint -shellcheck=" + shellcheck
+}
 
-// wantShellcheckSeverity is the severity flag make lint hands shellcheck:
-// style, every finding, as SC2086 (word splitting) is only info (issue #164).
-const wantShellcheckSeverity = "--severity=style"
+// wantShellcheckFlags are the arguments make lint hands shellcheck before the
+// scripts: no .shellcheckrc, which could silence a check on one host and not
+// in CI; style, every finding, as SC2086 (word splitting) is only info; and
+// "--", so no script name is read as an option (issue #164).
+var wantShellcheckFlags = []string{"--norc", "--severity=style", "--"}
 
 // goToolRun is one go tool call make lint made, as the fake go recorded it.
 type goToolRun struct {
@@ -338,16 +346,17 @@ func TestMakeLintRunsEveryReleaseTarget(t *testing.T) {
 				t.Errorf("make lint ran shellcheck %d times, want exactly once, after the linter runs: %+v", len(shellchecks), shellchecks)
 			} else if run := shellchecks[0]; run.After != len(runs) {
 				t.Errorf("make lint ran shellcheck after %d of %d linter runs, want after all of them", run.After, len(runs))
-			} else if diff := cmp.Diff(append([]string{wantShellcheckSeverity}, scripts...), run.Args); diff != "" {
-				t.Errorf("make lint ran shellcheck with the wrong arguments, want %s and every tracked shell script, as test/lint's IsShellScript picks them, in git's order (-want +got):\n%s",
-					wantShellcheckSeverity, diff)
+			} else if diff := cmp.Diff(append(slices.Clone(wantShellcheckFlags), scripts...), run.Args); diff != "" {
+				t.Errorf("make lint ran shellcheck with the wrong arguments, want %q and every tracked shell script, as test/lint's IsShellScript picks them, in git's order (-want +got):\n%s",
+					wantShellcheckFlags, diff)
 			}
 
+			wantActionlint := wantActionlintArgs(filepath.Join(fakeDir, "shellcheck"))
 			if len(goTools) != 1 {
-				t.Errorf("make lint made %d go tool calls, want exactly one, %q, after the linter runs: %+v", len(goTools), wantActionlintArgs, goTools)
-			} else if run := goTools[0]; run.Args != wantActionlintArgs || run.After != len(runs) {
+				t.Errorf("make lint made %d go tool calls, want exactly one, %q, after the linter runs: %+v", len(goTools), wantActionlint, goTools)
+			} else if run := goTools[0]; run.Args != wantActionlint || run.After != len(runs) {
 				t.Errorf("make lint called go %q after %d of %d linter runs, want go %q after all of them",
-					run.Args, run.After, len(runs), wantActionlintArgs)
+					run.Args, run.After, len(runs), wantActionlint)
 			} else if run.GOOS != "" || run.GOARCH != "" || run.CGOEnabled != "" {
 				t.Errorf("make lint ran actionlint with GOOS=%q GOARCH=%q CGO_ENABLED=%q, want all three unset, so go builds actionlint for the host it runs on",
 					run.GOOS, run.GOARCH, run.CGOEnabled)
@@ -515,12 +524,26 @@ func trackedShellScripts(t *testing.T, root string) []string {
 			continue
 		}
 
-		src, err := os.ReadFile(filepath.Join(root, filepath.FromSlash(rel)))
-		if err != nil {
-			if errors.Is(err, fs.ErrNotExist) {
-				continue // tracked but not in this checkout, as dev/shellcheck.sh skips it
-			}
+		file := filepath.Join(root, filepath.FromSlash(rel))
 
+		// Tracked but not in this checkout, as a sparse one has it, or not a
+		// regular file (a symbolic link or a submodule): dev/shellcheck.sh
+		// skips the same files.
+		info, err := os.Lstat(file)
+		if errors.Is(err, fs.ErrNotExist) {
+			continue
+		}
+
+		if err != nil {
+			t.Fatalf("stat %s: %v", rel, err)
+		}
+
+		if !info.Mode().IsRegular() {
+			continue
+		}
+
+		src, err := os.ReadFile(file)
+		if err != nil {
 			t.Fatalf("read %s: %v", rel, err)
 		}
 
@@ -534,6 +557,60 @@ func trackedShellScripts(t *testing.T, root string) []string {
 	}
 
 	return scripts
+}
+
+// TestLintScriptsRefuseAMissingShellcheck pins that dev/shellcheck.sh and
+// dev/actionlint.sh fail, and say how to install shellcheck, when none is on
+// the PATH, before they run anything: actionlint would otherwise switch its
+// shellcheck check off and pass (issue #164). The PATH holds only bash, which
+// the scripts' shebang finds, and the fake go, which records any call.
+func TestLintScriptsRefuseAMissingShellcheck(t *testing.T) {
+	t.Parallel()
+
+	root, err := filepath.Abs(repoRoot)
+	if err != nil {
+		t.Fatalf("resolve %q: %v", repoRoot, err)
+	}
+
+	bash, err := exec.LookPath("bash")
+	if err != nil {
+		t.Fatalf("find bash on PATH: %v", err)
+	}
+
+	for _, script := range []string{"dev/shellcheck.sh", "dev/actionlint.sh"} {
+		t.Run(script, func(t *testing.T) {
+			t.Parallel()
+
+			fakeDir := t.TempDir()
+			record := filepath.Join(t.TempDir(), "record")
+
+			writeFakeGo(t, fakeDir)
+
+			if err := os.Symlink(bash, filepath.Join(fakeDir, "bash")); err != nil {
+				t.Fatalf("link bash into the PATH: %v", err)
+			}
+
+			cmd := exec.CommandContext(t.Context(), filepath.Join(root, filepath.FromSlash(script)))
+			cmd.Dir = root
+			cmd.Env = makeEnv(map[string]string{"PATH": fakeDir, "SHIFT2EU_FAKE_LINT_RECORD": record})
+
+			out, err := cmd.CombinedOutput()
+			if err == nil {
+				t.Fatalf("%s succeeded with no shellcheck on the PATH, want it to fail\n%s", script, out)
+			}
+
+			const want = "shellcheck is not installed: re-provision the VM or see docs/contributing/development.md"
+			if !strings.Contains(string(out), want) {
+				t.Errorf("%s without shellcheck said %q, want it to say %q", script, out, want)
+			}
+
+			if data, err := os.ReadFile(record); err == nil {
+				t.Errorf("%s without shellcheck still called go: %q", script, data)
+			} else if !errors.Is(err, fs.ErrNotExist) {
+				t.Fatalf("read the fake go's record: %v", err)
+			}
+		})
+	}
 }
 
 // writeFakeGo writes the fake go into dir, executable, delegating every call

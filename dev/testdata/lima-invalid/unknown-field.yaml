@@ -198,7 +198,7 @@ provision:
       fi
 
       # The shellcheck release binary, pinned by its SHA-256 above, root-owned in /usr/local/bin like gh. make
-      # lint runs it, and actionlint (go tool actionlint) finds it on the PATH.
+      # lint runs it, and dev/actionlint.sh hands actionlint its path, failing without one.
       if ! /usr/local/bin/shellcheck --version 2>/dev/null | grep -qx "version: ${PARAM_shellcheckVersion#v}"; then
         (
           name="shellcheck-${PARAM_shellcheckVersion}"

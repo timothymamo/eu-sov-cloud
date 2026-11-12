@@ -499,8 +499,11 @@ func TestCILintMatrixCoversEveryReleaseTarget(t *testing.T) {
 }
 
 // checkLintShellJob pins the lint-shell job the Lint check needs (issue #164):
-// it runs dev/shellcheck.sh, make lint's shellcheck step, and go tool
-// actionlint, and neither the job nor a step of it may be skipped or excused.
+// it runs dev/shellcheck.sh and dev/actionlint.sh, make lint's shellcheck and
+// actionlint steps, and neither the job nor a step of it may be skipped or
+// excused. dev/actionlint.sh hands actionlint the shellcheck on PATH and fails
+// without one, so CI cannot pass with actionlint's shellcheck check switched
+// off; TestMakeLintRunsEveryReleaseTarget pins its arguments.
 func checkLintShellJob(t *testing.T, jobs map[string][]ciLine) {
 	t.Helper()
 
@@ -541,7 +544,7 @@ func checkLintShellJob(t *testing.T, jobs map[string][]ciLine) {
 			}
 		}
 
-		if _, run, ok := ciScalar(item.lines, "run"); ok && run == "go tool actionlint" {
+		if _, run, ok := ciScalar(item.lines, "run"); ok && run == "dev/actionlint.sh" {
 			actionlint = true
 		}
 
@@ -559,7 +562,7 @@ func checkLintShellJob(t *testing.T, jobs map[string][]ciLine) {
 	}
 
 	if !actionlint {
-		t.Errorf("no step of the lint-shell job runs go tool actionlint, so CI checks no workflow")
+		t.Errorf("no step of the lint-shell job runs dev/actionlint.sh, so CI checks no workflow, or checks it without shellcheck")
 	}
 }
 
