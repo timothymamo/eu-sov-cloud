@@ -519,8 +519,8 @@ var serverSignSteps = []string{
 
 // verifyJobHead is the verify job up to its steps: the independent check of
 // what the release published (issue #99), on a fresh runner after both images
-// are signed and attested, with read-only access to the registry and no OIDC
-// token of its own.
+// are signed and attested, with read-only access to the registry and to the
+// repository's attestations and no OIDC token of its own.
 const verifyJobHead = `  # The independent check of what the release published (issue #99): a fresh
   # runner, after both images are signed and attested, with read-only access to
   # the registry and no OIDC token, so nothing in it can sign or push. A tag can
@@ -531,7 +531,8 @@ const verifyJobHead = `  # The independent check of what the release published (
     needs: [sign, server-sign]
     runs-on: ubuntu-latest
     permissions:
-      packages: read # both images, their signatures and their attestations
+      packages: read # both images and their signatures
+      attestations: read # gh attestation verify reads them through the repository's API
     steps:
 `
 
@@ -1243,14 +1244,18 @@ func TestReleaseWorkflow(t *testing.T) {
 		{name: "the verify job needing the image jobs too", workflow: in("verify", "    needs: [sign, server-sign]\n", "    needs: [sign, server-sign, image]\n"), wantIn: "needs"},
 		{name: "the verify job without needs", workflow: in("verify", "    needs: [sign, server-sign]\n", ""), wantIn: `no "needs"`},
 
-		// It may read the registry and nothing more: no OIDC token, so nothing in
-		// it can sign an image of its own.
+		// It may read the registry and the repository's attestations and nothing
+		// more: no OIDC token, so nothing in it can sign an image of its own, and
+		// no scope it omits, which a job-level permissions block sets to none.
 		{name: "the verify job on a self-hosted runner", workflow: in("verify", "    runs-on: ubuntu-latest\n", "    runs-on: self-hosted\n"), wantIn: "runs-on"},
-		{name: "the verify job without permissions", workflow: in("verify", "    permissions:\n      packages: read # both images, their signatures and their attestations\n", ""), wantIn: `no "permissions"`},
-		{name: "packages: write for the verify job", workflow: in("verify", "      packages: read # both images, their signatures and their attestations\n", "      packages: write # both images, their signatures and their attestations\n"), wantIn: "packages"},
-		{name: "no packages: read for the verify job", workflow: in("verify", "      packages: read # both images, their signatures and their attestations\n", ""), wantIn: "packages"},
-		{name: "id-token: write for the verify job", workflow: in("verify", "      packages: read # both images, their signatures and their attestations\n", "      packages: read # both images, their signatures and their attestations\n      id-token: write # sign\n"), wantIn: "id-token"},
-		{name: "id-token: none for the verify job", workflow: in("verify", "      packages: read # both images, their signatures and their attestations\n", "      packages: read # both images, their signatures and their attestations\n      id-token: none # nothing to sign\n"), wantIn: "id-token"},
+		{name: "the verify job without permissions", workflow: in("verify", "    permissions:\n      packages: read # both images and their signatures\n      attestations: read # gh attestation verify reads them through the repository's API\n", ""), wantIn: `no "permissions"`},
+		{name: "packages: write for the verify job", workflow: in("verify", "      packages: read # both images and their signatures\n", "      packages: write # both images and their signatures\n"), wantIn: "packages"},
+		{name: "no packages: read for the verify job", workflow: in("verify", "      packages: read # both images and their signatures\n", ""), wantIn: "packages"},
+		{name: "attestations: write for the verify job", workflow: in("verify", "      attestations: read # gh attestation verify reads them through the repository's API\n", "      attestations: write # gh attestation verify reads them through the repository's API\n"), wantIn: "attestations"},
+		{name: "no attestations: read for the verify job", workflow: in("verify", "      attestations: read # gh attestation verify reads them through the repository's API\n", ""), wantIn: "attestations"},
+		{name: "contents: read for the verify job", workflow: in("verify", "      attestations: read # gh attestation verify reads them through the repository's API\n", "      attestations: read # gh attestation verify reads them through the repository's API\n      contents: read # a checkout\n"), wantIn: "contents"},
+		{name: "id-token: write for the verify job", workflow: in("verify", "      attestations: read # gh attestation verify reads them through the repository's API\n", "      attestations: read # gh attestation verify reads them through the repository's API\n      id-token: write # sign\n"), wantIn: "id-token"},
+		{name: "id-token: none for the verify job", workflow: in("verify", "      attestations: read # gh attestation verify reads them through the repository's API\n", "      attestations: read # gh attestation verify reads them through the repository's API\n      id-token: none # nothing to sign\n"), wantIn: "id-token"},
 
 		// Its steps are a closed list: cosign by exact release, a cosign login,
 		// the checks of each image, and the tag rule, and nothing else. No
