@@ -261,7 +261,7 @@ Everything below exists to keep the agents from waiting on you (#68). Three plac
 
 - **`.claude/settings.json`, checked in.** Permission rules apply on top of the mode: an allow rule skips
   the check, and a deny rule refuses the action. The deny rules (`--no-verify`, force pushes,
-  `git branch -D` and `--delete`, see CLAUDE.md rule 8) and the allow rules that name no path (the `make` targets, `go test/build/vet`,
+  `git branch -D` and `--delete`, see CLAUDE.md rule 8) and the allow rules that name no path (the fixed `make` targets, `go test/build/vet`,
   `golangci-lint run`, `dot-agent-deck work-done`, web search and the provider documentation sites)
   live here, so every checkout has them, including the dispatch worktrees the deck creates.
 - **`.claude/worker-settings.json`, checked in.** Loaded by the workers only. It denies
@@ -271,10 +271,16 @@ Everything below exists to keep the agents from waiting on you (#68). Three plac
   writes in the workspace path and merges the template into the VM user's settings: the template's keys
   replace the same keys there, its allow rules are added, and everything else is kept. Run it again after
   changing the template or recreating the VM. It holds what cannot be checked in as settings:
-  - **Git allow rules for every worktree.** They name absolute paths under the workspace, so they cover
-    the main checkout's `.worktrees/` and the PR worktrees inside dispatch worktrees alike. Claude Code
-    reads `.claude/settings.local.json` only from the directory a session starts in, so allow rules
-    there never reached the dispatched agents.
+  - **One `cd` allow rule for the workspace.** It names the workspace's absolute path, which a checked-in
+    file cannot know. There are no `git -C <path> ...` allow rules (#132): the `*` that stands for the
+    path also matches git options, so `git -C <ws>/x -c core.pager=... log` or `diff --output=<file>`
+    would skip the check, and the path varies, so no exact rule fits. Every Claude Code role runs in
+    auto mode, where the classifier reviews those calls instead. For the same reason
+    `.claude/settings.json` has no `make worktree BRANCH=*` rule: make accepts options such as
+    `--eval` or `-f` after the target. Allow rules end in a `*` only where the trailing arguments cannot
+    reach a shell, and never put one in the middle of a pattern. `make vm-claude-settings` only adds
+    rules, so on a VM set up before #132, remove the old `Bash(git -C ...)` rules from
+    `~/.claude/settings.json` by hand.
   - **`autoMode` context for the classifier:** that it runs in this VM, that tasks come from the
     orchestrator through the deck, which repository and domains are trusted, and that committing catalog
     snapshots from the providers' public pages to this public repository is normal work. Claude Code
