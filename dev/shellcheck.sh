@@ -10,7 +10,8 @@
 #
 # --norc keeps every .shellcheckrc out: shellcheck otherwise reads one from the script's directory and each
 # parent, then ~/.shellcheckrc or $XDG_CONFIG_HOME/shellcheckrc, any of which could silence a check and
-# make a native run report less than CI's. --severity=style reports everything, shellcheck's default,
+# make a native run report less than CI's. --norc does not stop SHELLCHECK_OPTS, whose words shellcheck
+# puts before its own arguments (an --exclude there silences a check just as well), so the script unsets it. --severity=style reports everything, shellcheck's default,
 # stated so it cannot drift: SC2086, the word splitting a quoting bug causes, is only info. "--" ends the
 # options, so no file name is read as one. A finding is fixed, or silenced on its line with
 # "# shellcheck disable=SCnnnn # reason", which test/lint holds to a code and a reason.
@@ -20,6 +21,8 @@
 #
 # Usage: dev/shellcheck.sh   (from the repository root, where make runs it)
 set -euo pipefail
+
+unset SHELLCHECK_OPTS
 
 if ! command -v shellcheck >/dev/null; then
   echo >&2 "shellcheck: shellcheck is not installed: re-provision the VM or see docs/contributing/development.md"

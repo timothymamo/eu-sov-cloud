@@ -41,12 +41,14 @@ exit 0
 // line "#go\t<GOOS>\t<GOARCH>\t<CGO_ENABLED>\t<SHIFT2EU_LINT_PROBES>\t<arguments>", so the record
 // tells whether it ran and whether it ran after them; it fails when
 // SHIFT2EU_FAKE_LINT_FAIL is test/lint. A go tool call, the actionlint step, is
-// recorded as "#tool\t<GOOS>\t<GOARCH>\t<CGO_ENABLED>\t<arguments>" and fails when
+// recorded as "#tool\t<GOOS>\t<GOARCH>\t<CGO_ENABLED>\t<SHELLCHECK_OPTS>\t<arguments>",
+// SHELLCHECK_OPTS as unsetShellcheckOpts when it is not set, since actionlint's
+// shellcheck would inherit it, and fails when
 // SHIFT2EU_FAKE_LINT_FAIL is actionlint. Every other call is handed to the real go
 // command, whose path replaces %s, single-quoted.
 const fakeGo = `#!/bin/sh
 if [ "$1" = tool ]; then
-	printf '#tool\t%%s\t%%s\t%%s\t%%s\n' "${GOOS}" "${GOARCH}" "${CGO_ENABLED}" "$*" >> "${SHIFT2EU_FAKE_LINT_RECORD}"
+	printf '#tool\t%%s\t%%s\t%%s\t%%s\t%%s\n' "${GOOS}" "${GOARCH}" "${CGO_ENABLED}" "${SHELLCHECK_OPTS-<unset>}" "$*" >> "${SHIFT2EU_FAKE_LINT_RECORD}"
 	if [ "${SHIFT2EU_FAKE_LINT_FAIL}" = "actionlint" ]; then
 		exit 3
 	fi
@@ -67,15 +69,22 @@ exec %s "$@"
 const wantLintTestArgs = "test -count=1 ./test/lint/"
 
 // fakeShellcheck is the shellcheck make lint finds on PATH. It records each
-// call as a line "#shellcheck" followed by a tab and each argument, and fails
-// when SHIFT2EU_FAKE_LINT_FAIL is shellcheck.
+// call as a line "#shellcheck", a tab and SHELLCHECK_OPTS (unsetShellcheckOpts
+// when it is not set), then a tab and each argument, and fails when
+// SHIFT2EU_FAKE_LINT_FAIL is shellcheck.
 const fakeShellcheck = `#!/bin/sh
-{ printf '#shellcheck'; printf '\t%s' "$@"; printf '\n'; } >> "${SHIFT2EU_FAKE_LINT_RECORD}"
+{ printf '#shellcheck\t%s' "${SHELLCHECK_OPTS-<unset>}"; printf '\t%s' "$@"; printf '\n'; } >> "${SHIFT2EU_FAKE_LINT_RECORD}"
 if [ "${SHIFT2EU_FAKE_LINT_FAIL}" = "shellcheck" ]; then
 	exit 3
 fi
 exit 0
 `
+
+// unsetShellcheckOpts is what the fakes record for SHELLCHECK_OPTS when it is
+// not set. shellcheck puts that variable's words before its own arguments, and
+// --norc does not stop it, so an --exclude there would silence a check in a
+// developer's make lint and not in CI: the lint scripts unset it (issue #164).
+const unsetShellcheckOpts = "<unset>"
 
 // wantActionlintArgs is the whole argument list of the go call that runs
 // actionlint when shellcheck is the shellcheck on PATH: the version tools/go.mod
@@ -96,18 +105,20 @@ var wantShellcheckFlags = []string{"--norc", "--severity=style", "--"}
 // goToolRun is one go tool call make lint made, as the fake go recorded it.
 type goToolRun struct {
 	// After is how many golangci-lint runs the record held before it.
-	After      int
-	GOOS       string
-	GOARCH     string
-	CGOEnabled string
-	Args       string
+	After          int
+	GOOS           string
+	GOARCH         string
+	CGOEnabled     string
+	ShellcheckOpts string
+	Args           string
 }
 
 // shellcheckRun is one shellcheck call make lint made.
 type shellcheckRun struct {
 	// After is how many golangci-lint runs the record held before it.
-	After int
-	Args  []string
+	After          int
+	ShellcheckOpts string
+	Args           []string
 }
 
 // The two ways a case sets GOLANGCI_LINT_CACHE for make.
@@ -282,6 +293,14 @@ func TestMakeLintRunsEveryReleaseTarget(t *testing.T) {
 				"RELEASE_TARGETS": "linux/amd64",
 			},
 		},
+		{
+			name:     "an exported SHELLCHECK_OPTS reaches neither shellcheck nor actionlint",
+			cache:    cacheSet,
+			wantExit: true,
+			env: map[string]string{
+				"SHELLCHECK_OPTS": "--exclude=SC2086 --severity=error",
+			},
+		},
 	}
 
 	for _, tc := range tests {
@@ -346,6 +365,9 @@ func TestMakeLintRunsEveryReleaseTarget(t *testing.T) {
 				t.Errorf("make lint ran shellcheck %d times, want exactly once, after the linter runs: %+v", len(shellchecks), shellchecks)
 			} else if run := shellchecks[0]; run.After != len(runs) {
 				t.Errorf("make lint ran shellcheck after %d of %d linter runs, want after all of them", run.After, len(runs))
+			} else if run.ShellcheckOpts != unsetShellcheckOpts {
+				t.Errorf("make lint ran shellcheck with SHELLCHECK_OPTS=%q, want it unset: shellcheck puts its words before its own arguments, and --norc does not stop them",
+					run.ShellcheckOpts)
 			} else if diff := cmp.Diff(append(slices.Clone(wantShellcheckFlags), scripts...), run.Args); diff != "" {
 				t.Errorf("make lint ran shellcheck with the wrong arguments, want %q and every tracked shell script, as test/lint's IsShellScript picks them, in git's order (-want +got):\n%s",
 					wantShellcheckFlags, diff)
@@ -360,6 +382,9 @@ func TestMakeLintRunsEveryReleaseTarget(t *testing.T) {
 			} else if run.GOOS != "" || run.GOARCH != "" || run.CGOEnabled != "" {
 				t.Errorf("make lint ran actionlint with GOOS=%q GOARCH=%q CGO_ENABLED=%q, want all three unset, so go builds actionlint for the host it runs on",
 					run.GOOS, run.GOARCH, run.CGOEnabled)
+			} else if run.ShellcheckOpts != unsetShellcheckOpts {
+				t.Errorf("make lint ran actionlint with SHELLCHECK_OPTS=%q, want it unset: the shellcheck actionlint starts would inherit it",
+					run.ShellcheckOpts)
 			}
 
 			// test/lint holds the rules golangci-lint cannot (nolint
@@ -613,6 +638,103 @@ func TestLintScriptsRefuseAMissingShellcheck(t *testing.T) {
 	}
 }
 
+// TestActionlintScriptRefusesAConfigFile pins that dev/actionlint.sh fails, and
+// names the file, when .github/actionlint.yaml or .github/actionlint.yml exists,
+// before it runs actionlint: actionlint reads either one whenever it exists,
+// tracked or not, and it can ignore whole rules, so an untracked one would make
+// a developer's make lint report less than CI's. test/lint refuses a tracked one
+// (issue #164). The script runs from a directory of its own holding a copy of
+// it, so the repository's .github is never touched; a symbolic link counts too,
+// dangling or not, as actionlint would follow one.
+func TestActionlintScriptRefusesAConfigFile(t *testing.T) {
+	t.Parallel()
+
+	root, err := filepath.Abs(repoRoot)
+	if err != nil {
+		t.Fatalf("resolve %q: %v", repoRoot, err)
+	}
+
+	script, err := os.ReadFile(filepath.Join(root, "dev", "actionlint.sh"))
+	if err != nil {
+		t.Fatalf("read dev/actionlint.sh: %v", err)
+	}
+
+	bash, err := exec.LookPath("bash")
+	if err != nil {
+		t.Fatalf("find bash on PATH: %v", err)
+	}
+
+	tests := []struct {
+		name   string
+		config string
+		// link makes the config a dangling symbolic link instead of a file.
+		link bool
+	}{
+		{name: "actionlint.yaml", config: ".github/actionlint.yaml"},
+		{name: "actionlint.yml", config: ".github/actionlint.yml"},
+		{name: "a dangling symbolic link", config: ".github/actionlint.yaml", link: true},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			work := t.TempDir()
+			fakeDir := t.TempDir()
+			record := filepath.Join(t.TempDir(), "record")
+
+			for _, dir := range []string{"dev", ".github"} {
+				if err := os.Mkdir(filepath.Join(work, dir), 0o700); err != nil {
+					t.Fatalf("make %s: %v", dir, err)
+				}
+			}
+
+			//nolint:gosec // the script copy must be executable
+			if err := os.WriteFile(filepath.Join(work, "dev", "actionlint.sh"), script, 0o700); err != nil {
+				t.Fatalf("copy dev/actionlint.sh: %v", err)
+			}
+
+			config := filepath.Join(work, filepath.FromSlash(tc.config))
+			if tc.link {
+				err = os.Symlink(filepath.Join(work, "missing.yaml"), config)
+			} else {
+				err = os.WriteFile(config, []byte("self-hosted-runner:\n  labels: []\n"), 0o600)
+			}
+
+			if err != nil {
+				t.Fatalf("create %s: %v", tc.config, err)
+			}
+
+			writeFakeGo(t, fakeDir)
+			writeFakeShellcheck(t, fakeDir)
+
+			if err := os.Symlink(bash, filepath.Join(fakeDir, "bash")); err != nil {
+				t.Fatalf("link bash into the PATH: %v", err)
+			}
+
+			cmd := exec.CommandContext(t.Context(), filepath.Join(work, "dev", "actionlint.sh"))
+			cmd.Dir = work
+			cmd.Env = makeEnv(map[string]string{"PATH": fakeDir, "SHIFT2EU_FAKE_LINT_RECORD": record})
+
+			out, err := cmd.CombinedOutput()
+			if err == nil {
+				t.Fatalf("dev/actionlint.sh succeeded with %s present, want it to fail\n%s", tc.config, out)
+			}
+
+			want := "actionlint: " + tc.config + " exists: it can silence actionlint's checks"
+			if !strings.Contains(string(out), want) {
+				t.Errorf("dev/actionlint.sh with %s present said %q, want it to say %q", tc.config, out, want)
+			}
+
+			if data, err := os.ReadFile(record); err == nil {
+				t.Errorf("dev/actionlint.sh with %s present still called go: %q", tc.config, data)
+			} else if !errors.Is(err, fs.ErrNotExist) {
+				t.Fatalf("read the fake go's record: %v", err)
+			}
+		})
+	}
+}
+
 // writeFakeGo writes the fake go into dir, executable, delegating every call
 // but go test to the go command the test finds on PATH.
 func writeFakeGo(t *testing.T, dir string) {
@@ -742,21 +864,21 @@ func readLintRecord(t *testing.T, path string) ([]lintRun, []goTestRun, []goTool
 
 	for i, line := range lines {
 		if rest, ok := strings.CutPrefix(line, "#tool\t"); ok {
-			fields := strings.SplitN(rest, "\t", 4)
-			if len(fields) != 4 {
-				t.Fatalf("record line %d = %q, want #tool and 4 tab-separated fields: GOOS, GOARCH, CGO_ENABLED and the arguments", i+1, line)
+			fields := strings.SplitN(rest, "\t", 5)
+			if len(fields) != 5 {
+				t.Fatalf("record line %d = %q, want #tool and 5 tab-separated fields: GOOS, GOARCH, CGO_ENABLED, SHELLCHECK_OPTS and the arguments", i+1, line)
 			}
 
 			goTools = append(goTools, goToolRun{
-				After: len(runs), GOOS: fields[0], GOARCH: fields[1], CGOEnabled: fields[2], Args: fields[3],
+				After: len(runs), GOOS: fields[0], GOARCH: fields[1], CGOEnabled: fields[2], ShellcheckOpts: fields[3], Args: fields[4],
 			})
 
 			continue
 		}
 
-		if rest, ok := strings.CutPrefix(line, "#shellcheck"); ok {
-			args := strings.Split(rest, "\t")[1:]
-			shellchecks = append(shellchecks, shellcheckRun{After: len(runs), Args: args})
+		if rest, ok := strings.CutPrefix(line, "#shellcheck\t"); ok {
+			fields := strings.Split(rest, "\t")
+			shellchecks = append(shellchecks, shellcheckRun{After: len(runs), ShellcheckOpts: fields[0], Args: fields[1:]})
 
 			continue
 		}
