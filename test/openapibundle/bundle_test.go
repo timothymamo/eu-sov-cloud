@@ -59,7 +59,9 @@ func TestBundleIsCommitted(t *testing.T) {
 	path := filepath.Join(repoRoot, filepath.FromSlash(bundled))
 
 	if *update {
-		if err := os.WriteFile(path, got, 0o644); err != nil {
+		// 0o600: the golden file internal/testutil/golden.go writes as well; git
+		// stores the mode as 644 anyway.
+		if err := os.WriteFile(path, got, 0o600); err != nil {
 			t.Fatalf("write %s: %v", bundled, err)
 		}
 	}
