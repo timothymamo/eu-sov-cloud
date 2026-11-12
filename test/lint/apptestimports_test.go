@@ -14,10 +14,16 @@ import "testing"
 // or net (io/ioutil, log/syslog, text/template, html/template, archive/zip,
 // debug/elf, debug/buildinfo, go/build, go/importer, runtime/debug) must be
 // refused too, so its want names only the list and the entry may pick its
-// reason. The pure packages beside them (net/url, net/netip, strings, context,
-// testing, runtime) must not be reported, and every issue must match a want, so
-// a rule that stops firing fails here. The probe is a _test.go file to prove
-// the rule lints test files at all.
+// reason. The last reviewer and auditor round added four to that half: go/parser
+// (ParseFile and ParseDir read files), mime/multipart (ReadForm writes temp
+// files), runtime/coverage (WriteMetaDir and WriteCountersDir write files) and
+// unsafe (//go:linkname reaches a denied package's functions without an import).
+// The pure packages beside them (net/url, net/netip, strings, context, testing,
+// runtime) must not be reported, and every issue must match a want, so a rule
+// that stops firing fails here. go/build/constraint is pure and with no want on
+// purpose: it pins that the go/build entry stays exact (go/build$), since a bare
+// go/build prefix entry would refuse it and fail this probe. The probe is a
+// _test.go file to prove the rule lints test files at all.
 //
 // make lint runs this probe with SHIFT2EU_LINT_PROBES=require on the host, and
 // every entry of CI's lint-target matrix runs the step that sets it.
