@@ -388,7 +388,7 @@ cannot follow, until then.
   1 GiB in `cmd/shift2eu-server`.
 - *Amended (issue #147):* the release ships `shift2eu-server` in archives of its own,
   `shift2eu-server_<version>_<os>_<arch>`, with the same tag and version as `shift2eu`, whose archives
-  no longer hold it ([ADR 0015](0015-publish-the-signed-image-to-ghcr-with-docker-buildx.md),
+  have never held it in a release ([ADR 0015](0015-publish-the-signed-image-to-ghcr-with-docker-buildx.md),
   Consequences). An operator who runs the binary rather than the image fetches that archive and checks
   it against the release's one `checksums.txt`, exactly as the CLI's (`docs/guide/verify-releases.md`,
   "Verify an archive"). The archive is not signed or attested; the image is, so an operator who needs

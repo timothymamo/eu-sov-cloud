@@ -64,23 +64,39 @@ name the source repository (`org.opencontainers.image.source`) and the commit
 
 The release archives, the CLI's `shift2eu_*` and the HTTP API's `shift2eu-server_*`
 ([Install](install.md#the-release-archives)), are listed in one `checksums.txt`, published with the
-release. The archives and `checksums.txt` are neither signed nor attested: only the images are. A
-matching checksum shows the download is the file the release published, not who published it; for
-that, use the images. Check either archive the same way:
+release. The archives and `checksums.txt` are neither signed nor attested: only the images are.
+`checksums.txt` comes from the same release as the archive, so a match detects a download corrupted
+in transit or on a mirror, not a compromised release or repository: whoever can replace a release's
+archive can replace its `checksums.txt` too. Where you need to know who published the binary, run the
+signed image instead. Check either archive the same way, with `TAG` set to the release you want:
 
 ```bash
-TAG=v0.2.0
+TAG=vX.Y.Z
 VERSION="${TAG#v}"
 ARCHIVE="shift2eu_${VERSION}_linux_amd64.tar.gz"   # the HTTP API's: shift2eu-server_${VERSION}_linux_amd64.tar.gz
 
 gh release download "$TAG" --repo timothymamo/shift2eu --pattern "$ARCHIVE" --pattern checksums.txt
-sha256sum --check --ignore-missing checksums.txt   # macOS: shasum -a 256 --check --ignore-missing checksums.txt
+grep -E "  ${ARCHIVE}\$" checksums.txt | sha256sum --check -   # macOS: ... | shasum -a 256 --check -
 tar -xzf "$ARCHIVE"
 ```
 
-`sha256sum` must print `OK` for the archive. Each archive holds only its own binary (`shift2eu` or
-`shift2eu-server`), with `README.md`, `LICENSE` and `docs/`. The `shift2eu-server_*` archives start
-with the first release after `v0.2.0`; up to `v0.2.0`, the `shift2eu_*` archive holds both binaries.
+The check reads exactly the archive's line of `checksums.txt`, so it must print `<archive>: OK`. A
+wrong digest prints `FAILED`, and a name missing from `checksums.txt` fails too (`no properly formatted
+checksum lines found`) instead of checking nothing. On Windows, in PowerShell, for a `.zip` archive:
+
+```powershell
+$Tag = "vX.Y.Z"
+$Archive = "shift2eu_$($Tag.TrimStart('v'))_windows_amd64.zip"   # the HTTP API's: shift2eu-server_...
+gh release download $Tag --repo timothymamo/shift2eu --pattern $Archive --pattern checksums.txt
+$Want = @(Get-Content checksums.txt | Where-Object { $_.EndsWith("  $Archive") })
+if ($Want.Count -ne 1) { throw "$Archive is not in checksums.txt exactly once" }
+if ((Get-FileHash -Algorithm SHA256 $Archive).Hash -ne $Want[0].Split(' ')[0]) { throw "$Archive does not match checksums.txt" }   # -ne ignores case
+Expand-Archive $Archive
+```
+
+Each archive holds only its own binary (`shift2eu` or `shift2eu-server`, `.exe` on Windows), with
+`README.md`, `LICENSE` and the Markdown pages under `docs/`. The `shift2eu-server_*` archives start
+with the first release after `v0.2.0`: `v0.2.0` and earlier shipped the CLI only, in `shift2eu_*`.
 
 ## Releases before the rename: v0.1.0 and v0.1.0-rc.1
 

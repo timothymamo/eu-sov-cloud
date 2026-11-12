@@ -56,7 +56,8 @@ arguments (`CMD`) `--listen 0.0.0.0:8080`. Arguments given to `docker run` repla
 `--listen 0.0.0.0:8080` again with any of your own. Each release also publishes the binary in
 archives of its own, `shift2eu-server_<version>_<os>_<arch>` ([Install](install.md#the-release-archives)),
 listed in the same `checksums.txt` as the CLI's and verified the same way
-([Verify an archive](verify-releases.md#verify-an-archive)). From a clone, `make server` builds `./bin/shift2eu-server` and
+([Verify an archive](verify-releases.md#verify-an-archive)); that check detects a corrupted download,
+not a tampered release, so run the signed image where you need the publisher verified. From a clone, `make server` builds `./bin/shift2eu-server` and
 `make server-image` the image `shift2eu-server:<version>` (`docker build --target server .` without
 the version stamp). Deploy it as [Behind a reverse proxy](reverse-proxy.md) describes.
 

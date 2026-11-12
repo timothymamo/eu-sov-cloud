@@ -207,7 +207,9 @@ attestations, pushed to the registry beside the image.
   `check.ReleaseWorkflow` builds both images' jobs from the same step lists, so the two cannot drift, and
   `check.DryRunMirrorsRelease` holds CI's dry run of each image to its release build. GoReleaser builds
   `shift2eu-server` beside `shift2eu` with the same settings, and each release archive holds both
-  binaries (until issue #147, below). The GHCR package `shift2eu-server` must be made public by hand after its first push, as
+  binaries (until issue #147, below). That state was never released: no release was tagged between
+  the two changes, so `v0.2.0` and earlier ship the CLI alone and the first release with
+  `shift2eu-server` ships it in archives of its own. The GHCR package `shift2eu-server` must be made public by hand after its first push, as
   `shift2eu`'s was.
 - Amended by issue #99: a ninth job, `verify`, checks what every release published, independently of
   the agents. Until then the published images were checked by hand, or by the `release-tag` skill inside
@@ -294,4 +296,6 @@ attestations, pushed to the registry beside the image.
   left to a follow-up that changes `release.yml`. `check.GoReleaserArchives` pins the section as a
   closed schema, and CI's `test` job runs `.github/scripts/verify-archives.sh`
   (`check.DryRunVerifiesArchives`): a GoReleaser snapshot of the release, failed unless each archive
-  holds exactly its own binary, every platform has both and `checksums.txt` matches every archive.
+  holds exactly its own binary and otherwise only `LICENSE`, `README.md` and Markdown pages under
+  `docs/`, every built platform has one archive of each and `checksums.txt` matches every archive. The
+  script builds into a temporary directory, so a local run leaves `dist/` alone.

@@ -19,12 +19,13 @@ release's tag and version:
 | `shift2eu_<version>_<os>_<arch>` | the CLI, `shift2eu` |
 | `shift2eu-server_<version>_<os>_<arch>` | the HTTP API, `shift2eu-server` |
 
-`<version>` is the tag without its `v` (`shift2eu-server_0.2.0_linux_amd64.tar.gz` for `v0.2.0`). Each
+`<version>` is the tag without its `v` (`shift2eu-server_X.Y.Z_linux_amd64.tar.gz` for `vX.Y.Z`). Each
 archive holds its one binary with `README.md`, `LICENSE` and the documentation under `docs/`; fetch
-only the one you need. Up to `v0.2.0`, the `shift2eu_*` archive held both binaries. The binaries are static and need nothing else: [Assess an inventory](assess.md)
-shows how to run `shift2eu`, and [Run the HTTP API](http-api.md) `shift2eu-server`.
-[Verify a release](verify-releases.md#verify-an-archive) shows how to check an archive against
-`checksums.txt`.
+only the one you need. The `shift2eu-server_*` archives start with the first release after `v0.2.0`:
+`v0.2.0` and earlier shipped the CLI only. The binaries are static and need nothing else:
+[Assess an inventory](assess.md) shows how to run `shift2eu`, and [Run the HTTP API](http-api.md)
+`shift2eu-server`. [Verify a release](verify-releases.md#verify-an-archive) shows how to check an
+archive against `checksums.txt`, which detects a corrupted download but not a tampered release.
 
 ## The images
 
