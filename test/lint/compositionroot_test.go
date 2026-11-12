@@ -38,6 +38,11 @@ import (
 // once for windows, which is where the windows names type-check.
 var compositionRootTags = []string{"composition-root-no-exec", "composition-root-env"}
 
+// probeTags are the tags of forbidigo's groups TestCompositionRootForbidigoProbe
+// covers: the two composition-root groups, and the CLI's own group (issue #152),
+// which takes over in internal/cli where the roots' groups stop.
+var probeTags = slices.Concat(compositionRootTags, []string{cliNoEnvOrProcessTag})
+
 // TestCompositionRootForbidigoProbe runs forbidigo, with the repository's
 // .golangci.yml, on the two composition roots and a CLI package
 // (testdata/compositionroot), twice: once for the host's platform, and once for
@@ -50,9 +55,12 @@ var compositionRootTags = []string{"composition-root-no-exec", "composition-root
 // other refusal kinds of the env group in main.go keep the file from being
 // exempt as a whole. A _test.go file of a composition root must be refused too:
 // its tests are compiled into the same package and run with the same
-// environment. Every call the groups refuse, in internal/cli, must pass: a group
-// that lost its path-except scope is refused by the probe's strictness, which
-// reports every issue the probe does not expect.
+// environment. Every call the CLI's own group refuses, in internal/cli, has a
+// line there with a want of that group, and the calls internal/cli is for — os
+// opening the inventory a user names, reading it and creating the report — must
+// pass: a group that lost its path-except scope, or one of the roots' that lost
+// its own scope and reached internal/cli, is refused by the probe's strictness,
+// which reports every issue the probe does not expect.
 //
 // A file for one platform builds on that platform only, so each run reads the
 // want comments of its own files, and an entry of a group need refuse a line in
@@ -63,13 +71,13 @@ func TestCompositionRootForbidigoProbe(t *testing.T) {
 
 	host := runForbidigoProbe(t, forbidigoProbe{
 		dir:             "compositionroot",
-		tags:            compositionRootTags,
+		tags:            probeTags,
 		files:           probeFilesForHost,
 		noEntryCoverage: true,
 	})
 	windows := runForbidigoProbe(t, forbidigoProbe{
 		dir:             "compositionroot",
-		tags:            compositionRootTags,
+		tags:            probeTags,
 		goos:            "windows",
 		goarch:          "amd64",
 		packages:        []string{"./cmd/..."},
@@ -78,7 +86,7 @@ func TestCompositionRootForbidigoProbe(t *testing.T) {
 	})
 
 	for _, e := range forbidigoEntries(t, moduleRoot(t)) {
-		if !slices.ContainsFunc(compositionRootTags, func(tag string) bool { return strings.HasPrefix(e.msg, tag+": ") }) {
+		if !slices.ContainsFunc(probeTags, func(tag string) bool { return strings.HasPrefix(e.msg, tag+": ") }) {
 			continue
 		}
 		if !host[e.msg] && !windows[e.msg] {

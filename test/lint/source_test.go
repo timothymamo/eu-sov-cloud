@@ -227,6 +227,16 @@ func TestScanSources(t *testing.T) {
 			},
 		},
 		{
+			// The CLI may read no variable either (issue #152), and the guard is
+			// linter-wide, so a directive on such a read in internal/cli is
+			// refused as well: the guard names no group, it names forbidigo.
+			name:  "nolint directive on the CLI's environment read",
+			files: map[string]string{"internal/cli/cli.go": "package cli\n\nimport \"os\"\n\nvar token = os.Getenv(\"TOKEN\") //nolint:forbidigo // probe\n"},
+			want: []string{
+				"internal/cli/cli.go:5:32: //nolint:forbidigo // probe would hide forbidigo issues; fix the design or the call instead (CLAUDE.md)",
+			},
+		},
+		{
 			name:  "bare nolint directive",
 			files: map[string]string{"a/a.go": "package a\n\nvar _ = 1 //nolint // probe\n"},
 			want: []string{

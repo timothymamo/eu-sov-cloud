@@ -20,7 +20,7 @@ import (
 // linters.settings.forbidigo). The tags of the two composition-root groups,
 // compositionRootTags, are pinned by what their rules select instead of by the
 // text of a path regexp, in TestCompositionRootExclusions.
-var forbidigoTags = []string{"cloud-read-only", "domain-is-pure", testutilNoEnvTag}
+var forbidigoTags = []string{"cloud-read-only", "domain-is-pure", testutilNoEnvTag, cliNoEnvOrProcessTag}
 
 // exclusionRule is one rule of linters.exclusions.rules in .golangci.yml.
 type exclusionRule struct {
@@ -88,6 +88,12 @@ func TestForbidigoExclusionsDropOneGroup(t *testing.T) {
 		// and nowhere else.
 		testutilNoEnvTag: {
 			{"path-except": `^internal/testutil/`, "text": groupText(testutilNoEnvTag)},
+		},
+		// The CLI's production code (issue #152): one rule, for every path
+		// outside internal/cli/, so the group holds where the CLI is and
+		// nowhere else. The roots' own groups take over under cmd/.
+		cliNoEnvOrProcessTag: {
+			{"path-except": `^internal/cli/`, "text": groupText(cliNoEnvOrProcessTag)},
 		},
 	}
 	if diff := cmp.Diff(want, got); diff != "" {

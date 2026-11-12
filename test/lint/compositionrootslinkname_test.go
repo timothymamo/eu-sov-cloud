@@ -19,15 +19,15 @@ var linknameDirective = regexp.MustCompile(`^//go:linkname(?:\s|$)`)
 
 // linknameProblems returns what is wrong with the compiler directives of src,
 // the content of the Go file at rel, one line each: a //go:linkname directive,
-// which a composition root never holds. The directive is how a file reaches a
-// function of a package it does not import, package unsafe's //go:linkname
-// included, so no depguard rule and no forbidigo entry can see the call it
-// makes possible (runtime_envs is the environment, credentials included;
-// reflect's runtime hooks are the process). It needs a blank import of package
-// unsafe beside it, which a test file may make today, and UnsafePointer reached
-// through //go:linkname is still a pointer: the check is the directive itself.
-// A comment that only mentions the directive in prose is no directive, and a
-// //go:build or //go:generate line is no linkname.
+// which neither a composition root nor the CLI it hands the work to holds. The
+// directive is how a file reaches a function of a package it does not import,
+// package unsafe's //go:linkname included, so no depguard rule and no forbidigo
+// entry can see the call it makes possible (runtime_envs is the environment,
+// credentials included; reflect's runtime hooks are the process). It needs a
+// blank import of package unsafe beside it, which a test file may make today,
+// and UnsafePointer reached through //go:linkname is still a pointer: the check
+// is the directive itself. A comment that only mentions the directive in prose
+// is no directive, and a //go:build or //go:generate line is no linkname.
 //
 // It reads the source, not the linted tree: a case is a string, so the pin is a
 // fixture (TestLinknameProblems).
@@ -46,7 +46,7 @@ func linknameProblems(rel string, src []byte) ([]string, error) {
 				continue
 			}
 
-			problems = append(problems, fmt.Sprintf("%s:%d: the file holds a //go:linkname directive, which binds a symbol of another package to a name of this one without an import of it; a composition root links no foreign symbol, package unsafe's included, and the call it makes possible is the one no import rule sees",
+			problems = append(problems, fmt.Sprintf("%s:%d: the file holds a //go:linkname directive, which binds a symbol of another package to a name of this one without an import of it; a composition root, and the CLI it hands the work to, link no foreign symbol, package unsafe's included, and the call it makes possible is the one no import rule sees",
 				rel, fset.Position(c.Slash).Line))
 		}
 	}
@@ -54,21 +54,21 @@ func linknameProblems(rel string, src []byte) ([]string, error) {
 	return problems, nil
 }
 
-// TestCompositionRootsLinkNoForeignSymbol checks every Go file of the two
-// composition roots, _test.go files included, for a //go:linkname directive
-// (linknameProblems). The tree holds none today, and the test pins that: the
-// directive reaches any function of any package, the environment dump of
-// runtime and the process entry points of syscall among them, and it needs
-// package unsafe, which depguard's composition-root rules deny a composition
-// root alone: a test file may import unsafe today, so a directive there runs
-// the same code under `go test`.
-func TestCompositionRootsLinkNoForeignSymbol(t *testing.T) {
+// TestRootsAndCLILinkNoForeignSymbol checks every Go file of the two composition
+// roots and of internal/cli, _test.go files included, for a //go:linkname
+// directive (linknameProblems). The tree holds none today, and the test pins
+// that: the directive reaches any function of any package, the environment dump
+// of runtime and the process entry points of syscall among them, and it needs
+// package unsafe, which depguard's rules deny the roots and the CLI: a test file
+// may import unsafe today, so a directive there runs the same code under
+// `go test`.
+func TestRootsAndCLILinkNoForeignSymbol(t *testing.T) {
 	t.Parallel()
 
 	root := moduleRoot(t)
 	files := 0
 	refused, err := walkGoFiles(root, skipDir, func(rel string, src []byte) error {
-		if !slices.ContainsFunc(compositionRootDirs, func(dir string) bool {
+		if !slices.ContainsFunc(environmentPathDirs, func(dir string) bool {
 			return strings.HasPrefix(rel, dir+"/")
 		}) {
 			return nil
@@ -90,7 +90,7 @@ func TestCompositionRootsLinkNoForeignSymbol(t *testing.T) {
 		t.Error(p)
 	}
 	if files == 0 {
-		t.Fatalf("no Go file under %v", compositionRootDirs)
+		t.Fatalf("no Go file under %v", environmentPathDirs)
 	}
 }
 
@@ -118,7 +118,7 @@ import _ "unsafe"
 func environ() []string
 `,
 			want: []string{
-				rel + `:5: the file holds a //go:linkname directive, which binds a symbol of another package to a name of this one without an import of it; a composition root links no foreign symbol, package unsafe's included, and the call it makes possible is the one no import rule sees`,
+				rel + `:5: the file holds a //go:linkname directive, which binds a symbol of another package to a name of this one without an import of it; a composition root, and the CLI it hands the work to, link no foreign symbol, package unsafe's included, and the call it makes possible is the one no import rule sees`,
 			},
 		},
 		{
@@ -136,7 +136,7 @@ func start()
 func TestProbe(t *testing.T) { start() }
 `,
 			want: []string{
-				rel + `:8: the file holds a //go:linkname directive, which binds a symbol of another package to a name of this one without an import of it; a composition root links no foreign symbol, package unsafe's included, and the call it makes possible is the one no import rule sees`,
+				rel + `:8: the file holds a //go:linkname directive, which binds a symbol of another package to a name of this one without an import of it; a composition root, and the CLI it hands the work to, link no foreign symbol, package unsafe's included, and the call it makes possible is the one no import rule sees`,
 			},
 		},
 		{

@@ -893,6 +893,94 @@ func TestDepguardRulesArePinned(t *testing.T) {
 	}
 }
 
+// cliImportRule is the name of the rule that holds internal/cli's production
+// imports (issue #152).
+const cliImportRule = "cli-gets-adapters-from-cmd"
+
+// cliImportRuleDenied are the packages the CLI's import rule must never allow,
+// now that it is a strict allow list: a process start (os/exec, syscall and
+// plugin, whose code runs in the CLI's process), a raw system call, a pointer
+// taken apart (unsafe), a signal handler that is not os/signal's, and the
+// packages a root's test may not import either.
+var cliImportRuleDenied = []string{
+	"os/exec",
+	"syscall",
+	"unsafe",
+	"plugin",
+	"runtime/cgo",
+	"os/signal",
+	"net/http/cgi",
+	"go/build",
+}
+
+// TestCLIImportRuleAllowsNoProcessOrPointer pins the shape issue #152 gave
+// cli-gets-adapters-from-cmd: a strict allow list that names what internal/cli
+// may import, instead of $gostd with a deny list beside it. $gostd allowed every
+// standard package nobody had thought to deny, unsafe among them: a composition
+// root that may not start a process or read the environment itself could hand
+// the call to the CLI, and the deny list kept out only the names it listed. The
+// allow list names os, which the CLI reads the inventory a user names with and
+// creates the report the user asked for with, and neither syscall, unsafe nor
+// os/exec, which it names for no purpose.
+//
+// The exact entries are pinned by TestDepguardRulesArePinned, whose copy the
+// commit that edits .golangci.yml updates; this one holds the property the
+// issue is about, so a rule rewritten entry by entry still has to keep it.
+func TestCLIImportRuleAllowsNoProcessOrPointer(t *testing.T) {
+	t.Parallel()
+
+	rules, err := check.DepguardRules(readRepositoryFile(t, ".golangci.yml"))
+	if err != nil {
+		t.Fatalf("DepguardRules(.golangci.yml): %v", err)
+	}
+
+	var rule check.DepguardRule
+	found := false
+	for _, r := range rules {
+		if r.Name == cliImportRule {
+			rule, found = r, true
+			break
+		}
+	}
+	if !found {
+		t.Fatalf(".golangci.yml holds no depguard rule %s, so nothing holds internal/cli's imports", cliImportRule)
+	}
+
+	if rule.ListMode != "strict" {
+		t.Errorf("the depguard rule %s has list-mode %q; a strict allow list says what the CLI may import, so a package added to the standard library later is refused until the list names it", cliImportRule, rule.ListMode)
+	}
+	if slices.Contains(rule.Allow, "$gostd") {
+		t.Errorf("the depguard rule %s allows $gostd, which allows every standard package, syscall and unsafe among them; name the packages the CLI imports today, each ending in $", cliImportRule)
+	}
+
+	// allows reports whether an allow entry admits pkg, as depguard reads the
+	// entries: one ending in $ is exact, and any other is a prefix. $gostd is
+	// read above, so an entry here is a package path.
+	allows := func(pkg string) bool {
+		for _, entry := range rule.Allow {
+			if exact, ok := strings.CutSuffix(entry, "$"); ok {
+				if exact == pkg {
+					return true
+				}
+				continue
+			}
+			if pkg == entry || strings.HasPrefix(pkg, entry) {
+				return true
+			}
+		}
+		return false
+	}
+
+	if !allows("os") {
+		t.Errorf("the depguard rule %s does not allow os, which the CLI reads the inventory a user names (--inventory) and creates the report the user asked for (--output) with", cliImportRule)
+	}
+	for _, pkg := range cliImportRuleDenied {
+		if allows(pkg) {
+			t.Errorf("the depguard rule %s allows %s, which the CLI may not import: a root that may not start a process, read a directory from the environment or take a pointer apart could hand it the call", cliImportRule, pkg)
+		}
+	}
+}
+
 // TestDepguardPinCatchesMutations proves the pin of TestDepguardRulesArePinned
 // is not vacuous: it takes the real .golangci.yml text in memory and, for every
 // rule, deletes the rule, deletes each entry of its files, allow and deny lists,

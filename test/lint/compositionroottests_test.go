@@ -6,7 +6,11 @@ import "testing"
 // repository's .golangci.yml on a probe module laid out like the repository
 // (testdata/compositionroottests/mod), whose two composition roots each hold a
 // _test.go file that imports the packages the composition-root-tests rule must
-// refuse: go/build, net/http/cgi, os/exec, plugin, runtime/cgo and unsafe.
+// refuse: go/build, net/http/cgi, os/exec, plugin, runtime/cgo and unsafe. Since
+// issue #152 the driving adapters' _test.go files (internal/cli and
+// internal/httpapi) hold the same imports, each with a want that names no rule,
+// because a test of the CLI or of the HTTP API runs in the same process as the
+// code the composition root hands the work to.
 //
 // The rule is lax, so its deny list alone decides, and it is the one depguard
 // rule that holds the roots' _test.go files: composition-root and
