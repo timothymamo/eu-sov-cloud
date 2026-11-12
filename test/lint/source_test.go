@@ -216,6 +216,17 @@ func TestScanSources(t *testing.T) {
 			},
 		},
 		{
+			// The composition roots may read the environment (issue #111), and a
+			// directive that silences forbidigo on such a read would hide the rule
+			// that says which one and where: the guard is linter-wide, so it
+			// covers them.
+			name:  "nolint directive on a composition root's environment read",
+			files: map[string]string{"cmd/shift2eu/main.go": "package main\n\nimport \"os\"\n\nvar token = os.Getenv(\"TOKEN\") //nolint:forbidigo // probe\n"},
+			want: []string{
+				"cmd/shift2eu/main.go:5:32: //nolint:forbidigo // probe would hide forbidigo issues; fix the design or the call instead (CLAUDE.md)",
+			},
+		},
+		{
 			name:  "bare nolint directive",
 			files: map[string]string{"a/a.go": "package a\n\nvar _ = 1 //nolint // probe\n"},
 			want: []string{

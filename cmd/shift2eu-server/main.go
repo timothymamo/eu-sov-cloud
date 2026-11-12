@@ -16,5 +16,5 @@ func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	context.AfterFunc(ctx, stop)
 
-	os.Exit(run(ctx, os.Args[1:], os.LookupEnv, os.Stderr, nil))
+	os.Exit(run(ctx, os.Args[1:], func() (string, bool) { return os.LookupEnv(tokenEnvVar) }, os.Stderr, nil))
 }

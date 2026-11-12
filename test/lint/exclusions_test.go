@@ -4,7 +4,9 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"slices"
+	"strings"
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
@@ -12,8 +14,12 @@ import (
 	"github.com/timothymamo/shift2eu/test/internal/yamlread"
 )
 
-// forbidigoTags are the tags of forbidigo's groups, each of which starts the
-// msg of every entry in its group (.golangci.yml, linters.settings.forbidigo).
+// forbidigoTags are the tags of forbidigo's groups whose exclusion rules
+// TestForbidigoExclusionsDropOneGroup pins entry by entry, each of which starts
+// the msg of every entry in its group (.golangci.yml,
+// linters.settings.forbidigo). The tags of the two composition-root groups,
+// compositionRootTags, are pinned by what their rules select instead of by the
+// text of a path regexp, in TestCompositionRootExclusions.
 var forbidigoTags = []string{"cloud-read-only", "domain-is-pure"}
 
 // exclusionRule is one rule of linters.exclusions.rules in .golangci.yml.
@@ -26,14 +32,17 @@ type exclusionRule struct {
 // TestForbidigoExclusionsDropOneGroup checks every rule of
 // linters.exclusions.rules that drops forbidigo issues, read from
 // .golangci.yml, offline and without golangci-lint. Such a rule names
-// forbidigo alone, and its text is exactly 'because "<tag>: [^"]*"$' for a
-// known group tag, so it matches the quoted msg at the end of an issue and
-// cannot drop another group's issue on a call that passes the tag as a string.
-// The rules of every group are pinned, so a new group states its own: the
+// forbidigo alone, and its text is a text of one group, so it matches the quoted
+// msg at the end of an issue and cannot drop another group's issue on a call
+// that passes the tag as a string: either the group's whole form,
+// 'because "<tag>: [^"]*"$', or the narrower form that instantiates it with the
+// msg of one entry, which drops that entry's issues only. The rules of every
+// group pinned here are pinned exactly, so a new group states its own: the
 // cloud-read-only group has none, and the domain-is-pure group exactly two,
 // one for every path outside internal/domain/ and one for every _test.go file.
-// A rule that names no linters would drop forbidigo issues too, so every rule
-// names its linters.
+// The composition-root groups are pinned by what their rules select:
+// TestCompositionRootExclusions. A rule that names no linters would drop
+// forbidigo issues too, so every rule names its linters.
 func TestForbidigoExclusionsDropOneGroup(t *testing.T) {
 	t.Parallel()
 
@@ -41,7 +50,8 @@ func TestForbidigoExclusionsDropOneGroup(t *testing.T) {
 	for _, tag := range forbidigoTags {
 		got[tag] = nil
 	}
-	for _, r := range exclusionRules(t, moduleRoot(t)) {
+	root := moduleRoot(t)
+	for _, r := range exclusionRules(t, root) {
 		if r.linters == nil {
 			t.Errorf(".golangci.yml:%d: an exclusion rule with no linters drops every linter's issues, forbidigo's included; name its linters", r.line)
 			continue
@@ -54,11 +64,14 @@ func TestForbidigoExclusionsDropOneGroup(t *testing.T) {
 			continue
 		}
 		text := r.fields["text"]
-		tag, ok := groupOfText(text)
+		tag, ok := groupOfText(t, root, text)
 		if !ok {
-			t.Errorf(".golangci.yml:%d: forbidigo exclusion text %q; want exactly 'because \"<tag>: [^\"]*\"$' with a tag of %q",
-				r.line, text, forbidigoTags)
+			t.Errorf(".golangci.yml:%d: forbidigo exclusion text %q; want a text of a group of %q, either 'because \"<tag>: [^\"]*\"$' or that text with one entry's msg in place of [^\"]*",
+				r.line, text, slices.Concat(forbidigoTags, compositionRootTags))
 			continue
+		}
+		if slices.Contains(compositionRootTags, tag) {
+			continue // TestCompositionRootExclusions pins its scope and its one exception
 		}
 		got[tag] = append(got[tag], r.fields)
 	}
@@ -76,15 +89,58 @@ func TestForbidigoExclusionsDropOneGroup(t *testing.T) {
 	}
 }
 
-// groupOfText returns the tag whose exclusion text text is.
-func groupOfText(text string) (string, bool) {
-	for _, tag := range forbidigoTags {
-		if text == `because "`+tag+`: [^"]*"$` {
+// groupOfText returns the tag whose exclusion text text is, in either form the
+// group's rules may have: groupText(tag), the group's whole form, or narrowedText
+// with the msg of one entry of the group (narrowedTextOf), the single exception a
+// group may state for one function in one file (TestCompositionRootExclusions).
+//
+// A narrower text is no group's unless it drops exactly one entry's issue of the
+// group: a body such as .* drops every entry's, and would be classified as an
+// exception while it allows the whole group.
+func groupOfText(t *testing.T, root, text string) (string, bool) {
+	t.Helper()
+
+	tags := slices.Concat(forbidigoTags, compositionRootTags)
+	for _, tag := range tags {
+		if text == groupText(tag) {
 			return tag, true
 		}
 	}
-	return "", false
+	m := narrowedText.FindStringSubmatch(text)
+	if m == nil || !slices.Contains(tags, m[1]) {
+		return "", false
+	}
+	narrowed, err := regexp.Compile(text)
+	if err != nil {
+		return "", false
+	}
+	matched := 0
+	for _, e := range forbidigoEntries(t, root) {
+		if !strings.HasPrefix(e.msg, m[1]+": ") {
+			continue
+		}
+		if narrowed.MatchString(issueText("name", e.msg)) {
+			matched++
+		}
+	}
+	return m[1], matched == 1
 }
+
+// narrowedTextOf returns the exclusion text that drops the issue of the entry
+// with msg alone: the group's text with msg, regex-escaped, in place of [^"]*.
+func narrowedTextOf(msg string) string {
+	return `because "` + regexp.QuoteMeta(msg) + `"$`
+}
+
+// groupText returns the exclusion text that drops every issue of the group with
+// tag: the documented form, which matches the quoted msg at the end of an issue.
+func groupText(tag string) string {
+	return `because "` + tag + `: [^"]*"$`
+}
+
+// narrowedText matches an exclusion text that names one entry's msg in place of a
+// group's whole text, and captures the group's tag.
+var narrowedText = regexp.MustCompile(`^because "([^":]+): [^"]*"\$$`)
 
 // exclusionRules reads linters.exclusions.rules from .golangci.yml under root
 // through parseExclusionRules, and fails the test when the file holds no rule.

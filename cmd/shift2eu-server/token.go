@@ -33,15 +33,16 @@ type tokenConfig struct {
 }
 
 // readToken returns the bearer token, if one is configured: from the
-// environment variable tokenEnvVar or from the file at tokenFile, never both.
+// environment variable tokenEnvVar, which tokenSource reads and reports
+// together with whether it is set, or from the file at tokenFile, never both.
 // The white space around the token is trimmed. A source that is configured but
 // holds no token (a variable set to the empty string, an empty file), or a token
 // shorter than minTokenLength, is an error, as is a file that cannot be read: it
 // is never read as "no token". A token file that the group or other users can
 // access earns a warning, on systems with those permission bits. No error or
 // warning quotes the token or the file's content.
-func readToken(lookupEnv func(string) (string, bool), tokenFile string) (tokenConfig, error) {
-	value, fromEnv := lookupEnv(tokenEnvVar)
+func readToken(tokenSource func() (string, bool), tokenFile string) (tokenConfig, error) {
+	value, fromEnv := tokenSource()
 	fromFile := tokenFile != ""
 
 	switch {

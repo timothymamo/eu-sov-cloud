@@ -1165,6 +1165,38 @@ linters:
           deny:
             - pkg: github.com/google/go-cmp
               desc: go-cmp is a test-only dependency
+        # The composition roots' _test.go files (issue #111). The strict
+        # rules composition-root and server-composition-root skip test files
+        # (!$test), yet a test is compiled into the root's package and runs in
+        # the same process: it could start a program, load a plugin, hand a
+        # path to a CGI handler, build a package, reach C, or take a pointer
+        # apart for a raw system call or a foreign symbol through
+        # //go:linkname (test/lint refuses that directive in the roots). The
+        # rule is lax, so its deny list alone decides and no allow list has to
+        # follow every pure import a test makes. syscall/js builds for js/wasm
+        # only and is denied all the same.
+        composition-root-tests:
+          list-mode: lax
+          files:
+            - "**/cmd/shift2eu/*_test.go"
+            - "**/cmd/shift2eu/**/*_test.go"
+            - "**/cmd/shift2eu-server/*_test.go"
+            - "**/cmd/shift2eu-server/**/*_test.go"
+          deny:
+            - pkg: go/build
+              desc: a composition root's test builds no package; it runs the root's code in process
+            - pkg: net/http/cgi
+              desc: a composition root's test runs no CGI program; the cgi handler starts a process
+            - pkg: os/exec
+              desc: a composition root's test runs no program, such as a cloud CLI
+            - pkg: plugin
+              desc: a composition root's test loads no plugin, whose code would run in the process
+            - pkg: runtime/cgo
+              desc: a composition root's test reaches no C code
+            - pkg: syscall/js
+              desc: a composition root's test calls no JavaScript host function
+            - pkg: unsafe
+              desc: a composition root's test takes no pointer apart, which is how a raw system call or a linknamed symbol is reached
         # The e2e tier builds the binary and runs it as a black box, offline,
         # against the fixtures in test/e2e/testdata. It imports only the
         # standard library, go-cmp and internal/testutil: no adapter,
@@ -1198,8 +1230,11 @@ linters:
     # a group starts with the group's tag (cloud-read-only:, domain-is-pure:).
     # forbidigo has no per-entry file scope: a group that holds for some files
     # only gets an entry in linters.exclusions.rules with linters [forbidigo],
-    # a path or path-except, and a text of exactly this form:
+    # a path or path-except, and a text of this form:
     #   text: 'because "<tag>: [^"]*"$'
+    # A named exception for one entry (composition-root-env) has that form
+    # with the entry's exact msg, regex-escaped, in place of [^"]*, so it
+    # drops that entry's issues and no other entry's of its group.
     # The issue text is: use of `<expression>` forbidden because "<msg>".
     # The expression keeps its string literals, so a text of just '<tag>:'
     # also drops another group's issue on a call that passes that string.
@@ -1456,6 +1491,80 @@ linters:
         - pattern: '^time\.(?:Parse|Time\.(?:UnmarshalJSON|UnmarshalText|UnmarshalBinary|GobDecode))$'
           pkg: '^time$'
           msg: 'domain-is-pure: this matches a zone offset against time.Local, which reads TZ and /etc/localtime; use time.ParseInLocation with time.UTC or a *time.Location passed in'
+        # Group composition-root-no-exec: the composition roots cmd/shift2eu
+        # and cmd/shift2eu-server (issue #111) start no program and dump no
+        # environment. Their depguard allow lists (composition-root,
+        # server-composition-root) must allow os and syscall, which can start
+        # a process (shelling out to a cloud CLI) or hand over every variable,
+        # credentials included (CLAUDE.md rule 3). os/exec is refused as a
+        # package: any use of it, whichever name. The group has no exception.
+        #
+        # Group composition-root-env: the composition roots read no named
+        # variable either, with one narrow exception: cmd/shift2eu-server/main.go
+        # calls os.LookupEnv once, with tokenEnvVar (SHIFT2EU_SERVER_TOKEN),
+        # in the token source func() (string, bool) it passes to run (ADR
+        # 0019); run, setUp and readToken see only the token, never a lookup
+        # by name. test/lint's TestCompositionRootPassesLookupEnvToRun pins
+        # that shape. The entry stands alone, so the exception's exclusion
+        # rule names its msg and drops no other entry's issue.
+        #
+        # Scope of both: every file under cmd/shift2eu/ and
+        # cmd/shift2eu-server/, _test.go files included. A test of a
+        # composition root is compiled into the same package and runs with the
+        # same environment, and the server's tests hand run a fake token
+        # source, so none needs a real one. Elsewhere the depguard rules keep os/exec out
+        # by layer; these groups only add the call-level rule depguard cannot
+        # state for the roots. The environment is not kept out elsewhere: the
+        # CLI's rule (cli-gets-adapters-from-cmd) allows $gostd, so
+        # internal/cli may import os and read a variable a root delegates to
+        # it, a known gap (docs/architecture.md). internal/httpapi's strict
+        # allow list leaves os and syscall out.
+        #
+        # No-exec also refuses the windows entry points of syscall
+        # (CreateProcess, CreateProcessAsUser, GetEnvironmentStrings, LoadDLL,
+        # MustLoadDLL, NewLazyDLL, LoadLibrary, GetProcAddress),
+        # the raw system calls (Syscall, Syscall6/9/12/15/18, SyscallN,
+        # RawSyscall, RawSyscall6) and the syscall.SYS_* numbers they take, and
+        # any use of package unsafe, which takes a pointer apart for a raw
+        # system call; depguard's composition-root-tests rule keeps unsafe out
+        # of the roots' tests as well. These names are defence in depth: the
+        # comprehensive guard is test/lint's syscall allow list
+        # (TestCompositionRootsUseSyscallOnlyForSignals), under which a root uses package
+        # syscall for a SIG* constant and the type syscall.Signal only, and
+        # the unsafe ban is no complete one either (fmt and strconv can print
+        # and parse an address). Env also
+        # refuses windows's syscall.GetEnvironmentVariable. Every name is a
+        # pattern, so the entries hold on every release target whether the
+        # name exists there or not (syscall.Exec has no windows form,
+        # syscall.CreateProcess no unix one); test/lint's probe lints the roots
+        # natively and for windows/amd64.
+        - pattern: '^os\.(?:StartProcess|Environ)$'
+          pkg: '^os$'
+          msg: 'composition-root-no-exec: a composition root starts no process and hands over no environment, where credentials live; take what it needs as a flag or a named variable'
+        - pattern: '^syscall\.(?:Exec|ForkExec|StartProcess|Environ)$'
+          pkg: '^syscall$'
+          msg: 'composition-root-no-exec: a composition root starts or replaces no process and hands over no environment, where credentials live'
+        - pattern: '^syscall\.(?:CreateProcess|CreateProcessAsUser|GetEnvironmentStrings|LoadDLL|MustLoadDLL|NewLazyDLL|LoadLibrary|GetProcAddress)$'
+          pkg: '^syscall$'
+          msg: 'composition-root-no-exec: a composition root starts no windows process, loads no library whose code would run and hands over no environment, where credentials live'
+        - pattern: '^syscall\.(?:(?:Raw)?Syscall(?:6|9|12|15|18|N)?|SYS_\w+)$'
+          pkg: '^syscall$'
+          msg: 'composition-root-no-exec: a composition root makes no raw system call, which starts a process as well as syscall.Exec does'
+        - pattern: '^\w+\.\w+'
+          pkg: '^unsafe$'
+          msg: 'composition-root-no-exec: a composition root takes no pointer apart, which is how a raw system call is handed an address; package unsafe is refused as a whole'
+        - pattern: '^\w+\.\w+'
+          pkg: '^os/exec$'
+          msg: 'composition-root-no-exec: a composition root runs no program, such as a cloud CLI; os/exec is refused as a whole'
+        - pattern: '^os\.(?:Getenv|ExpandEnv)$'
+          pkg: '^os$'
+          msg: 'composition-root-env: a composition root reads no environment variable; take the value as a flag'
+        - pattern: '^os\.LookupEnv$'
+          pkg: '^os$'
+          msg: 'composition-root-env: os.LookupEnv is called in cmd/shift2eu-server/main.go only, for SHIFT2EU_SERVER_TOKEN, in the token source it hands to run (ADR 0019); take any other value as a flag'
+        - pattern: '^syscall\.(?:Getenv|GetEnvironmentVariable)$'
+          pkg: '^syscall$'
+          msg: 'composition-root-env: a composition root reads no environment variable; take the value as a flag'
     gosec:
       excludes:
         - G104 # unchecked errors are already reported by errcheck
@@ -1522,6 +1631,28 @@ linters:
         linters:
           - forbidigo
         text: 'because "domain-is-pure: [^"]*"$'
+      # composition-root-no-exec and composition-root-env: both groups hold
+      # for every file under cmd/shift2eu/ and cmd/shift2eu-server/, _test.go
+      # files included (see the groups in the forbidigo settings). One
+      # path-except rule per group: two per-root rules would each drop the
+      # other root's issues.
+      - path-except: ^cmd/shift2eu(?:-server)?/
+        linters:
+          - forbidigo
+        text: 'because "composition-root-no-exec: [^"]*"$'
+      - path-except: ^cmd/shift2eu(?:-server)?/
+        linters:
+          - forbidigo
+        text: 'because "composition-root-env: [^"]*"$'
+      # The one exception (ADR 0019): os.LookupEnv(tokenEnvVar), the call the
+      # token source that main.go passes to run makes for
+      # SHIFT2EU_SERVER_TOKEN, in cmd/shift2eu-server/main.go alone. text is
+      # the os.LookupEnv entry's msg, so os.Getenv, os.ExpandEnv and
+      # syscall.Getenv are still refused there.
+      - path: ^cmd/shift2eu-server/main\.go$
+        linters:
+          - forbidigo
+        text: 'because "composition-root-env: os\.LookupEnv is called in cmd/shift2eu-server/main\.go only, for SHIFT2EU_SERVER_TOKEN, in the token source it hands to run \(ADR 0019\); take any other value as a flag"$'
 
 formatters:
   enable:

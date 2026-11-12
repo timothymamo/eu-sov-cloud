@@ -80,8 +80,8 @@
 // the check exempts them, while a third-party package that a package no
 // strict rule holds imports directly, or that no allow list reaches, is still
 // reported. The exemption reads the strict allow lists only: the lax deny
-// rules (go-cmp-only-in-tests, cloud-sdks-only-in-provider-adapters) are held
-// by depguard in make lint alone. A third-party import in internal/cli is
+// rules (go-cmp-only-in-tests, cloud-sdks-only-in-provider-adapters,
+// composition-root-tests) are held by depguard in make lint alone. A third-party import in internal/cli is
 // refused by depguard alone, whose strict rule there allows only $gostd and
 // named module packages. One in cmd/shift2eu is refused by the strict rule
 // composition-root (issue #101), which allows the module path as its one prefix

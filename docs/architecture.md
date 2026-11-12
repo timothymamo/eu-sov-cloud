@@ -273,7 +273,7 @@ hand-written GCP package, add an entry for it, a probe line only it refuses and 
   repository holds no `go.work`, `go.work.sum` or `vendor/` directory, any of which could otherwise
   substitute code for an allowed import path (`test/architecture/gomod_test.go`). It reads the
   strict allow lists only: the lax deny rules (`go-cmp-only-in-tests`,
-  `cloud-sdks-only-in-provider-adapters`) are held by depguard in `make lint` alone. A third-party
+  `cloud-sdks-only-in-provider-adapters`, `composition-root-tests`) are held by depguard in `make lint` alone. A third-party
   import in `internal/cli` is refused by depguard alone, whose strict rule there allows only `$gostd`
   and named module packages; one in `cmd/shift2eu` is refused by the strict rule `composition-root`
   (issue #101), which `test/architecture` holds the composition root to on every release target,
@@ -283,13 +283,6 @@ hand-written GCP package, add an entry for it, a probe line only it refuses and 
   `go list -deps` lists the imports of a held package's tests but not those imported packages
   themselves, so a package only a test imports is checked against the test's allow list, not for
   its own module, directory or non-Go sources.
-- **Process and environment calls in `cmd/shift2eu`.** The `composition-root` rule allows `os` and
-  `syscall`, so the composition root could call `os.StartProcess`, `syscall.Exec` or
-  `syscall.ForkExec`, shelling out to a cloud CLI, or `os.Environ` and `os.Getenv`, dumping the
-  environment, and only review catches it (the security audit's LOW-2 on issue #101). A forbidigo
-  group scoped to `cmd/shift2eu` would close it; that is follow-up work outside issue #101. The same
-  holds for `cmd/shift2eu-server` under `server-composition-root`, which allows `os` and `syscall` too;
-  `os/exec` is refused there by the allow list and, for its whole dependency tree, by `test/e2e`.
 - **Files lint never loads**: a file behind a build tag other than `integration` and `e2e`, a
   `//go:build ignore` helper, and the `testdata`, `_` and `.` directories `./...` skips. `test/lint`
   fails on such a file, and on an imported package in such a directory. A main package there, run
@@ -319,6 +312,85 @@ hand-written GCP package, add an entry for it, a probe line only it refuses and 
   last forbidigo entry), so an interface elsewhere named with a verb not on it gets through. A source
   adapter can import only the project packages its depguard rule lists, which keeps that interface
   out of its reach unless one of those packages declares it.
+
+## Composition-root process and environment rule
+
+The strict allow lists `composition-root` and `server-composition-root` must allow `os` and
+`syscall`, and both can start a process (shelling out to a cloud CLI) or read the environment, where
+credentials live (CLAUDE.md rule 3). An import rule cannot see a call, so two forbidigo groups hold
+`cmd/shift2eu` and `cmd/shift2eu-server` (issue #111, the security audit's LOW-2 on issue #101):
+
+- **`composition-root-no-exec`** refuses `os.StartProcess`, `syscall.Exec`, `syscall.ForkExec`,
+  `syscall.StartProcess`, every use of `os/exec` (pattern `^\w+\.\w+` with `pkg: '^os/exec$'`), and
+  dumping the whole environment, `os.Environ` and `syscall.Environ`. On windows it refuses the same
+  through `syscall.CreateProcess`, `syscall.CreateProcessAsUser` and `syscall.GetEnvironmentStrings`,
+  and loading a library whose code would run: `syscall.LoadDLL`, `MustLoadDLL`, `NewLazyDLL`,
+  `LoadLibrary` and `GetProcAddress`. It refuses the raw system calls a process can
+  be started with just as well (`syscall.Syscall`, `Syscall6`, `Syscall9`, `Syscall12`, `Syscall15`,
+  `Syscall18`, `SyscallN`, `RawSyscall`, `RawSyscall6`) and the `syscall.SYS_*` numbers they take,
+  and every use of package `unsafe`, which hands a raw system call an address. Every pattern is anchored with `^...$`, so a longer name (`syscall.CreateProcessX`,
+  `syscall.Syscalls`, `syscall.SYSCTL`) passes. It has no exception. These named entries are
+  defence in depth, not the guard: a deny list of names leaked (`syscall.AllThreadsSyscall`, a
+  `syscall.LazyDLL` literal with `NewProc().Call`, `NewCallback`, `Ptrace*`), so the syscall allow
+  list below is what holds. The `unsafe` ban is defence in depth too: `fmt` and `strconv` can print
+  and parse an address without it.
+- **`composition-root-env`** refuses reading a named variable: `os.Getenv`, `os.LookupEnv`,
+  `os.ExpandEnv`, `syscall.Getenv` and, on windows, `syscall.GetEnvironmentVariable`. Its one
+  exception is a single `os.LookupEnv` call in `cmd/shift2eu-server/main.go`, with the argument
+  `tokenEnvVar` (`SHIFT2EU_SERVER_TOKEN`), in the token source
+  `func() (string, bool) { return os.LookupEnv(tokenEnvVar) }` that `main` hands to `run` (ADR 0019).
+  `run`, `setUp` and `readToken` see only the token and whether it is set, never a lookup by name, so
+  no code in `cmd/shift2eu-server` can read another variable through them.
+  `os.LookupEnv` has an entry of its own, and the exception's exclusion rule has
+  `path: ^cmd/shift2eu-server/main\.go$` and a text that is the group's form instantiated with that
+  entry's msg, regex-escaped, so it drops no other entry's issue in that file and nothing elsewhere.
+
+Each group has one exclusion rule, `path-except: ^cmd/shift2eu(?:-server)?/` (two per-root rules would
+each drop the other root's issues). Both hold for `_test.go` files under the roots too: a test there
+runs in the same package and environment, and the server's tests hand `run` a fake token source. The
+patterns are names, so they hold on every release target whether a name exists there or not
+(`syscall.Exec` has no windows form, `syscall.CreateProcess` no unix one).
+`TestCompositionRootForbidigoProbe` runs forbidigo on a probe module
+(`test/lint/testdata/compositionroot`) with every refused call in both roots and in `internal/cli`,
+natively and with `GOOS=windows GOARCH=amd64 CGO_ENABLED=0`, where the windows names type-check.
+`TestCompositionRootForbidigoPatterns` pins the patterns against lists of refused and allowed names,
+and `TestCompositionRootExclusions` pins the scope and the one exception.
+
+Four source checks in `test/lint` read the real roots, tests included, as the groups cannot state
+them:
+
+- `TestCompositionRootsUseSyscallOnlyForSignals` is the comprehensive guard on `syscall`: an AST
+  check under which a root uses package `syscall` only for a `^SIG[A-Z0-9]+$` constant and the type
+  `syscall.Signal`, read through the import name the file gives it; a dot or blank import of
+  `syscall` is refused. Any other name, whether forbidigo lists it or not, fails.
+- `TestCompositionRootsLinkNoForeignSymbol` refuses a `//go:linkname` directive in the roots, which
+  would reach an unexported runtime or `syscall` symbol past every name rule.
+- `TestCompositionRootPassesLookupEnvToRun` holds `cmd/shift2eu-server/main.go` to exactly one
+  reference to `os.LookupEnv`: a call with the one argument `tokenEnvVar`, the sole return expression
+  of a `func() (string, bool)` literal passed directly to the package-level `run`, which `main.go`
+  neither declares nor assigns (the forbidigo exception is a path and a msg, so a second use in that
+  file, or handing `os.LookupEnv` itself to `run`, would lint clean).
+- `TestCompositionRootsNameNoEnvironmentPath` refuses a string literal holding `/proc/` or `/dev/fd/`
+  in any Go file of the roots, as `os.ReadFile("/proc/self/environ")` dumps every variable.
+
+The roots' `_test.go` files are compiled into the same package and run in the same process, but the
+strict depguard rules `composition-root` and `server-composition-root` skip them. The lax depguard
+rule `composition-root-tests` covers them: it denies `go/build`, `net/http/cgi`, `os/exec`, `plugin`,
+`runtime/cgo`, `syscall/js` and `unsafe`. `TestCompositionRootTestsReachNoForeignCodeProbe` runs it on
+a probe module (`test/lint/testdata/compositionroottests`) for both roots, and
+`test/architecture` pins it with the other depguard rules.
+
+Known gaps, which these rules do not close:
+
+- **Delegation to a driving adapter.** A root can pass the work to `internal/cli`, whose depguard rule
+  allows `$gostd`: it may import `os` and read a variable (or `syscall` and start a process; only
+  `os/exec` is denied to it). `internal/httpapi`'s strict allow list leaves `os` and `syscall` out, but
+  its tests may import them. Review holds that line.
+- **A `/proc` path built at run time.** The source check sees a literal only; a path built at run
+  time (`"/pr" + "oc"`, `filepath.Join`) gets through.
+- **Implicit reads.** `net/http`'s `DefaultTransport` reads `HTTP_PROXY`, `HTTPS_PROXY` and
+  `NO_PROXY` (and their lower-case forms) itself. It reads named variables and exposes none, so this
+  is accepted.
 
 ## Domain-is-pure rule
 
@@ -362,7 +434,8 @@ pattern fails the probe, and lines for a method value (`_ = t.Local`), a func va
 domain function named `println`, and the refused calls in a domain test and a CLI file must pass.
 `TestDomainIsPurePatterns` checks the patterns, offline, against lists of refused and allowed names.
 `TestForbidigoExclusionsDropOneGroup` pins the exclusion rules of every group: every rule that drops
-forbidigo issues names forbidigo alone with a text of exactly `because "<tag>: [^"]*"$`, the
+forbidigo issues names forbidigo alone with a text of `because "<tag>: [^"]*"$`, or, for a named
+exception, that form with one entry's exact msg in place of `[^"]*` (composition-root rule above), the
 cloud-read-only group has none, and the domain-is-pure rules are exactly `path-except: ^internal/domain/`
 and `path: _test\.go$`. A new group adds its tag and states its rules, even none. A line in the
 cloud-read-only probe passes the string `"domain-is-pure: x"` to a refused call, so a text of just the
