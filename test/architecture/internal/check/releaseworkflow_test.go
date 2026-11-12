@@ -1418,7 +1418,7 @@ func TestReleaseWorkflow(t *testing.T) {
 		{name: "a separate publish step by tag", workflow: steps("publish", slices.Concat(publishSteps, []string{publishByTagStep})), wantIn: "holds 3 steps, want exactly 2"},
 		{name: "an extra step in the publish job", workflow: steps("publish", beforeStep(t, publishSteps, "      - name: Check the draft's assets and publish it", "run: ./scripts/prepare.sh")), wantIn: "holds 3 steps, want exactly 2"},
 		{name: "the publish step in the goreleaser job", workflow: steps("goreleaser", beforeStep(t, goreleaserSteps, "      - uses: actions/upload-artifact@", "name: Check the draft's assets and publish it\n        run: "+publishByID)), wantIn: "jobs: goreleaser: steps holds 5 steps, want exactly 4"},
-		{name: "the publish step in the test job", workflow: inTestJob("name: Check the draft's assets and publish it\n        run: "+publishByID), wantIn: "holds 5 steps, want exactly 4"},
+		{name: "the publish step in the test job", workflow: inTestJob("name: Check the draft's assets and publish it\n        run: " + publishByID), wantIn: "holds 5 steps, want exactly 4"},
 
 		// The jobs are a closed list: the image that publishes, the SBOM that
 		// reads, the sign job that signs.
