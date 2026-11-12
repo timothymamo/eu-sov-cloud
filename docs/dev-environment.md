@@ -48,7 +48,7 @@ dot-agent-deck publishes Linux arm64 and amd64 builds and is documented to run o
 4. Create the VM, copy the credentials into it and set it up:
 
    ```bash
-   brew install lima          # Lima 2.0 or newer
+   brew install lima          # the LIMA_VERSION in .github/workflows/vm-tools.yml (see below)
    make vm-create             # several minutes the first time
    ```
 
@@ -139,6 +139,14 @@ make vm-up && make deck    # the TUI attaches to the daemon service
 Tool versions are pinned in `dev/lima.yaml` under `param:`, and Renovate opens a PR when a new version
 is released. A VM keeps the template it was created with, so after merging a version bump recreate it
 with `make vm-delete vm-create`, then `make deck`: nothing has to be typed in the VM.
+
+Lima itself runs on the Mac, so it is not pinned in the template: `dev/lima.yaml` accepts Lima 2.0 or
+newer (`minimumLimaVersion`). CI runs `limactl validate dev/lima.yaml` with the Lima pinned as
+`LIMA_VERSION` in `.github/workflows/vm-tools.yml`, installed from its release tarball checked against
+`LIMA_SHA256`, on every pull request and weekly: a template Lima refuses to create a VM from fails the
+PR, not the next `make vm-up` (only creating a VM runs Lima's checks; starting an existing one does
+not). Use that Lima version on the Mac, so you and CI agree on what a valid template is; when Renovate
+bumps it, `brew upgrade lima`.
 
 The same goes for the VM's size: `make vm-up` starts an existing VM with the CPUs, memory and disk it
 was created with. To resize it without recreating it, keeping its tools, login and configuration:
