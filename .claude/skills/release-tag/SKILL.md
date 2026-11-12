@@ -39,6 +39,12 @@ the tagged commit is on `main`: always tag a commit of `main`.
 7. Watch the run (`gh run watch`), then report the release URL (`gh release view vX.Y.Z --json url`).
    If a pending run was cancelled, re-run it with `gh run rerun <id>`. On failure, report the failed
    step's log and stop; never delete or move a pushed tag.
+   Report the result of the run's `verify` job too, the independent check of both published images
+   on a fresh GitHub-hosted runner (issue #99, ADR 0015):
+   `gh run view <id> --json jobs --jq '.jobs[] | select(.name == "Verify the published images") | .conclusion'`.
+   It must be `success`. A failed `verify` job is a failed release: report it with the failed step's
+   log (`gh run view <id> --log-failed`) and stop. Do not re-run it to get past the failure, and do not
+   count the VM check below as a substitute for it.
 8. Check the published image yourself; do not hand this to the user. The Lima VM has cosign, a `gh`
    with `gh attestation`, `crane` and rootless `nerdctl` (ADR 0017); this is the README's "Verify the
    image" in its VM form, for the new tag. Run it from the repository root, with no registry login, and
@@ -70,6 +76,5 @@ the tagged commit is on `main`: always tag a commit of `main`.
    cannot), and run the checks after that.
 
    This is a smoke test, not the trust anchor: every agent shares the VM user, which has passwordless
-   `sudo`, so any of them could tamper with these binaries or their output. An independent check on a
-   GitHub-hosted runner, a post-publish job in `release.yml`, is the follow-up that would make it
-   authoritative (ADR 0017).
+   `sudo`, so any of them could tamper with these binaries or their output (ADR 0017). The independent
+   check is the release's `verify` job of step 7.

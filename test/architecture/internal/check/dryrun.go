@@ -2,6 +2,7 @@ package check
 
 import (
 	"fmt"
+	"regexp"
 	"slices"
 	"strings"
 
@@ -103,7 +104,12 @@ type workflowJob struct {
 //     starting highest="$(, is the dry run's line in its latest step once the
 //     release's tag source, git tag -l 'v*.*.*' --merged
 //     refs/remotes/origin/main, is replaced by the dry run's printf '%s\n'
-//     "$@": the same filter, sort and pick, on sample tags.
+//     "$@": the same filter, sort and pick, on sample tags;
+//   - for each image, the verify job's step whose run: names <image>:$TAG
+//     (exactly one) runs the image with at least one line starting docker
+//     run, and each such line, its image argument (a quoted "$NAME") set
+//     aside, is a line of a run: step of the dry run's image job: the same
+//     flags and the same command, on the image the dry run built (issue #99).
 func DryRunMirrorsRelease(ci, release []byte) []string {
 	r := &schemaReader{}
 
@@ -130,6 +136,11 @@ func DryRunMirrorsRelease(ci, release []byte) []string {
 		perImage = append(perImage, slices.Concat(imageJob.steps, sbomJob.steps))
 	}
 
+	verify, ok := r.readJob(release, "release.yml", verifyJob)
+	if !ok {
+		return r.messages
+	}
+
 	d := dryRun{r: r, ciRaw: rawLines(ci), releaseRaw: rawLines(release)}
 
 	d.pins(ciJob.steps, slices.Concat(perImage...))
@@ -148,6 +159,10 @@ func DryRunMirrorsRelease(ci, release []byte) []string {
 	d.tags(ciJob.steps, cli)
 	d.flavor(ciJob.steps, cli)
 	d.highest(ciJob.steps, cli)
+
+	for _, img := range releaseImages {
+		d.containerRun(ciJob.steps, verify.steps, img)
+	}
 
 	return r.messages
 }
@@ -756,4 +771,87 @@ func (d dryRun) highestLine(raw []string, steps []workflowStep, file, id string)
 	}
 
 	return lines[0], s.num, true
+}
+
+// imageArg matches the image argument of a docker run line, a quoted "$NAME".
+var imageArg = regexp.MustCompile(`"\$[A-Z_][A-Z0-9_]*"`)
+
+// containerRun checks that every docker run line of the release's verify step
+// for img is a line of a run: step of the dry run, its image argument set
+// aside: the dry run runs the image it built as the release runs the published
+// one.
+func (d dryRun) containerRun(ci, verify []workflowStep, img releaseImage) {
+	ref := img.name + ":$TAG"
+
+	var found []workflowStep
+
+	for _, s := range verify {
+		if s.hasRun && strings.Contains(d.script(d.releaseRaw, s), ref) {
+			found = append(found, s)
+		}
+	}
+
+	if len(found) != 1 {
+		d.r.fail("release.yml's verify job holds %d steps whose run: names %s, want exactly 1: the step that verifies the published image", len(found), ref)
+
+		return
+	}
+
+	step := found[0]
+
+	runs := dockerRuns(d.script(d.releaseRaw, step))
+	if len(runs) == 0 {
+		d.r.fail("release.yml: the verify job's step for %s (line %d) runs no container run (a line starting docker run): the release must run the image it verifies", ref, step.num)
+
+		return
+	}
+
+	var ciRuns []string
+
+	for _, s := range ci {
+		if s.hasRun {
+			ciRuns = append(ciRuns, dockerRuns(d.script(d.ciRaw, s))...)
+		}
+	}
+
+	for _, want := range runs {
+		if !slices.Contains(ciRuns, want) {
+			d.r.fail("release.yml: the verify job's step for %s (line %d) runs %q, which no run: step of ci.yml's image job runs on its own image: the dry run must run the image as release.yml's verify job runs it", ref, step.num, want)
+		}
+	}
+}
+
+// script returns the command of s, a run: step of the document raw: a literal
+// block's lines, comment lines first included, or its one line; "" when it
+// is neither, which the schema checks report.
+func (d dryRun) script(raw []string, s workflowStep) string {
+	if s.run.Value == "|" {
+		script, err := yamlread.LiteralBlockLeadingHashes(raw, s.run)
+		if err != nil {
+			return ""
+		}
+
+		return script
+	}
+
+	script, err := yamlread.Single(s.run)
+	if err != nil {
+		return ""
+	}
+
+	return script
+}
+
+// dockerRuns returns the lines of script, trimmed, that start docker run, each
+// with its image argument replaced by <image>.
+func dockerRuns(script string) []string {
+	var out []string
+
+	for l := range strings.SplitSeq(script, "\n") {
+		if l = strings.TrimSpace(l); strings.HasPrefix(l, "docker run ") {
+			out = append(out, imageArg.ReplaceAllLiteralString(l, "<image>"))
+		}
+	}
+
+	return out
 }
