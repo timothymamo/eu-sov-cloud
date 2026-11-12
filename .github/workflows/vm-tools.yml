@@ -12,7 +12,11 @@ name: VM tools
 # must give). test/devenv pins that each differs from dev/lima.yaml by its breakage alone and that its
 # .expect holds its case's refusal. To add a case, add it to limaBreakages in test/devenv with the text
 # of Lima's refusal and run `go test ./test/devenv -update`. Lima's log quotes the template, so the job
-# prints it with workflow commands stopped.
+# prints it with workflow commands stopped. The Lima it runs is authenticated as verify-pins authenticates
+# gh (#141): lima-vm/lima's release.yml attests every release asset with actions/attest-build-provenance
+# on the push of its tag, so the job checks the pinned tarball against that attestation with the runner's
+# preinstalled gh, which does not come from the release under test, before it checks LIMA_SHA256 and
+# extracts it.
 #
 # verify-pins: dev/lima.yaml pins cosign and gh by a SHA-256 per architecture, and provisioning trusts
 # those pins: no trusted cosign or GitHub token exists there yet. This job is what makes a pin authentic. It
@@ -45,6 +49,10 @@ jobs:
     name: Validate the Lima template
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    permissions:
+      contents: read
+      # gh attestation verify reads lima-vm/lima's attestations through the GitHub API with GITHUB_TOKEN.
+      attestations: read
     env:
       # The Lima the dev environment documents (docs/dev-environment.md), so CI and developers agree on
       # what a valid template is. limactl validate needs no VM and no virtualisation.
@@ -59,11 +67,36 @@ jobs:
         with:
           persist-credentials: false
       - name: Install the pinned Lima
+        env:
+          # The runner's preinstalled gh, not the release under test.
+          GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
+          if ! [[ "${LIMA_VERSION}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error file=.github/workflows/vm-tools.yml::LIMA_VERSION is not a release tag like v1.2.3"
+            exit 1
+          fi
+          gh --version
           name="lima-${LIMA_VERSION#v}-Linux-x86_64.tar.gz"
           curl -fsSL --retry 3 -o "${RUNNER_TEMP}/${name}" \
             "https://github.com/lima-vm/lima/releases/download/${LIMA_VERSION}/${name}"
+          # lima-vm/lima builds a release in release.yml on the push of its tag (a push to master runs
+          # it too, but attests nothing), so the attestation's source ref is the tag and its source digest
+          # the commit the tag names. Pinning both, and the workflow, rules out an attestation of another
+          # build or another release.
+          if ! lima_commit="$(gh api "repos/lima-vm/lima/commits/refs/tags/${LIMA_VERSION}" --jq .sha)" ||
+            ! [[ "${lima_commit}" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "::error file=.github/workflows/vm-tools.yml::cannot resolve lima-vm/lima tag ${LIMA_VERSION} to a commit (LIMA_VERSION)"
+            exit 1
+          fi
+          echo "lima-vm/lima ${LIMA_VERSION} is commit ${lima_commit}"
+          if ! gh attestation verify "${RUNNER_TEMP}/${name}" -R lima-vm/lima \
+            --signer-workflow lima-vm/lima/.github/workflows/release.yml \
+            --source-ref "refs/tags/${LIMA_VERSION}" --source-digest "${lima_commit}" \
+            --deny-self-hosted-runners; then
+            echo "::error file=.github/workflows/vm-tools.yml::Lima ${LIMA_VERSION}: ${name} has no valid build attestation from lima-vm/lima's release workflow at commit ${lima_commit}"
+            exit 1
+          fi
           if ! echo "${LIMA_SHA256}  ${RUNNER_TEMP}/${name}" | sha256sum -c --strict -; then
             echo "::error file=.github/workflows/vm-tools.yml::${name} does not match LIMA_SHA256"
             exit 1

@@ -60,7 +60,7 @@
       matchDepNames: ['cli/cli'],
       groupName: 'gh',
       prBodyNotes: [
-        '**Before merging:** the "VM tools" check must be green: it verifies each pinned digest against gh\'s build attestation (ADR 0017). Every `digestVersion` in `dev/lima.yaml` must equal the new `ghVersion`.',
+        '**Before merging:** the "VM tools" check must be green: it verifies each pinned digest against gh\'s build attestation (ADR 0017). Every `digestVersion` in `dev/lima.yaml` must equal the new `ghVersion`. The same digests change in each `dev/testdata/lima-invalid/*.yaml`: those copies follow `dev/lima.yaml` and are held equal to it by `test/devenv`. They are never provisioned, so only `dev/lima.yaml`\'s copy is verified; review that one.',
       ],
     },
     {
@@ -68,7 +68,7 @@
       matchDepNames: ['sigstore/cosign'],
       groupName: 'cosign',
       prBodyNotes: [
-        '**Before merging:** the "VM tools" check must be green: it verifies each pinned digest against sigstore/cosign\'s signature with an independently installed cosign (ADR 0017). Every `digestVersion` in `dev/lima.yaml` must equal the new `cosignVersion`.',
+        '**Before merging:** the "VM tools" check must be green: it verifies each pinned digest against sigstore/cosign\'s signature with an independently installed cosign (ADR 0017). Every `digestVersion` in `dev/lima.yaml` must equal the new `cosignVersion`. The same digests change in each `dev/testdata/lima-invalid/*.yaml`: those copies follow `dev/lima.yaml` and are held equal to it by `test/devenv`. They are never provisioned, so only `dev/lima.yaml`\'s copy is verified; review that one.',
       ],
     },
     {
@@ -77,7 +77,7 @@
       matchDepNames: ['lima-vm/lima'],
       groupName: 'Lima',
       prBodyNotes: [
-        '**Before merging:** the "VM tools" check must be green, and `digestVersion` in `.github/workflows/vm-tools.yml` must equal the new `LIMA_VERSION`. Upgrade your own Lima to the same version (`brew upgrade lima`).',
+        '**Before merging:** the "VM tools" check must be green: it verifies the Lima tarball against lima-vm/lima\'s build attestation before it checks `LIMA_SHA256`. `digestVersion` in `.github/workflows/vm-tools.yml` must equal the new `LIMA_VERSION`. Upgrade your own Lima to the same version (`brew upgrade lima`).',
       ],
     },
     {
