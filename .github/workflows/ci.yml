@@ -68,21 +68,84 @@ jobs:
         env:
           SHIFT2EU_LINT_PROBES: require
 
+  # shellcheck on every shell script git tracks, and actionlint on the workflows, which hands their run:
+  # scripts to the same shellcheck (issue #164, ADR 0022), as make lint runs them. Neither depends on the
+  # target, so they run once, in a job of their own that the Lint check needs. shellcheck is the release
+  # dev/lima.yaml pins, at the same version and SHA-256 (test/architecture holds the two pins equal), never
+  # the runner's preinstalled one; actionlint is the tool go.mod pins, verified by go.sum.
+  lint-shell:
+    name: Lint shell scripts and workflows
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      # renovate: datasource=github-releases depName=koalaman/shellcheck
+      SHELLCHECK_VERSION: "v0.11.0"
+      # SHA-256 of shellcheck-<version>.linux.x86_64.tar.gz, the runner's architecture: dev/lima.yaml's
+      # shellcheckSha256Amd64. Renovate moves digestVersion and the digest together with the version.
+      # renovate: datasource=github-release-attachments depName=koalaman/shellcheck digestVersion=v0.11.0
+      SHELLCHECK_SHA256: "b7af85e41cc99489dcc21d66c6d5f3685138f06d34651e6d34b42ec6d54fe6f6"
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      # cache: false, as lint-target's: an entry saved here would be the one the Test job restores.
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+          cache: false
+      - name: Install the pinned shellcheck
+        run: |
+          set -euo pipefail
+          if ! [[ "${SHELLCHECK_VERSION}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error file=.github/workflows/ci.yml::SHELLCHECK_VERSION is not a release tag like v1.2.3"
+            exit 1
+          fi
+          name="shellcheck-${SHELLCHECK_VERSION}"
+          asset="${name}.linux.x86_64.tar.gz"
+          curl -fsSL --retry 3 -o "${RUNNER_TEMP}/${asset}" \
+            "https://github.com/koalaman/shellcheck/releases/download/${SHELLCHECK_VERSION}/${asset}"
+          if ! echo "${SHELLCHECK_SHA256}  ${RUNNER_TEMP}/${asset}" | sha256sum -c --strict -; then
+            echo "::error file=.github/workflows/ci.yml::${asset} does not match SHELLCHECK_SHA256"
+            exit 1
+          fi
+          tar -C "${RUNNER_TEMP}" --no-same-owner -xzf "${RUNNER_TEMP}/${asset}"
+          mkdir -p "${RUNNER_TEMP}/shellcheck-bin"
+          install -m 0755 "${RUNNER_TEMP}/${name}/shellcheck" "${RUNNER_TEMP}/shellcheck-bin/shellcheck"
+          echo "${RUNNER_TEMP}/shellcheck-bin" >> "${GITHUB_PATH}"
+      # The pinned shellcheck must be the one on the PATH: actionlint runs whichever it finds there.
+      - name: shellcheck the tracked shell scripts
+        run: |
+          set -euo pipefail
+          if [ "$(command -v shellcheck)" != "${RUNNER_TEMP}/shellcheck-bin/shellcheck" ]; then
+            echo "::error file=.github/workflows/ci.yml::the shellcheck on the PATH is not the pinned one"
+            exit 1
+          fi
+          shellcheck --version
+          dev/shellcheck.sh
+      - name: actionlint the workflows
+        run: go tool actionlint
+
   # Lint is a required status check, and a matrix reports one check per entry under its own name: this
-  # job reports the whole matrix as the one Lint check, and fails unless every entry succeeded. It runs
-  # after a failed or skipped entry too, but not in a run cancelled by a newer push.
+  # job reports the whole matrix, and lint-shell, as the one Lint check, and fails unless every entry and
+  # lint-shell succeeded. It runs after a failed or skipped job too, but not in a run cancelled by a newer
+  # push.
   lint:
     name: Lint
-    needs: lint-target
+    needs: [lint-target, lint-shell]
     if: ${{ !cancelled() }}
     runs-on: ubuntu-latest
     steps:
       - name: Every lint target passed
         env:
           RESULT: ${{ needs.lint-target.result }}
+          SHELL_RESULT: ${{ needs.lint-shell.result }}
         run: |
           if [ "$RESULT" != "success" ]; then
             echo "lint-target finished with result '$RESULT', want 'success'" >&2
+            exit 1
+          fi
+          if [ "$SHELL_RESULT" != "success" ]; then
+            echo "lint-shell finished with result '$SHELL_RESULT', want 'success'" >&2
             exit 1
           fi
 

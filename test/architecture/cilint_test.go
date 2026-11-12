@@ -399,7 +399,7 @@ func TestCILintMatrixCoversEveryReleaseTarget(t *testing.T) {
 
 	wantAggregateLines := []string{
 		"name: Lint",
-		"needs: lint-target",
+		"needs: [lint-target, lint-shell]",
 		"if: ${{ !cancelled() }}",
 	}
 
@@ -416,7 +416,9 @@ func TestCILintMatrixCoversEveryReleaseTarget(t *testing.T) {
 
 	for _, want := range []struct{ key, value string }{
 		{"name", "Lint"},
-		{"needs", "lint-target"},
+		// lint-shell runs shellcheck and actionlint once (issue #164): the
+		// Lint check gates it as it gates the matrix.
+		{"needs", "[lint-target, lint-shell]"},
 		// Not always(): a run cancelled by a newer push must not report a red
 		// Lint, and a failed or skipped entry still runs this job, which fails.
 		{"if", "${{ !cancelled() }}"},
@@ -458,6 +460,7 @@ func TestCILintMatrixCoversEveryReleaseTarget(t *testing.T) {
 
 	wantExactLines(t, fmt.Sprintf("env: block of the lint job's step on line %d", step.num), stepEnv, []string{
 		"RESULT: ${{ needs.lint-target.result }}",
+		"SHELL_RESULT: ${{ needs.lint-shell.result }}",
 	})
 
 	run, ok := ciBlock(step.lines, "run")
@@ -481,11 +484,82 @@ func TestCILintMatrixCoversEveryReleaseTarget(t *testing.T) {
 		`echo "lint-target finished with result '$RESULT', want 'success'" >&2`,
 		`exit 1`,
 		`fi`,
+		`if [ "$SHELL_RESULT" != "success" ]; then`,
+		`echo "lint-shell finished with result '$SHELL_RESULT', want 'success'" >&2`,
+		`exit 1`,
+		`fi`,
 	}
 
 	if diff := cmp.Diff(wantScript, script); diff != "" {
-		t.Errorf("the lint job's run: script on line %d (-want +got):\n%s\nWant a non-success result of the matrix to fail the Lint check, and nothing else",
+		t.Errorf("the lint job's run: script on line %d (-want +got):\n%s\nWant a non-success result of the matrix or of lint-shell to fail the Lint check, and nothing else",
 			step.num, diff)
+	}
+
+	checkLintShellJob(t, jobs)
+}
+
+// checkLintShellJob pins the lint-shell job the Lint check needs (issue #164):
+// it runs dev/shellcheck.sh, make lint's shellcheck step, and go tool
+// actionlint, and neither the job nor a step of it may be skipped or excused.
+func checkLintShellJob(t *testing.T, jobs map[string][]ciLine) {
+	t.Helper()
+
+	job, ok := jobs["lint-shell"]
+	if !ok {
+		t.Fatalf(".github/workflows/ci.yml has no lint-shell job under jobs:, so CI runs neither shellcheck nor actionlint")
+	}
+
+	for _, key := range []string{"if", "continue-on-error"} {
+		if num, _, ok := ciScalar(job, key); ok {
+			t.Errorf("line %d: the lint-shell job holds %q, want it never skipped or excused: a finding must fail Lint", num, key)
+		}
+	}
+
+	steps, ok := ciBlock(job, "steps")
+	if !ok {
+		t.Fatalf("the lint-shell job holds no steps: list, so it lints nothing")
+	}
+
+	items, err := ciItems(steps)
+	if err != nil {
+		t.Fatalf("the lint-shell job's steps: %v", err)
+	}
+
+	var shellcheck, actionlint bool
+
+	for _, item := range items {
+		keys, err := ciKeys(item.lines)
+		if err != nil {
+			t.Errorf("the lint-shell job's steps: %v", err)
+
+			continue
+		}
+
+		for _, key := range keys {
+			if key.name == "continue-on-error" || key.name == "if" {
+				t.Errorf("line %d: a step of the lint-shell job holds %q, want no step skipped or excused", key.num, key.name)
+			}
+		}
+
+		if _, run, ok := ciScalar(item.lines, "run"); ok && run == "go tool actionlint" {
+			actionlint = true
+		}
+
+		if block, ok := ciBlock(item.lines, "run"); ok {
+			for _, l := range block {
+				if l.text == "dev/shellcheck.sh" {
+					shellcheck = true
+				}
+			}
+		}
+	}
+
+	if !shellcheck {
+		t.Errorf("no step of the lint-shell job runs dev/shellcheck.sh on a line of its own, so CI shellchecks no script")
+	}
+
+	if !actionlint {
+		t.Errorf("no step of the lint-shell job runs go tool actionlint, so CI checks no workflow")
 	}
 }
 

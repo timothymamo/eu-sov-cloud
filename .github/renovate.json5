@@ -72,6 +72,16 @@
       ],
     },
     {
+      // dev/lima.yaml pins shellcheck by version and a SHA-256 per architecture, and ci.yml's lint-shell job
+      // by the same version and the amd64 SHA-256 (test/architecture holds them equal): one PR for all.
+      description: 'shellcheck: dev/lima.yaml and ci.yml version and digests together',
+      matchDepNames: ['koalaman/shellcheck'],
+      groupName: 'shellcheck',
+      prBodyNotes: [
+        '**Before merging:** every `digestVersion` in `dev/lima.yaml` and `.github/workflows/ci.yml` must equal the new version, and the "Lint" check must be green: its lint-shell job downloads the release and checks it against `SHELLCHECK_SHA256`. shellcheck releases carry no signature or attestation, so compare the new digests with those GitHub lists for the release assets. The same digests change in each `dev/testdata/lima-invalid/*.yaml`, held equal to `dev/lima.yaml` by `test/devenv`. New findings the version reports are fixed in this PR.',
+      ],
+    },
+    {
       // The vm-tools workflow pins Lima by version and by the SHA-256 of its Linux tarball.
       description: 'Lima: vm-tools.yml version and digest together',
       matchDepNames: ['lima-vm/lima'],
@@ -86,10 +96,10 @@
       // Defence in depth only: the github-release-attachments datasource (Renovate 44) keeps the pinned
       // digest when the tag is unchanged, so it proposes no such PR today. What catches a replaced asset
       // is the weekly run of .github/workflows/vm-tools.yml, which then fails on the pin.
-      description: 'gh, cosign and Lima: a release asset changed under an existing tag',
-      matchDepNames: ['cli/cli', 'sigstore/cosign', 'lima-vm/lima'],
+      description: 'gh, cosign, Lima and shellcheck: a release asset changed under an existing tag',
+      matchDepNames: ['cli/cli', 'sigstore/cosign', 'lima-vm/lima', 'koalaman/shellcheck'],
       matchUpdateTypes: ['digest'],
-      groupName: 'replaced gh, cosign or Lima release asset',
+      groupName: 'replaced gh, cosign, Lima or shellcheck release asset',
       addLabels: ['security-review'],
       automerge: false,
       prBodyNotes: [
@@ -103,7 +113,7 @@
       // a quoted SHA-256 of one release asset. Renovate finds the asset whose digest it is in the
       // <tag> release (through the release's checksum file), takes the same asset's digest from the
       // new release, and updates digestVersion and the digest together.
-      description: 'SHA-256 digests of GitHub release assets in dev/lima.yaml and the vm-tools workflow',
+      description: 'SHA-256 digests of GitHub release assets in dev/lima.yaml, the vm-tools workflow and ci.yml',
       customType: 'regex',
       managerFilePatterns: [
         '/^dev/lima\\.yaml$/',
@@ -112,6 +122,8 @@
         // not leave them behind and fail that test.
         '/^dev/testdata/lima-invalid/[^/]+\\.yaml$/',
         '/^\\.github/workflows/vm-tools\\.yml$/',
+        // ci.yml's lint-shell job pins the shellcheck release the VM does.
+        '/^\\.github/workflows/ci\\.yml$/',
       ],
       matchStrings: [
         '# renovate: datasource=(?<datasource>github-release-attachments) depName=(?<depName>\\S+) digestVersion=(?<currentValue>\\S+)\\s+\\S+:\\s*"(?<currentDigest>[a-f0-9]{64})"',

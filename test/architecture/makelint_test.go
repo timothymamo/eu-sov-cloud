@@ -1,7 +1,9 @@
 package architecture_test
 
 import (
+	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -13,6 +15,7 @@ import (
 	"github.com/google/go-cmp/cmp"
 
 	"github.com/timothymamo/shift2eu/test/internal/releasetarget"
+	"github.com/timothymamo/shift2eu/test/lint"
 )
 
 // fakeLinter is the golangci-lint make lint finds on PATH. It records the
@@ -37,9 +40,18 @@ exit 0
 // make lint ends with, is recorded in the same record as the linter runs, as a
 // line "#go\t<GOOS>\t<GOARCH>\t<CGO_ENABLED>\t<SHIFT2EU_LINT_PROBES>\t<arguments>", so the record
 // tells whether it ran and whether it ran after them; it fails when
-// SHIFT2EU_FAKE_LINT_FAIL is test/lint. Every other call is handed to the real go
+// SHIFT2EU_FAKE_LINT_FAIL is test/lint. A go tool call, the actionlint step, is
+// recorded as "#tool\t<GOOS>\t<GOARCH>\t<CGO_ENABLED>\t<arguments>" and fails when
+// SHIFT2EU_FAKE_LINT_FAIL is actionlint. Every other call is handed to the real go
 // command, whose path replaces %s, single-quoted.
 const fakeGo = `#!/bin/sh
+if [ "$1" = tool ]; then
+	printf '#tool\t%%s\t%%s\t%%s\t%%s\n' "${GOOS}" "${GOARCH}" "${CGO_ENABLED}" "$*" >> "${SHIFT2EU_FAKE_LINT_RECORD}"
+	if [ "${SHIFT2EU_FAKE_LINT_FAIL}" = "actionlint" ]; then
+		exit 3
+	fi
+	exit 0
+fi
 if [ "$1" = test ]; then
 	printf '#go\t%%s\t%%s\t%%s\t%%s\t%%s\n' "${GOOS}" "${GOARCH}" "${CGO_ENABLED}" "${SHIFT2EU_LINT_PROBES}" "$*" >> "${SHIFT2EU_FAKE_LINT_RECORD}"
 	if [ "${SHIFT2EU_FAKE_LINT_FAIL}" = "test/lint" ]; then
@@ -53,6 +65,42 @@ exec %s "$@"
 // wantLintTestArgs is the whole argument list of the go call make lint ends
 // with: the test/lint tests, uncached.
 const wantLintTestArgs = "test -count=1 ./test/lint/"
+
+// fakeShellcheck is the shellcheck make lint finds on PATH. It records each
+// call as a line "#shellcheck" followed by a tab and each argument, and fails
+// when SHIFT2EU_FAKE_LINT_FAIL is shellcheck.
+const fakeShellcheck = `#!/bin/sh
+{ printf '#shellcheck'; printf '\t%s' "$@"; printf '\n'; } >> "${SHIFT2EU_FAKE_LINT_RECORD}"
+if [ "${SHIFT2EU_FAKE_LINT_FAIL}" = "shellcheck" ]; then
+	exit 3
+fi
+exit 0
+`
+
+// wantActionlintArgs is the whole argument list of the go call that runs
+// actionlint: the version go.mod pins, on .github/workflows, its default.
+const wantActionlintArgs = "tool actionlint"
+
+// wantShellcheckSeverity is the severity flag make lint hands shellcheck:
+// style, every finding, as SC2086 (word splitting) is only info (issue #164).
+const wantShellcheckSeverity = "--severity=style"
+
+// goToolRun is one go tool call make lint made, as the fake go recorded it.
+type goToolRun struct {
+	// After is how many golangci-lint runs the record held before it.
+	After      int
+	GOOS       string
+	GOARCH     string
+	CGOEnabled string
+	Args       string
+}
+
+// shellcheckRun is one shellcheck call make lint made.
+type shellcheckRun struct {
+	// After is how many golangci-lint runs the record held before it.
+	After int
+	Args  []string
+}
 
 // The two ways a case sets GOLANGCI_LINT_CACHE for make.
 const (
@@ -154,6 +202,8 @@ func TestMakeLintRunsEveryReleaseTarget(t *testing.T) {
 
 	slices.Sort(wantRelease)
 
+	scripts := trackedShellScripts(t, root)
+
 	tests := []struct {
 		name string
 		// cache is cacheSet or cacheUnset: how the case gives make a
@@ -198,6 +248,18 @@ func TestMakeLintRunsEveryReleaseTarget(t *testing.T) {
 			wantExit: false,
 		},
 		{
+			name:     "a failing shellcheck fails make lint after every run",
+			cache:    cacheSet,
+			fail:     "shellcheck",
+			wantExit: false,
+		},
+		{
+			name:     "a failing actionlint fails make lint after every run",
+			cache:    cacheSet,
+			fail:     "actionlint",
+			wantExit: false,
+		},
+		{
 			name:     "an exported platform and build settings change nothing",
 			cache:    cacheSet,
 			wantExit: true,
@@ -225,6 +287,7 @@ func TestMakeLintRunsEveryReleaseTarget(t *testing.T) {
 
 			writeFakeLinter(t, fakeDir)
 			writeFakeGo(t, fakeDir)
+			writeFakeShellcheck(t, fakeDir)
 
 			env := map[string]string{
 				"PATH":                      fakeDir + string(os.PathListSeparator) + os.Getenv("PATH"),
@@ -264,7 +327,31 @@ func TestMakeLintRunsEveryReleaseTarget(t *testing.T) {
 					tc.fail, out)
 			}
 
-			runs, goTests := readLintRecord(t, record)
+			runs, goTests, goTools, shellchecks := readLintRecord(t, record)
+
+			// shellcheck and actionlint do not depend on the target, so make
+			// lint runs each once, after the linter runs (issue #164).
+			// shellcheck must see exactly the scripts IsShellScript picks, the
+			// rule test/lint holds their directives to, so dev/shellcheck.sh
+			// and test/lint cannot drift apart.
+			if len(shellchecks) != 1 {
+				t.Errorf("make lint ran shellcheck %d times, want exactly once, after the linter runs: %+v", len(shellchecks), shellchecks)
+			} else if run := shellchecks[0]; run.After != len(runs) {
+				t.Errorf("make lint ran shellcheck after %d of %d linter runs, want after all of them", run.After, len(runs))
+			} else if diff := cmp.Diff(append([]string{wantShellcheckSeverity}, scripts...), run.Args); diff != "" {
+				t.Errorf("make lint ran shellcheck with the wrong arguments, want %s and every tracked shell script, as test/lint's IsShellScript picks them, in git's order (-want +got):\n%s",
+					wantShellcheckSeverity, diff)
+			}
+
+			if len(goTools) != 1 {
+				t.Errorf("make lint made %d go tool calls, want exactly one, %q, after the linter runs: %+v", len(goTools), wantActionlintArgs, goTools)
+			} else if run := goTools[0]; run.Args != wantActionlintArgs || run.After != len(runs) {
+				t.Errorf("make lint called go %q after %d of %d linter runs, want go %q after all of them",
+					run.Args, run.After, len(runs), wantActionlintArgs)
+			} else if run.GOOS != "" || run.GOARCH != "" || run.CGOEnabled != "" {
+				t.Errorf("make lint ran actionlint with GOOS=%q GOARCH=%q CGO_ENABLED=%q, want all three unset, so go builds actionlint for the host it runs on",
+					run.GOOS, run.GOARCH, run.CGOEnabled)
+			}
 
 			// test/lint holds the rules golangci-lint cannot (nolint
 			// directives that would hide a depguard issue), so make lint must
@@ -400,6 +487,55 @@ func writeFakeLinter(t *testing.T, dir string) {
 	}
 }
 
+// writeFakeShellcheck writes the fake shellcheck into dir, executable.
+func writeFakeShellcheck(t *testing.T, dir string) {
+	t.Helper()
+
+	//nolint:gosec // the fake shellcheck must be executable
+	if err := os.WriteFile(filepath.Join(dir, "shellcheck"), []byte(fakeShellcheck), 0o700); err != nil {
+		t.Fatalf("write the fake shellcheck: %v", err)
+	}
+}
+
+// trackedShellScripts returns the files git tracks in root that
+// lint.IsShellScript calls shell scripts, in git's order: what make lint must
+// hand shellcheck.
+func trackedShellScripts(t *testing.T, root string) []string {
+	t.Helper()
+
+	out, err := exec.CommandContext(t.Context(), "git", "-C", root, "ls-files", "-z").Output()
+	if err != nil {
+		t.Fatalf("git ls-files in %s: %v", root, err)
+	}
+
+	var scripts []string
+
+	for _, rel := range strings.Split(string(out), "\x00") {
+		if rel == "" {
+			continue
+		}
+
+		src, err := os.ReadFile(filepath.Join(root, filepath.FromSlash(rel)))
+		if err != nil {
+			if errors.Is(err, fs.ErrNotExist) {
+				continue // tracked but not in this checkout, as dev/shellcheck.sh skips it
+			}
+
+			t.Fatalf("read %s: %v", rel, err)
+		}
+
+		if lint.IsShellScript(rel, src) {
+			scripts = append(scripts, rel)
+		}
+	}
+
+	if len(scripts) == 0 {
+		t.Fatal("git tracks no shell script lint.IsShellScript picks, so the shellcheck pin would pin nothing")
+	}
+
+	return scripts
+}
+
 // writeFakeGo writes the fake go into dir, executable, delegating every call
 // but go test to the go command the test finds on PATH.
 func writeFakeGo(t *testing.T, dir string) {
@@ -500,10 +636,11 @@ func makeEnv(env map[string]string) []string {
 	return out
 }
 
-// readLintRecord reads the lines the fake linter and the fake go appended: the
-// linter runs in the order make made them, and every go test call with how
-// many linter runs came before it.
-func readLintRecord(t *testing.T, path string) ([]lintRun, []goTestRun) {
+// readLintRecord reads the lines the fake linter, the fake go and the fake
+// shellcheck appended: the linter runs in the order make made them, and every
+// go test call, go tool call and shellcheck call with how many linter runs came
+// before it.
+func readLintRecord(t *testing.T, path string) ([]lintRun, []goTestRun, []goToolRun, []shellcheckRun) {
 	t.Helper()
 
 	data, err := os.ReadFile(path)
@@ -520,9 +657,33 @@ func readLintRecord(t *testing.T, path string) ([]lintRun, []goTestRun) {
 
 	runs := make([]lintRun, 0, len(lines))
 
-	var goTests []goTestRun
+	var (
+		goTests     []goTestRun
+		goTools     []goToolRun
+		shellchecks []shellcheckRun
+	)
 
 	for i, line := range lines {
+		if rest, ok := strings.CutPrefix(line, "#tool\t"); ok {
+			fields := strings.SplitN(rest, "\t", 4)
+			if len(fields) != 4 {
+				t.Fatalf("record line %d = %q, want #tool and 4 tab-separated fields: GOOS, GOARCH, CGO_ENABLED and the arguments", i+1, line)
+			}
+
+			goTools = append(goTools, goToolRun{
+				After: len(runs), GOOS: fields[0], GOARCH: fields[1], CGOEnabled: fields[2], Args: fields[3],
+			})
+
+			continue
+		}
+
+		if rest, ok := strings.CutPrefix(line, "#shellcheck"); ok {
+			args := strings.Split(rest, "\t")[1:]
+			shellchecks = append(shellchecks, shellcheckRun{After: len(runs), Args: args})
+
+			continue
+		}
+
 		if rest, ok := strings.CutPrefix(line, "#go\t"); ok {
 			fields := strings.SplitN(rest, "\t", 5)
 			if len(fields) != 5 {
@@ -556,7 +717,7 @@ func readLintRecord(t *testing.T, path string) ([]lintRun, []goTestRun) {
 		})
 	}
 
-	return runs, goTests
+	return runs, goTests, goTools, shellchecks
 }
 
 // formatRuns renders the recorded runs, one per line, for an assertion message.
