@@ -53,8 +53,13 @@ moves or deletes a tag.
 3. Find the open release PR:
    `gh pr list --state open --label "autorelease: pending" --json number,title,headRefName,url`.
    There must be exactly one, from the branch `release-please--branches--main--components--shift2eu`
-   (exactly; ADR 0021 says why), opened by the release App (`gh pr view <n> --json author`, a
-   `[bot]` login). If there is none, check for a merged one still waiting for its tag
+   (exactly; ADR 0021 says why), opened by the release App itself, not just any bot. Read the author
+   with `gh pr view <n> --json author --jq '.author.is_bot, .author.login'`: `gh` gives an App's login
+   as `app/<slug>` (the REST API's `<slug>[bot]`), so it must print `true` and `app/<slug>`; take
+   `<slug>` by removing `app/` (or a trailing `[bot]`, if a `gh` version prints that form). Then
+   `gh api apps/<slug> --jq .id` must equal the `RELEASE_APP_ID` read in step 2. A human author, a
+   login of another form, a slug that does not resolve, or a different id: report it and stop. If
+   there is none, check for a merged one still waiting for its tag
    (`gh pr list --state merged --label "autorelease: pending" --json number,title,mergeCommit`): if
    there is one, go to step 6 for it. Otherwise release-please found nothing to release since the last
    release (only docs, test, ci, chore, build, style or refactor commits): report that and stop.
