@@ -10,7 +10,9 @@
 // and fails closed: it refuses every key, hook, env entry, flag and YAML
 // feature that could change what the release compiles and that it does not
 // read, so a change to how the release is built fails the tests until the
-// reader is taught it. Main is the main package the release builds. The
+// reader is taught it. Main is the main package the release builds, and Env
+// the environment every build must set, exactly: CGO_ENABLED=0, GOWORK=off
+// and GOFLAGS=-mod=readonly (issue #102). The
 // document is read with test/internal/yamlread.
 //
 // The package is internal to test: it is not an API of the module.
