@@ -625,10 +625,11 @@ var verifySteps = []string{
       # moves neither X.Y nor latest. The highest is the tag the image jobs'
       # stamp read: the release tags merged into main. They are read by
       # ancestry here too, from the public repository into a bare repository of
-      # this job's own, so no checkout runs and no repository code runs. A
-      # registry error on a tag the rule requires fails the job; the one tag it
-      # allows to be absent, the highest while its own run has not published
-      # it, is read with its error silenced, and a notice says so.
+      # this job's own, so no checkout runs and no repository code runs. Only a
+      # registry saying the tag does not exist is read as an absent tag, which
+      # the rule allows for the one tag whose own run has not published it, the
+      # highest, and a notice then says so; any other answer from the registry,
+      # a 5xx, a rate limit or a failed login, fails the job.
       - name: The tags follow the release rule
         env:
           TAG: ${{ github.ref_name }}
@@ -639,44 +640,65 @@ var verifySteps = []string{
           version="${TAG#v}"
           minor="${version%%-*}"
           minor="${minor%.*}"
-          git init -q repo
-          git -C repo fetch -q --filter=tree:0 --no-tags https://github.com/timothymamo/shift2eu.git '+refs/heads/main:refs/remotes/origin/main' '+refs/tags/v*:refs/tags/v*'
-          highest="$(git -C repo tag -l 'v*.*.*' --merged refs/remotes/origin/main | sed -nE '/^v[0-9]+\.[0-9]+\.[0-9]+$/p' | sort -V | tail -n 1)"
+          git init -q tags
+          git -C tags fetch -q --filter=tree:0 --no-tags https://github.com/timothymamo/shift2eu.git '+refs/heads/main:refs/remotes/origin/main' '+refs/tags/v*:refs/tags/v*'
+          highest="$(git -C tags tag -l 'v*.*.*' --merged refs/remotes/origin/main | sed -nE '/^v[0-9]+\.[0-9]+\.[0-9]+$/p' | sort -V | tail -n 1)"
           if [ -z "$highest" ]; then
             echo "no release tag is merged into main, so X.Y and latest cannot be checked" >&2
             exit 1
           fi
+          # digest_or_absent prints the digest its tag resolves to, or nothing
+          # when the registry says the tag does not exist; any other error is
+          # printed and fails the step, whose caller assigns the digest in a
+          # command of its own so set -e sees the failure.
+          digest_or_absent() {
+            if out="$(docker buildx imagetools inspect "$1" --format '{{.Manifest.Digest}}' 2>&1)"; then
+              printf '%s\n' "$out"
+            elif printf '%s\n' "$out" | grep -qiE 'not found|manifest unknown'; then
+              :
+            else
+              printf '%s\n' "$out" >&2
+              return 1
+            fi
+          }
           check() {
-            repo="$1"
+            image="$1"
             digest="$2"
+            minor_digest="$(digest_or_absent "$image:$minor")"
             case "$TAG" in
               *-*)
-                if [ "$(docker buildx imagetools inspect "$repo:$minor" --format '{{.Manifest.Digest}}' 2> /dev/null)" = "$digest" ]; then
-                  echo "$repo:$minor is $TAG, a pre-release, and a pre-release moves neither X.Y nor latest" >&2
+                if [ "$minor_digest" = "$digest" ]; then
+                  echo "$image:$minor is $TAG, a pre-release, and a pre-release moves neither X.Y nor latest" >&2
                   exit 1
                 fi
-                if [ "$(docker buildx imagetools inspect "$repo:latest" --format '{{.Manifest.Digest}}' 2> /dev/null)" = "$digest" ]; then
-                  echo "$repo:latest is $TAG, a pre-release, and a pre-release moves neither X.Y nor latest" >&2
+                latest_digest="$(digest_or_absent "$image:latest")"
+                if [ "$latest_digest" = "$digest" ]; then
+                  echo "$image:latest is $TAG, a pre-release, and a pre-release moves neither X.Y nor latest" >&2
                   exit 1
                 fi
                 ;;
               *)
-                if [ "$(docker buildx imagetools inspect "$repo:$minor" --format '{{.Manifest.Digest}}')" != "$digest" ]; then
-                  echo "$repo:$minor is not $TAG" >&2
+                if [ "$minor_digest" != "$digest" ]; then
+                  echo "$image:$minor is not $TAG" >&2
                   exit 1
                 fi
                 if [ "$highest" = "$TAG" ]; then
-                  if [ "$(docker buildx imagetools inspect "$repo:latest" --format '{{.Manifest.Digest}}')" != "$digest" ]; then
-                    echo "$repo:latest is not $TAG, the highest release tag" >&2
-                    exit 1
-                  fi
-                elif published="$(docker buildx imagetools inspect "$repo:$highest" --format '{{.Manifest.Digest}}' 2> /dev/null)"; then
-                  if [ "$(docker buildx imagetools inspect "$repo:latest" --format '{{.Manifest.Digest}}')" = "$digest" ]; then
-                    echo "$repo:latest is $TAG, which is not the highest release tag, $highest" >&2
+                  latest_digest="$(digest_or_absent "$image:latest")"
+                  if [ "$latest_digest" != "$digest" ]; then
+                    echo "$image:latest is not $TAG, the highest release tag" >&2
                     exit 1
                   fi
                 else
-                  echo "::notice::$repo:$highest is not published yet, so this run does not check $repo:latest"
+                  highest_digest="$(digest_or_absent "$image:$highest")"
+                  if [ -z "$highest_digest" ]; then
+                    echo "::notice::$image:$highest is not published yet, so this run does not check $image:latest"
+                  else
+                    latest_digest="$(digest_or_absent "$image:latest")"
+                    if [ "$latest_digest" = "$digest" ]; then
+                      echo "$image:latest is $TAG, which is not the highest release tag, $highest" >&2
+                      exit 1
+                    fi
+                  fi
                 fi
                 ;;
             esac
@@ -1374,8 +1396,8 @@ func TestReleaseWorkflow(t *testing.T) {
 
 		// The tag rule (ADR 0015): vX.Y.Z always, X.Y for every release, latest
 		// for the highest release tag alone, and a pre-release moving neither.
-		{name: "the tag rule without the latest tag", workflow: steps("verify", inVerifyStep(t, "name: The tags follow the release rule", `"$repo:latest"`, `"$repo:newest"`)), wantIn: "want the tag rule: run is"},
-		{name: "the tag rule without the minor tag", workflow: steps("verify", inVerifyStep(t, "name: The tags follow the release rule", `"$repo:$minor"`, `"$repo:$TAG"`)), wantIn: "want the tag rule: run is"},
+		{name: "the tag rule without the latest tag", workflow: steps("verify", inVerifyStep(t, "name: The tags follow the release rule", `"$image:latest"`, `"$image:newest"`)), wantIn: "want the tag rule: run is"},
+		{name: "the tag rule without the minor tag", workflow: steps("verify", inVerifyStep(t, "name: The tags follow the release rule", `"$image:$minor"`, `"$image:$TAG"`)), wantIn: "want the tag rule: run is"},
 		{name: "the tag rule without the pre-release case", workflow: steps("verify", inVerifyStep(t, "name: The tags follow the release rule", "              *-*)\n", "              x-*)\n")), wantIn: "want the tag rule: run is"},
 		{name: "the tag rule checking one image alone", workflow: steps("verify", inVerifyStep(t, "name: The tags follow the release rule", "          check ghcr.io/timothymamo/shift2eu-server \"$SERVER_BUILT\"\n", "")), wantIn: "want the tag rule: run is"},
 
@@ -1384,25 +1406,36 @@ func TestReleaseWorkflow(t *testing.T) {
 		// so the rule compares digests rather than asking whether the tag
 		// exists. A pre-release on a minor line that has already shipped is the
 		// common case, and it must pass.
-		{name: "the pre-release rule back to a tag that merely exists", workflow: steps("verify", inVerifyStep(t, "name: The tags follow the release rule", `if [ "$(docker buildx imagetools inspect "$repo:$minor" --format '{{.Manifest.Digest}}' 2> /dev/null)" = "$digest" ]; then`, `if docker buildx imagetools inspect "$repo:$minor" > /dev/null 2>&1; then`)), wantIn: "want the tag rule: run is"},
-		{name: "the pre-release rule without its X.Y check", workflow: steps("verify", inVerifyStep(t, "name: The tags follow the release rule", `if [ "$(docker buildx imagetools inspect "$repo:$minor" --format '{{.Manifest.Digest}}' 2> /dev/null)" = "$digest" ]; then`, `if false; then`)), wantIn: "want the tag rule: run is"},
-		{name: "the pre-release rule without its latest check", workflow: steps("verify", inVerifyStep(t, "name: The tags follow the release rule", `if [ "$(docker buildx imagetools inspect "$repo:latest" --format '{{.Manifest.Digest}}' 2> /dev/null)" = "$digest" ]; then`, `if false; then`)), wantIn: "want the tag rule: run is"},
+		{name: "the pre-release rule back to a tag that merely exists", workflow: steps("verify", inVerifyStep(t, "name: The tags follow the release rule", "                if [ \"$minor_digest\" = \"$digest\" ]; then\n", "                if [ -n \"$minor_digest\" ]; then\n")), wantIn: "want the tag rule: run is"},
+		{name: "the pre-release rule without its X.Y check", workflow: steps("verify", inVerifyStep(t, "name: The tags follow the release rule", "                if [ \"$minor_digest\" = \"$digest\" ]; then\n", "                if false; then\n")), wantIn: "want the tag rule: run is"},
+		{name: "the pre-release rule without its latest check", workflow: steps("verify", inVerifyStep(t, "name: The tags follow the release rule", "                if [ \"$latest_digest\" = \"$digest\" ]; then\n", "                if false; then\n")), wantIn: "want the tag rule: run is"},
+
+		// Only absence is absence (review N1, audit N1): each of the rule's
+		// reads treats a tag the registry says does not exist as absent, which
+		// the rule allows where it allows it, and fails the step on any other
+		// answer. Every read is pinned alone, so none can go back to swallowing
+		// a 5xx, a rate limit or a failed login, and a pre-release may still
+		// leave X.Y or latest absent.
+		{name: "the tag rule taking any registry error for an absent tag", workflow: steps("verify", inVerifyStep(t, "name: The tags follow the release rule", `            elif printf '%s\n' "$out" | grep -qiE 'not found|manifest unknown'; then`+"\n", "            elif true; then\n")), wantIn: "want the tag rule: run is"},
+		{name: "the tag rule reading a pre-release's X.Y with its error silenced", workflow: steps("verify", inVerifyStep(t, "name: The tags follow the release rule", `            minor_digest="$(digest_or_absent "$image:$minor")"`+"\n", `            minor_digest="$(digest_or_absent "$image:$minor" 2> /dev/null)"`+"\n")), wantIn: "want the tag rule: run is"},
+		{name: "the tag rule reading a pre-release's latest with its error silenced", workflow: steps("verify", inVerifyStep(t, "name: The tags follow the release rule", `                latest_digest="$(digest_or_absent "$image:latest")"`+"\n", `                latest_digest="$(digest_or_absent "$image:latest" 2> /dev/null)"`+"\n")), wantIn: "want the tag rule: run is"},
+		{name: "the tag rule reading the highest with its error silenced", workflow: steps("verify", inVerifyStep(t, "name: The tags follow the release rule", `                  highest_digest="$(digest_or_absent "$image:$highest")"`+"\n", `                  highest_digest="$(digest_or_absent "$image:$highest" 2> /dev/null)"`+"\n")), wantIn: "want the tag rule: run is"},
 
 		// The highest release tag is the one the stamp decided latest from: the
 		// release tags merged into main, in the same filter, sort and pick
 		// (review M1, audit M2a). Without the ancestry filter a stray tag off
 		// main would be highest, and every later release's verify would fail.
-		{name: "the tag rule counting every tag, not only those merged into main", workflow: steps("verify", inVerifyStep(t, "name: The tags follow the release rule", "git -C repo tag -l 'v*.*.*' --merged refs/remotes/origin/main", "git -C repo tag -l 'v*.*.*'")), wantIn: "want the tag rule: run is"},
+		{name: "the tag rule counting every tag, not only those merged into main", workflow: steps("verify", inVerifyStep(t, "name: The tags follow the release rule", "git -C tags tag -l 'v*.*.*' --merged refs/remotes/origin/main", "git -C tags tag -l 'v*.*.*'")), wantIn: "want the tag rule: run is"},
 		{name: "the tag rule counting the tags of another branch", workflow: steps("verify", inVerifyStep(t, "name: The tags follow the release rule", "--merged refs/remotes/origin/main", "--merged refs/heads/main")), wantIn: "want the tag rule: run is"},
 		{name: "the tag rule fetching no tags", workflow: steps("verify", inVerifyStep(t, "name: The tags follow the release rule", " '+refs/tags/v*:refs/tags/v*'", "")), wantIn: "want the tag rule: run is"},
-		{name: "the tag rule checking out the repository", workflow: steps("verify", inVerifyStep(t, "name: The tags follow the release rule", "          git init -q repo\n", "          git clone -q --no-tags --depth 1 https://github.com/timothymamo/shift2eu.git repo\n")), wantIn: "want the tag rule: run is"},
+		{name: "the tag rule checking out the repository", workflow: steps("verify", inVerifyStep(t, "name: The tags follow the release rule", "          git init -q tags\n", "          git clone -q --no-tags --depth 1 https://github.com/timothymamo/shift2eu.git tags\n")), wantIn: "want the tag rule: run is"},
 
 		// The timing of the latest check (review M2, audit M2b): only a
 		// published higher tag can hold latest back, so a re-run of an older
 		// release passes once a newer one has shipped, and a newer tag whose
 		// run is still in flight is no reason to fail.
-		{name: "the tag rule without its notice for a highest tag not yet published", workflow: steps("verify", inVerifyStep(t, "name: The tags follow the release rule", `                  echo "::notice::$repo:$highest is not published yet, so this run does not check $repo:latest"`+"\n", "")), wantIn: "want the tag rule: run is"},
-		{name: "the tag rule without the check that latest is not this tag", workflow: steps("verify", inVerifyStep(t, "name: The tags follow the release rule", `                  if [ "$(docker buildx imagetools inspect "$repo:latest" --format '{{.Manifest.Digest}}')" = "$digest" ]; then`+"\n", "                  if false; then\n")), wantIn: "want the tag rule: run is"},
+		{name: "the tag rule without its notice for a highest tag not yet published", workflow: steps("verify", inVerifyStep(t, "name: The tags follow the release rule", `                    echo "::notice::$image:$highest is not published yet, so this run does not check $image:latest"`+"\n", "")), wantIn: "want the tag rule: run is"},
+		{name: "the tag rule without the check that latest is not this tag", workflow: steps("verify", inVerifyStep(t, "name: The tags follow the release rule", `                    if [ "$latest_digest" = "$digest" ]; then`+"\n", "                    if false; then\n")), wantIn: "want the tag rule: run is"},
 
 		// Fail closed (review S1, audit L3): every script of the job opens with
 		// set -euo pipefail, an empty highest is an error, and a registry error
@@ -1412,7 +1445,7 @@ func TestReleaseWorkflow(t *testing.T) {
 		{name: "the tag rule without set -euo pipefail", workflow: steps("verify", inVerifyStep(t, "name: The tags follow the release rule", "        run: |\n          set -euo pipefail\n", "        run: |\n")), wantIn: "want the tag rule: run is"},
 		{name: "a shell on the tag rule step", workflow: in("verify", "      - name: The tags follow the release rule\n", "      - name: The tags follow the release rule\n        shell: bash\n"), wantIn: `key "shell"`},
 		{name: "the tag rule without the guard on an empty highest", workflow: steps("verify", inVerifyStep(t, "name: The tags follow the release rule", "          if [ -z \"$highest\" ]; then\n            echo \"no release tag is merged into main, so X.Y and latest cannot be checked\" >&2\n            exit 1\n          fi\n", "")), wantIn: "want the tag rule: run is"},
-		{name: "the tag rule reading a missing latest as absent", workflow: steps("verify", inVerifyStep(t, "name: The tags follow the release rule", `if [ "$(docker buildx imagetools inspect "$repo:latest" --format '{{.Manifest.Digest}}')" != "$digest" ]; then`, `if [ "$(docker buildx imagetools inspect "$repo:latest" --format '{{.Manifest.Digest}}' 2> /dev/null)" != "$digest" ]; then`)), wantIn: "want the tag rule: run is"},
+		{name: "the tag rule reading the highest release's latest with its error silenced", workflow: steps("verify", inVerifyStep(t, "name: The tags follow the release rule", `                  latest_digest="$(digest_or_absent "$image:latest")"`+"\n", `                  latest_digest="$(digest_or_absent "$image:latest" 2> /dev/null)"`+"\n")), wantIn: "want the tag rule: run is"},
 
 		{name: "an empty document", workflow: "", wantIn: "release workflow"},
 	}
