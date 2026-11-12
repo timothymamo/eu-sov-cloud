@@ -26,12 +26,15 @@ const probeEnv = "SHIFT2EU_LINT_PROBES"
 // that test, and runForbidigoProbe leaves it out.
 const astPrefix = "test/lint: "
 
-// forbidigoProbe is a probe of one forbidigo group: a module under
+// forbidigoProbe is a probe of one golangci-lint rule group: a module under
 // testdata/<dir>/mod in which every line that ends in a want comment must be
 // refused, with the messages the comment names, and no other line may be.
 type forbidigoProbe struct {
 	dir string // the directory under testdata
-	tag string // the group's tag, which starts each of its msgs
+	// tag is the forbidigo group's tag, which starts each of its msgs. A probe
+	// of a depguard rule that no forbidigo group backs leaves it empty, and
+	// then forbidigo does not run at all.
+	tag string
 	// stubs maps each directory under testdata/<dir>/stub to the module path
 	// its stub stands in for.
 	stubs map[string]string
@@ -40,8 +43,9 @@ type forbidigoProbe struct {
 }
 
 // runForbidigoProbe runs golangci-lint, with the repository's .golangci.yml and
-// forbidigo alone enabled (depguard too if the probe asks), on a scratch copy of
-// the probe's module, offline and with no credentials. A line that ends in
+// the linters the probe asks for enabled (forbidigo for a tag, depguard if it
+// asks for it), on a scratch copy of the probe's module, offline and with no
+// credentials. A line that ends in
 //
 //	// want "<message prefix>" ["<message prefix>" ...]
 //
@@ -50,7 +54,8 @@ type forbidigoProbe struct {
 // a depguard issue's its text. Lines are not merged (--uniq-by-line=false), so
 // two entries refusing one line are told apart. Every entry of the group must
 // refuse at least one line, so an entry that silently stops matching fails the
-// probe. Without golangci-lint on PATH it skips, unless SHIFT2EU_LINT_PROBES=require.
+// probe; a probe with no tag holds no such group and skips that check. Without
+// golangci-lint on PATH it skips, unless SHIFT2EU_LINT_PROBES=require.
 func runForbidigoProbe(t *testing.T, p forbidigoProbe) {
 	t.Helper()
 
@@ -109,10 +114,17 @@ func runForbidigoProbe(t *testing.T, p forbidigoProbe) {
 	writeFile(t, dst, "mod/go.mod", goMod)
 	mod := filepath.Join(scratch, "mod")
 
-	linters := "forbidigo"
-	if p.depguard {
-		linters += ",depguard"
+	var enabled []string
+	if p.tag != "" {
+		enabled = append(enabled, "forbidigo")
 	}
+	if p.depguard {
+		enabled = append(enabled, "depguard")
+	}
+	if len(enabled) == 0 {
+		t.Fatal("the probe enables no linter: set its tag for forbidigo, depguard for an import rule, or both")
+	}
+	linters := strings.Join(enabled, ",")
 	// Probes run in parallel, each with a cache of its own in its scratch
 	// directory, so the lock that refuses a second run is not needed.
 	cmd := exec.CommandContext(t.Context(), bin, "run", "--enable-only="+linters, "--allow-parallel-runners",
@@ -195,6 +207,9 @@ func runForbidigoProbe(t *testing.T, p forbidigoProbe) {
 				t.Errorf("%s: no issue starts with %q; the entry that should refuse this line no longer does", line, prefix)
 			}
 		}
+	}
+	if p.tag == "" {
+		return
 	}
 	for _, e := range forbidigoEntries(t, root) {
 		if strings.HasPrefix(e.msg, p.tag+": ") && !refusedBy[e.msg] {
