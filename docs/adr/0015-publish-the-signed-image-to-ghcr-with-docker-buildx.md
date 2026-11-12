@@ -2,6 +2,7 @@
 
 - Status: Accepted. Amended by issue #92: a pre-release tag is a GitHub pre-release too (Tags, below).
   Amended by PRD #103: a second image, `shift2eu-server`, is published the same way (Consequences).
+  Amended by issue #99: an independent `verify` job checks both published images (Consequences).
 - Date: 2026-11-11
 
 ## Context
@@ -201,3 +202,28 @@ attestations, pushed to the registry beside the image.
   `shift2eu-server` beside `shift2eu` with the same settings, and each release archive holds both
   binaries. The GHCR package `shift2eu-server` must be made public by hand after its first push, as
   `shift2eu`'s was.
+- Amended by issue #99: a ninth job, `verify`, checks what every release published, independently of
+  the agents. Until then the published images were checked by hand, or by the `release-tag` skill inside
+  the agents' Lima VM ([ADR 0017](0017-run-a-rootless-container-runtime-in-the-lima-vm.md)); audit
+  finding M1 of PR #96 noted that this check is not independent: the agents that run it share the VM,
+  and what runs there can alter the check. `verify` needs `sign` and `server-sign` and runs on a fresh
+  GitHub-hosted runner. For each image it resolves the tag to the digest it points to now (a tag can be
+  moved, a digest cannot) and, by that digest, runs the README's "Verify the image": `cosign verify` with
+  the exact release identity (`release.yml@refs/tags/<tag>`, GitHub's OIDC issuer, the `push` trigger);
+  `gh attestation verify` of the build provenance and of the SPDX SBOM, with the repository, the signer
+  workflow, the tag as source ref and self-hosted runners denied; and the image itself with
+  `docker run --rm --read-only --network none`: the CLI's `version`, which must report the tag's
+  version, and the server's `--help`, which must exit 0, since `shift2eu-server` has no `version`
+  subcommand. Then it checks the tag rule above for both images: `vX.Y.Z` always, `X.Y` for a release
+  and never for a pre-release, and `latest` exactly when the tag is the highest release tag. That
+  highest tag is read with `git ls-remote` and the stamp's filter, sort and pick, not from GitHub's
+  "latest release", which is the most recently created release rather than the highest version, and
+  without a checkout. Its permissions are `packages: read` (the images and their signatures) and
+  `attestations: read` (`gh attestation verify` reads the attestations through the repository's API),
+  nothing else: no `id-token`, so nothing in it can sign, and no `contents`, as it checks out no
+  repository code; its only actions are `sigstore/cosign-installer`, by commit, with cosign by exact
+  release. A failed `verify` is a failed release: the `release-tag` skill reports the job's result,
+  and a failure is investigated and fixed forward, never retried around. `check.ReleaseWorkflow` pins the
+  job's keys, permissions and steps, and `check.DryRunMirrorsRelease` holds CI's dry run to run each
+  image it built with the same `docker run` flags and command as `verify`; pushing, signing and
+  attesting still need a tag, so the rest of `verify` runs only in a release.
