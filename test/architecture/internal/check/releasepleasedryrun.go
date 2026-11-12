@@ -11,8 +11,8 @@ import (
 const (
 	ciWorkflowName = ".github/workflows/ci.yml"
 
-	// releasePleaseDryRunScript is the dry run of release-please.yml's guard
-	// and tag steps, which a job of ci.yml runs.
+	// releasePleaseDryRunScript is the dry run of release-please.yml's guard,
+	// tag and relabel steps, which a job of ci.yml runs.
 	releasePleaseDryRunScript = ".github/scripts/release-please-dry-run.sh"
 )
 
@@ -84,7 +84,7 @@ func ReleasePleaseDryRun(src []byte) []string {
 	}
 
 	if !found {
-		r.fail("%s holds no job that runs %s, so a change to release-please.yml's guard or tag step is never run before it merges", name, releasePleaseDryRunScript)
+		r.fail("%s holds no job that runs %s, so a change to release-please.yml's guard, tag or relabel step is never run before it merges", name, releasePleaseDryRunScript)
 	}
 
 	return r.messages

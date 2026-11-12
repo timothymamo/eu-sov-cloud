@@ -9,8 +9,10 @@ Releases are proposed, not tagged by hand (issue #142, ADR 0021). On every push 
 `.github/workflows/release-please.yml` keeps one **release PR** open, labelled `autorelease: pending`,
 whose version and `CHANGELOG.md` entry release-please computes from the Conventional Commits since the
 last release (`release-please-config.json`). Merging that PR is the decision to ship: the same workflow
-then creates the `vX.Y.Z` tag on the merge commit with the release GitHub App's token and relabels the
-PR `autorelease: tagged`. The tag starts `.github/workflows/release.yml`: GoReleaser publishes the
+then creates the `vX.Y.Z` tag on the merge commit with the **release-tag App**'s token, in a job of its
+own, and relabels the PR `autorelease: tagged` with the **release-please App**'s token, the App that
+opened it (issue #157: two Apps, so the token the third-party release-please action holds can create no
+release tag). The tag starts `.github/workflows/release.yml`: GoReleaser publishes the
 binaries, then the image, sbom and sign jobs the signed images `ghcr.io/timothymamo/shift2eu` and
 `ghcr.io/timothymamo/shift2eu-server`, and the `verify` job checks them (ADR 0015). This skill reviews
 the release PR and reports on it, and after the merge verifies the tag, the release run and the
@@ -33,41 +35,52 @@ moves or deletes a tag.
      by at least one of them;
    - a ruleset holding `update` or `deletion` may be bypassed by maintainers only (`bypass_actors`
      of `actor_type` `RepositoryRole` with the admin role, `actor_id` 5, or `OrganizationAdmin`);
-   - a ruleset holding only `creation` may also be bypassed by the release App (`actor_type`
-     `Integration`, the App's id), and by nothing else.
-   The expected split is `Release tag creation` (creation; Repository admin and the release App) and
+   - a ruleset holding only `creation` may also be bypassed by the release-tag App (`actor_type`
+     `Integration`, that App's id), and by nothing else: no other App, **the release-please App
+     included**, may bypass any `v*` tag ruleset.
+   The expected split is `Release tag creation` (creation; Repository admin and the release-tag App) and
    `Release tags` (update, deletion, non_fast_forward; Repository admin only): a bypass list applies to
    every rule of its ruleset, so the App sits only in the one that restricts nothing but creation. Any
    other bypass actor, an App that may bypass update or deletion, or a missing rule fails the check: report
    what you found, that a maintainer must fix it (an agent must not), and stop.
-   The release App is the one whose id the workflow mints its token with: read it with
-   `gh api repos/{owner}/{repo}/environments/release-please/variables/RELEASE_APP_ID --jq .value`. The
-   `Integration` bypass actor of `Release tag creation` must have exactly that `actor_id`; if the
-   variable cannot be read, or the ids differ, report it and stop. Then check the `release-please`
-   environment, which holds the App's key: `gh api repos/{owner}/{repo}/environments/release-please`
-   must show `deployment_branch_policy.custom_branch_policies` `true` (and `protected_branches`
-   `false`), and
-   `gh api repos/{owner}/{repo}/environments/release-please/deployment-branch-policies --jq '.branch_policies[] | .type + " " + .name'`
+   The two Apps are the ones whose client IDs the workflow mints its tokens with (ADR 0021): read them
+   with
+   `gh api repos/{owner}/{repo}/environments/release-tag/variables/RELEASE_TAG_APP_CLIENT_ID --jq .value`
+   and
+   `gh api repos/{owner}/{repo}/environments/release-please/variables/RELEASE_APP_CLIENT_ID --jq .value`.
+   `Release tag creation` must hold exactly one `Integration` bypass actor. Find that App's slug from its
+   `actor_id` among the installations you can see,
+   `gh api user/installations --paginate --jq '.installations[] | (.app_id | tostring) + " " + .app_slug'`,
+   check the slug against `^[a-z0-9][a-z0-9-]*$`, and then `gh api apps/<slug> --jq .client_id` must
+   equal `RELEASE_TAG_APP_CLIENT_ID`. Any other App there, the release-please App (whose client ID is
+   `RELEASE_APP_CLIENT_ID`) above all, fails the check. If a variable cannot be read, the installation is
+   not listed, the App cannot be read (it is private, so a 404 means you cannot see it), or the client
+   IDs differ, report it and stop.
+   Then check both environments, `release-please` (the release-please App's key) and `release-tag` (the
+   release-tag App's key): for each `<env>`, `gh api repos/{owner}/{repo}/environments/<env>` must show
+   `deployment_branch_policy.custom_branch_policies` `true` (and `protected_branches` `false`), and
+   `gh api repos/{owner}/{repo}/environments/<env>/deployment-branch-policies --jq '.branch_policies[] | .type + " " + .name'`
    must list exactly one policy, `branch main`. Anything else lets a workflow on another branch or tag
-   read the App's key: report it and stop.
+   read an App's key: report it and stop.
 3. Find the open release PR:
    `gh pr list --state open --label "autorelease: pending" --json number,title,headRefName,url`.
    There must be exactly one, from the branch `release-please--branches--main--components--shift2eu`
-   (exactly; ADR 0021 says why), opened by the release App itself, not just any bot. Read the author
+   (exactly; ADR 0021 says why), opened by the release-please App itself, not just any bot. Read the author
    with `gh pr view <n> --json author --jq '.author.is_bot, .author.login'`: `gh` gives an App's login
    as `app/<slug>` (the REST API's `<slug>[bot]`), so it must print `true` and `app/<slug>`; take
    `<slug>` by removing `app/` (or a trailing `[bot]`, if a `gh` version prints that form). The slug
    must match `^[a-z0-9][a-z0-9-]*$` before it goes into any command; if it does not, report it and
-   stop. Then `gh api apps/<slug> --jq .id` must equal the `RELEASE_APP_ID` read in step 2. The App
+   stop. Then `gh api apps/<slug> --jq .client_id` must equal the `RELEASE_APP_CLIENT_ID` read in step 2,
+   and `gh api apps/<slug> --jq .id` must not be a bypass actor of any `v*` tag ruleset. The App
    is private, so a 404 there means you cannot see it, not that it does not exist: report that and
    stop. A human author, a login of another form, a slug that does not resolve, or a different id:
    report it and stop. If there is no open release PR, check for a merged one still waiting for its
    tag:
    `gh pr list --state merged --label "autorelease: pending" --json number,title,author,headRefName,mergeCommit`.
    Hold it to the same checks as an open one: exactly one, its `headRefName` exactly
-   `release-please--branches--main--components--shift2eu`, its author the release App (`is_bot`
-   `true`, login `app/<slug>`, the slug matching the pattern above, and `gh api apps/<slug> --jq .id`
-   equal to `RELEASE_APP_ID`). If it passes, go to step 6 for it; if it fails any check, or there is
+   `release-please--branches--main--components--shift2eu`, its author the release-please App (`is_bot`
+   `true`, login `app/<slug>`, the slug matching the pattern above, and `gh api apps/<slug> --jq .client_id`
+   equal to `RELEASE_APP_CLIENT_ID`). If it passes, go to step 6 for it; if it fails any check, or there is
    more than one, report it and stop. If there is neither an open nor a merged one, release-please
    found nothing to release since the last release (only docs, test, ci, chore, build, style or
    refactor commits): report that and stop.
@@ -101,9 +114,12 @@ moves or deletes a tag.
 6. Verify the tag. Find the release-please run on the merge commit
    (`gh pr view <n> --json mergeCommit --jq .mergeCommit.oid`):
    `gh run list --workflow release-please.yml --commit <merge commit> --json databaseId,status,conclusion`,
-   and watch it (`gh run watch <id>`). It must succeed. If its step "Wait for no release to be queued or
-   in progress" failed because a release was in flight, wait for that `release.yml` run to finish, then
-   `gh run rerun <id>`, once. On any other failure, report the failed step's log
+   and watch it (`gh run watch <id>`). It must succeed: its `Release please`, `Tag` and `Relabel` jobs
+   (the last is skipped only when nothing was tagged). If the `Tag` job's step "Wait for no release to be
+   queued or in progress" failed because a release was in flight, wait for that `release.yml` run to finish, then
+   `gh run rerun <id>`, once. If only the `Relabel` job failed after the tag was created, a re-run finds
+   the tag on the merge commit, hands it on and finishes the relabelling: `gh run rerun <id>`, once. On any
+   other failure, report the failed step's log
    (`gh run view <id> --log-failed`) and stop. Then `git -C <repository root> fetch --tags` and check
    that `vX.Y.Z` exists, is the version reviewed in step 4, and points at the merge commit
    (`git -C <repository root> rev-parse 'vX.Y.Z^{commit}'`), and that the PR is now labelled

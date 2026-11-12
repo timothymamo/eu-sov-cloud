@@ -4,7 +4,8 @@
   Amended by PRD #103: a second image, `shift2eu-server`, is published the same way (Consequences).
   Amended by issue #99: an independent `verify` job checks both published images (Consequences).
   Amended by [ADR 0021](0021-propose-releases-with-release-please-and-tag-with-a-github-app.md) (issue
-  #142): the release App creates the tags, and the `v*` tag ruleset is split in two (Consequences).
+  #142): the release App creates the tags, and the `v*` tag ruleset is split in two (Consequences);
+  since issue #157 that App is the release-tag App, the only App that bypasses `Release tag creation`.
 - Date: 2026-11-11
 
 ## Context
@@ -143,7 +144,9 @@ attestations, pushed to the registry beside the image.
   Since issue #142 (ADR 0021) the release App creates the tags, and the ruleset is split in two,
   because a ruleset's bypass list applies to all its rules: `Release tag creation` restricts creation,
   bypassed by repository admins and the release App; `Release tags` restricts update, deletion and
-  non-fast-forward, bypassed by repository admins only. The skill accepts their union.
+  non-fast-forward, bypassed by repository admins only. The skill accepts their union. Since issue #157
+  the App that creates the tags is the release-tag App, in a job of its own, and it is the only App the
+  skill accepts as a bypass actor of `Release tag creation` (ADR 0021, amendment).
 - **Verification instructions** pin an exact identity per release: `cosign verify` with
   `--certificate-identity .../release.yml@refs/tags/vX.Y.Z` and the GitHub OIDC issuer, and
   `gh attestation verify` with `--source-ref refs/tags/vX.Y.Z`, `--signer-workflow` and

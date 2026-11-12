@@ -1176,17 +1176,18 @@ func TestRCTagsArePreReleases(t *testing.T) {
 	}
 }
 
-// TestReleasePleaseProposesTheNextVersion pins issue #142: release-please keeps
+// TestReleasePleaseProposesTheNextVersion pins issues #142, #157 and #159:
+// release-please keeps
 // one release PR open on main, computes the next version from the Conventional
 // Commits since the last tag with the release-tag skill's rules, and maintains
-// CHANGELOG.md; merging the PR pushes the vX.Y.Z tag with the release App's
+// CHANGELOG.md; merging the PR pushes the vX.Y.Z tag with the release-tag App's
 // short-lived token, and that tag starts .github/workflows/release.yml exactly
 // as it runs today. The workflow is held to check.ReleasePleaseWorkflow and the
 // document it reads to check.ReleasePleaseConfig, so the version rules, the tag
-// form, the App's permissions and the one-release-at-a-time group stay read
+// form, the two Apps' permissions and the one-release-at-a-time group stay read
 // from the files the workflow reads. ci.yml is held to
-// check.ReleasePleaseDryRun, so the dry run of the workflow's guard and tag
-// steps runs on every pull request and every push to main, with no write and no
+// check.ReleasePleaseDryRun, so the dry run of the workflow's guard, tag and
+// relabel steps runs on every pull request and every push to main, with no write and no
 // secret.
 func TestReleasePleaseProposesTheNextVersion(t *testing.T) {
 	t.Parallel()

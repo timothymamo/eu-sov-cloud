@@ -1,15 +1,27 @@
 name: Release please
 
-# Proposes the next release in one release PR on main, and tags it when the PR merges (issue #142,
-# ADR 0021). release-please computes the version from the Conventional Commits since the last release
-# with the release-tag skill's rules (release-please-config.json) and keeps CHANGELOG.md. The tag it
-# leads to starts .github/workflows/release.yml, which alone publishes, signs and attests, exactly as
+# Proposes the next release in one release PR on main, and tags it when the PR merges (issues #142, #157
+# and #159, ADR 0021). release-please computes the version from the Conventional Commits since the last
+# release with the release-tag skill's rules (release-please-config.json) and keeps CHANGELOG.md. The tag
+# it leads to starts .github/workflows/release.yml, which alone publishes, signs and attests, exactly as
 # it did when the tag was pushed by hand. check.ReleasePleaseWorkflow pins this file.
+#
+# Two GitHub Apps split the writing, each held by an environment of its own, limited to main:
+#   - the release-please App (environment release-please: RELEASE_APP_CLIENT_ID, RELEASE_APP_PRIVATE_KEY)
+#     opens the release PR, labels it, and relabels it once it is tagged. It bypasses no ruleset, so it
+#     cannot create a release tag. Its token holds Contents and Pull requests write, and Protect main asks
+#     for no approving review, so it could still open and merge a PR once the required checks pass
+#     (ADR 0021, residual risk, tracked in the bot-account issue).
+#   - the release-tag App (environment release-tag: RELEASE_TAG_APP_CLIENT_ID, RELEASE_TAG_APP_PRIVATE_KEY)
+#     creates the tag, in a job of its own. It is the only App that may bypass the Release tag creation
+#     ruleset, and its token holds Contents write and Pull requests read alone, so it can neither write
+#     to a pull request nor merge one.
+# No job holds the other App's credentials. Both token steps pass client-id, never the deprecated app-id.
 on:
   push:
     branches: [main]
 
-# Nothing through GITHUB_TOKEN writes: the release App's short-lived token does the writing.
+# Nothing through GITHUB_TOKEN writes: the Apps' short-lived tokens do the writing.
 permissions: {}
 
 # A group of its own, never the release group release.yml uses: GitHub keeps one pending run per group
@@ -24,51 +36,80 @@ jobs:
     name: Release please
     runs-on: ubuntu-latest
     timeout-minutes: 15
-    # Holds the RELEASE_APP_ID variable and the RELEASE_APP_PRIVATE_KEY secret, and is limited to main.
+    # Holds the release-please App's RELEASE_APP_CLIENT_ID variable and RELEASE_APP_PRIVATE_KEY secret,
+    # and is limited to main.
     environment: release-please
+    # GITHUB_TOKEN reads only: the App's token does the writing.
+    permissions:
+      contents: read
+    # The release-please App's own slug: the tag job tags only a release PR this App opened.
+    outputs:
+      app-slug: ${{ steps.app.outputs.app-slug }}
+    steps:
+      # A token of the release-please App, revoked when the job ends, with exactly what release-please
+      # needs: Contents write (the release branch) and Pull requests write (the release PR and its labels;
+      # the autorelease labels exist, so no Issues permission).
+      - name: Mint the release-please App's token
+        id: app
+        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
+        with:
+          client-id: ${{ vars.RELEASE_APP_CLIENT_ID }}
+          private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
+          permission-contents: write
+          permission-pull-requests: write
+      # Opens or updates the release PR, labelled autorelease: pending. With skip-github-release it
+      # creates no GitHub Release and so no tag (GoReleaser creates the Release), and it opens no new
+      # release PR while a merged one is still labelled autorelease: pending: the tag job creates that
+      # PR's tag and the relabel job relabels it autorelease: tagged. Every input but token would override
+      # release-please-config.json, so none is set.
+      - uses: googleapis/release-please-action@45996ed1f6d02564a971a2fa1b5860e934307cf7 # v5.0.0
+        with:
+          token: ${{ steps.app.outputs.token }}
+
+  tag:
+    name: Tag
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    needs: release-please
+    # Holds the release-tag App's RELEASE_TAG_APP_CLIENT_ID variable and RELEASE_TAG_APP_PRIVATE_KEY
+    # secret, and is limited to main.
+    environment: release-tag
     # GITHUB_TOKEN reads only: contents for the job, actions for the guard's read of release.yml's runs,
     # pull-requests for its read of the closed release PRs.
     permissions:
       contents: read
       actions: read
       pull-requests: read
+    # The release PR this job tagged and its tag, empty when it tagged nothing, for the relabel job.
+    outputs:
+      pr: ${{ steps.tag.outputs.pr }}
+      tag: ${{ steps.tag.outputs.tag }}
     steps:
-      # A token of the release App, revoked when the job ends, with exactly what release-please and the
-      # tag need: Contents write (the release branch, the tag) and Pull requests write (the release PR and
-      # its labels; the autorelease labels exist, so no Issues permission, and the tag step lists the
-      # release PRs through pulls, never issues, which needs Issues read). A tag the App creates starts
-      # release.yml, where one created with GITHUB_TOKEN would start nothing, and only the App may bypass
-      # the Release tag creation ruleset. Protect main asks for no approving review, so this token could
-      # also open and merge a PR once its checks pass (ADR 0021, residual risk).
-      - name: Mint the release App's token
+      # A token of the release-tag App, revoked when the job ends: Contents write to create the tag, and
+      # Pull requests read to check the merged release PR, nothing else. A tag the App creates starts
+      # release.yml, where one created with GITHUB_TOKEN would start nothing, and only this App may bypass
+      # the Release tag creation ruleset.
+      - name: Mint the release-tag App's token
         id: app
         uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
         with:
-          app-id: ${{ vars.RELEASE_APP_ID }}
-          private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
+          client-id: ${{ vars.RELEASE_TAG_APP_CLIENT_ID }}
+          private-key: ${{ secrets.RELEASE_TAG_APP_PRIVATE_KEY }}
           permission-contents: write
-          permission-pull-requests: write
-      # Opens or updates the release PR, labelled autorelease: pending. With skip-github-release it
-      # creates no GitHub Release and so no tag (GoReleaser creates the Release), and it opens no new
-      # release PR while a merged one is still labelled autorelease: pending: the tag step below creates
-      # that PR's tag and relabels it autorelease: tagged. Every input but token would override
-      # release-please-config.json, so none is set.
-      - uses: googleapis/release-please-action@45996ed1f6d02564a971a2fa1b5860e934307cf7 # v5.0.0
-        with:
-          token: ${{ steps.app.outputs.token }}
+          permission-pull-requests: read
       # One release at a time: no tag while release.yml has a run requested, waiting, pending, queued or
       # in progress, since a tag pushed at a release run that GitHub then cancels publishes nothing
-      # (ADR 0015). It waits only when there is something to tag, a merged release PR the App opened from
+      # (ADR 0015). It waits only when there is something to tag, a merged release PR the release-please App opened from
       # release-please's branch still labelled autorelease: pending, read with the tag step's own pulls
       # query, so a push to main during a release with nothing to tag passes. The release PR stays
       # labelled autorelease: pending, so the next push to main, or a re-run of this workflow once the
-      # release has finished, tags it. It reads with GITHUB_TOKEN, never the App's token.
+      # release has finished, tags it. It reads with GITHUB_TOKEN, never an App's token.
       - name: Wait for no release to be queued or in progress
         id: guard
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
-          APP_SLUG: ${{ steps.app.outputs.app-slug }}
+          APP_SLUG: ${{ needs.release-please.outputs.app-slug }}
         run: |
           set -euo pipefail
           branch='release-please--branches--main--components--shift2eu'
@@ -86,12 +127,14 @@ jobs:
             fi
           done
       # Creates the annotated vX.Y.Z tag of the merged release PR still labelled autorelease: pending, on
-      # that PR's merge commit, through the API with the App's token, then labels the PR
-      # autorelease: tagged before removing autorelease: pending. It lists the closed PRs into main from
-      # release-please's branch through pulls, every page, never through issues, which the App's token
-      # cannot read without Issues read. Only one the App itself opened (${APP_SLUG}[bot]) and merged,
-      # labelled autorelease: pending, is a candidate: a closed unmerged one, or one by anyone else, keeps
-      # its label and is named in a warning, so a label set by hand can neither release nor block a release.
+      # that PR's merge commit, through the API with the release-tag App's token, and writes the PR's
+      # number and the tag to its outputs, pr and tag, for the relabel job: this token cannot write to a
+      # pull request, so it never labels. It lists the closed PRs into main from release-please's branch
+      # through pulls, every page, never through issues, which neither App's token can read without Issues
+      # read. Only one the release-please App opened (${APP_SLUG}[bot], the release-please job's output)
+      # and merged, labelled autorelease: pending, is a candidate: a closed unmerged one, or one by anyone
+      # else, keeps its label and is named in a warning, so a label set by hand can neither release nor
+      # block a release.
       # It fails closed: several candidates, a PR not merged into main from release-please's branch
       # release-please--branches--main--components--shift2eu (release-please 17.6.0, the version
       # release-please-action v5.0.0 bundles, with one package named shift2eu), a PR that changes anything
@@ -104,15 +147,14 @@ jobs:
         env:
           GH_TOKEN: ${{ steps.app.outputs.token }}
           GH_REPO: ${{ github.repository }}
-          APP_SLUG: ${{ steps.app.outputs.app-slug }}
+          APP_SLUG: ${{ needs.release-please.outputs.app-slug }}
         run: |
           set -euo pipefail
           fail() { echo "::error::$*"; exit 1; }
           q() { printf '%q' "$1"; }
           pending='autorelease: pending'
-          tagged='autorelease: tagged'
           branch='release-please--branches--main--components--shift2eu'
-          [[ "${APP_SLUG}" =~ ^[a-z0-9][a-z0-9-]*$ ]] || fail "the release App's slug $(q "${APP_SLUG}") is not a slug"
+          [[ "${APP_SLUG}" =~ ^[a-z0-9][a-z0-9-]*$ ]] || fail "the release-please App's slug $(q "${APP_SLUG}") is not a slug"
           author="${APP_SLUG}[bot]"
 
           listed="$(gh api --paginate "repos/${GH_REPO}/pulls?state=closed&base=main&head=${GH_REPO%%/*}:${branch}&per_page=100" | jq -s 'add // []')"
@@ -168,7 +210,7 @@ jobs:
             gh api --method POST "repos/${GH_REPO}/git/refs" -f ref="refs/tags/${tag}" -f sha="${object}" --silent
             echo "Created ${tag} on ${merge}, the merge commit of #${pr}."
           else
-            # A run that created the tag but failed to relabel: relabel only if the tag is this PR's.
+            # A run that created the tag but failed to relabel: hand it on only if the tag is this PR's.
             target="$(gh api "repos/${GH_REPO}/git/ref/tags/${tag}" --jq '.object.type + " " + .object.sha')"
             if [ "${target%% *}" = "tag" ]; then
               annotated="${target#* }"
@@ -176,10 +218,71 @@ jobs:
               target="$(gh api "repos/${GH_REPO}/git/tags/${annotated}" --jq '.object.type + " " + .object.sha')"
             fi
             [ "${target}" = "commit ${merge}" ] || fail "${tag} exists on $(q "${target#* }"), not on #${pr}'s merge commit ${merge}"
-            echo "${tag} already exists on ${merge}; relabelling #${pr}."
+            echo "${tag} already exists on ${merge}; the relabel job relabels #${pr}."
           fi
+
+          # Written also when the tag already existed on this merge commit, so a re-run finishes the
+          # relabelling.
+          echo "pr=${pr}" >>"${GITHUB_OUTPUT}"
+          echo "tag=${tag}" >>"${GITHUB_OUTPUT}"
+
+  relabel:
+    name: Relabel
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    needs: [release-please, tag]
+    # Only when the tag job tagged a PR, or found its tag already on that PR's merge commit.
+    if: needs.tag.outputs.pr != ''
+    # The release-please App labels the release PR, so it relabels it too: the release-tag App's token
+    # cannot write to a pull request. Holds that App's variable and secret, and is limited to main.
+    environment: release-please
+    # GITHUB_TOKEN reads only: the App's token does the writing.
+    permissions:
+      contents: read
+    steps:
+      # The release-please App's token again, narrowed exactly as in the release-please job.
+      - name: Mint the release-please App's token to relabel
+        id: app
+        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
+        with:
+          client-id: ${{ vars.RELEASE_APP_CLIENT_ID }}
+          private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
+          permission-contents: write
+          permission-pull-requests: write
+      # Labels the tagged release PR autorelease: tagged, then removes autorelease: pending. It trusts the
+      # tag job's outputs no further than it checks them: the PR number and the vX.Y.Z tag must be well
+      # formed, the PR merged, and the tag must point, through its annotated tag object, at that PR's
+      # merge commit, or it relabels nothing. The outputs reach the shell through env: alone, quoted.
+      - name: Relabel the tagged release PR
+        id: relabel
+        env:
+          GH_TOKEN: ${{ steps.app.outputs.token }}
+          GH_REPO: ${{ github.repository }}
+          PR: ${{ needs.tag.outputs.pr }}
+          TAG: ${{ needs.tag.outputs.tag }}
+        run: |
+          set -euo pipefail
+          fail() { echo "::error::$*"; exit 1; }
+          q() { printf '%q' "$1"; }
+          [[ "${PR}" =~ ^[0-9]+$ ]] || fail "pull request number $(q "${PR}") is not a number"
+          [[ "${TAG}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] || fail "tag $(q "${TAG}") is not exactly vX.Y.Z"
+
+          pull="$(gh api "repos/${GH_REPO}/pulls/${PR}")"
+          merged="$(jq -r '.merged' <<<"${pull}")"
+          merge="$(jq -r '.merge_commit_sha' <<<"${pull}")"
+          [ "${merged}" = "true" ] || fail "#${PR} is not merged"
+          [[ "${merge}" =~ ^[0-9a-f]{40}$ ]] || fail "#${PR} has merge commit $(q "${merge}"), want 40 hex characters"
+
+          target="$(gh api "repos/${GH_REPO}/git/ref/tags/${TAG}" --jq '.object.type + " " + .object.sha')"
+          if [ "${target%% *}" = "tag" ]; then
+            annotated="${target#* }"
+            [[ "${annotated}" =~ ^[0-9a-f]{40}$ ]] || fail "${TAG} points at tag object $(q "${annotated}"), want 40 hex characters"
+            target="$(gh api "repos/${GH_REPO}/git/tags/${annotated}" --jq '.object.type + " " + .object.sha')"
+          fi
+          [ "${target}" = "commit ${merge}" ] || fail "${TAG} is on $(q "${target#* }"), not on #${PR}'s merge commit ${merge}: nothing is relabelled"
 
           # Tagged first, then no longer pending: a run that stops between the two leaves both labels, and a
           # re-run finds the tag on this merge commit and finishes the relabelling.
-          gh api --method POST "repos/${GH_REPO}/issues/${pr}/labels" -f "labels[]=${tagged}" --silent
-          gh api --method DELETE "repos/${GH_REPO}/issues/${pr}/labels/autorelease:%20pending" --silent
+          gh api --method POST "repos/${GH_REPO}/issues/${PR}/labels" -f "labels[]=autorelease: tagged" --silent
+          gh api --method DELETE "repos/${GH_REPO}/issues/${PR}/labels/autorelease:%20pending" --silent
+          echo "Relabelled #${PR} autorelease: tagged."
