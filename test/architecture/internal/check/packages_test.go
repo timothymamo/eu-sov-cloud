@@ -36,6 +36,8 @@ func TestPackages(t *testing.T) {
 		"internal/domain/x",
 		"internal/domain/_x",
 		"internal/domain/testdata/y",
+		"internal/app",
+		"internal/app/analysis",
 		"internal/adapter/x",
 		"internal/adapter/source",
 		"internal/adapter/source/aws",
@@ -277,6 +279,95 @@ func TestPackages(t *testing.T) {
 
 	helperImportsHTTP := mainPkg("internal/adapter/source/helper")
 	helperImportsHTTP.Imports = []string{"net/http"}
+
+	// appTestsRules is app-tests-use-fakes-not-adapters as .golangci.yml writes
+	// it (issue #144): a rule that names the test files of internal/app alone,
+	// so it holds a package's test imports and none of its production ones. It
+	// allows testing and errors, and refuses everything else.
+	appTestsRules := []check.Rule{{
+		Name:      "app-tests-use-fakes-not-adapters",
+		Dir:       "internal/app",
+		Tests:     true,
+		TestsOnly: true,
+		Allow:     []check.AllowEntry{{Path: "errors"}, {Path: "testing"}},
+	}}
+
+	// appRules is the production half of the layer, as
+	// app-uses-ports-not-adapters holds it: a package under internal/app is held
+	// by both rules, each for its own files.
+	appRules := []check.Rule{{
+		Name:  "app-uses-ports-not-adapters",
+		Dir:   "internal/app",
+		Allow: []check.AllowEntry{{Path: "errors"}},
+	}}
+
+	// appImportsOS is what only the production half reads: a rule that holds a
+	// package's test files alone says nothing about its own imports.
+	appImportsOS := mainPkg("internal/app")
+	appImportsOS.Imports = []string{"os"}
+
+	appTestImportsHTTP := mainPkg("internal/app")
+	appTestImportsHTTP.Imports = []string{"errors"}
+	appTestImportsHTTP.TestImports = []string{"net/http", "testing"}
+
+	appXTestImportsHTTP := mainPkg("internal/app")
+	appXTestImportsHTTP.Imports = []string{"errors"}
+	appXTestImportsHTTP.XTestImports = []string{"net/http"}
+
+	// A package both halves hold: its own imports pass the production rule and
+	// its test imports pass the test rule.
+	appHeldByBothHalves := mainPkg("internal/app")
+	appHeldByBothHalves.Imports = []string{"errors"}
+	appHeldByBothHalves.TestImports = []string{"errors", "testing"}
+
+	// allowedThirdParty's strictness (issue #144): a package the only covering
+	// rule holds for its test files alone holds no production import of it, so
+	// the third-party package its production file imports is no allow-list
+	// entry of any rule and must be reported. With a rule that allows the
+	// third-party prefix in its own right, the same import is exempt, which is
+	// what tells the two apart.
+	appImportsThirdParty := mainPkg("internal/app")
+	appImportsThirdParty.Imports = []string{"errors", "example.org/lib"}
+
+	thirdPartyFromApp := check.Package{
+		ImportPath: "example.org/lib",
+		Module:     &check.Module{Path: "example.org/lib"},
+		Imports:    []string{"errors"},
+	}
+
+	// appAllowsThirdParty is the production rule widened by the prefix entry
+	// the strict allowance needs: the exemption follows only an allow list that
+	// holds the import, and a rule that holds the package's own files allows
+	// it.
+	appAllowsThirdParty := []check.Rule{{
+		Name: "app-uses-ports-not-adapters",
+		Dir:  "internal/app",
+		Allow: []check.AllowEntry{
+			{Path: "errors"},
+			{Path: "example.org/", Prefix: true},
+		},
+	}}
+
+	// appTestsRulesAllowThirdParty is the test-file rule with the third-party
+	// package in its allow list, as a list that names what a test imports may.
+	// A production import of the same package is still not exempt: the rule
+	// holds no production file of internal/app, so its entries say nothing
+	// about one (allowedThirdParty judges a package's own imports by the rules
+	// that hold its own files alone).
+	appTestsRulesAllowThirdParty := []check.Rule{{
+		Name:      "app-tests-use-fakes-not-adapters",
+		Dir:       "internal/app",
+		Tests:     true,
+		TestsOnly: true,
+		Allow: []check.AllowEntry{
+			{Path: "errors"},
+			{Path: "example.org/lib"},
+			{Path: "testing"},
+		},
+	}}
+
+	// appBothHalves are the layer's two rules, each holding its own files.
+	appBothHalves := append(slices.Clone(appRules), appTestsRules...)
 
 	tests := []struct {
 		name string
@@ -528,6 +619,70 @@ func TestPackages(t *testing.T) {
 			pkgs:          []check.Package{helperImportsHTTP},
 			wantFlagged:   []string{testModule + "/internal/adapter/source/helper"},
 			wantFragments: []string{"net/http"},
+		},
+
+		// The rule that holds the application layer's test files alone (issue
+		// #144): it reads the package's test imports and none of its own.
+		{
+			name:          "a production import is not read by a rule that holds test files alone",
+			rules:         appTestsRules,
+			pkgs:          []check.Package{appImportsOS},
+			wantFlagged:   []string{testModule + "/internal/app"},
+			wantFragments: []string{"is held by rules for its test files alone, so no rule of " + testModule + " the check reads holds its own imports"},
+			notFragments:  []string{"imports os", "app-tests-use-fakes-not-adapters"},
+		},
+		{
+			name:          "an internal test import is flagged by a rule that holds test files alone",
+			rules:         appTestsRules,
+			pkgs:          []check.Package{appTestImportsHTTP},
+			wantFlagged:   []string{testModule + "/internal/app"},
+			wantFragments: []string{"net/http in a test file", "app-tests-use-fakes-not-adapters"},
+		},
+		{
+			name:          "an external test import is flagged by a rule that holds test files alone",
+			rules:         appTestsRules,
+			pkgs:          []check.Package{appXTestImportsHTTP},
+			wantFlagged:   []string{testModule + "/internal/app"},
+			wantFragments: []string{"net/http in an external test file"},
+		},
+		{
+			// Both halves cover the package, so it is not one the rules hold
+			// for its test files alone, and each holds what its own files
+			// import: no message either way.
+			name:  "a package the production half holds too passes both halves",
+			rules: appBothHalves,
+			pkgs:  []check.Package{appHeldByBothHalves},
+		},
+		{
+			name:          "a package the production half holds too is not reported as held for its test files alone",
+			rules:         appBothHalves,
+			pkgs:          []check.Package{appImportsOS},
+			wantFlagged:   []string{testModule + "/internal/app"},
+			wantFragments: []string{"os", "app-uses-ports-not-adapters"},
+			notFragments:  []string{"test files alone"},
+		},
+		{
+			// No rule holds the production import of a third-party package, so
+			// the exemption must not let it in: only an allow list that holds
+			// the import of a package's own files may exempt it.
+			name:        "a third-party import of a package only a test-file rule holds is flagged",
+			rules:       appTestsRules,
+			pkgs:        []check.Package{appImportsThirdParty, thirdPartyFromApp},
+			wantFlagged: []string{testModule + "/internal/app", "example.org/lib"},
+		},
+		{
+			// The case that tells the two rules apart: the test-file rule names
+			// the third-party package, so a check that judged a production
+			// import by it would exempt the package the tests merely allow.
+			name:        "an entry of a test-file rule does not exempt a production import of that package",
+			rules:       appTestsRulesAllowThirdParty,
+			pkgs:        []check.Package{appImportsThirdParty, thirdPartyFromApp},
+			wantFlagged: []string{testModule + "/internal/app", "example.org/lib"},
+		},
+		{
+			name:  "a third-party import the production half allows is exempt",
+			rules: appAllowsThirdParty,
+			pkgs:  []check.Package{appImportsThirdParty, thirdPartyFromApp},
 		},
 	}
 

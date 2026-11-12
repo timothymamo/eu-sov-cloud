@@ -42,8 +42,9 @@ func filesDoc(comment string, files ...string) string {
 // SDK-only rule is why the last two exist: it names one directory and excludes
 // two under it, and it holds test files, which go list -deps lists separately.
 //
-// A rule that writes !$test holds no test files; one without it does. Every
-// other shape is still refused.
+// A rule that writes !$test holds no test files; one without it does. A rule
+// that names the test-file pair of a directory instead holds that directory's
+// test files alone (TestsOnly, issue #144). Every other shape is still refused.
 func TestRuleDirs(t *testing.T) {
 	t.Parallel()
 
@@ -113,6 +114,75 @@ func TestRuleDirs(t *testing.T) {
 			files: []string{"**/internal/domain/**"},
 			want:  check.RuleFiles{Dirs: []string{"internal/domain"}, Tests: true},
 		},
+
+		// The shape app-tests-use-fakes-not-adapters has (issue #144): the
+		// pair **/<dir>/**/*_test.go and **/<dir>/*_test.go names the test
+		// files of a directory alone, and no production file beside them.
+		{
+			name:  "a directory's pair of test-file globs holds its test files alone",
+			files: []string{"**/internal/app/**/*_test.go", "**/internal/app/*_test.go"},
+			want:  check.RuleFiles{Dirs: []string{"internal/app"}, Tests: true, TestsOnly: true},
+		},
+		{
+			// One pair per directory, the globs below the directory before the
+			// globs in it: the directories come back in file order, as they do
+			// for the directory globs.
+			name: "two directories come back in file order with their test-file globs",
+			files: []string{
+				"**/internal/app/**/*_test.go",
+				"**/internal/app/*_test.go",
+				"**/internal/app/analysis/**/*_test.go",
+				"**/internal/app/analysis/*_test.go",
+			},
+			want: check.RuleFiles{Dirs: []string{"internal/app", "internal/app/analysis"}, Tests: true, TestsOnly: true},
+		},
+		{
+			// **/<dir>/**/*_test.go names only the test files below the
+			// directory: the ones directly in it still need their own glob.
+			name:            "a test-file glob without the glob that holds the files in the directory is an error",
+			files:           []string{"**/internal/app/**/*_test.go"},
+			wantErr:         true,
+			wantErrFragment: "without **/internal/app/*_test.go",
+		},
+		{
+			name:            "a test-file glob without the glob that holds the files below the directory is an error",
+			files:           []string{"**/internal/app/*_test.go"},
+			wantErr:         true,
+			wantErrFragment: "without **/internal/app/**/*_test.go",
+		},
+		{
+			// The pair names the directory's test files once: a second glob for
+			// the same shape holds no more of them.
+			name:            "a test-file glob written twice is an error",
+			files:           []string{"**/internal/app/**/*_test.go", "**/internal/app/**/*_test.go", "**/internal/app/*_test.go"},
+			wantErr:         true,
+			wantErrFragment: "twice",
+		},
+		{
+			// A test-file list holds no production file: the directory glob
+			// would hold every one of them.
+			name:            "the pair beside the directory glob is an error",
+			files:           []string{"**/internal/app/**/*_test.go", "**/internal/app/*_test.go", "**/internal/app/**"},
+			wantErr:         true,
+			wantErrFragment: "and the directory internal/app",
+		},
+		{
+			// An exclusion narrows a directory glob: a list of test files has
+			// no directory to narrow, so the negated glob says nothing.
+			name:            "the pair beside an exclusion is an error",
+			files:           []string{"**/internal/app/**/*_test.go", "**/internal/app/*_test.go", "!**/internal/app/analysis/**"},
+			wantErr:         true,
+			wantErrFragment: "takes out internal/app/analysis",
+		},
+		{
+			// !$test takes the test files out of a directory glob: beside the
+			// pair it would leave the rule holding nothing.
+			name:            "the pair beside !$test is an error",
+			files:           []string{"**/internal/app/**/*_test.go", "**/internal/app/*_test.go", "!$test"},
+			wantErr:         true,
+			wantErrFragment: "!$test",
+		},
+
 		{
 			// $all names every file of the module, not a directory the check
 			// could hold packages to.

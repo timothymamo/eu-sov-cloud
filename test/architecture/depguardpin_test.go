@@ -122,12 +122,15 @@ var pinnedDepguardRules = []check.DepguardRule{
 		// else. The standard packages are the domain's pure ones (the list of
 		// domain-is-pure above), shared so the domain and its callers' tests
 		// agree on what pure means, and the five the application layer's tests
-		// need beyond them: bytes and slices for what a test builds and
-		// compares, sync for a fake's mutex, testing, and context, which the
-		// use case takes. The module's packages are the application package
-		// under test, the six domain packages and internal/testutil; go-cmp is
-		// the one third-party package a test may import. Every entry is exact,
-		// and no deny entry names a package an allow entry allows.
+		// need beyond them: bytes, context, which the use case takes, io, sync
+		// for a fake's mutex, and testing. The module's packages are the
+		// application package under test, the six domain packages and
+		// internal/testutil; go-cmp is the one third-party package a test may
+		// import. Every entry is exact, and no deny entry names a package an
+		// allow entry allows. YAML cannot join two sequences, so the domain's
+		// pure entries are repeated here:
+		// TestAppTestsRuleSharesTheDomainsPureEntries is the sharing, and fails
+		// when one of them is dropped from this list.
 		//
 		// The deny list is the one app-uses-ports-not-adapters writes, which the
 		// alias *app-deny shares: under a strict list it only says why a
@@ -135,11 +138,12 @@ var pinnedDepguardRules = []check.DepguardRule{
 		//
 		// The files: list holds the _test.go files of internal/app and of the
 		// layer's subdirectories, and no production file, so app-uses-ports-
-		// not-adapters holds those. RuleDirs reads neither glob (it holds
-		// directories written **/<dir>/**), which is why the package check
-		// skips the rule (skippedStrictRules, test/architecture/
-		// repository_test.go) and TestAppTestsUseFakesNotAdaptersProbe holds it
-		// instead.
+		// not-adapters holds those. RuleDirs reads the pair as the test files of
+		// the directory alone (RuleFiles.TestsOnly, issue #144), so the package
+		// check holds the test imports of every package under internal/app to
+		// this list, package by package for every release target, and
+		// TestAppTestsUseFakesNotAdaptersProbe (test/lint) holds the imports a
+		// test must still be refused.
 		Name:     "app-tests-use-fakes-not-adapters",
 		ListMode: "strict",
 		Files: []string{
@@ -1302,5 +1306,72 @@ func requireMutationReported(t *testing.T, mutation depguardMutation) {
 		return strings.HasPrefix(message, mutation.rule+": ")
 	}) {
 		t.Errorf("the mutated document reads as the pinned rules: DepguardRules() = %v and PinnedRules() reported nothing about %s, so the pin would miss this mutation", rules, mutation.rule)
+	}
+}
+
+// TestAppTestsRuleSharesTheDomainsPureEntries pins that the domain's rule and
+// the application layer's test rule agree on what "pure" means (issue #144).
+// YAML cannot join two sequences: depguard reads each rule's allow list on its
+// own, so app-tests-use-fakes-not-adapters repeats the standard-package entries
+// of domain-is-pure, and only a test can hold the two lists together. Every
+// standard package the domain may import must be one the application layer's
+// tests may import too, or the domain gains a package its callers' tests cannot
+// reach the same thing through and the two lists silently disagree on what pure
+// is.
+//
+// The entries compared are the rule's standard packages: every allow entry that
+// is not one of the module's packages. Each must be an exact entry of the
+// app-tests rule as well, written as domain-is-pure writes it: an exact entry
+// allows that package alone, and a prefix entry would widen the rule.
+func TestAppTestsRuleSharesTheDomainsPureEntries(t *testing.T) {
+	t.Parallel()
+
+	golangci := readRepositoryFile(t, ".golangci.yml")
+
+	pure, err := check.AllowList(golangci, "domain-is-pure")
+	if err != nil {
+		t.Fatalf("AllowList(.golangci.yml, domain-is-pure): %v", err)
+	}
+
+	tests, err := check.AllowList(golangci, "app-tests-use-fakes-not-adapters")
+	if err != nil {
+		t.Fatalf("AllowList(.golangci.yml, app-tests-use-fakes-not-adapters): %v", err)
+	}
+
+	var (
+		checked int
+		missing []string
+	)
+
+	for _, entry := range pure {
+		// The module's own packages are the domain's, not the standard
+		// library's: which of them a test may import is its own question, and
+		// the domain's list names all six either way.
+		if strings.HasPrefix(entry.Path, modulePath+"/") {
+			continue
+		}
+
+		checked++
+
+		if entry.Prefix {
+			t.Errorf("domain-is-pure allows %s by prefix, and a prefix entry allows every package under it: write %s$ for the package the domain may import", entry.Path, entry.Path)
+		}
+
+		if !slices.ContainsFunc(tests, func(test check.AllowEntry) bool {
+			return !test.Prefix && test.Path == entry.Path
+		}) {
+			missing = append(missing, entry.Path+"$")
+		}
+	}
+
+	if checked == 0 {
+		t.Fatal("domain-is-pure allows no standard package, so this test would compare nothing")
+	}
+
+	if len(missing) != 0 {
+		slices.Sort(missing)
+
+		t.Errorf("app-tests-use-fakes-not-adapters does not allow %s, which domain-is-pure does: add the entries to its allow list in .golangci.yml and to pinnedDepguardRules in the same commit, or the two rules no longer agree on what pure means",
+			strings.Join(missing, ", "))
 	}
 }
