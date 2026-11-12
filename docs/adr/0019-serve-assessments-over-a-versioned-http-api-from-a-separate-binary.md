@@ -215,33 +215,52 @@ handler with no listener of its own. Milestone 3 **must** also:
 packages it needs, no third-party package, no cloud SDK, no `os/exec` and never `internal/cli`.
 
 - *Flags and environment.* `--listen` (default `127.0.0.1:8080`), `--token-file <path>`,
-  `--concurrency <n>` (0, the default, is the computed default below), `--cors-origin <origin>` and
+  `--concurrency <n>` (0, the default, is the computed default below), `--max-connections <n>`
+  (default 256; 0 or less is a configuration error), `--cors-origin <origin>` and
   `--allowed-host <host>` (both repeatable) and `--insecure-no-auth`. The token comes from
   `EUSOV_SERVER_TOKEN` or `--token-file`, never a flag; both at once is a configuration error. A
   variable that is set but trims to nothing, an empty or blank file, and a file that cannot be read are
   configuration errors, never "no token"; an unset variable is no token source. White space around a
-  token is trimmed, from the file and from the variable. Every configuration error is one line,
-  `eusov-server: ...`, exit code 2, before anything listens; no error quotes the token.
+  token is trimmed, from the file and from the variable. A token shorter than 32 characters once
+  trimmed is a configuration error naming its source and the minimum: a shorter one is within reach of
+  a client that guesses, and 32 characters is what `openssl rand -hex 16` or a password manager give.
+  Every configuration error is one line, `eusov-server: ...`, exit code 2, before anything listens; no
+  error quotes the token. A failure to open the listener (an address in use) is a runtime failure,
+  one line, exit code 1.
 - *The loopback rule.* A `--listen` host that is `localhost` or a loopback IP address is loopback;
   anything else (an empty host, `0.0.0.0`, `::`, any other name) is not, and without a token is refused
-  unless `--insecure-no-auth` is given. On loopback without a token and without `--allowed-host`, the
+  unless `--insecure-no-auth` is given. The name `localhost` is resolved by the system, so it is
+  trusted only as far as the address it binds: once the listener is open, a listener named as loopback
+  whose bound address is not a loopback IP is non-loopback, and without a token or
+  `--insecure-no-auth` the server closes it and exits 2. On loopback without a token and without `--allowed-host`, the
   `Host` allow-list is `localhost:<port>` and `<bound address>:<port>`, from the bound listener, so it
   holds the real port when `--listen` asks for port 0. A listener whose bound address is not loopback,
   or that has no port, resolves to no host, which is a startup error, never "any host". `--allowed-host`
-  replaces the resolved list, and is validated by `WithAllowedHosts`. The handler is built once before
+  replaces the resolved list, it is not appended to it: the operator who names the hosts chooses
+  them, including whether `localhost` is among them, and is validated by `WithAllowedHosts`. The handler is built once before
   the listener opens, so an invalid option never opens a port, and again with the resolved list.
 - *Timeouts and limits.* `ReadHeaderTimeout` 10 s, `ReadTimeout` 30 s, `WithBodyReadTimeout` 30 s
   (equal to `ReadTimeout`, as required above), `WriteTimeout` 60 s (from the end of the headers: the
   body read, the assessment, about 0.4 s for the largest on one core, and the write),
-  `IdleTimeout` 60 s and `MaxHeaderBytes` 64 KiB (431 above it; the API reads five headers). A client
-  that stalls in its headers is closed after 10 s and holds no slot; one that stalls in its body frees
-  its slot after 30 s.
+  `IdleTimeout` 60 s and `MaxHeaderBytes` 16 KiB (431 above it; the API reads five headers, which
+  need far less, and a smaller cap bounds what each open connection may make the server buffer). A
+  client that stalls in its headers is closed after 10 s and holds no slot; one that stalls in its body
+  frees its slot after 30 s.
+- *Connection cap.* The listener holds at most `--max-connections` connections open, 256 by default;
+  a connection over the cap is closed at once, never queued, and its slot is free again when one
+  closes. The concurrency cap bounds assessments, not connections: without this cap a client that
+  opens connections and stalls in their headers holds a file descriptor and a header buffer for 10 s
+  each, without limit. 256 stays well below the 1024 open files a default process may hold and is far
+  more than the handful of assessments the server runs at once; an operator behind a proxy that pools
+  connections needs fewer, one with many direct clients sets more. Per-client limits stay the proxy's.
 - *Concurrency default.* `max(1, min(cpus, budget / peak))`, where `cpus` is `runtime.GOMAXPROCS(0)`
   (which follows a container's CPU limit), `peak` is 1 GiB and `budget` is `GOMEMLIMIT` when it is set
   (`debug.SetMemoryLimit(-1)` below `math.MaxInt64`), else 2 GiB. `BenchmarkMaximalAllComparison`
   (`test/apiparity`) measures 1,053,936,082 bytes allocated per maximal `["all"]` request (the largest
   inventory the reader accepts, every target) on linux/arm64, in 0.42 s; the bytes allocated bound
-  the request's live memory from above, so 1 GiB, that number rounded up, is a safe peak. With a
+  the request's live memory from above, so 1 GiB, that number rounded up, is a safe peak. It is the
+  bytes allocated with no headroom added: the garbage collector reclaims during the request, so live
+  memory stays below it, and the rounding is the only margin. With a
   `GOMEMLIMIT` the server never admits more maximal requests than fit in it, but always one. Without
   one it knows nothing of its memory, so it assumes a small container's 2 GiB, room for two maximal
   requests, rather than one maximal request per CPU, which would exceed the memory of most hosts with
@@ -251,15 +270,26 @@ packages it needs, no third-party package, no cloud SDK, no `os/exec` and never 
   Most requests are far smaller than the maximal one, so the default is conservative by design: a busy
   server answers 503 `busy` with `Retry-After: 1` rather than running out of memory.
 - *Readiness.* `/readyz` loads every target's catalog, in key order, and answers 200 once all have
-  loaded, 503 until then; once they have, it does not load them again, as the embedded snapshots cannot
-  change while the process runs.
+  loaded, 503 until then; a failed load is retried on the next check, and once every catalog has
+  loaded it does not load them again, as the embedded snapshots cannot change while the process runs.
+  A check that comes while another check is loading answers 503 at once rather than waiting for that
+  load: a probe's timeout is short, and 503 is the answer it understands.
 - *Access log.* One line per request on stderr, once it is answered:
   `eusov-server: access method=POST path="/v1/assessments" status=200 duration=12.3ms size=1234`. The
-  path is quoted, so a path holding a line feed cannot forge a line, and carries no query string; the
+  path is quoted, so a path holding a line feed cannot forge a line, cut to its first 256 bytes and
+  marked with `...` after the quotes when it is longer, so a client cannot write an unbounded run of
+  its own into the log, and carries no query string; the
   size is the answer's body in bytes. Nothing else of the request is logged: no header value, no query,
   no body, no inventory value, no report. The `http.Server`'s own error log goes to stderr with the
   same prefix; it reports connection-level problems and no request content.
-- *Startup and shutdown.* Once listening, the server prints `eusov-server: listening on <host:port>`.
+- *Startup and shutdown.* Once listening, the server prints `eusov-server: listening on <host:port>`,
+  then `eusov-server: concurrency <n>`, the effective concurrency (the flag's value or the computed
+  default), so the operator sees what it picked. Two startup warnings, each one line
+  `eusov-server: warning: ...`, come before them, and the server starts anyway: `serving without
+  authentication on <host:port>` (the bound address) for `--insecure-no-auth` on a non-loopback
+  listener without a token, and, on systems with permission bits (not Windows), a `--token-file` that
+  its group or other users can access (`mode & 0o077`), naming the path and never the token. Refusing
+  to start over the file's mode would turn a permission mistake into an outage.
   `SIGTERM` or `SIGINT` starts the graceful shutdown: `http.Server.Shutdown` stops accepting
   connections and waits up to 25 s, below the 30 s a container platform usually allows before
   `SIGKILL`, for the requests in flight, then the process exits 0. Requests that outlast the deadline

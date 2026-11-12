@@ -202,15 +202,18 @@ Each milestone ships as one PR, in this order.
    `server-composition-root` (in the depguard pin, and held by `test/architecture` for every release
    target). It wires the adapters `cmd/eusov` wires into `httpapi.New` and adds `--listen`,
    `--token-file` or `EUSOV_SERVER_TOKEN` (never a flag; a configured but empty source, or both at
-   once, is a startup error, and the token is trimmed), `--concurrency`, `--cors-origin`,
+   once, is a startup error, the token is trimmed and must be at least 32 characters), `--concurrency`,
+   `--max-connections` (default 256; a connection over the cap is closed at once), `--cors-origin`,
    `--allowed-host` and `--insecure-no-auth`. It refuses a non-loopback address without a token unless
-   `--insecure-no-auth` is given, and on loopback without a token answers only to `localhost` and its
-   bound address with the port. It sets `ReadHeaderTimeout` 10 s, `ReadTimeout` 30 s, a 30 s body read
-   timeout, `WriteTimeout` 60 s, `IdleTimeout` 60 s and `MaxHeaderBytes` 64 KiB. The concurrency
+   `--insecure-no-auth` is given (and then warns that it serves without authentication), treats a
+   `localhost` listener as loopback only when the address it bound is loopback, warns about a token
+   file other users can access, and on loopback without a token answers only to `localhost` and its
+   bound address with the port. It prints the effective concurrency after the listening line. It sets `ReadHeaderTimeout` 10 s, `ReadTimeout` 30 s, a 30 s body read
+   timeout, `WriteTimeout` 60 s, `IdleTimeout` 60 s and `MaxHeaderBytes` 16 KiB. The concurrency
    default is `max(1, min(CPUs, budget / 1 GiB))`, the budget being `GOMEMLIMIT` or, without it, 2 GiB,
    from `BenchmarkMaximalAllComparison`'s 1.05 GB per maximal request. `/readyz` answers 200 once every
-   catalog has loaded. The access log writes one line per request to stderr with the method, the
-   quoted path, the status, the duration and the size, and nothing else. `SIGTERM` and `SIGINT` shut it
+   catalog has loaded, and 503 at once while another check is loading. The access log writes one line per request to stderr with the method, the
+   quoted path (cut to 256 bytes), the status, the duration and the size, and nothing else. `SIGTERM` and `SIGINT` shut it
    down gracefully within 25 s and exit 0. `make build` builds `bin/eusov-server` too. White-box tests
    of `run` pin the token, the loopback and `Host` rules, the concurrency, the access log, stalled
    header and body clients and the graceful shutdown; e2e tests run the built binary, compare its bytes
