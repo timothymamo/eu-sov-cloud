@@ -4,7 +4,15 @@ name: VM tools
 #
 # validate-template: limactl validate, so a template Lima refuses to create an instance from fails the
 # PR rather than the next `make vm-up` (#120, #122). Only creating an instance runs Lima's checks;
-# restarting an existing VM does not, so nothing else notices.
+# restarting an existing VM does not, so nothing else notices. A warning counts as a refusal: Lima only
+# warns on an unknown field. The job also proves the check can fail (#137): every template in
+# dev/testdata/lima-invalid is dev/lima.yaml with one known breakage (#120's param read only through
+# bash indirection, an unknown field, a mistyped value), and the job fails, naming the template, if
+# Lima accepts one, or refuses it without the text its <name>.expect beside it holds (the reason Lima
+# must give). test/devenv pins that each differs from dev/lima.yaml by its breakage alone and that its
+# .expect holds its case's refusal. To add a case, add it to limaBreakages in test/devenv with the text
+# of Lima's refusal and run `go test ./test/devenv -update`. Lima's log quotes the template, so the job
+# prints it with workflow commands stopped.
 #
 # verify-pins: dev/lima.yaml pins cosign and gh by a SHA-256 per architecture, and provisioning trusts
 # those pins: no trusted cosign or GitHub token exists there yet. This job is what makes a pin authentic. It
@@ -19,6 +27,7 @@ on:
     branches: [main]
     paths:
       - dev/lima.yaml
+      - dev/testdata/lima-invalid/**
       - .github/workflows/vm-tools.yml
   pull_request:
   schedule:
@@ -64,10 +73,109 @@ jobs:
           mkdir -p "${RUNNER_TEMP}/lima"
           tar -xzf "${RUNNER_TEMP}/${name}" -C "${RUNNER_TEMP}/lima"
           echo "${RUNNER_TEMP}/lima/bin" >> "${GITHUB_PATH}"
-      - name: limactl validate dev/lima.yaml
+      - name: limactl validate dev/lima.yaml and the broken templates
         run: |
+          set -euo pipefail
           limactl --version
-          limactl validate dev/lima.yaml
+          # What the last validate saw: limactl validate's exit status and its JSON log.
+          status=0
+          log=""
+          # Runs limactl validate on <template> and prints its log. Lima's messages quote the template, so
+          # a line of it could read as a workflow command (::add-mask::, ::stop-commands::, ::error ...): the
+          # log is printed between ::stop-commands:: markers with a random token, so the runner runs none of
+          # it. Nothing the job prints outside that region carries template, log or .expect text: its own
+          # lines name only files, and only once their names are checked. An empty line is skipped; a line
+          # that is not a JSON object is printed as it is, as an unparsed one.
+          validate() { # <template>
+            local token
+            status=0
+            log="$(limactl --log-format json validate "$1" 2>&1)" || status=$?
+            token="$(openssl rand -hex 16)"
+            echo "::stop-commands::${token}"
+            jq -Rr 'select(. != "") | ((fromjson? | objects) // {level: "unparsed", msg: .})
+              | "  \(.level // "unparsed"): \(.msg // "" | tostring)"
+              + (if .error != null then "\n" + (.error | tostring | split("\n") | map("    " + .) | join("\n"))
+                 else "" end)' <<<"${log}" || echo "  (the log could not be printed)"
+            echo "::${token}::"
+          }
+          # Whether Lima accepted the last template: limactl validate exited 0 and logged nothing above
+          # info. Lima 2.3 only warns on an unknown field ("Non-strict YAML detected"), so a misspelt key
+          # would pass on the exit status alone. A line that is not a JSON object counts as a warning.
+          accepted() {
+            [ "${status}" -eq 0 ] && jq -Rse '[split("\n")[] | select(. != "")
+              | ((fromjson? | objects) // {level: "unparsed"}) | .level]
+              | all(. == "info" or . == "debug" or . == "trace")' <<<"${log}" >/dev/null 2>&1
+          }
+          # Whether the last log holds <text>, as a fixed string, in a message or an error. Matched on the
+          # decoded fields, not the JSON line, where Lima's quotes are escaped.
+          logged() { # <text>
+            jq -Rse --arg want "$1" '[split("\n")[] | select(. != "")
+              | ((fromjson? | objects) // {msg: .}) | .msg, .error | select(. != null)
+              | tostring | contains($want)] | any' <<<"${log}" >/dev/null 2>&1
+          }
+          failed=0
+          echo "dev/lima.yaml, which Lima must accept:"
+          validate dev/lima.yaml
+          if ! accepted; then
+            echo "::error file=dev/lima.yaml::limactl validate refuses dev/lima.yaml or warns about it"
+            failed=1
+          fi
+          # Each broken template is dev/lima.yaml with one breakage (test/devenv pins that), so with
+          # dev/lima.yaml accepted, a refusal can only come from that breakage; its .expect pins which
+          # refusal, so a template Lima starts refusing for another reason fails too.
+          shopt -s nullglob
+          broken=(dev/testdata/lima-invalid/*.yaml)
+          if [ "${#broken[@]}" -eq 0 ]; then
+            echo "::error file=.github/workflows/vm-tools.yml::no broken templates in dev/testdata/lima-invalid"
+            exit 1
+          fi
+          for template in "${broken[@]}"; do
+            # The name goes into ::error annotations and the log, so it must not be able to carry a
+            # workflow command or an annotation property: it is not printed unless it is a plain one.
+            if ! [[ "${template}" =~ ^dev/testdata/lima-invalid/[a-z0-9-]+\.yaml$ ]]; then
+              echo "::error file=.github/workflows/vm-tools.yml::a template in dev/testdata/lima-invalid is not named [a-z0-9-]+.yaml"
+              failed=1
+              continue
+            fi
+            # Regular files only: a symlink would point limactl, or the read of the .expect, at any file
+            # on the runner.
+            if [ ! -f "${template}" ] || [ -L "${template}" ]; then
+              echo "::error file=${template}::${template} must be a regular file, not a symlink or anything else"
+              failed=1
+              continue
+            fi
+            expect="${template%.yaml}.expect"
+            expected=""
+            if [ -L "${expect}" ] || { [ -e "${expect}" ] && [ ! -f "${expect}" ]; }; then
+              echo "::error file=${template}::${expect} must be a regular file, not a symlink or anything else"
+              failed=1
+            else
+              if [ -f "${expect}" ]; then
+                # An unreadable .expect reads as empty, so the error below names it.
+                expected="$(<"${expect}")" || expected=""
+              fi
+              # One line, so it can neither start a workflow command in the log nor match across lines.
+              if [ -z "${expected}" ] || [[ "${expected}" == *[$'\r\n']* ]]; then
+                echo "::error file=${template}::${expect} is missing, unreadable, empty or more than one line: it must hold the text Lima's refusal of ${template} contains"
+                failed=1
+                expected=""
+              fi
+            fi
+            echo "${template}, which Lima must refuse:"
+            validate "${template}"
+            if accepted; then
+              echo "::error file=${template}::limactl validate accepts ${template}, a template it must refuse: the check would not catch this breakage in dev/lima.yaml"
+              failed=1
+            elif [ -z "${expected}" ]; then
+              : # Refused, but for a reason nothing pins: already an error above.
+            elif logged "${expected}"; then
+              echo "  refused with the text ${expect} holds, as it must be"
+            else
+              echo "::error file=${template}::limactl validate refuses ${template}, but its log above does not contain the text ${expect} holds: it is refused for another reason"
+              failed=1
+            fi
+          done
+          exit "${failed}"
 
   verify-pins:
     name: Verify the gh and cosign pins

@@ -1,0 +1,373 @@
+# Isolated environment for running dot-agent-deck and its agents.
+#
+# Create it with `make vm-up`, which passes `--mount-only <workspace>:w`: the
+# repository's parent directory, which holds only this repository and the
+# worktrees dot-agent-deck's dispatcher creates beside it, is the ONLY host path
+# the VM can see. Agents running inside cannot read ~/.ssh, ~/.aws, ~/.azure,
+# ~/.config/gcloud or anything else on the Mac.
+#
+# Everything the agents need is installed here, so nothing about the agent
+# toolchain has to be installed on the host. See docs/dev-environment.md.
+minimumLimaVersion: 2.0.0
+
+base:
+  - template:_images/ubuntu-lts
+
+vmType: vz
+cpus: 4
+memory: 16GiB
+disk: 40GiB
+
+# Deliberately empty: host mounts come only from `--mount-only` in the Makefile.
+mounts: []
+
+# Lima's own containerd stays off: the provisioning below installs a rootless containerd and BuildKit
+# (nerdctl-full) at a version pinned here rather than the one the host's Lima bundles. Nothing rootful:
+# no root daemon, no docker group, no socket the VM user can use to become root
+# (docs/adr/0017-run-a-rootless-container-runtime-in-the-lima-vm.md).
+containerd:
+  system: false
+  user: maybe
+
+# Kept current by Renovate through the "# renovate:" comments (.github/renovate.json5).
+param:
+  # renovate: datasource=golang-version depName=go
+  goVersion: "1.27.4"
+  # renovate: datasource=github-releases depName=golangci/golangci-lint
+  golangciLintVersion: "v2.15.0"
+  # renovate: datasource=go depName=golang.org/x/vuln
+  govulncheckVersion: "v1.9.0"
+  # renovate: datasource=github-releases depName=vfarcic/dot-agent-deck
+  dotAgentDeckVersion: "v0.49.8"
+  # renovate: datasource=node-version depName=node versioning=node
+  nodeVersion: "26.13.0"
+  # renovate: datasource=npm depName=@earendil-works/pi-coding-agent
+  piVersion: "1.5.2"
+  # gh from its release, not Ubuntu's package: `gh attestation verify` needs gh 2.49 or later.
+  # renovate: datasource=github-releases depName=cli/cli
+  ghVersion: "v2.103.3"
+  # SHA-256 of gh_<version>_linux_<arch>.tar.gz, per architecture: what authenticates gh in provisioning
+  # (ADR 0017). The vm-tools workflow checks it against gh's build attestation on every PR: merge a change
+  # only when that check is green (not yet a required status). Renovate moves each digestVersion and
+  # digest together with ghVersion, in one PR; a digest left behind fails provisioning.
+  # renovate: datasource=github-release-attachments depName=cli/cli digestVersion=v2.103.3
+  ghSha256Amd64: "4c806978ffce1cec70853302a56d70ac6da4f19bae7adca4e1a8ab00633dd91d"
+  # renovate: datasource=github-release-attachments depName=cli/cli digestVersion=v2.103.3
+  ghSha256Arm64: "ee32df2323c8847f5fac6cb6b4b69ca75828e9329a8f22f677021f7b3306ce63"
+  # cosign v3 or later reads the release's signature bundles (README, "Verify the image").
+  # renovate: datasource=github-releases depName=sigstore/cosign
+  cosignVersion: "v3.1.4"
+  # SHA-256 of cosign-linux-<arch>, per architecture: what authenticates cosign in provisioning, where no
+  # trusted cosign exists yet to verify it (ADR 0017). The vm-tools workflow checks it against
+  # sigstore/cosign's keyless signature with an independently installed cosign on every PR: merge a
+  # change only when that check is green (not yet a required status). Updated like the gh digests.
+  # renovate: datasource=github-release-attachments depName=sigstore/cosign digestVersion=v3.1.4
+  cosignSha256Amd64: "424e2c97d0b45fd7a6b608a87f090f35633f4c23ece5f092d48bba11aaf4bbfa"
+  # renovate: datasource=github-release-attachments depName=sigstore/cosign digestVersion=v3.1.4
+  cosignSha256Arm64: "ade83b7aac62e131cacfe96d958948b2150cc9efec46a570a2649b8e27dedad2"
+  # nerdctl-full: nerdctl, containerd, BuildKit, RootlessKit, runc and CNI plugins, run rootless.
+  # renovate: datasource=github-releases depName=containerd/nerdctl
+  nerdctlVersion: "v2.4.1"
+  # crane resolves a tag to its digest without pulling the image (README, "Verify the image").
+  # renovate: datasource=go depName=github.com/google/go-containerregistry
+  craneVersion: "v0.22.1"
+
+provision:
+  - mode: system
+    script: |
+      #!/bin/bash
+      set -eux -o pipefail
+      export DEBIAN_FRONTEND=noninteractive
+      # Provisioning re-runs on every boot, so each step is skipped when already done.
+      # uidmap (newuidmap, newgidmap) and slirp4netns are what rootless containerd needs from the system.
+      pkgs="build-essential ca-certificates curl git gnupg jq make ripgrep slirp4netns uidmap unzip"
+      if ! dpkg -s ${pkgs} >/dev/null 2>&1; then
+        apt-get update
+        apt-get install -y --no-install-recommends ${pkgs}
+      fi
+      # gh comes from its release below; Ubuntu's older package goes, so there is one gh on the PATH.
+      if dpkg -s gh >/dev/null 2>&1; then
+        apt-get remove -y gh
+      fi
+
+      arch="$(dpkg --print-architecture)" # amd64 | arm64, matching Go's naming
+
+      # Stops provisioning unless <file> has the SHA-256 pinned in dev/lima.yaml as param <name><Arch>
+      # (ghSha256Amd64, ...). A version bump whose digests were not updated with it stops here too. Called
+      # in the subshells below, whose EXIT trap removes the rejected download. Callers pass both digests as
+      # PARAM_<name>Amd64 and PARAM_<name>Arm64, by name: Lima refuses a param that no script names, and
+      # cannot see one read through ${!var}.
+      check_pinned_sha256() { # <file> <param name without the architecture> <amd64 digest> <arm64 digest>
+        local expected actual
+        case "${arch}" in
+          amd64) expected="$3" ;;
+          arm64) expected="$4" ;;
+        esac
+        actual="$(sha256sum "$1" | cut -d' ' -f1)"
+        if [ -z "${expected}" ] || [ "${actual}" != "${expected}" ]; then
+          echo >&2 "$(basename "$1"): SHA-256 ${actual} does not match ${2}${arch^} (${expected:-not set})" \
+            "in dev/lima.yaml. Not installed. If the version was just bumped and the digest was not, take the" \
+            "new digest from the release only after verifying the asset (docs/dev-environment.md, Updating gh and cosign)."
+          exit 1
+        fi
+      }
+      # Go, verified against the published checksum.
+      if ! /usr/local/go/bin/go version 2>/dev/null | grep -q "go${PARAM_goVersion} "; then
+        tarball="go${PARAM_goVersion}.linux-${arch}.tar.gz"
+        tmp="$(mktemp -d)"
+        curl -fsSL -o "${tmp}/${tarball}" "https://dl.google.com/go/${tarball}"
+        echo "$(curl -fsSL "https://dl.google.com/go/${tarball}.sha256")  ${tmp}/${tarball}" | sha256sum --check --strict
+        rm -rf /usr/local/go
+        tar -C /usr/local -xzf "${tmp}/${tarball}"
+        rm -rf "${tmp}"
+      fi
+
+      # Node.js, needed by pi. Official build, verified against the release checksums.
+      if ! /usr/local/node/bin/node --version 2>/dev/null | grep -qx "v${PARAM_nodeVersion}"; then
+        tarball="node-v${PARAM_nodeVersion}-linux-${arch/amd64/x64}.tar.gz"
+        tmp="$(mktemp -d)"
+        curl -fsSL -o "${tmp}/${tarball}" "https://nodejs.org/dist/v${PARAM_nodeVersion}/${tarball}"
+        curl -fsSL -o "${tmp}/SHASUMS256.txt" "https://nodejs.org/dist/v${PARAM_nodeVersion}/SHASUMS256.txt"
+        (cd "${tmp}" && grep " ${tarball}\$" SHASUMS256.txt | sha256sum --check --strict)
+        rm -rf /usr/local/node && mkdir -p /usr/local/node
+        tar -C /usr/local/node --strip-components=1 --no-same-owner -xzf "${tmp}/${tarball}"
+        rm -rf "${tmp}"
+      fi
+
+      if ! golangci-lint --version 2>/dev/null | grep -q "version ${PARAM_golangciLintVersion#v} "; then
+        curl -fsSL "https://raw.githubusercontent.com/golangci/golangci-lint/${PARAM_golangciLintVersion}/install.sh" \
+          | sh -s -- -b /usr/local/bin "${PARAM_golangciLintVersion}"
+      fi
+
+      # cosign release binary. Its SHA-256 pin above is the trust anchor here: no trusted cosign exists
+      # yet; the vm-tools workflow verifies the pinned digest's signature with an independently installed
+      # cosign on every PR, and a pin is merged only with that check green. The self-check after it
+      # guards integrity and the bundle's consistency only, not authenticity: the binary under test
+      # verifies itself, against the trust root embedded in it (ADR 0017). It checks the bundle's certificate, signature and Rekor
+      # inclusion proof offline; only Sigstore's TUF repository (tuf-repo-cdn.sigstore.dev) is fetched,
+      # into a cache under ${tmp}, as is anything cosign writes to HOME. Before gh. Each subshell's EXIT
+      # trap removes ${tmp} whether it installs or stops provisioning.
+      if ! /usr/local/bin/cosign version 2>&1 | grep -qE "^GitVersion:[[:space:]]+${PARAM_cosignVersion}\$"; then
+        (
+          asset="cosign-linux-${arch}"
+          base="https://github.com/sigstore/cosign/releases/download/${PARAM_cosignVersion}"
+          tmp="$(mktemp -d)"
+          trap 'rm -rf "${tmp}"' EXIT
+          curl -fsSL -o "${tmp}/${asset}" "${base}/${asset}"
+          curl -fsSL -o "${tmp}/${asset}.sigstore.json" "${base}/${asset}.sigstore.json"
+          check_pinned_sha256 "${tmp}/${asset}" cosignSha256 \
+            "${PARAM_cosignSha256Amd64}" "${PARAM_cosignSha256Arm64}"
+          chmod 0755 "${tmp}/${asset}"
+          mkdir -m 0700 "${tmp}/home" "${tmp}/sigstore"
+          if ! HOME="${tmp}/home" TUF_ROOT="${tmp}/sigstore" "${tmp}/${asset}" verify-blob \
+            --bundle "${tmp}/${asset}.sigstore.json" \
+            --certificate-identity keyless@projectsigstore.iam.gserviceaccount.com \
+            --certificate-oidc-issuer https://accounts.google.com "${tmp}/${asset}"; then
+            echo >&2 "cosign ${PARAM_cosignVersion}: ${asset} is not signed by sigstore/cosign's release identity. Not installed."
+            exit 1
+          fi
+          install -m 0755 "${tmp}/${asset}" /usr/local/bin/cosign
+        )
+      fi
+
+      # gh release binary, pinned by its SHA-256 above. Its attestation is not checked here, as `gh
+      # attestation verify` needs a trusted gh and a GitHub token; the vm-tools workflow checks it for
+      # every pinned digest on every PR, and a pin is merged only with that check green (ADR 0017).
+      if ! /usr/local/bin/gh --version 2>/dev/null | grep -q "^gh version ${PARAM_ghVersion#v} "; then
+        (
+          name="gh_${PARAM_ghVersion#v}_linux_${arch}"
+          base="https://github.com/cli/cli/releases/download/${PARAM_ghVersion}"
+          tmp="$(mktemp -d)"
+          trap 'rm -rf "${tmp}"' EXIT
+          curl -fsSL -o "${tmp}/${name}.tar.gz" "${base}/${name}.tar.gz"
+          check_pinned_sha256 "${tmp}/${name}.tar.gz" ghSha256 \
+            "${PARAM_ghSha256Amd64}" "${PARAM_ghSha256Arm64}"
+          tar -C "${tmp}" --no-same-owner -xzf "${tmp}/${name}.tar.gz"
+          install -m 0755 "${tmp}/${name}/bin/gh" /usr/local/bin/gh
+        )
+      fi
+
+      # crane, root-owned in /usr/local/bin like cosign and gh, so the VM user cannot replace it. Verified
+      # against the Go checksum database, as govulncheck is. Go's caches go to a directory removed after.
+      if ! /usr/local/bin/crane version 2>/dev/null | grep -qx "${PARAM_craneVersion}"; then
+        tmp="$(mktemp -d)"
+        GOBIN=/usr/local/bin GOPATH="${tmp}/gopath" GOCACHE="${tmp}/gocache" GOFLAGS=-modcacherw GOTOOLCHAIN=local \
+          /usr/local/go/bin/go install "github.com/google/go-containerregistry/cmd/crane@${PARAM_craneVersion}"
+        rm -rf "${tmp}"
+      fi
+
+      # nerdctl-full in its own directory. SHA256SUMS must carry a valid signature from one of the release
+      # managers pinned here by full fingerprint, as listed with their GPG fingerprints in nerdctl's
+      # MAINTAINERS (MAINTAINERS_GUIDE.md: they sign SHA256SUMS and publish the key at
+      # https://github.com/<user>.gpg). A release signed by anyone else fails here: check the new signer's
+      # fingerprint against MAINTAINERS before adding it. The VM user runs its containerd and BuildKit
+      # rootless (user provisioning below); nothing here starts a daemon as root.
+      if ! /usr/local/nerdctl/bin/nerdctl --version 2>/dev/null | grep -qx "nerdctl version ${PARAM_nerdctlVersion#v}"; then
+        tarball="nerdctl-full-${PARAM_nerdctlVersion#v}-linux-${arch}.tar.gz"
+        base="https://github.com/containerd/nerdctl/releases/download/${PARAM_nerdctlVersion}"
+        tmp="$(mktemp -d)"
+        curl -fsSL -o "${tmp}/${tarball}" "${base}/${tarball}"
+        curl -fsSL -o "${tmp}/SHA256SUMS" "${base}/SHA256SUMS"
+        curl -fsSL -o "${tmp}/SHA256SUMS.asc" "${base}/SHA256SUMS.asc"
+        # GitHub ID and fingerprint: AkihiroSuda, ChengyuZhu6.
+        signers="C020EA876CE4E06C7AB95AEF49524C6F9F638F1A 521B0CBA0657089B2B8141FDE14F08B8908ED6E8"
+        # In a subshell, so GNUPGHOME stays local and the EXIT trap stops gpg-agent on every path. Either
+        # key may fail to import: the pin below decides whose signature counts, so one key is enough.
+        (
+          export GNUPGHOME="${tmp}/gnupg"
+          mkdir -m 0700 "${GNUPGHOME}"
+          trap 'gpgconf --kill all' EXIT
+          imported=0
+          for user in AkihiroSuda ChengyuZhu6; do
+            if curl -fsSL "https://github.com/${user}.gpg" | gpg --batch --quiet --import; then
+              imported=$((imported + 1))
+            else
+              echo >&2 "nerdctl ${PARAM_nerdctlVersion}: could not import the key of ${user} from GitHub"
+            fi
+          done
+          if [ "${imported}" -eq 0 ]; then
+            echo >&2 "nerdctl ${PARAM_nerdctlVersion}: no release manager key could be imported"
+            exit 1
+          fi
+          # gpg's exit status alone accepts a signature by a revoked or expired key, so the status lines
+          # decide: exactly one good signature, nothing revoked, expired, bad or unverifiable, and then the
+          # primary key fingerprint of that signature (VALIDSIG's last field) must be pinned.
+          gpg --batch --status-file "${tmp}/gpg-status" --verify "${tmp}/SHA256SUMS.asc" "${tmp}/SHA256SUMS" 2>/dev/null || true
+          signer="$(awk '
+            $1 != "[GNUPG:]" { next }
+            $2 == "GOODSIG" { good++ }
+            $2 == "VALIDSIG" { valid++; fpr = $NF }
+            $2 ~ /^(REVKEYSIG|EXPKEYSIG|EXPSIG|BADSIG|ERRSIG)$/ { bad++ }
+            END { if (good == 1 && valid == 1 && bad == 0) print fpr }
+          ' "${tmp}/gpg-status")"
+          if [ -z "${signer}" ] || [[ " ${signers} " != *" ${signer} "* ]]; then
+            echo >&2 "nerdctl ${PARAM_nerdctlVersion}: SHA256SUMS is not signed by a pinned release manager (${signer:-no single good signature})"
+            exit 1
+          fi
+        )
+        (cd "${tmp}" && grep " ${tarball}\$" SHA256SUMS | sha256sum --check --strict)
+        rm -rf /usr/local/nerdctl && mkdir -p /usr/local/nerdctl
+        tar -C /usr/local/nerdctl --no-same-owner -xzf "${tmp}/${tarball}"
+        rm -rf "${tmp}"
+      fi
+
+      # Ubuntu lets only programs with an AppArmor profile create user namespaces
+      # (kernel.apparmor_restrict_unprivileged_userns), and its own rootlesskit profile covers only
+      # /usr/bin/rootlesskit. This one lets the pinned RootlessKit, and nothing else, create them.
+      if command -v apparmor_parser >/dev/null 2>&1 && [ -d /sys/kernel/security/apparmor ]; then
+        cat > /etc/apparmor.d/usr.local.nerdctl.bin.rootlesskit <<'APPARMOR'
+      abi <abi/4.0>,
+      include <tunables/global>
+
+      /usr/local/nerdctl/bin/rootlesskit flags=(unconfined) {
+        userns,
+
+        # Site-specific additions and overrides. See local/README for details.
+        include if exists <local/usr.local.nerdctl.bin.rootlesskit>
+      }
+      APPARMOR
+        apparmor_parser -r /etc/apparmor.d/usr.local.nerdctl.bin.rootlesskit
+      fi
+
+      cat > /etc/profile.d/shift2eu.sh <<'PROFILE'
+      export PATH="$HOME/.local/bin:$HOME/go/bin:/usr/local/go/bin:/usr/local/node/bin:/usr/local/nerdctl/bin:$PATH"
+      # Agent credentials, copied in from the Mac by `make vm-env` (docs/dev-environment.md).
+      if [ -r "$HOME/.config/dot-agent-deck/daemon.env" ]; then
+        set -a
+        . "$HOME/.config/dot-agent-deck/daemon.env"
+        set +a
+      fi
+      PROFILE
+
+  - mode: user
+    script: |
+      #!/bin/bash
+      set -eux -o pipefail
+      export PATH="$HOME/.local/bin:$HOME/go/bin:/usr/local/go/bin:/usr/local/node/bin:/usr/local/nerdctl/bin:$PATH"
+      mkdir -p "$HOME/.local/bin"
+
+      go install "golang.org/x/vuln/cmd/govulncheck@${PARAM_govulncheckVersion}"
+
+      # git push over HTTPS authenticates through gh, with the GITHUB_TOKEN copied in by `make vm-env`.
+      git config --global credential.https://github.com.helper '!gh auth git-credential'
+
+      # The deck's daemon runs as a systemd user service (`dot-agent-deck daemon install`, once). This
+      # drop-in gives it the credentials from `make vm-env`. Lima enables lingering, so it starts at boot.
+      mkdir -p "$HOME/.config/systemd/user/dot-agent-deck.service.d"
+      cat > "$HOME/.config/systemd/user/dot-agent-deck.service.d/credentials.conf" <<'UNIT'
+      [Service]
+      EnvironmentFile=-%h/.config/dot-agent-deck/daemon.env
+      UNIT
+
+      # The daemon starts every agent pane with its own environment, which systemd leaves without a
+      # TERM, so Claude Code and pi would print no colour. The deck's terminal emulator handles 24-bit colour.
+      cat > "$HOME/.config/systemd/user/dot-agent-deck.service.d/terminal.conf" <<'UNIT'
+      [Service]
+      Environment=TERM=xterm-256color COLORTERM=truecolor
+      UNIT
+
+      # Claude Code (native installer, no Node.js needed): every role except the tester.
+      command -v claude >/dev/null 2>&1 || curl -fsSL https://claude.ai/install.sh | bash
+
+      # pi: the tester role (DeepSeek). Global npm packages go to ~/.local, so `pi update` needs no root.
+      npm config set prefix "$HOME/.local"
+      if ! pi --version 2>/dev/null | grep -qx "${PARAM_piVersion}"; then
+        npm install -g --ignore-scripts --no-fund --no-audit "@earendil-works/pi-coding-agent@${PARAM_piVersion}"
+      fi
+
+      # dot-agent-deck release binary, verified against the release checksums.
+      if ! dot-agent-deck --version 2>/dev/null | grep -q "${PARAM_dotAgentDeckVersion#v}"; then
+        arch="$(dpkg --print-architecture)"
+        asset="dot-agent-deck-linux-${arch}"
+        base="https://github.com/vfarcic/dot-agent-deck/releases/download/${PARAM_dotAgentDeckVersion}"
+        tmp="$(mktemp -d)"
+        curl -fsSL -o "${tmp}/${asset}" "${base}/${asset}"
+        curl -fsSL -o "${tmp}/checksums.txt" "${base}/checksums.txt"
+        (cd "${tmp}" && grep " ${asset}\$" checksums.txt | sha256sum --check --strict)
+        install -m 0755 "${tmp}/${asset}" "$HOME/.local/bin/dot-agent-deck"
+        rm -rf "${tmp}"
+        dot-agent-deck hooks install
+      fi
+
+      # Rootless containerd and BuildKit (nerdctl-full, from the system provisioning) as systemd user
+      # services of the VM user, started at boot through lingering. Last, so a failure here leaves the
+      # agent toolchain above installed. No registry login is configured: pulls are anonymous.
+      export XDG_RUNTIME_DIR="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"
+      # The user's systemd manager (user@UID.service) starts asynchronously once lingering is on: wait for it,
+      # as Lima's own rootless containerd setup does.
+      timeout 120s bash -c 'until [ -S "$XDG_RUNTIME_DIR/systemd/private" ]; do sleep 2; done'
+      stamp="$HOME/.local/state/shift2eu/nerdctl-version"
+      # Keyed on the outcome, not on the unit file: the setuptool writes the unit before enabling it, so a
+      # failed first start is retried on the next boot.
+      systemctl --user is-enabled --quiet containerd.service || containerd-rootless-setuptool.sh install
+      systemctl --user is-enabled --quiet buildkit.service || containerd-rootless-setuptool.sh install-buildkit
+      # After a `limactl edit` that changes nerdctlVersion, the system provisioning above installs the new
+      # binaries but the running services keep the replaced ones: restart them once. (A Renovate bump reaches
+      # only VMs created after it: Lima copies the template when it creates the VM.)
+      if [ -e "${stamp}" ] && [ "$(cat "${stamp}")" != "${PARAM_nerdctlVersion}" ]; then
+        systemctl --user restart containerd.service buildkit.service
+      fi
+      mkdir -p "$(dirname "${stamp}")"
+      echo "${PARAM_nerdctlVersion}" > "${stamp}"
+
+probes:
+  - script: |
+      #!/bin/bash
+      set -eux -o pipefail
+      export PATH="$HOME/.local/bin:$HOME/go/bin:/usr/local/go/bin:/usr/local/node/bin:/usr/local/nerdctl/bin:$PATH"
+      for bin in go golangci-lint govulncheck node claude pi dot-agent-deck gh cosign crane nerdctl; do
+        if ! timeout 300s bash -c "until command -v ${bin} >/dev/null 2>&1; do sleep 5; done"; then
+          echo >&2 "${bin} is not installed yet"
+          exit 1
+        fi
+      done
+      # The release check (release-tag skill) calls these root-owned binaries by absolute path.
+      /usr/local/bin/gh attestation --help >/dev/null
+      /usr/local/bin/cosign version >/dev/null 2>&1
+      /usr/local/bin/crane version >/dev/null
+      export XDG_RUNTIME_DIR="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"
+      if ! timeout 300s bash -c "until systemctl --user is-active --quiet containerd.service buildkit.service; do sleep 5; done"; then
+        echo >&2 "rootless containerd or BuildKit is not running (systemctl --user status containerd buildkit)"
+        exit 1
+      fi
+    hint: See /var/log/cloud-init-output.log in the guest

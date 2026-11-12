@@ -146,7 +146,24 @@ newer (`minimumLimaVersion`). CI runs `limactl validate dev/lima.yaml` with the 
 `LIMA_SHA256`, on every pull request and weekly: a template Lima refuses to create a VM from fails the
 PR, not the next `make vm-up` (only creating a VM runs Lima's checks; starting an existing one does
 not). Use that Lima version on the Mac, so you and CI agree on what a valid template is; when Renovate
-bumps it, `brew upgrade lima`.
+bumps it, `brew upgrade lima`. A warning counts as a refusal there: Lima only warns about an unknown
+(for example misspelt) field, and still exits 0.
+
+The same job proves the check can fail. Every template in `dev/testdata/lima-invalid/` is
+`dev/lima.yaml` with one known breakage: a `param` read only through bash indirection, which Lima cannot
+see (#120), an unknown field and a value of the wrong type. Beside each template, `<name>.expect` holds
+one line of the reason Lima must give. CI validates each template and fails, naming it, if Lima accepts
+it, which would mean a later Lima stopped catching that breakage, or if Lima refuses it without that
+text in its message, which would mean it is refused for another reason than the one it tests.
+`go test ./test/devenv` (part of `make check`) pins that each template differs from `dev/lima.yaml` by
+its one-line breakage alone, so it cannot drift from the real template, that each `.expect` holds its
+case's refusal text, and that the directory holds one template and one `.expect` per case and nothing
+else. Renovate bumps the templates' pins together with `dev/lima.yaml`'s. After any other change to
+`dev/lima.yaml`, rewrite them with `go test ./test/devenv -update` and commit the result. To add a case,
+add an entry to `limaBreakages` in `test/devenv/limainvalid_test.go` (the template's name, the one line
+it replaces and `refusal`, a substring of the message `limactl validate` prints for it), run
+`go test ./test/devenv -update` to write its template and `.expect`, and check with `limactl validate`
+that Lima refuses the new template with that text.
 
 The same goes for the VM's size: `make vm-up` starts an existing VM with the CPUs, memory and disk it
 was created with. To resize it without recreating it, keeping its tools, login and configuration:
