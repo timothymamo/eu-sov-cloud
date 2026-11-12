@@ -370,9 +370,10 @@ docker run --rm "$IMAGE" --help   # prints the flags and exits 0
 
 It is distroless and runs as `nonroot`, with the entrypoint `/shift2eu-server` and the default
 arguments (`CMD`) `--listen 0.0.0.0:8080`. Arguments given to `docker run` replace those, so pass
-`--listen 0.0.0.0:8080` again with any of your own. The release archives hold the `shift2eu-server` binary beside `shift2eu`. From a
-clone, `make server` builds `./bin/shift2eu-server` and `make server-image` the image
-`shift2eu-server:<version>` (`docker build --target server .` without the version stamp).
+`--listen 0.0.0.0:8080` again with any of your own. The release archives hold the `shift2eu-server`
+binary beside `shift2eu`. From a clone, `make server` builds `./bin/shift2eu-server` and
+`make server-image` the image `shift2eu-server:<version>` (`docker build --target server .` without
+the version stamp).
 
 ### Behind a reverse proxy
 
@@ -443,7 +444,7 @@ limit_req_zone $binary_remote_addr zone=shift2eu:10m rate=2r/s;
 server {
     listen 80;
     server_name api.example.com;
-    return 301 https://$host$request_uri;
+    return 301 https://api.example.com$request_uri;
 }
 
 server {
@@ -477,6 +478,10 @@ This proxy serves callers on its own origin and servers calling it directly. A b
 origin should call through its site's own backend, which holds the credentials, rather than through
 `--cors-origin`: a CORS preflight (`OPTIONS`) carries no credentials and the server never allows them,
 so never drop authentication from the proxy, or from the server, to make preflights pass.
+
+Configure every client with the `https://` URL. The port-80 redirect is a convenience, not a
+protection: a client that sends its Basic credentials over plain HTTP has sent them in clear before
+any redirect, and HSTS protects a client only after its first HTTPS visit.
 
 ### Example requests
 
