@@ -158,13 +158,16 @@ jobs:
         with:
           name: archives
       # An immutable release locks its assets when it is published, so the
-      # draft is read before it is published: its asset names must be exactly
-      # the names checksums.txt lists plus checksums.txt itself, each asset's
-      # digest must be the one that file records, and its checksums.txt must be
-      # the very file this run attested. A draft that holds anything else is
-      # never published. A draft is not readable by its tag, so the API's list
-      # of the releases is read.
-      - name: Check the draft's assets against checksums.txt
+      # draft is read before it is published, and the release published is the
+      # one that was checked (issues #156, #163): the draft's asset names must
+      # be exactly the names checksums.txt lists plus checksums.txt itself, each
+      # asset's digest must be the one that file records, and its checksums.txt
+      # must be the very file this run attested. A draft that holds anything
+      # else is never published. A draft is not readable by its tag, so the
+      # API's list of the releases is read, and the draft is published by the id
+      # that list gives it, in this one step: publishing by tag would let gh
+      # resolve a published release, or a swapped draft, in its place.
+      - name: Check the draft's assets and publish it
         env:
           TAG: ${{ github.ref_name }}
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -176,18 +179,29 @@ jobs:
           # its bytes. --paginate --slurp hands the pages over as one array of
           # pages, which add joins into one list of releases.
           gh api --paginate --slurp "repos/timothymamo/shift2eu/releases" > "$tmp/releases.json"
+          # A tag that already has a published release is refused rather than
+          # checked: publishing it again needs a human.
+          if [ "$(jq --arg tag "$TAG" 'add | map(select(.draft == false and .tag_name == $tag)) | length' "$tmp/releases.json")" != 0 ]; then
+            echo "repos/timothymamo/shift2eu already publishes a release for $TAG" >&2
+            exit 1
+          fi
           if [ "$(jq --arg tag "$TAG" 'add | map(select(.draft and .tag_name == $tag)) | length' "$tmp/releases.json")" != 1 ]; then
             echo "repos/timothymamo/shift2eu holds no single draft release for $TAG" >&2
             exit 1
           fi
-          # The names checksums.txt lists, and checksums.txt itself: what the
-          # draft release must hold exactly, so nothing is published that the
+          # The draft is published by the id this response gives it, and never
+          # by the tag again: gh resolves a tag to a published release before a
+          # draft, so a release published, or a draft swapped, after the checks
+          # below would be published in the place of the one that was checked.
+          id="$(jq --arg tag "$TAG" -r 'add | map(select(.draft and .tag_name == $tag)) | .[0].id' "$tmp/releases.json")"
+          # The names checksums.txt lists, and checksums.txt itself: what that
+          # draft must hold exactly, so nothing is published that the
           # attestation never covered.
           {
             sed -e 's/^[0-9a-f]\{64\}  //' checksums.txt
             echo checksums.txt
           } | sort > "$tmp/attested.txt"
-          jq --arg tag "$TAG" -r 'add | map(select(.draft and .tag_name == $tag)) | .[0].assets[] | .name' "$tmp/releases.json" | sort > "$tmp/published.txt"
+          jq --argjson id "$id" -r 'add | map(select(.id == $id)) | .[0].assets[] | .name' "$tmp/releases.json" | sort > "$tmp/published.txt"
           if ! cmp -s "$tmp/attested.txt" "$tmp/published.txt"; then
             echo "the draft release for $TAG does not hold what checksums.txt lists:" >&2
             diff -u "$tmp/attested.txt" "$tmp/published.txt" >&2 || true
@@ -196,7 +210,7 @@ jobs:
           # Every asset's digest is the one checksums.txt lists: the bytes the
           # attestation covers are the bytes that are published.
           while read -r hash name; do printf 'sha256:%s %s\n' "$hash" "$name"; done < checksums.txt | sort > "$tmp/attested-digests.txt"
-          jq --arg tag "$TAG" -r 'add | map(select(.draft and .tag_name == $tag)) | .[0].assets[] | select(.name != "checksums.txt") | "\(.digest) \(.name)"' "$tmp/releases.json" | sort > "$tmp/published-digests.txt"
+          jq --argjson id "$id" -r 'add | map(select(.id == $id)) | .[0].assets[] | select(.name != "checksums.txt") | "\(.digest) \(.name)"' "$tmp/releases.json" | sort > "$tmp/published-digests.txt"
           if ! cmp -s "$tmp/attested-digests.txt" "$tmp/published-digests.txt"; then
             echo "the draft release for $TAG holds an asset whose digest checksums.txt does not list:" >&2
             diff -u "$tmp/attested-digests.txt" "$tmp/published-digests.txt" >&2 || true
@@ -204,18 +218,12 @@ jobs:
           fi
           # checksums.txt is attested too: the draft's copy must be the very
           # file this run attested, not one written after the attestation.
-          if [ "$(jq --arg tag "$TAG" -r 'add | map(select(.draft and .tag_name == $tag)) | .[0].assets[] | select(.name == "checksums.txt") | .digest' "$tmp/releases.json")" != "sha256:$(sha256sum checksums.txt | cut -d' ' -f1)" ]; then
+          if [ "$(jq --argjson id "$id" -r 'add | map(select(.id == $id)) | .[0].assets[] | select(.name == "checksums.txt") | .digest' "$tmp/releases.json")" != "sha256:$(sha256sum checksums.txt | cut -d' ' -f1)" ]; then
             echo "the draft release's checksums.txt is not the one this run attested" >&2
             exit 1
           fi
-      # gh is given the repository with --repo: the job checks nothing out, and
-      # gh reads no repository from GITHUB_REPOSITORY, so without it gh says
-      # "fatal: not a git repository" and publishes nothing.
-      - name: Publish the draft release
-        env:
-          TAG: ${{ github.ref_name }}
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: gh release edit "$TAG" --repo timothymamo/shift2eu --draft=false
+          # The draft this job read and checked, and no other.
+          gh api -X PATCH "repos/timothymamo/shift2eu/releases/$id" -F draft=false
 
   # Builds and pushes the container image to GHCR (ADR 0015), after GoReleaser
   # uploads the draft release: a failed GoReleaser publishes no image, but the
@@ -769,13 +777,19 @@ jobs:
             sed -e 's/^[0-9a-f]\{64\}  //' checksums.txt
             echo checksums.txt
           } | sort > "$tmp/attested.txt"
-          ls -1 | sort > "$tmp/downloaded.txt"
+          # Every file the release holds, dotfiles included: ls -1 and the
+          # shell's * both skip a name that starts with ".", which would let a
+          # file hide from this check and from the loop after it.
+          ls -A | sort > "$tmp/downloaded.txt"
           if ! cmp -s "$tmp/attested.txt" "$tmp/downloaded.txt"; then
             echo "the release of $TAG does not hold what checksums.txt lists:" >&2
             diff -u "$tmp/attested.txt" "$tmp/downloaded.txt" >&2 || true
             exit 1
           fi
           sha256sum -c checksums.txt
+          # dotglob makes * list the dotfiles too, so every downloaded file is
+          # a subject and none is left unverified.
+          shopt -s dotglob
           for subject in *; do
             gh attestation verify "$subject" --repo timothymamo/shift2eu \
               --signer-workflow timothymamo/shift2eu/.github/workflows/release.yml \

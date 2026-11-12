@@ -225,21 +225,24 @@ var attestArchivesSteps = []releaseStep{
 // ghEnv is the env: of a gh step: the tag, and the job's own token for gh.
 var ghEnv = []string{tagEnv, "GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}"}
 
-// publishSteps are the publish job's steps (issue #156): GitHub's own
+// publishSteps are the publish job's steps (issues #156, #163): GitHub's own
 // download of the archives' workflow artifact, for the checksums.txt the
-// attest-archives job attested; the check that the draft release GoReleaser
-// uploaded to holds exactly that file and the files it lists, each with the
-// digest it records, read from the API's list of the releases since a draft
-// is not readable by its tag; and the one command that publishes the draft.
-// gh is given the repository with --repo: the job checks nothing out, so gh
-// has no git repository to read it from.
+// attest-archives job attested; and one step that reads the API's list of the
+// releases, since a draft is not readable by its tag, refuses a tag that
+// already holds a published release, checks that the tag's one draft holds
+// exactly that file and the files it lists, each with the digest it records,
+// and publishes that draft by the id the list gave it. Publishing by tag in a
+// step of its own would let gh resolve a published release, or a draft
+// swapped in after the check, in the place of the one checked. gh is given
+// the repository in its own arguments: the job checks nothing out, so gh has
+// no git repository to read it from.
 var publishSteps = []releaseStep{
 	{
 		what: "actions/download-artifact (the archives)", uses: downloadArtifactAction,
 		with: map[string]*regexp.Regexp{"name": exactly(archivesArtifact)},
 	},
 	{
-		what: "the check of the draft's assets", name: "Check the draft's assets against checksums.txt",
+		what: "the check and publication of the draft", name: "Check the draft's assets and publish it",
 		env: ghEnv,
 		run: strings.Join([]string{
 			strictShell,
@@ -249,18 +252,29 @@ var publishSteps = []releaseStep{
 			`# its bytes. --paginate --slurp hands the pages over as one array of`,
 			`# pages, which add joins into one list of releases.`,
 			`gh api --paginate --slurp "repos/` + releaseRepo + `/releases" > "$tmp/releases.json"`,
+			`# A tag that already has a published release is refused rather than`,
+			`# checked: publishing it again needs a human.`,
+			`if [ "$(jq --arg tag "$TAG" 'add | map(select(.draft == false and .tag_name == $tag)) | length' "$tmp/releases.json")" != 0 ]; then`,
+			`  echo "repos/` + releaseRepo + ` already publishes a release for $TAG" >&2`,
+			`  exit 1`,
+			`fi`,
 			`if [ "$(jq --arg tag "$TAG" 'add | map(select(.draft and .tag_name == $tag)) | length' "$tmp/releases.json")" != 1 ]; then`,
 			`  echo "repos/` + releaseRepo + ` holds no single draft release for $TAG" >&2`,
 			`  exit 1`,
 			`fi`,
-			`# The names checksums.txt lists, and checksums.txt itself: what the`,
-			`# draft release must hold exactly, so nothing is published that the`,
+			`# The draft is published by the id this response gives it, and never`,
+			`# by the tag again: gh resolves a tag to a published release before a`,
+			`# draft, so a release published, or a draft swapped, after the checks`,
+			`# below would be published in the place of the one that was checked.`,
+			`id="$(jq --arg tag "$TAG" -r 'add | map(select(.draft and .tag_name == $tag)) | .[0].id' "$tmp/releases.json")"`,
+			`# The names checksums.txt lists, and checksums.txt itself: what that`,
+			`# draft must hold exactly, so nothing is published that the`,
 			`# attestation never covered.`,
 			`{`,
 			`  sed -e 's/^[0-9a-f]\{64\}  //' checksums.txt`,
 			`  echo checksums.txt`,
 			`} | sort > "$tmp/attested.txt"`,
-			`jq --arg tag "$TAG" -r 'add | map(select(.draft and .tag_name == $tag)) | .[0].assets[] | .name' "$tmp/releases.json" | sort > "$tmp/published.txt"`,
+			`jq --argjson id "$id" -r 'add | map(select(.id == $id)) | .[0].assets[] | .name' "$tmp/releases.json" | sort > "$tmp/published.txt"`,
 			`if ! cmp -s "$tmp/attested.txt" "$tmp/published.txt"; then`,
 			`  echo "the draft release for $TAG does not hold what checksums.txt lists:" >&2`,
 			`  diff -u "$tmp/attested.txt" "$tmp/published.txt" >&2 || true`,
@@ -269,7 +283,7 @@ var publishSteps = []releaseStep{
 			`# Every asset's digest is the one checksums.txt lists: the bytes the`,
 			`# attestation covers are the bytes that are published.`,
 			`while read -r hash name; do printf 'sha256:%s %s\n' "$hash" "$name"; done < checksums.txt | sort > "$tmp/attested-digests.txt"`,
-			`jq --arg tag "$TAG" -r 'add | map(select(.draft and .tag_name == $tag)) | .[0].assets[] | select(.name != "checksums.txt") | "\(.digest) \(.name)"' "$tmp/releases.json" | sort > "$tmp/published-digests.txt"`,
+			`jq --argjson id "$id" -r 'add | map(select(.id == $id)) | .[0].assets[] | select(.name != "checksums.txt") | "\(.digest) \(.name)"' "$tmp/releases.json" | sort > "$tmp/published-digests.txt"`,
 			`if ! cmp -s "$tmp/attested-digests.txt" "$tmp/published-digests.txt"; then`,
 			`  echo "the draft release for $TAG holds an asset whose digest checksums.txt does not list:" >&2`,
 			`  diff -u "$tmp/attested-digests.txt" "$tmp/published-digests.txt" >&2 || true`,
@@ -277,16 +291,13 @@ var publishSteps = []releaseStep{
 			`fi`,
 			`# checksums.txt is attested too: the draft's copy must be the very`,
 			`# file this run attested, not one written after the attestation.`,
-			`if [ "$(jq --arg tag "$TAG" -r 'add | map(select(.draft and .tag_name == $tag)) | .[0].assets[] | select(.name == "checksums.txt") | .digest' "$tmp/releases.json")" != "sha256:$(sha256sum checksums.txt | cut -d' ' -f1)" ]; then`,
+			`if [ "$(jq --argjson id "$id" -r 'add | map(select(.id == $id)) | .[0].assets[] | select(.name == "checksums.txt") | .digest' "$tmp/releases.json")" != "sha256:$(sha256sum checksums.txt | cut -d' ' -f1)" ]; then`,
 			`  echo "the draft release's checksums.txt is not the one this run attested" >&2`,
 			`  exit 1`,
 			`fi`,
+			`# The draft this job read and checked, and no other.`,
+			`gh api -X PATCH "repos/` + releaseRepo + `/releases/$id" -F draft=false`,
 		}, "\n"),
-	},
-	{
-		what: "the publication of the draft release", name: "Publish the draft release",
-		env: ghEnv,
-		run: `gh release edit "$TAG" --repo ` + releaseRepo + ` --draft=false`,
 	},
 }
 
@@ -321,13 +332,19 @@ var verifyArchivesSteps = []releaseStep{
 			`  sed -e 's/^[0-9a-f]\{64\}  //' checksums.txt`,
 			`  echo checksums.txt`,
 			`} | sort > "$tmp/attested.txt"`,
-			`ls -1 | sort > "$tmp/downloaded.txt"`,
+			`# Every file the release holds, dotfiles included: ls -1 and the`,
+			`# shell's * both skip a name that starts with ".", which would let a`,
+			`# file hide from this check and from the loop after it.`,
+			`ls -A | sort > "$tmp/downloaded.txt"`,
 			`if ! cmp -s "$tmp/attested.txt" "$tmp/downloaded.txt"; then`,
 			`  echo "the release of $TAG does not hold what checksums.txt lists:" >&2`,
 			`  diff -u "$tmp/attested.txt" "$tmp/downloaded.txt" >&2 || true`,
 			`  exit 1`,
 			`fi`,
 			`sha256sum -c checksums.txt`,
+			`# dotglob makes * list the dotfiles too, so every downloaded file is`,
+			`# a subject and none is left unverified.`,
+			`shopt -s dotglob`,
 			`for subject in *; do`,
 			`  gh attestation verify "$subject" --repo ` + releaseRepo + ` \`,
 			`    --signer-workflow ` + signerWorkflow + ` \`,
@@ -794,15 +811,16 @@ var releaseJobs = func() []releaseJob {
 //     actions/attest-build-provenance with a subject-path of every archive,
 //     by its extension, and checksums.txt;
 //   - the publish job's steps are exactly actions/download-artifact of that
-//     artifact, the check of the draft release (an exact run: script under
-//     set -euo pipefail, reading the API's list of the releases: exactly one
-//     draft for the tag, holding exactly checksums.txt and the files it
-//     lists, each asset's digest the one it records, and its checksums.txt
-//     the attested one), and gh release edit "$TAG" --repo
-//     timothymamo/shift2eu --draft=false, which publishes the draft release
-//     GoReleaser uploaded to (.goreleaser.yaml's release.draft,
-//     check.GitHubRelease), the tag and token through env: in both gh steps;
-//     the one step of the workflow that publishes it (issue #156);
+//     artifact, and one step that checks the draft release (an exact run:
+//     script under set -euo pipefail, reading the API's list of the
+//     releases: no published release for the tag, exactly one draft for it,
+//     holding exactly checksums.txt and the files it lists, each asset's
+//     digest the one it records, and its checksums.txt the attested one) and
+//     then publishes that draft, the one GoReleaser uploaded to (.goreleaser.yaml's
+//     release.draft, check.GitHubRelease), by the id the list gave it with gh
+//     api -X PATCH repos/timothymamo/shift2eu/releases/$id -F draft=false,
+//     never by its tag, the tag and token through env:; the one step of the
+//     workflow that publishes it (issues #156, #163);
 //   - an image job's steps are exactly actions/checkout, the stamp of the
 //     build arguments and of the latest decision (a run: script, with the
 //     tag through env:, counting only the release tags merged into
@@ -838,8 +856,9 @@ var releaseJobs = func() []releaseJob {
 //   - the verify-archives job's steps are exactly gh release download, with
 //     --repo, of every asset of the published release, and, under set -euo
 //     pipefail, the check that the release is not a draft and holds exactly
-//     checksums.txt and the files it lists, sha256sum -c checksums.txt, and
-//     gh attestation verify of every downloaded file with the
+//     checksums.txt and the files it lists, dotfiles included (ls -A),
+//     sha256sum -c checksums.txt, and gh attestation verify of every
+//     downloaded file, dotfiles included (shopt -s dotglob), with the
 //     release identity, bound to this tag and commit, on GitHub's runners
 //     only;
 //   - every step holds exactly the keys listed (name, id, uses, with, env,
