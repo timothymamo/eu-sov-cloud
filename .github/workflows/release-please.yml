@@ -1,0 +1,140 @@
+name: Release please
+
+# Proposes the next release in one release PR on main, and tags it when the PR merges (issue #142,
+# ADR 0021). release-please computes the version from the Conventional Commits since the last release
+# with the release-tag skill's rules (release-please-config.json) and keeps CHANGELOG.md. The tag it
+# leads to starts .github/workflows/release.yml, which alone publishes, signs and attests, exactly as
+# it did when the tag was pushed by hand. check.ReleasePleaseWorkflow pins this file.
+on:
+  push:
+    branches: [main]
+
+# Nothing through GITHUB_TOKEN writes: the release App's short-lived token does the writing.
+permissions: {}
+
+# A group of its own, never the release group release.yml uses: GitHub keeps one pending run per group
+# and cancels the older pending one when a new run queues, so sharing that group would let a later push
+# to main cancel a release waiting to run. A run in progress is never cancelled: it may be tagging.
+concurrency:
+  group: release-please
+  cancel-in-progress: false
+
+jobs:
+  release-please:
+    name: Release please
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    # Holds the RELEASE_APP_ID variable and the RELEASE_APP_PRIVATE_KEY secret, and is limited to main.
+    environment: release-please
+    # GITHUB_TOKEN reads only: contents for the job, actions for the guard's read of release.yml's runs.
+    permissions:
+      contents: read
+      actions: read
+    steps:
+      # A token of the release App, revoked when the job ends, with exactly what release-please and the
+      # tag need: Contents write (the release branch, the tag) and Pull requests write (the release PR and
+      # its labels; the autorelease labels exist, so no Issues permission). A tag the App creates starts
+      # release.yml, where one created with GITHUB_TOKEN would start nothing, and only the App may bypass
+      # the Release tag creation ruleset. Protect main still keeps it from pushing to main.
+      - name: Mint the release App's token
+        id: app
+        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
+        with:
+          app-id: ${{ vars.RELEASE_APP_ID }}
+          private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
+          permission-contents: write
+          permission-pull-requests: write
+      # Opens or updates the release PR, labelled autorelease: pending. With skip-github-release it
+      # creates no GitHub Release and so no tag (GoReleaser creates the Release), and it opens no new
+      # release PR while a merged one is still labelled autorelease: pending: the tag step below creates
+      # that PR's tag and relabels it autorelease: tagged. Every input but token would override
+      # release-please-config.json, so none is set.
+      - uses: googleapis/release-please-action@45996ed1f6d02564a971a2fa1b5860e934307cf7 # v5.0.0
+        with:
+          token: ${{ steps.app.outputs.token }}
+      # One release at a time: no tag while release.yml has a run waiting or running, since a tag pushed
+      # at a release run that GitHub then cancels publishes nothing (ADR 0015). The release PR stays
+      # labelled autorelease: pending, so the next push to main, or a re-run of this workflow once the
+      # release has finished, tags it.
+      - name: Wait for no release to be queued or in progress
+        id: guard
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          for status in requested waiting pending queued in_progress; do
+            runs="$(gh api "repos/${GH_REPO}/actions/workflows/release.yml/runs?status=${status}&per_page=1" --jq '.total_count')"
+            if [ "${runs}" != "0" ]; then
+              echo "::error::release.yml has ${runs} run(s) ${status}: nothing is tagged; re-run this workflow once the release has finished"
+              exit 1
+            fi
+          done
+      # Creates the annotated vX.Y.Z tag of the merged release PR still labelled autorelease: pending, on
+      # that PR's merge commit, through the API with the App's token, then relabels the PR
+      # autorelease: tagged. It fails closed: several pending PRs, a PR not merged into main from
+      # release-please's branch, a version that is not exactly X.Y.Z or that the PR's title does not
+      # name, a merge commit not on main, or an existing tag on another commit stop it. Pull request data
+      # reaches the shell through gh's output into quoted variables only, never through an expression.
+      - name: Tag the merged release PR
+        id: tag
+        env:
+          GH_TOKEN: ${{ steps.app.outputs.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          fail() { echo "::error::$*"; exit 1; }
+          pending='autorelease: pending'
+          tagged='autorelease: tagged'
+
+          prs="$(gh api "repos/${GH_REPO}/issues?state=closed&labels=autorelease:%20pending&per_page=100" --jq '.[] | select(.pull_request != null) | .number')"
+          count="$(printf '%s' "${prs}" | grep -c . || true)"
+          if [ "${count}" = "0" ]; then
+            echo "No merged release PR waits for its tag."
+            exit 0
+          fi
+          [ "${count}" = "1" ] || fail "${count} closed pull requests are labelled ${pending}, want at most 1: label all but one by hand"
+          pr="${prs}"
+          [[ "${pr}" =~ ^[0-9]+$ ]] || fail "pull request number '${pr}' is not a number"
+
+          pull="$(gh api "repos/${GH_REPO}/pulls/${pr}")"
+          merged="$(jq -r '.merged' <<<"${pull}")"
+          base="$(jq -r '.base.ref' <<<"${pull}")"
+          head="$(jq -r '.head.ref' <<<"${pull}")"
+          head_repo="$(jq -r '.head.repo.full_name' <<<"${pull}")"
+          merge="$(jq -r '.merge_commit_sha' <<<"${pull}")"
+          title="$(jq -r '.title' <<<"${pull}")"
+          [ "${merged}" = "true" ] || fail "#${pr} is labelled ${pending} but was closed without merging"
+          [ "${base}" = "main" ] || fail "#${pr} was merged into '${base}', want main"
+          [ "${head_repo}" = "${GH_REPO}" ] || fail "#${pr} comes from '${head_repo}', want ${GH_REPO}"
+          case "${head}" in
+            release-please--branches--main | release-please--branches--main--components--*) ;;
+            *) fail "#${pr} comes from '${head}', want release-please's branch release-please--branches--main" ;;
+          esac
+          [[ "${merge}" =~ ^[0-9a-f]{40}$ ]] || fail "#${pr} has merge commit '${merge}', want 40 hex characters"
+          ancestry="$(gh api "repos/${GH_REPO}/compare/${merge}...main" --jq '.status')"
+          [ "${ancestry}" = "identical" ] || [ "${ancestry}" = "ahead" ] || fail "#${pr}'s merge commit ${merge} is not on main (${ancestry})"
+
+          version="$(gh api -H 'Accept: application/vnd.github.raw+json' "repos/${GH_REPO}/contents/.release-please-manifest.json?ref=${merge}" | jq -er '.["."]')"
+          [[ "${version}" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || fail ".release-please-manifest.json at ${merge} holds version '${version}', want exactly X.Y.Z"
+          tag="v${version}"
+          [ "${title% "${version}"}" != "${title}" ] || fail "#${pr}'s title does not end in the manifest's version ${version}"
+
+          existing="$(gh api "repos/${GH_REPO}/git/matching-refs/tags/${tag}" --jq "[.[] | select(.ref == \"refs/tags/${tag}\")] | length")"
+          if [ "${existing}" = "0" ]; then
+            object="$(gh api --method POST "repos/${GH_REPO}/git/tags" -f tag="${tag}" -f message="${tag}" -f object="${merge}" -f type=commit --jq '.sha')"
+            [[ "${object}" =~ ^[0-9a-f]{40}$ ]] || fail "creating the tag object of ${tag} returned '${object}'"
+            gh api --method POST "repos/${GH_REPO}/git/refs" -f ref="refs/tags/${tag}" -f sha="${object}" --silent
+            echo "Created ${tag} on ${merge}, the merge commit of #${pr}."
+          else
+            # A run that created the tag but failed to relabel: relabel only if the tag is this PR's.
+            target="$(gh api "repos/${GH_REPO}/git/ref/tags/${tag}" --jq '.object.type + " " + .object.sha')"
+            if [ "${target%% *}" = "tag" ]; then
+              target="$(gh api "repos/${GH_REPO}/git/tags/${target#* }" --jq '.object.type + " " + .object.sha')"
+            fi
+            [ "${target}" = "commit ${merge}" ] || fail "${tag} exists on ${target#* }, not on #${pr}'s merge commit ${merge}"
+            echo "${tag} already exists on ${merge}; relabelling #${pr}."
+          fi
+
+          gh api --method DELETE "repos/${GH_REPO}/issues/${pr}/labels/autorelease:%20pending" --silent
+          gh api --method POST "repos/${GH_REPO}/issues/${pr}/labels" -f "labels[]=${tagged}" --silent

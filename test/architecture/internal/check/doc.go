@@ -57,6 +57,22 @@
 // pins and BuildKit image, and to the verify job's container run of each
 // image.
 //
+// ReleasePleaseWorkflow and ReleasePleaseConfig hold the workflow that
+// proposes the next release, .github/workflows/release-please.yml, and the
+// document it reads, release-please-config.json, to issue #142 (ADR 0021).
+// The workflow runs on a push to main alone, in the release-please
+// environment, with permissions: {} at the top level, job permissions that
+// only read, and a concurrency group of its own that never cancels a run in
+// progress; it runs only the App token action and release-please, pinned by
+// commit, mints the App's token with exactly Contents and Pull requests
+// write, hands it to release-please and to the step that creates the tag
+// through the API, behind a step that waits for no release.yml run to be
+// queued or in progress, publishes nothing, and pastes no expression but
+// github.repository into a script. The configuration holds the release-tag
+// skill's version rules, vX.Y.Z tags with no component,
+// skip-github-release, no key that could move the version or the tag
+// unreviewed, and one package at the repository root.
+//
 // GitHubRelease holds the release section of .goreleaser.yaml to exactly
 // prerelease: auto, so a pre-release tag is a GitHub pre-release and never the
 // latest release (issue #92).
