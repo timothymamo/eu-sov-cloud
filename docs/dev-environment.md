@@ -83,6 +83,7 @@ again: it changes only what is not set up yet, so running it on a VM that is set
 | `pi` | `pi auth check --provider deepseek` |
 | `gh` | `gh auth status`: logged in to github.com (`GITHUB_TOKEN`) |
 | `deck` | `dot-agent-deck validate`: checks `.dot-agent-deck.toml` |
+| `deck command` | Sets the deck's `default_command` to `claude --model opus --permission-mode auto`, the orchestrator's command: the New Agent form pre-fills it, and a dispatcher started with a blank command, and the single units it dispatches, run it. A command already set in the VM is kept (`dot-agent-deck config set default_command ...` changes it) |
 | `daemon` | `dot-agent-deck daemon install`, unless `dot-agent-deck.service` is already installed |
 
 It never prints a credential: the checks show only the field they test.
