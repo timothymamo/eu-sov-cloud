@@ -89,6 +89,15 @@
 // cmd/eusov that imports a third-party library, a stand-in SDK and a nested
 // module under the fixture's own module path, which the main-module assertion
 // must report, while the rule holds its sibling cmd/eusov-server not at all.
+// The server's composition root, cmd/eusov-server (PRD #103, milestone 3), is
+// held the same way by its sibling strict rule server-composition-root: the
+// module path as the one prefix entry and the standard packages the server
+// imports, each exact. TestCompositionRootRulesAreChecked pins both rules'
+// shape, TestCompositionRootRulesAreHeldToTheirRuleForEveryReleaseTarget holds
+// the real cmd/eusov and cmd/eusov-server to them on every release platform,
+// and TestCompositionRootRulesHoldTheirProbesForEveryReleaseTarget fails a
+// fixture cmd/eusov-server that imports a third-party library or a stand-in
+// SDK.
 // The exemption trusts the import path, which is sound because nothing can
 // substitute other code for an allowed path: TestRootModuleHasNoReplace reads
 // the root go.mod with the go command's own parser (go mod edit -json) and

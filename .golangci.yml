@@ -282,9 +282,8 @@ linters:
         # constructs without importing the SDK itself.
         #
         # The rule holds cmd/eusov only. A glob segment matches no "/", so
-        # **/cmd/eusov/** does not match a sibling such as cmd/eusov-server.
-        # A future cmd/eusov-server (PRD #103) gets a sibling rule written the
-        # same way, with its own files: entry and the packages it needs.
+        # **/cmd/eusov/** does not match a sibling such as cmd/eusov-server,
+        # which has a sibling rule of its own, server-composition-root.
         composition-root:
           list-mode: strict
           files:
@@ -305,6 +304,52 @@ linters:
               desc: a cloud SDK lives only in its provider's adapter
             - pkg: google.golang.org/api
               desc: a cloud SDK lives only in its provider's adapter
+        # The HTTP API's composition root (PRD #103, ADR 0019), the sibling of
+        # composition-root and written the same way: it constructs the
+        # adapters, hands them to internal/httpapi and runs the http.Server
+        # around it (flags, the token, timeouts, the access log, the graceful
+        # shutdown). Its imports are a strict allow list of the module's own
+        # packages and the standard packages it needs, each ending in $; no
+        # third-party package, no cloud SDK and no os/exec, which
+        # TestServerPathHasNoCloudSDKOrProcess (test/e2e) also pins for the
+        # whole dependency tree. Add a standard package only when
+        # cmd/eusov-server needs it, beside the pin in test/architecture.
+        server-composition-root:
+          list-mode: strict
+          files:
+            - "**/cmd/eusov-server/**"
+            - "!$test"
+          allow:
+            - context$
+            - errors$
+            - flag$
+            - fmt$
+            - io$
+            - log$
+            - log/slog$
+            - math$
+            - net$
+            - net/http$
+            - os$
+            - os/signal$
+            - runtime$
+            - runtime/debug$
+            - slices$
+            - strconv$
+            - strings$
+            - sync$
+            - syscall$
+            - time$
+            - github.com/timothymamo/eu-sov-cloud/
+          deny:
+            - pkg: github.com/aws/aws-sdk-go-v2
+              desc: a cloud SDK lives only in its provider's adapter; the server takes inventory documents, never credentials (ADR 0019)
+            - pkg: github.com/Azure/azure-sdk-for-go
+              desc: a cloud SDK lives only in its provider's adapter; the server takes inventory documents, never credentials (ADR 0019)
+            - pkg: cloud.google.com/go
+              desc: a cloud SDK lives only in its provider's adapter; the server takes inventory documents, never credentials (ADR 0019)
+            - pkg: google.golang.org/api
+              desc: a cloud SDK lives only in its provider's adapter; the server takes inventory documents, never credentials (ADR 0019)
         # Adapters are constructed only in the composition root. No other
         # production package, adapters included, imports an adapter: one
         # adapter never builds or calls another, and internal/config or the
