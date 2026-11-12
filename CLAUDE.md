@@ -12,9 +12,10 @@ have a direct equivalent, which a partial one, which have none, and what blocks 
 against an embedded OVHcloud, Scaleway or UpCloud catalog snapshot, through every layer, or compares
 several targets in one report (`--target all` or a list), as Markdown or as versioned JSON
 (`--format json`, ADR 0018) (PRD #2, OVHcloud from PRD #11, UpCloud from PRD #77 and the comparison
-from PRD #89, all in `prds/done/`; the JSON report from PRD #103). A second binary, `shift2eu-server`,
-serves the same assessments over a versioned HTTP API (PRD #103, ADR 0019). Live source adapters do not
-exist yet. Work is planned as PRDs in `prds/`.
+from PRD #89, the JSON report and the HTTP API from PRD #103, all in `prds/done/`). A second binary,
+`shift2eu-server`, serves the same assessments over a versioned HTTP API (PRD #103, ADR 0019), released
+as a binary and as the image `ghcr.io/timothymamo/shift2eu-server` beside the CLI's. Live source adapters
+do not exist yet. Work is planned as PRDs in `prds/`.
 
 ## Ubiquitous language
 

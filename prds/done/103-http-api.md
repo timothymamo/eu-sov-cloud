@@ -1,6 +1,6 @@
 # PRD #103: Serve assessments over an HTTP API
 
-**Status:** In progress (milestones 1 to 3 done). The decisions the user accepted with milestones 1 and 2
+**Status:** Complete (milestones 1 to 4 done). The decisions the user accepted with milestones 1 and 2
 are marked *Decided* (issue #112).
 **Issue:** #103
 
@@ -129,15 +129,17 @@ use `net/http/httptest` and a server on `127.0.0.1`), unless marked *review*.
   milestone 1 (issue #112): the tie list and the required-changes list moved into it (`Verdict.Ties`,
   `ChangesToList`), shared by both renderers, with the Markdown output unchanged. An ADR records the
   separate binary, the API's versioning, and the security model.
-- [ ] `make check` passes. The security-audit skill is run on milestones 2 to 4.
+- [x] `make check` passes. The security-audit skill is run on milestones 2 to 4. *Done:* `make check`
+  passes on every milestone; the audit ran on milestones 2 and 3, and runs on milestone 4 once its
+  change is committed (the orchestrator confirms it).
 
 **Packaging**
 
-- [ ] The release workflow builds `shift2eu-server` for the release targets, and publishes its container
+- [x] The release workflow builds `shift2eu-server` for the release targets, and publishes its container
   image `ghcr.io/timothymamo/shift2eu-server`. The image is non-root and distroless, signed and attested like
   `shift2eu`'s (ADR 0015), with `ENTRYPOINT ["/shift2eu-server"]`. `check.ReleaseWorkflow` and the CI dry run
   cover it.
-- [ ] The README documents running the server behind a reverse proxy (TLS, authentication, rate limits),
+- [x] The README documents running the server behind a reverse proxy (TLS, authentication, rate limits),
   the environment it reads, and an example request.
 
 ## Milestones
@@ -153,7 +155,7 @@ Each milestone ships as one PR, in this order.
    and `--format json` e2e goldens. `shift2eu assess --format json|markdown` selects the renderer;
    Markdown stays the default and unchanged. A comparison is validated once, in the domain, for every
    reporter. The format and its version policy are recorded in
-   [ADR 0018](../docs/adr/0018-version-the-json-report-format-for-the-cli-and-the-api.md).
+   [ADR 0018](../../docs/adr/0018-version-the-json-report-format-for-the-cli-and-the-api.md).
 
 2. [x] **HTTP API adapter.** `internal/httpapi`: the routes, request decoding and limits, error shapes,
    content negotiation, headers, and the OpenAPI document, tested with `httptest` and fakes for the use
@@ -182,7 +184,7 @@ Each milestone ships as one PR, in this order.
    value is echoed. The depguard rules `httpapi-gets-adapters-from-cmd`,
    `httpapi-imported-only-by-the-server` and `request-decoders-parse-bytes` are in the depguard pin, and
    `test/architecture` holds them for every release target. The design is recorded in
-   [ADR 0019](../docs/adr/0019-serve-assessments-over-a-versioned-http-api-from-a-separate-binary.md). The handler's halves of four criteria are done, and `cmd/shift2eu-server` adds the rest in
+   [ADR 0019](../../docs/adr/0019-serve-assessments-over-a-versioned-http-api-from-a-separate-binary.md). The handler's halves of four criteria are done, and `cmd/shift2eu-server` adds the rest in
    milestone 3: the readiness check over every catalog, the concurrency flag and its default, the token
    from an environment variable or a file with the loopback rule, and the composition root with its
    dependency test. ADR 0019 also binds milestone 3 to: set the server's read-header, read, write and
@@ -218,37 +220,57 @@ Each milestone ships as one PR, in this order.
    of `run` pin the token, the loopback and `Host` rules, the concurrency, the access log, stalled
    header and body clients and the graceful shutdown; e2e tests run the built binary, compare its bytes
    with `shift2eu assess` in JSON and Markdown, and pin that its dependencies hold no cloud SDK and no
-   `os/exec`. The decisions are recorded in [ADR 0019](../docs/adr/0019-serve-assessments-over-a-versioned-http-api-from-a-separate-binary.md).
-4. [ ] **Packaging and docs.** GoReleaser builds, the `shift2eu-server` image in the `Dockerfile`, the
+   `os/exec`. The decisions are recorded in [ADR 0019](../../docs/adr/0019-serve-assessments-over-a-versioned-http-api-from-a-separate-binary.md).
+4. [x] **Packaging and docs.** GoReleaser builds, the `shift2eu-server` image in the `Dockerfile`, the
    release workflow (publish, sign, attest) and its checks, and the README's deployment section. Moves this
    PRD to `prds/done/` and completes #103. Depends on 3. Security-sensitive: the release workflow changes.
 
+   *Done:* `.goreleaser.yaml` has a second builds entry, `shift2eu-server`, with the CLI's env, flags,
+   ldflags and platforms, and each release archive holds both binaries. `releasetarget.Read` accepts a
+   build of `./cmd/shift2eu-server` beside `./cmd/shift2eu`, each once, with the same platforms, and
+   `test/architecture` holds the server binary's sources as it does the CLI's. The `Dockerfile`'s
+   builder compiles the server too, and a stage named `server` ships it on the CLI's distroless
+   `nonroot` base with `ENTRYPOINT ["/shift2eu-server"]` and `EXPOSE 8080`; the CLI stays the last
+   stage, and `make server-image` builds `--target server`. `test/container` holds the stage and the
+   build to the release's. `release.yml` publishes `ghcr.io/timothymamo/shift2eu-server` from jobs of
+   its own, `server-image`, `server-sbom` and `server-sign`, with the CLI image's tags, SBOM, cosign
+   signature and attestations and the same split permissions; not a matrix, as a matrix job's outputs
+   keep one leg's digest only. `check.ReleaseWorkflow` builds both images' jobs from the same step
+   lists. CI's `image` job also builds the server image for both platforms, reads its SBOM and
+   smoke-tests it (refused off loopback without a token, the health checks, 401 without the token, an
+   assessment with it), and `check.DryRunMirrorsRelease` pairs each release image with its CI build.
+   The README's "Run the HTTP API" section documents the image and binary, the reverse proxy (with an
+   nginx example), every flag and variable, and example requests. ADR 0013 and 0015 record the second
+   image as amendments. Left open: ADR 0019 also names a published OpenAPI document that bundles the
+   report's JSON Schemas, which `api/openapi.json` still refers to by relative path; it is not part of
+   this milestone's criteria and is not done.
+
 ## Decisions and open questions
 
-- **Decided: a separate binary, not `shift2eu serve`** ([ADR 0019](../docs/adr/0019-serve-assessments-over-a-versioned-http-api-from-a-separate-binary.md)
+- **Decided: a separate binary, not `shift2eu serve`** ([ADR 0019](../../docs/adr/0019-serve-assessments-over-a-versioned-http-api-from-a-separate-binary.md)
   records it with the API's design, versioning and security model). The CLI's guarantee, that nothing it reaches can
   open a connection, is pinned by a test, and is worth keeping for users who run it on sensitive
   inventories. A `serve` subcommand would put `net/http` in the CLI's dependencies and end that guarantee.
   A second binary in the same module reuses every package. It costs a second build target and image.
-- **Decided: the API takes inventory documents only, never cloud credentials.** Recorded in [ADR 0019](../docs/adr/0019-serve-assessments-over-a-versioned-http-api-from-a-separate-binary.md). Live discovery from the
+- **Decided: the API takes inventory documents only, never cloud credentials.** Recorded in [ADR 0019](../../docs/adr/0019-serve-assessments-over-a-versioned-http-api-from-a-separate-binary.md). Live discovery from the
   API would mean a web server holding customers' cloud credentials, the most sensitive thing this project
   could handle (CLAUDE.md rules 1 and 3). If the website needs it later, it gets its own PRD and threat
   model. Until then the website, or the user, runs discovery and uploads the inventory.
-- **Decided: TLS and users belong to the proxy or the website's backend.** Recorded in [ADR 0019](../docs/adr/0019-serve-assessments-over-a-versioned-http-api-from-a-separate-binary.md). The server is a stateless
+- **Decided: TLS and users belong to the proxy or the website's backend.** Recorded in [ADR 0019](../../docs/adr/0019-serve-assessments-over-a-versioned-http-api-from-a-separate-binary.md). The server is a stateless
   compute service: no accounts, no sessions, no storage. A shared bearer token protects it from anyone
   who reaches it directly. Users, rate limits per user, and TLS are better handled by the site's backend
   or a reverse proxy, which the docs describe. Built-in TLS can follow if a deployment needs it.
 - **Decided: synchronous requests.** An assessment over an embedded snapshot takes milliseconds, so a
   request answers directly. Async jobs, queues and webhooks are left out until something makes requests
   slow, such as live discovery.
-- **Decided: one JSON report format for the CLI and the API** ([ADR 0018](../docs/adr/0018-version-the-json-report-format-for-the-cli-and-the-api.md)).
+- **Decided: one JSON report format for the CLI and the API** ([ADR 0018](../../docs/adr/0018-version-the-json-report-format-for-the-cli-and-the-api.md)).
   Users can script the CLI and the website can call the API, and both read the same document. A test
   pins that both give the same bytes. The format carries a `schemaVersion`: adding an optional key or a
   new value of an open set (such as a reason code) keeps it, and readers ignore what they do not know;
   removing, renaming or retyping a key, or any other change that can break a reader, is a new
   `schemaVersion` with an ADR. Unlike the inventory format (ADR 0006), where `shift2eu` is the strict
   reader, here `shift2eu` is the writer.
-- **Decided: the API is versioned in the path (`/v1/`).** Recorded in [ADR 0019](../docs/adr/0019-serve-assessments-over-a-versioned-http-api-from-a-separate-binary.md). A breaking change is a `/v2/` route beside
+- **Decided: the API is versioned in the path (`/v1/`).** Recorded in [ADR 0019](../../docs/adr/0019-serve-assessments-over-a-versioned-http-api-from-a-separate-binary.md). A breaking change is a `/v2/` route beside
   `/v1/` for a deprecation period. Additive fields are not breaking.
 - **Decided: no request content is ever stored or logged.** Inventories and reports are customer data
   (CLAUDE.md rule 2). The server keeps them only in memory for the length of the request.
