@@ -32,9 +32,10 @@ for step in guard tag; do
   grep -q 'set -euo pipefail' "${work}/${step}.sh" || { echo "could not read the ${step} step's script from ${workflow}" >&2; exit 1; }
 done
 
-# The fake gh: "gh api [--method M] [-H h] [--jq f] [--silent] [-f k=v ...] path". It logs
-# "METHOD path k=v ..." to calls, and answers from the response stored for "METHOD path", or {} for a
-# write without one; a read without one fails as an HTTP 404 would.
+# The fake gh: "gh api [--method M] [-H h] [--jq f] [--silent] [--paginate] [-f k=v ...] path". It
+# logs "METHOD path k=v ..." to calls, and answers from the response stored for "METHOD path", or {} for
+# a write without one; a read without one fails as an HTTP 404 would. A response is one page, so
+# --paginate changes nothing.
 mkdir "${work}/bin"
 cat >"${work}/bin/gh" <<'FAKE'
 #!/usr/bin/env bash
@@ -48,6 +49,7 @@ while [ "$#" -gt 0 ]; do
     -H) shift 2 ;;
     --jq) jq_filter="$2"; shift 2 ;;
     --silent) silent=1; shift ;;
+    --paginate) shift ;;
     -f) fields+=("$2"); shift 2 ;;
     -*) echo "fake gh: unexpected flag $1" >&2; exit 2 ;;
     *) path="$1"; shift ;;
@@ -112,13 +114,16 @@ never_said() {
   fi
 }
 
-pending="repos/${repo}/issues?state=closed&labels=autorelease:%20pending&per_page=100"
+# The steps' one listing: the closed PRs into main from release-please's branch, as the pulls endpoint
+# returns them.
+pending="repos/${repo}/pulls?state=closed&base=main&head=${repo%%/*}:${branch}&per_page=100"
 
-# Items of the closed issues labelled autorelease: pending: a merged release PR of the App, a PR closed
-# without merging, a merged PR of someone else, and an issue.
-merged_pr() { echo "{\"number\": $1, \"user\": {\"login\": \"${2:-${bot}}\"}, \"pull_request\": {\"merged_at\": \"2026-11-12T10:00:00Z\"}}"; }
-unmerged_pr() { echo "{\"number\": $1, \"user\": {\"login\": \"${bot}\"}, \"pull_request\": {\"merged_at\": null}}"; }
-an_issue='{"number": 7, "user": {"login": "someone"}}'
+# Items of that listing: a merged release PR of the App labelled autorelease: pending, a PR closed
+# without merging, a merged PR of someone else, both labelled autorelease: pending too, and an earlier
+# release PR of the App, already tagged and labelled autorelease: tagged alone.
+merged_pr() { echo "{\"number\": $1, \"user\": {\"login\": \"${2:-${bot}}\"}, \"merged_at\": \"2026-11-12T10:00:00Z\", \"labels\": [{\"name\": \"autorelease: pending\"}]}"; }
+unmerged_pr() { echo "{\"number\": $1, \"user\": {\"login\": \"${bot}\"}, \"merged_at\": null, \"labels\": [{\"name\": \"autorelease: pending\"}]}"; }
+tagged_pr="{\"number\": 7, \"user\": {\"login\": \"${bot}\"}, \"merged_at\": \"2026-10-01T10:00:00Z\", \"labels\": [{\"name\": \"autorelease: tagged\"}]}"
 
 runs() { echo "{\"total_count\": $1}"; }
 # guard_runs answers the guard's read of release.yml's runs: one run in the status given, none in the
@@ -136,7 +141,7 @@ run_step "guard: a merged release PR, no release in flight" guard pass; wrote_no
 for status in requested waiting pending queued in_progress; do
   scenario "guard-${status}"; respond GET "${pending}" "[$(merged_pr 42)]"; guard_runs "${status}"
   run_step "guard: a merged release PR, a release run ${status}" guard fail; wrote_nothing "guard: a release run ${status}"
-  scenario "guard-nothing-${status}"; respond GET "${pending}" "[$(unmerged_pr 41), $(merged_pr 43 someone), ${an_issue}]"; guard_runs "${status}"
+  scenario "guard-nothing-${status}"; respond GET "${pending}" "[$(unmerged_pr 41), $(merged_pr 43 someone), ${tagged_pr}]"; guard_runs "${status}"
   run_step "guard: nothing to tag, a release run ${status}" guard pass; wrote_nothing "guard: nothing to tag, ${status}"
 done
 
@@ -144,7 +149,7 @@ done
 # version (the manifest's) with the given title; extra jq edits the pull request.
 merged_release() {
   local version="$1" title="$2" edit="${3:-.}" ancestry="${4:-ahead}"
-  respond GET "${pending}" "[$(merged_pr 42), ${an_issue}]"
+  respond GET "${pending}" "[$(merged_pr 42), ${tagged_pr}]"
   respond GET "repos/${repo}/pulls/42" "$(jq -c --arg version "${title}" "${edit}" <<<"{\"merged\": true, \"user\": {\"login\": \"${bot}\"}, \"base\": {\"ref\": \"main\"}, \"head\": {\"ref\": \"${branch}\", \"repo\": {\"full_name\": \"${repo}\"}}, \"merge_commit_sha\": \"${merge}\", \"title\": \"${title}\"}")"
   respond GET "repos/${repo}/pulls/42/files?per_page=100" '[{"filename": "CHANGELOG.md"}, {"filename": ".release-please-manifest.json"}]'
   respond GET "repos/${repo}/compare/${merge}...main" "{\"status\": \"${ancestry}\"}"
@@ -165,16 +170,19 @@ tagged_42() {
   fi
   wrote "$1" "^POST repos/${repo}/issues/42/labels labels\[\]=autorelease: tagged$"
   wrote "$1" "^DELETE repos/${repo}/issues/42/labels/autorelease:%20pending"
-  if grep -qE '/issues/(41|43|44)/' "${FAKE_GH}/calls"; then echo "FAIL $1: another PR was relabelled"; failures=$((failures + 1)); fi
+  if grep -qE '/issues/(7|41|43|44)/' "${FAKE_GH}/calls"; then echo "FAIL $1: another PR was relabelled"; failures=$((failures + 1)); fi
 }
 
-scenario none; respond GET "${pending}" "[${an_issue}]"
+scenario none; respond GET "${pending}" "[${tagged_pr}]"
 run_step "tag: no merged release PR" tag pass; wrote_nothing "tag: no merged release PR"
+
+scenario empty; respond GET "${pending}" '[]'
+run_step "tag: no closed release PR at all" tag pass; wrote_nothing "tag: no closed release PR at all"
 
 scenario release; merged_release 0.3.0 "chore(main): release 0.3.0"
 run_step "tag: a merged release PR" tag pass; tagged_42 "tag: a merged release PR"
 
-scenario unmerged-only; respond GET "${pending}" "[$(unmerged_pr 41), ${an_issue}]"
+scenario unmerged-only; respond GET "${pending}" "[$(unmerged_pr 41), ${tagged_pr}]"
 run_step "tag: only a PR closed without merging" tag pass; wrote_nothing "tag: only a PR closed without merging"
 said "tag: only a PR closed without merging" '^::warning::#41 .*closed without merging'
 
@@ -197,6 +205,12 @@ run_step "tag: a pull request whose author is not the App" tag fail; wrote_nothi
 scenario two; merged_release 0.3.0 "chore(main): release 0.3.0"
 respond GET "${pending}" "[$(merged_pr 42), $(merged_pr 44)]"
 run_step "tag: two merged release PRs" tag fail; wrote_nothing "tag: two merged release PRs"
+
+# A triage user re-applies autorelease: pending to #7, an earlier release PR of the App already tagged:
+# two candidates, so the step fails closed rather than pick one.
+scenario relabelled; merged_release 0.3.0 "chore(main): release 0.3.0"
+respond GET "${pending}" "[$(merged_pr 42), $(jq -c '.labels += [{"name": "autorelease: pending"}]' <<<"${tagged_pr}")]"
+run_step "tag: an old tagged release PR labelled autorelease: pending again" tag fail; wrote_nothing "tag: an old tagged release PR labelled again"
 
 for bad in "0.3" "0.3.0-rc.1" "v0.3.0" "0.3.0 ; touch pwned" '0.3.0$(touch pwned)'; do
   scenario "version-$(printf '%s' "${bad}" | sha256sum | cut -c1-8)"; merged_release "${bad}" "chore(main): release ${bad}"

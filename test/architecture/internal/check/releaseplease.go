@@ -65,12 +65,13 @@ var fetchingRuns = []string{"gh release", "curl", "wget"}
 var repoEndpoint = regexp.MustCompile(`repos/(?:\$\{GH_REPO\}|\$GH_REPO|\$\{\{\s*github\.repository\s*\}\})/([^"'\s]*)`)
 
 // tagEndpoints are the API endpoints the tagging step may call, its query
-// removed: the release PRs (issues, pulls, a pull request, its files and its
-// labels), the manifest at the merge commit (contents), the merge commit's
-// ancestry (compare), and the tag (git/ref, git/refs, git/matching-refs,
-// git/tags). Nothing creates or edits a GitHub Release.
+// removed: the release PRs (pulls, a pull request, its files and its labels),
+// the manifest at the merge commit (contents), the merge commit's ancestry
+// (compare), and the tag (git/ref, git/refs, git/matching-refs, git/tags).
+// Nothing creates or edits a GitHub Release. The issues listing is not among
+// them: the App's token holds no Issues permission, and GitHub answers that
+// listing with 403 without Issues read.
 var tagEndpoints = []*regexp.Regexp{
-	regexp.MustCompile(`^issues$`),
 	regexp.MustCompile(`^issues/[^/]+/labels(/[^/]+)?$`),
 	regexp.MustCompile(`^pulls$`),
 	regexp.MustCompile(`^pulls/[^/]+$`),
@@ -779,7 +780,7 @@ func (r *schemaReader) tagEndpoints(s pleaseStep, path string) {
 	for _, m := range repoEndpoint.FindAllStringSubmatch(s.script, -1) {
 		endpoint, _, _ := strings.Cut(m[1], "?")
 		if !slices.ContainsFunc(tagEndpoints, func(re *regexp.Regexp) bool { return re.MatchString(endpoint) }) {
-			r.fail("line %d: %s: the tagging step calls the API endpoint %s; want only the release PR's (issues, pulls, pulls/<n>, pulls/<n>/files, issues/<n>/labels), the manifest's (contents), the merge commit's ancestry (compare) and the tag's (git/ref, git/refs, git/matching-refs, git/tags)", s.num, path, endpoint)
+			r.fail("line %d: %s: the tagging step calls the API endpoint %s; want only the release PR's (pulls, pulls/<n>, pulls/<n>/files, issues/<n>/labels), the manifest's (contents), the merge commit's ancestry (compare) and the tag's (git/ref, git/refs, git/matching-refs, git/tags)", s.num, path, endpoint)
 		}
 	}
 }
