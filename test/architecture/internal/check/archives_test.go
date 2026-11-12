@@ -372,8 +372,8 @@ func TestGoReleaserArchives(t *testing.T) {
 // distribution and the same version as release.yml's goreleaser step, installed
 // only, so the snapshot that builds the archives in the dry run is the
 // GoReleaser that publishes them (issue #147).
-const ciGoreleaserInstall = `      # The GoReleaser release.yml runs, at the same commit and version, installed only: the script below
-      # runs a snapshot of the release, which builds the archives and publishes nothing.
+const ciGoreleaserInstall = `      # The same goreleaser version release.yml runs, installed only: the script below runs a snapshot of
+      # the release at this commit, which builds the archives and publishes nothing.
       - uses: goreleaser/goreleaser-action@a4f02ab5355a589de60d917a659ce617ed19b3de # v7.3.0
         with:
           distribution: goreleaser
