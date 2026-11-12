@@ -97,11 +97,17 @@ var releasePleaseActionStep = `      - uses: googleapis/release-please-action@` 
 // that GitHub then cancels publishes nothing, and a run that is only requested
 // or waiting may still publish. It reads the runs with github.token, the
 // automatic token of the job's actions: read, never an App's token.
+//
+// Its env: holds that token, the repository and the release-please App's own
+// slug, APP_SLUG: shift2eu-release, the same constant the tagging step reads:
+// the tag job holds the App it tags for itself, and reads no output of the job
+// that runs the third-party release-please action.
 const releasePleaseGuardStep = `      - name: Wait for no release to be queued or in progress
         id: guard
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
+          APP_SLUG: shift2eu-release
         run: |
           set -euo pipefail
           for status in requested waiting pending queued in_progress; do
@@ -121,19 +127,21 @@ const releasePleaseGuardStep = `      - name: Wait for no release to be queued o
 // starts no workflow and the ruleset refuses it; a tag created with git push is
 // not the App's either (ADR 0015).
 //
-// Its env: holds exactly the App's token, the repository, and the
-// release-please job's output, the release-please App's own slug, so that only
-// a PR the release-please App opened is a candidate: a hand-written PR labelled
-// autorelease: pending is never tagged. Its gh api endpoints are the release
-// PR's own (pulls, pulls/<n>), the merge commit's ancestry (compare), the
-// manifest at that commit (contents) and the tag (git/refs): nothing creates or
-// edits a GitHub Release, and no script calls a host of its own.
+// Its env: holds exactly the App's token, the repository and the release-please
+// App's own slug, APP_SLUG: shift2eu-release, a constant of this file and not a
+// job output, so that only a PR the release-please App opened is a candidate: a
+// hand-written PR labelled autorelease: pending is never tagged. The job that
+// runs the third-party release-please action hands this step nothing it must
+// trust. Its gh api endpoints are the release PR's own (pulls, pulls/<n>), the
+// merge commit's ancestry (compare), the manifest at that commit (contents) and
+// the tag (git/refs): nothing creates or edits a GitHub Release, and no script
+// calls a host of its own.
 const releasePleaseTagStep = `      - name: Tag the merged release PR
         id: tag
         env:
           GH_TOKEN: ${{ steps.app.outputs.token }}
           GH_REPO: ${{ github.repository }}
-          APP_SLUG: ${{ needs.release-please.outputs.app-slug }}
+          APP_SLUG: shift2eu-release
         run: |
           set -euo pipefail
           pending="autorelease: pending"
@@ -176,14 +184,25 @@ const releasePleaseRelabelStep = `      - name: Relabel the tagged release PR
           gh api --method DELETE "repos/${GH_REPO}/issues/${PR}/labels/autorelease:%20pending" --silent
 `
 
+// The env: of the tag job's two tokenless steps, as the accepted shape writes
+// them: a case that changes one of the values a step holds prefixes its step's,
+// since the guard and the tagging step share GH_REPO and APP_SLUG and differ in
+// GH_TOKEN alone.
+const (
+	taggingStepEnv = "          GH_TOKEN: ${{ steps.app.outputs.token }}\n          GH_REPO: ${{ github.repository }}\n          APP_SLUG: shift2eu-release\n"
+	guardStepEnv   = "          GH_TOKEN: ${{ github.token }}\n          GH_REPO: ${{ github.repository }}\n          APP_SLUG: shift2eu-release\n"
+)
+
 // releasePleaseAppsWorkflow returns .github/workflows/release-please.yml in the
 // shape issues #157 and #159 want: one workflow on a push to main, with
 // permissions: {} at the top level, a concurrency group of its own, and three
 // jobs. The release-please job, in the release-please environment, mints the
 // release-please App's token from that environment's client ID and private key
-// and opens the release PR, and exposes the App's own slug as its output. The
-// tag job, in the release-tag environment, mints the tag App's token from that
-// environment's client ID and private key, waits for no release.yml run in
+// and opens the release PR, and declares no output: the job that runs the
+// third-party release-please action hands the jobs after it nothing. The tag
+// job, in the release-tag environment, mints the tag App's token from that
+// environment's client ID and private key, holds the release-please App's slug
+// as the constant its guard and tag steps read, waits for no release.yml run in
 // flight, and creates the tag. The relabel job, in the release-please
 // environment, mints the release-please App's token again and, when the tag job
 // tagged a PR, relabels it. Each token step passes client-id, never the
@@ -218,12 +237,8 @@ jobs:
     # GITHUB_TOKEN reads only: the App's token does the writing.
     permissions:
       contents: read
-    # The App's own slug, which the tag job checks the release PR's author
-    # against: only a PR this App opened is ever tagged.
-    outputs:
-      app-slug: ${{ steps.app.outputs.app-slug }}
     steps:
-` + release.step("Mint the release App's token") + releasePleaseActionStep + `  tag:
+` + release.step("Mint the release-please App's token") + releasePleaseActionStep + `  tag:
     name: Tag
     runs-on: ubuntu-latest
     timeout-minutes: 15
@@ -250,7 +265,7 @@ jobs:
     permissions:
       contents: read
     steps:
-` + relabel.step("Mint the release App's token to relabel") + releasePleaseRelabelStep
+` + relabel.step("Mint the release-please App's token to relabel") + releasePleaseRelabelStep
 }
 
 // mutateEvery returns doc with every occurrence of old replaced by new, failing
@@ -302,8 +317,11 @@ func added(messages, got []string) []string {
 // environment's client-id and private key alone, and narrowed to the
 // permissions the job needs, so neither job can read the other App's
 // credentials, and the release-please job's token, which may merge a PR into
-// main, is not the one that creates the tag. Both token steps pass client-id,
-// never the deprecated app-id (#159).
+// main, is not the one that creates the tag. The tag job reads no output of the
+// job that runs the third-party release-please action: the release-please
+// App's public slug reaches its guard and tag steps as the constant
+// APP_SLUG: shift2eu-release, and the release-please job declares no output.
+// Both token steps pass client-id, never the deprecated app-id (#159).
 //
 // The check returns one message per problem and none for the accepted shape. A
 // case compares what the check reports of its mutation with what it reports of
@@ -486,7 +504,7 @@ func TestReleasePleaseWorkflow(t *testing.T) {
 		// refuses.
 		{
 			name:     "no job-level permissions",
-			workflow: mutate(t, acceptedWorkflow, "    permissions:\n      contents: read\n    # The App's own slug", "    # The App's own slug"),
+			workflow: mutate(t, acceptedWorkflow, "    # GITHUB_TOKEN reads only: the App's token does the writing.\n    permissions:\n      contents: read\n    steps:\n", "    steps:\n"),
 		},
 		{
 			name:     "write-all at the tag job level",
@@ -623,23 +641,65 @@ func TestReleasePleaseWorkflow(t *testing.T) {
 			wantIn:   "GH_TOKEN",
 		},
 
-		// The release-please App's slug is the author the tag step checks the
-		// merged release PR against, and it comes from the release-please job's
-		// output, not from a variable or a secret of the repository. The
-		// tagging step's env: holds nothing else.
+		// The release-please App's slug is the author the steps of the tag job
+		// check the merged release PR against, and each holds it as the constant
+		// APP_SLUG: shift2eu-release, the App's public slug, never a job output
+		// of the job that runs the third-party release-please action, and never
+		// a variable or a secret of the repository. The tagging step's env: holds
+		// nothing else.
 		{
 			name:     "no APP_SLUG on the tagging step",
-			workflow: mutate(t, acceptedWorkflow, "          APP_SLUG: ${{ needs.release-please.outputs.app-slug }}\n", ""),
+			workflow: mutate(t, acceptedWorkflow, taggingStepEnv, "          GH_TOKEN: ${{ steps.app.outputs.token }}\n          GH_REPO: ${{ github.repository }}\n"),
 			wantIn:   "APP_SLUG",
 		},
 		{
 			name:     "an APP_SLUG from a variable",
-			workflow: mutate(t, acceptedWorkflow, "APP_SLUG: ${{ needs.release-please.outputs.app-slug }}", "APP_SLUG: ${{ vars.RELEASE_APP_SLUG }}"),
+			workflow: mutate(t, acceptedWorkflow, taggingStepEnv, "          GH_TOKEN: ${{ steps.app.outputs.token }}\n          GH_REPO: ${{ github.repository }}\n          APP_SLUG: ${{ vars.RELEASE_APP_SLUG }}\n"),
 			wantIn:   "APP_SLUG",
 		},
 		{
+			// The tag job trusts nothing the release-please job reports: the
+			// slug it tags for is its own constant, so a job output here is a
+			// value the third-party action's job hands it.
+			name:     "the tagging step's APP_SLUG from the release-please job's output",
+			workflow: mutate(t, acceptedWorkflow, taggingStepEnv, "          GH_TOKEN: ${{ steps.app.outputs.token }}\n          GH_REPO: ${{ github.repository }}\n          APP_SLUG: ${{ needs.release-please.outputs.app-slug }}\n"),
+			wantIn:   "APP_SLUG",
+		},
+		{
+			name:     "the guard's APP_SLUG from the release-please job's output",
+			workflow: mutate(t, acceptedWorkflow, guardStepEnv, "          GH_TOKEN: ${{ github.token }}\n          GH_REPO: ${{ github.repository }}\n          APP_SLUG: ${{ needs.release-please.outputs.app-slug }}\n"),
+			wantIn:   "APP_SLUG",
+		},
+		{
+			name:     "another slug on the tagging step",
+			workflow: mutate(t, acceptedWorkflow, taggingStepEnv, "          GH_TOKEN: ${{ steps.app.outputs.token }}\n          GH_REPO: ${{ github.repository }}\n          APP_SLUG: someone-else\n"),
+			wantIn:   "APP_SLUG",
+		},
+		{
+			name:     "another slug on the guard",
+			workflow: mutate(t, acceptedWorkflow, guardStepEnv, "          GH_TOKEN: ${{ github.token }}\n          GH_REPO: ${{ github.repository }}\n          APP_SLUG: someone-else\n"),
+			wantIn:   "APP_SLUG",
+		},
+		{
+			// Anywhere in the tag job, not on APP_SLUG alone: a second
+			// reference to the release-please job's outputs is a second value
+			// the tag job trusts, whatever env: key it reaches the shell through.
+			name:     "the guard reading the release-please job's output as well",
+			workflow: mutate(t, acceptedWorkflow, guardStepEnv, guardStepEnv+"          RELEASE_SLUG: ${{ needs.release-please.outputs.app-slug }}\n"),
+			wantIn:   "needs.release-please.outputs",
+		},
+		{
+			// The release-please job declares no output at all: the App's slug
+			// is the tag job's own constant, and an output on that job invites
+			// the job after it to trust a value the third-party action's job
+			// reports.
+			name:     "an app-slug output on the release-please job",
+			workflow: mutate(t, acceptedWorkflow, "    # GITHUB_TOKEN reads only: the App's token does the writing.\n    permissions:\n      contents: read\n    steps:\n", "    # GITHUB_TOKEN reads only: the App's token does the writing.\n    permissions:\n      contents: read\n    outputs:\n      app-slug: ${{ steps.app.outputs.app-slug }}\n    steps:\n"),
+			wantIn:   "outputs",
+		},
+		{
 			name:     "another env key on the tagging step",
-			workflow: mutate(t, acceptedWorkflow, "          APP_SLUG: ${{ needs.release-please.outputs.app-slug }}\n", "          APP_SLUG: ${{ needs.release-please.outputs.app-slug }}\n          GH_DEBUG: \"1\"\n"),
+			workflow: mutate(t, acceptedWorkflow, taggingStepEnv, taggingStepEnv+"          GH_DEBUG: \"1\"\n"),
 			wantIn:   "GH_DEBUG",
 		},
 
