@@ -65,7 +65,8 @@ name the source repository (`org.opencontainers.image.source`) and the commit
 
 The release archives, the CLI's `shift2eu_*` and the HTTP API's `shift2eu-server_*`
 ([Install](install.md#the-release-archives)), are listed in one `checksums.txt`, published with the
-release. Each archive and `checksums.txt` itself carry GitHub build provenance, attested by the release
+release, as is the OpenAPI document `shift2eu-server_openapi.json`, checked against it the same way with
+its name in place of the archive's. Each archive and `checksums.txt` itself carry GitHub build provenance, attested by the release
 workflow for its tag, before the release is published (issue #163). The digest check alone detects a
 download corrupted in transit or on a mirror; the attestation adds who built the file: `release.yml`,
 run on a push of exactly that tag, from that commit, on GitHub's runners. Whoever could replace an

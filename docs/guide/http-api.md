@@ -20,6 +20,17 @@ error; it refers to the report's JSON Schemas in
 path. Every error is `{"error": {"code": "...", "message": "..."}}`, and no message echoes a value from
 the request.
 
+Outside the repository those relative paths do not resolve, so each release, from the first after
+`v0.3.0`, also publishes the self-contained document as the asset `shift2eu-server_openapi.json`: the
+same document with the report schemas bundled under `components.schemas` (`AssessmentReportV1`,
+`ComparisonReportV1`). The latest release's is always at
+<https://github.com/timothymamo/shift2eu/releases/latest/download/shift2eu-server_openapi.json>, and a
+given release's at `https://github.com/timothymamo/shift2eu/releases/download/vX.Y.Z/shift2eu-server_openapi.json`.
+It is listed in the release's `checksums.txt` and verified like an archive
+([Verify an archive](verify-releases.md#verify-an-archive)). The repository holds the same file as
+[`api/openapi.bundled.json`](../../api/openapi.bundled.json), generated from `api/openapi.json` (`make
+openapi`) and held to it by a test; `api/openapi.json` stays the source to edit.
+
 ## Get it
 
 Each release, from the first after `v0.2.0`, publishes `ghcr.io/timothymamo/shift2eu-server` for

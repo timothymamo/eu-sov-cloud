@@ -1,6 +1,7 @@
 # 0019. Serve assessments over a versioned HTTP API from a separate binary
 
-- Status: Accepted; amended 2026-11-12: the bundled OpenAPI document moves from milestone 4 to [issue #139](https://github.com/timothymamo/shift2eu/issues/139);
+- Status: Accepted; amended 2026-11-12: the bundled OpenAPI document moves from milestone 4 to [issue #139](https://github.com/timothymamo/shift2eu/issues/139),
+  which publishes it as the release asset `shift2eu-server_openapi.json` (Consequences);
   amended by issue #147: `shift2eu-server` ships in release archives of its own (Consequences)
 - Date: 2026-11-11 (accepted 2026-11-12, issue #112; milestone 3 decisions added 2026-11-12)
 
@@ -310,6 +311,22 @@ packages it needs, no third-party package, no cloud SDK, no `os/exec` and never 
 [issue #139](https://github.com/timothymamo/shift2eu/issues/139): `api/openapi.json` refers to them by repo-relative path, which a reader outside the repository
 cannot follow, until then.
 
+*Amended (2026-11-12, issue #139, done):* `api/openapi.bundled.json` is the self-contained document.
+`test/internal/openapibundle` generates it from `api/openapi.json`: every `$ref` to a file becomes
+`#/components/schemas/<Name>` (`assessment-v1.schema.json` is `AssessmentReportV1`), the schema is
+added there once without its `$id` and `$schema`, and its own pointers (`#`, `#/$defs/X`) are rewritten
+to absolute ones into the bundle, so two schemas' `$defs` cannot collide. `test/openapibundle`
+regenerates it on every test run and fails unless it equals the committed file (`make openapi` writes
+it), so the bundle cannot drift from the document or the schemas, and `api/openapi.json` stays the one
+source. Each release publishes it as `shift2eu-server_openapi.json` (GoReleaser `release.extra_files`)
+and lists it in `checksums.txt` (`checksum.extra_files`); `check.GitHubRelease` and
+`check.GoReleaserArchives` pin both entries, and ci.yml's snapshot dry run
+(`.github/scripts/verify-archives.sh`) fails unless `checksums.txt` lists it with the sha256 of the
+committed file. The asset name carries no version, so
+`releases/latest/download/shift2eu-server_openapi.json` is a stable URL: the release already scopes
+the version (`releases/download/vX.Y.Z/...`). The `shift2eu-server_` prefix matches the server's
+archives, as the document describes that binary's API.
+
 ## Alternatives considered
 
 - **`shift2eu serve`, a subcommand of the CLI.** One binary and one image, but `net/http` in the CLI's
@@ -335,8 +352,8 @@ cannot follow, until then.
 - **`api/openapi.yaml`.** The usual format, but a test would need a YAML parser in the module. JSON is
   read with `encoding/json` and is valid OpenAPI.
 - **Copy the report schemas into the OpenAPI document.** Self-contained, but two copies of the report's
-  contract that can drift; the relative `$ref` keeps one, and [issue #139](https://github.com/timothymamo/shift2eu/issues/139) bundles them when it
-  publishes the document.
+  contract that can drift; the relative `$ref` keeps one, and [issue #139](https://github.com/timothymamo/shift2eu/issues/139) bundles them, generated
+  and compared by a test, when it publishes the document.
 - **Echo the offending value, escaped, in `invalid_inventory`** (the CLI's wording). Most helpful to a
   developer, but the message reaches a website, its users and its logs, and an inventory value can be a
   secret someone pasted into a tag. Naming the position and field is enough to find it in the document
