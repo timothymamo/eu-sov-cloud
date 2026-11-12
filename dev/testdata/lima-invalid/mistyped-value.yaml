@@ -14,7 +14,7 @@ base:
   - template:_images/ubuntu-lts
 
 vmType: vz
-cpus: four
+cpus: 4
 memory: 16GiB
 disk: 40GiB
 
@@ -27,7 +27,7 @@ mounts: []
 # (docs/adr/0017-run-a-rootless-container-runtime-in-the-lima-vm.md).
 containerd:
   system: false
-  user: false
+  user: maybe
 
 # Kept current by Renovate through the "# renovate:" comments (.github/renovate.json5).
 param:
