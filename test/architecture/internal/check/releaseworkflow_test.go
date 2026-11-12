@@ -137,7 +137,8 @@ var goreleaserSteps = []string{
       # what this run wrote. The archives are named by their extension, not by
       # their name alone: dist/shift2eu_* also matches GoReleaser's build
       # directories (dist/shift2eu_linux_amd64_v1/ ...), and would hand on 12
-      # bare binaries beside the archives.
+      # bare binaries beside the archives. It is kept a week, so a failed
+      # attestation or publication is recovered by re-running the failed jobs.
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: archives
@@ -148,7 +149,7 @@ var goreleaserSteps = []string{
             dist/shift2eu-server_*.zip
             dist/checksums.txt
           if-no-files-found: error
-          retention-days: 1
+          retention-days: 7
 `,
 }
 
@@ -210,7 +211,8 @@ var attestArchivesSteps = []string{
 const publishJobHead = `  # The release is published last (issue #156): GoReleaser uploads every asset
   # to a draft, so nothing can be added to or replaced in the release once it is
   # public, and this job alone publishes it, after the archives are attested.
-  # contents: write and nothing else: nothing in it can sign, push or attest.
+  # It reads the draft before it publishes it, and holds contents: write and
+  # nothing else: nothing in it can sign, push or attest.
   publish:
     name: Publish the release
     needs: [test, goreleaser, attest-archives]
@@ -220,15 +222,74 @@ const publishJobHead = `  # The release is published last (issue #156): GoReleas
     steps:
 `
 
-// publishSteps are the publish job's steps: the one command that publishes the
-// draft, with the tag and the token through env: and the repository named on
-// the command.
+// publishSteps are the publish job's steps: the attested checksums.txt out of
+// the archives workflow artifact, the check of the draft release's assets
+// against it, and the one command that publishes the draft. The tag and the
+// token come through env:, and every gh command is given the repository with
+// --repo, since the job checks nothing out.
 var publishSteps = []string{
-	`      # No step of this job reads the release before publishing it: what the
-      # release holds was attested before it was published. gh is given the
-      # repository with --repo: the job checks nothing out, and gh reads no
-      # repository from GITHUB_REPOSITORY, so without it gh says "fatal: not a
-      # git repository" and publishes nothing.
+	`      # The checksums.txt the attest-archives job attested, from the workflow
+      # artifact it attests (issue #156): what is published must be exactly what
+      # was attested, and this file is the list of it.
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: archives
+`,
+	`      # An immutable release locks its assets when it is published, so the
+      # draft is read before it is published: its asset names must be exactly
+      # the names checksums.txt lists plus checksums.txt itself, each asset's
+      # digest must be the one that file records, and its checksums.txt must be
+      # the very file this run attested. A draft that holds anything else is
+      # never published. A draft is not readable by its tag, so the API's list
+      # of the releases is read.
+      - name: Check the draft's assets against checksums.txt
+        env:
+          TAG: ${{ github.ref_name }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          tmp="$(mktemp -d)"
+          # A draft release is not readable by its tag. The API lists it among
+          # the releases, with draft: true, and gives every asset the digest of
+          # its bytes. --paginate --slurp hands the pages over as one array of
+          # pages, which add joins into one list of releases.
+          gh api --paginate --slurp "repos/timothymamo/shift2eu/releases" > "$tmp/releases.json"
+          if [ "$(jq --arg tag "$TAG" 'add | map(select(.draft and .tag_name == $tag)) | length' "$tmp/releases.json")" != 1 ]; then
+            echo "repos/timothymamo/shift2eu holds no single draft release for $TAG" >&2
+            exit 1
+          fi
+          # The names checksums.txt lists, and checksums.txt itself: what the
+          # draft release must hold exactly, so nothing is published that the
+          # attestation never covered.
+          {
+            sed -e 's/^[0-9a-f]\{64\}  //' checksums.txt
+            echo checksums.txt
+          } | sort > "$tmp/attested.txt"
+          jq --arg tag "$TAG" -r 'add | map(select(.draft and .tag_name == $tag)) | .[0].assets[] | .name' "$tmp/releases.json" | sort > "$tmp/published.txt"
+          if ! cmp -s "$tmp/attested.txt" "$tmp/published.txt"; then
+            echo "the draft release for $TAG does not hold what checksums.txt lists:" >&2
+            diff -u "$tmp/attested.txt" "$tmp/published.txt" >&2 || true
+            exit 1
+          fi
+          # Every asset's digest is the one checksums.txt lists: the bytes the
+          # attestation covers are the bytes that are published.
+          while read -r hash name; do printf 'sha256:%s %s\n' "$hash" "$name"; done < checksums.txt | sort > "$tmp/attested-digests.txt"
+          jq --arg tag "$TAG" -r 'add | map(select(.draft and .tag_name == $tag)) | .[0].assets[] | select(.name != "checksums.txt") | "\(.digest) \(.name)"' "$tmp/releases.json" | sort > "$tmp/published-digests.txt"
+          if ! cmp -s "$tmp/attested-digests.txt" "$tmp/published-digests.txt"; then
+            echo "the draft release for $TAG holds an asset whose digest checksums.txt does not list:" >&2
+            diff -u "$tmp/attested-digests.txt" "$tmp/published-digests.txt" >&2 || true
+            exit 1
+          fi
+          # checksums.txt is attested too: the draft's copy must be the very
+          # file this run attested, not one written after the attestation.
+          if [ "$(jq --arg tag "$TAG" -r 'add | map(select(.draft and .tag_name == $tag)) | .[0].assets[] | select(.name == "checksums.txt") | .digest' "$tmp/releases.json")" != "sha256:$(sha256sum checksums.txt | cut -d' ' -f1)" ]; then
+            echo "the draft release's checksums.txt is not the one this run attested" >&2
+            exit 1
+          fi
+`,
+	`      # gh is given the repository with --repo: the job checks nothing out, and
+      # gh reads no repository from GITHUB_REPOSITORY, so without it gh says
+      # "fatal: not a git repository" and publishes nothing.
       - name: Publish the draft release
         env:
           TAG: ${{ github.ref_name }}
@@ -242,7 +303,8 @@ var publishSteps = []string{
 // fresh runner after publish, with read-only access to the release and to the
 // repository's attestations, no OIDC token and no checkout.
 const verifyArchivesJobHead = `  # A fresh runner that verifies what the published release carries (issue
-  # #163): it downloads checksums.txt and the archives from the release, checks
+  # #163): it downloads every asset of the release, checks that the release is
+  # published and holds exactly checksums.txt and the files it lists, checks
   # their digests and verifies each of them against the build provenance this
   # workflow made for this tag and commit. Read-only: contents: read and
   # attestations: read, no OIDC token and nothing it can write, and no
@@ -257,30 +319,50 @@ const verifyArchivesJobHead = `  # A fresh runner that verifies what the publish
     steps:
 `
 
-// verifyArchivesSteps are the verify-archives job's steps: the release's own
-// assets, the check of their digests, and the provenance of every archive and
-// of checksums.txt itself (docs/guide/verify-releases.md).
+// verifyArchivesSteps are the verify-archives job's steps: every asset of the
+// release, the check that it is published and holds exactly checksums.txt and
+// the files that file lists, their digests, and the provenance of every one of
+// them (docs/guide/verify-releases.md).
 var verifyArchivesSteps = []string{
-	`      # The release as a reader of it sees it, published by now. gh is given
-      # the repository with --repo here too: no checkout, and gh reads no
-      # repository from GITHUB_REPOSITORY.
+	`      # Every asset of the release, not the patterns the workflow expects to
+      # find: what is checked is what was published. gh is given the repository
+      # with --repo here too, since no checkout runs and gh reads no repository
+      # from GITHUB_REPOSITORY.
       - name: Download the published archives
         env:
           TAG: ${{ github.ref_name }}
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          gh release download "$TAG" --repo timothymamo/shift2eu \
-            --pattern 'shift2eu_*' --pattern 'shift2eu-server_*' --pattern checksums.txt
+        run: gh release download "$TAG" --repo timothymamo/shift2eu
 `,
-	`      # docs/guide/verify-releases.md on this release: the digests first, then
-      # the provenance of every archive and of checksums.txt itself, made by
-      # this workflow, for this tag and commit, on GitHub's runners.
+	`      # docs/guide/verify-releases.md on this release: the release is
+      # published, not a draft, and holds exactly checksums.txt and the files it
+      # lists, whose digests are checked first; then the provenance of every one
+      # of them, made by this workflow, for this tag and commit, on GitHub's
+      # runners.
       - name: Verify the published archives
         env:
           TAG: ${{ github.ref_name }}
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
+          if [ "$(gh release view "$TAG" --repo timothymamo/shift2eu --json isDraft --jq '.isDraft')" != false ]; then
+            echo "the release of $TAG is still a draft, so it was never published" >&2
+            exit 1
+          fi
+          tmp="$(mktemp -d)"
+          # The files checksums.txt lists, and checksums.txt itself: what the
+          # release must hold exactly, so nothing is verified that the
+          # release does not carry, and nothing is left unverified.
+          {
+            sed -e 's/^[0-9a-f]\{64\}  //' checksums.txt
+            echo checksums.txt
+          } | sort > "$tmp/attested.txt"
+          ls -1 | sort > "$tmp/downloaded.txt"
+          if ! cmp -s "$tmp/attested.txt" "$tmp/downloaded.txt"; then
+            echo "the release of $TAG does not hold what checksums.txt lists:" >&2
+            diff -u "$tmp/attested.txt" "$tmp/downloaded.txt" >&2 || true
+            exit 1
+          fi
           sha256sum -c checksums.txt
           for subject in shift2eu_* shift2eu-server_* checksums.txt; do
             gh attestation verify "$subject" --repo timothymamo/shift2eu \
@@ -1274,8 +1356,17 @@ func TestReleaseWorkflow(t *testing.T) {
 		{name: "the publish job publishing another release", workflow: in("publish", `gh release edit "$TAG" --repo timothymamo/shift2eu --draft=false`, `gh release edit latest --repo timothymamo/shift2eu --draft=false`), wantIn: `want exactly "gh release edit \"$TAG\" --repo timothymamo/shift2eu --draft=false"`},
 		{name: "the publish command without --repo", workflow: in("publish", "--repo timothymamo/shift2eu ", ""), wantIn: `want exactly "gh release edit \"$TAG\" --repo timothymamo/shift2eu --draft=false"`},
 		{name: "the publish job's tag pasted into the script", workflow: in("publish", `gh release edit "$TAG" --repo timothymamo/shift2eu --draft=false`, `gh release edit "${{ github.ref_name }}" --repo timothymamo/shift2eu --draft=false`), wantIn: "holds a ${{ }} expression"},
-		{name: "the publish job without the token from env", workflow: in("publish", "          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}\n", ""), wantIn: "env holds"},
-		{name: "an extra step in the publish job", workflow: steps("publish", beforeStep(t, publishSteps, "      - name: Publish the draft release", "run: ./scripts/prepare.sh")), wantIn: "holds 2 steps, want exactly 1"},
+		{name: "the publish job without the token from env", workflow: in("publish", "          TAG: ${{ github.ref_name }}\n          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}\n        run: gh release edit", "          TAG: ${{ github.ref_name }}\n        run: gh release edit"), wantIn: "env holds"},
+		// An immutable release locks its assets when it is published (issue
+		// #156), so the draft is checked against the attested checksums.txt
+		// before it is published: its asset names and digests must be the ones
+		// that file lists, and its checksums.txt the attested one.
+		{name: "no check of the draft's assets before publishing", workflow: steps("publish", withoutStep(t, publishSteps, "name: Check the draft's assets against checksums.txt")), wantIn: "holds 2 steps, want exactly 3"},
+		{name: "the attested checksums.txt not downloaded before publishing", workflow: steps("publish", withoutStep(t, publishSteps, "actions/download-artifact@")), wantIn: "holds 2 steps, want exactly 3"},
+		{name: "the draft checked only after it is published", workflow: steps("publish", swappedSteps(t, publishSteps, "name: Check the draft's assets against checksums.txt", "name: Publish the draft release")), wantIn: `name is "Publish the draft release"`},
+		{name: "a draft check of the names alone", workflow: in("publish", "          # Every asset's digest is the one checksums.txt lists: the bytes the\n          # attestation covers are the bytes that are published.\n          while read -r hash name; do printf 'sha256:%s %s\\n' \"$hash\" \"$name\"; done < checksums.txt | sort > \"$tmp/attested-digests.txt\"\n", ""), wantIn: "the draft release for $TAG holds an asset whose digest checksums.txt does not list"},
+		{name: "a draft check that trusts the draft's checksums.txt", workflow: in("publish", "            echo \"the draft release's checksums.txt is not the one this run attested\" >&2\n", "            echo \"the draft release's checksums.txt is the attested one\" >&2\n"), wantIn: "the draft release's checksums.txt is not the one this run attested"},
+		{name: "an extra step in the publish job", workflow: steps("publish", beforeStep(t, publishSteps, "      - name: Publish the draft release", "run: ./scripts/prepare.sh")), wantIn: "holds 4 steps, want exactly 3"},
 		{name: "the publish step in the goreleaser job", workflow: steps("goreleaser", beforeStep(t, goreleaserSteps, "      - uses: actions/upload-artifact@", "name: Publish the draft release\n        run: gh release edit \"$TAG\" --repo timothymamo/shift2eu --draft=false")), wantIn: "jobs: goreleaser: steps holds 5 steps, want exactly 4"},
 		{name: "the publish step in the test job", workflow: inTestJob("name: Publish the draft release\n        run: gh release edit \"$TAG\" --repo timothymamo/shift2eu --draft=false"), wantIn: "holds 5 steps, want exactly 4"},
 
@@ -1701,13 +1792,19 @@ func TestReleaseWorkflow(t *testing.T) {
 		{name: "a bare shift2eu_* subject pattern", workflow: in("attest-archives", "            shift2eu_*.tar.gz\n", "            shift2eu_*\n"), wantIn: "subject-path"},
 		{name: "the archives attested by digest instead", workflow: in("attest-archives", "          subject-path: |\n            shift2eu_*.tar.gz\n            shift2eu_*.zip\n            shift2eu-server_*.tar.gz\n            shift2eu-server_*.zip\n            checksums.txt\n", "          subject-digest: sha256:0000000000000000000000000000000000000000000000000000000000000000\n"), wantIn: `no "subject-path"`},
 		{name: "the archives not handed on by goreleaser", workflow: steps("goreleaser", withoutStep(t, goreleaserSteps, "actions/upload-artifact@")), wantIn: "holds 3 steps, want exactly 4"},
+		// The archives artifact is kept a week, so a failed attestation or
+		// publication is recovered by re-running the failed jobs; the SBOM
+		// artifacts stay a day.
+		{name: "the archives artifact kept one day", workflow: in("goreleaser", "          retention-days: 7\n", "          retention-days: 1\n"), wantIn: "retention-days"},
 
 		// The independent check of the published archives (issue #163), beside
 		// the image verify job: a fresh runner after publish, read-only to the
-		// release and to the repository's attestations, which downloads the
-		// release's own assets, checks their digests, and runs gh attestation
-		// verify on every archive and on checksums.txt itself with the release's
-		// workflow, its tag and commit, and GitHub's runners only.
+		// release and to the repository's attestations, which downloads every
+		// asset of the release, refuses a release that is still a draft and one
+		// that holds anything but checksums.txt and the files it lists, checks
+		// their digests, and runs gh attestation verify on every archive and on
+		// checksums.txt itself with the release's workflow, its tag and commit,
+		// and GitHub's runners only.
 		{name: "no verify-archives job", workflow: release.withoutJob(t, "verify-archives"), wantIn: `no "verify-archives"`},
 		{name: "the verify-archives job on a self-hosted runner", workflow: in("verify-archives", "    runs-on: ubuntu-latest\n", "    runs-on: self-hosted\n"), wantIn: "runs-on"},
 		{name: "the verify-archives job without needs", workflow: in("verify-archives", "    needs: publish\n", ""), wantIn: `no "needs"`},
@@ -1722,7 +1819,13 @@ func TestReleaseWorkflow(t *testing.T) {
 		{name: "a checkout in the verify-archives job", workflow: steps("verify-archives", beforeStep(t, verifyArchivesSteps, "      - name: Download the published archives", "uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1")), wantIn: "holds 3 steps, want exactly 2"},
 		{name: "a missing step in the verify-archives job", workflow: steps("verify-archives", withoutStep(t, verifyArchivesSteps, "name: Verify the published archives")), wantIn: "holds 1 steps, want exactly 2"},
 		{name: "the published archives not downloaded", workflow: in("verify-archives", `gh release download "$TAG"`, `gh release view "$TAG"`), wantIn: `gh release download \"$TAG\" --repo timothymamo/shift2eu`},
-		{name: "the download without --repo", workflow: in("verify-archives", `gh release download "$TAG" --repo timothymamo/shift2eu \`, `gh release download "$TAG" \`), wantIn: `gh release download \"$TAG\" --repo timothymamo/shift2eu`},
+		{name: "the download without --repo", workflow: in("verify-archives", `gh release download "$TAG" --repo timothymamo/shift2eu`, `gh release download "$TAG"`), wantIn: `want exactly "gh release download \"$TAG\" --repo timothymamo/shift2eu"`},
+		{name: "a download of the expected patterns alone", workflow: in("verify-archives", `gh release download "$TAG" --repo timothymamo/shift2eu`, `gh release download "$TAG" --repo timothymamo/shift2eu --pattern 'shift2eu_*' --pattern 'shift2eu-server_*' --pattern checksums.txt`), wantIn: `want exactly "gh release download \"$TAG\" --repo timothymamo/shift2eu"`},
+		// What the release holds is exactly checksums.txt and the files it
+		// lists, and it is published: an asset the attestation does not cover,
+		// or one the release never got, fails here rather than pass unverified.
+		{name: "the release's file set not checked", workflow: in("verify-archives", "            echo \"the release of $TAG does not hold what checksums.txt lists:\" >&2\n", "            echo \"the release of $TAG holds exactly checksums.txt and its files\" >&2\n"), wantIn: "the release of $TAG does not hold what checksums.txt lists"},
+		{name: "a release left a draft", workflow: in("verify-archives", "            echo \"the release of $TAG is still a draft, so it was never published\" >&2\n", "            echo \"the release of $TAG is published\" >&2\n"), wantIn: "the release of $TAG is still a draft, so it was never published"},
 		{name: "the verification without set -euo pipefail", workflow: in("verify-archives", "        run: |\n          set -euo pipefail\n", "        run: |\n"), wantIn: `want exactly "set -euo pipefail`},
 		{name: "the digests not checked", workflow: in("verify-archives", "          sha256sum -c checksums.txt\n", ""), wantIn: "sha256sum -c checksums.txt"},
 		{name: "a verification of another repository", workflow: in("verify-archives", `gh attestation verify "$subject" --repo timothymamo/shift2eu`, `gh attestation verify "$subject" --repo example/shift2eu`), wantIn: "--repo timothymamo/shift2eu"},
