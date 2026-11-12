@@ -6,9 +6,10 @@ version: "2"
 # which run with real read-only cloud credentials. What applies to them:
 #   - gosec runs on every _test.go file except for G204 and G304, which tests
 #     trip by design (see the exclusion rules at the end of this file).
-#   - test/e2e has a depguard rule of its own, e2e-is-black-box. Every other
-#     depguard rule but app-tests-use-fakes-not-adapters leaves _test.go files
-#     out, so an integration test gets no depguard rule.
+#   - test/e2e has a depguard rule of its own, e2e-is-black-box, and the
+#     application layer's tests have the strict app-tests-use-fakes-not-adapters.
+#     Every other depguard rule leaves _test.go files out, so an integration
+#     test elsewhere gets no depguard rule.
 #   - forbidigo's cloud-read-only group checks them like any other file,
 #     which matters most here, where the credentials are real.
 # e2e and integration are the only custom build tags. Never negate them: lint
@@ -73,8 +74,10 @@ linters:
         # test/architecture reads every strict rule's files: and allow: lists
         # and checks the rule package by package (ADR 0012): write a strict
         # rule's directories as "**/<dir>/**", whole directories it takes out
-        # as "!**/<dir>/**", and "!$test" unless it holds test files, or give
-        # it a reasoned skip there. An allow entry without $ is a prefix.
+        # as "!**/<dir>/**", and "!$test" unless it holds test files; a rule
+        # for the test files of a directory alone as the pair
+        # "**/<dir>/**/*_test.go" and "**/<dir>/*_test.go"; or give it a
+        # reasoned skip there. An allow entry without $ is a prefix.
         #
         # test/architecture also pins every rule here whole
         # (TestDepguardRulesArePinned, issue #80): list-mode, files, allow and
@@ -156,11 +159,11 @@ linters:
             - pkg: google.golang.org/api
               desc: cloud SDKs belong in internal/adapter/source/gcp
             # The assess path needs no network, process or OS access in the
-            # application layer: adapters do I/O behind the ports. The strict
-            # app-uses-ports-not-adapters rule refuses everything its allow list
-            # leaves out, so for it the entries below only say why. The lax
-            # app-tests-use-fakes-not-adapters rule shares this list and allows
-            # any package not named here, so the list is not complete: it names
+            # application layer: adapters do I/O behind the ports. Both rules
+            # that share this list are strict, app-uses-ports-not-adapters for
+            # the layer's production files and app-tests-use-fakes-not-adapters
+            # for its tests (issue #144), so each refuses everything its allow
+            # list leaves out, and for them the entries below only say why:
             # the standard packages known to reach files, sockets, processes or
             # shared libraries. Every net/* package that can open a connection
             # (and crypto/tls, whose Dial opens one), os and os/exec, os/user
@@ -173,14 +176,14 @@ linters:
             # temporary files), runtime/coverage (WriteMetaDir,
             # WriteCountersDir) and runtime/debug (WriteHeapDump,
             # SetCrashOutput); and unsafe, whose //go:linkname would reach a
-            # denied function without importing its package. A standard
-            # package that can do I/O and is added to Go must be added here;
-            # test/lint, TestAppTestsUseFakesNotAdaptersProbe, pins the list
-            # (issue #119). The pure packages are left out on purpose: net/url
-            # and net/netip, and path/filepath, whose Join and Base touch no
-            # file (its Walk and Glob do, but nothing in internal/app imports
-            # it); the strict rule refuses them through its allow list, with
-            # depguard's generic message, and the tests may use them.
+            # denied function without importing its package. The list need not
+            # be complete, since the allow lists refuse a package it misses,
+            # one added to Go later included: test/lint,
+            # TestAppTestsUseFakesNotAdaptersProbe, pins that these stay
+            # refused (issues #119 and #144). No deny entry may name a package
+            # an allow list allows (net/url and net/netip are pure and allowed),
+            # since depguard then decides by entry length; test/architecture's
+            # AllowList refuses that.
             #
             # depguard prefix-matches, so net/http also covers
             # net/http/httptest and every other net/http/* package, net/rpc
@@ -245,14 +248,59 @@ linters:
               desc: the application layer writes no coverage data (WriteMetaDir and WriteCountersDir write files)
             - pkg: unsafe
               desc: the application layer and its tests need no unsafe code; //go:linkname would reach functions denied here
-        # The application layer's tests use fakes, not adapters, and keep the
-        # same deny list. They are left out of the strict rule above because
-        # they also need testing, go-cmp and testutil.
+        # The application layer's tests use fakes, not adapters, and do no
+        # I/O. They are left out of the strict rule above because they also
+        # need testing, go-cmp and internal/testutil, so they have a strict
+        # allow list of their own (issue #144): the application package under
+        # test, the domain packages, internal/testutil, go-cmp, testing, the
+        # domain's pure standard packages (the allow list of domain-is-pure,
+        # so the domain and the tests of its caller agree on what pure means),
+        # and the few more a test needs: bytes, context (the use case takes
+        # one), io, sync (a fake's mutex). Every entry ends in $, for the
+        # reason given at domain-is-pure. Anything else fails lint, a standard
+        # package added to Go later included. YAML cannot join two lists, so
+        # the domain's entries are repeated here, not aliased: one added to
+        # domain-is-pure is added here too when the tests need it. Add a
+        # package only when a test needs it, never one that does I/O. The deny
+        # list is the one app-uses-ports-not-adapters writes, shared through
+        # *app-deny: under a strict list it only says why.
+        #
+        # The files: entries are the _test.go files of internal/app and of the
+        # directories below it, and no production file, which
+        # app-uses-ports-not-adapters holds. test/architecture reads this pair
+        # of globs as the test files of internal/app and holds the test
+        # imports of every package under it to this allow list, package by
+        # package for every release target (ADR 0012).
         app-tests-use-fakes-not-adapters:
-          list-mode: lax
+          list-mode: strict
           files:
             - "**/internal/app/**/*_test.go"
             - "**/internal/app/*_test.go"
+          allow:
+            - bytes$
+            - context$
+            - errors$
+            - fmt$
+            - io$
+            - net/netip$
+            - net/url$
+            - slices$
+            - strconv$
+            - strings$
+            - sync$
+            - testing$
+            - time$
+            - unicode$
+            - unicode/utf8$
+            - github.com/google/go-cmp/cmp$
+            - github.com/timothymamo/shift2eu/internal/app/analysis$
+            - github.com/timothymamo/shift2eu/internal/domain/assessment$
+            - github.com/timothymamo/shift2eu/internal/domain/catalog$
+            - github.com/timothymamo/shift2eu/internal/domain/inventory$
+            - github.com/timothymamo/shift2eu/internal/domain/mapping$
+            - github.com/timothymamo/shift2eu/internal/domain/taxonomy$
+            - github.com/timothymamo/shift2eu/internal/domain/text$
+            - github.com/timothymamo/shift2eu/internal/testutil$
           deny: *app-deny
         # The driving adapter gets its adapters from the composition root
         # through cli.Deps and never constructs one, so it imports only the

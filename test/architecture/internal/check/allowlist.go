@@ -116,7 +116,25 @@ func AllowList(golangci []byte, rule string) ([]AllowEntry, error) {
 		return nil, fmt.Errorf("read depguard rule %s: %w", rule, err)
 	}
 
-	allow, err := readAllow(body)
+	// aliased resolves a deny list written as an alias of an anchor (deny:
+	// *name) by reading every rule of the document in file order, as
+	// DepguardRules does, since the anchor sits in another rule.
+	aliased := func() ([]string, error) {
+		rules, err := DepguardRules(golangci)
+		if err != nil {
+			return nil, err
+		}
+
+		for _, r := range rules {
+			if r.Name == rule {
+				return r.Deny, nil
+			}
+		}
+
+		return nil, fmt.Errorf("no depguard rule %s", rule)
+	}
+
+	allow, err := readAllow(body, aliased)
 	if err != nil {
 		return nil, fmt.Errorf("read depguard rule %s: %w", rule, err)
 	}
@@ -205,7 +223,7 @@ func listMode(entries []yamlread.Entry) (string, int, error) {
 
 // readAllow checks the list-mode of a rule's body and returns its allow
 // entries.
-func readAllow(body []yamlread.Line) ([]AllowEntry, error) {
+func readAllow(body []yamlread.Line, aliased func() ([]string, error)) ([]AllowEntry, error) {
 	entries, err := yamlread.Mapping(body)
 	if err != nil {
 		return nil, err
@@ -270,7 +288,7 @@ func readAllow(body []yamlread.Line) ([]AllowEntry, error) {
 		out = append(out, AllowEntry{Path: value, Prefix: true})
 	}
 
-	if err := checkDeny(entries, out); err != nil {
+	if err := checkDeny(entries, out, aliased); err != nil {
 		return nil, err
 	}
 
@@ -282,14 +300,26 @@ func readAllow(body []yamlread.Line) ([]AllowEntry, error) {
 // then decides that import by which entry is longer, not by which list holds
 // it, so the allow list alone no longer says what the rule allows. A deny
 // entry no allow entry allows, such as net beside net/netip$, leaves the allow
-// list as the whole answer and is fine.
-func checkDeny(entries []yamlread.Entry, allow []AllowEntry) error {
+// list as the whole answer and is fine. A deny list written as an alias of
+// an anchor in another rule (deny: *name) is read through aliased, which
+// follows it as DepguardRules does.
+func checkDeny(entries []yamlread.Entry, allow []AllowEntry, aliased func() ([]string, error)) error {
 	for _, e := range entries {
 		if e.Key != "deny" {
 			continue
 		}
 
-		paths, err := readDenyPaths(e)
+		var (
+			paths []string
+			err   error
+		)
+
+		if strings.HasPrefix(e.Value, "*") {
+			paths, err = aliasedDenyPaths(e, aliased)
+		} else {
+			paths, err = readDenyPaths(e)
+		}
+
 		if err != nil {
 			return err
 		}
@@ -308,10 +338,31 @@ func checkDeny(entries []yamlread.Entry, allow []AllowEntry) error {
 	return nil
 }
 
+// aliasedDenyPaths returns the paths of a deny list written as an alias
+// (deny: *name), read through aliased. It refuses an alias with lines below
+// it or a name the reader does not follow.
+func aliasedDenyPaths(e yamlread.Entry, aliased func() ([]string, error)) ([]string, error) {
+	name, err := anchorName(e, e.Value[1:])
+	if err != nil {
+		return nil, err
+	}
+
+	if len(e.Block) != 0 {
+		return nil, fmt.Errorf("line %d: deny is the alias *%s and has lines below it", e.Num, name)
+	}
+
+	paths, err := aliased()
+	if err != nil {
+		return nil, fmt.Errorf("line %d: deny is the alias *%s: %w", e.Num, name, err)
+	}
+
+	return paths, nil
+}
+
 // readDenyPaths returns the path of each entry of a deny list: a block
 // sequence below the key, optionally anchored (deny: &name), whose entries are
-// a scalar path or a mapping of pkg and desc. It fails closed on an alias,
-// whose entries this reader of one rule cannot see.
+// a scalar path or a mapping of pkg and desc. An alias is read by
+// aliasedDenyPaths instead; this reader of one rule fails closed on one.
 func readDenyPaths(e yamlread.Entry) ([]string, error) {
 	if e.Value != "" && !strings.HasPrefix(e.Value, "&") {
 		return nil, fmt.Errorf("line %d: deny has %q on its own line, want an anchor or nothing", e.Num, e.Value)

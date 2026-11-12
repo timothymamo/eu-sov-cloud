@@ -32,16 +32,9 @@ const (
 var skippedStrictRules = map[string]string{
 	"cli-gets-adapters-from-cmd": "it allows $gostd, which depguard expands to one prefix entry per top-level directory of GOROOT/src, so no allow list of package-by-package imports can say what it means",
 	"e2e-is-black-box":           "test/e2e holds test files only, so go list -deps reaches no package of it: it is no layer of the production packages the check holds, and a package only a test file imports is never listed at all",
-	appTestsRule:                 "it holds the application layer's _test.go files only (**/internal/app/**/*_test.go), a glob RuleDirs refuses: naming its directory **/internal/app/** would hold the layer's production files to the tests' allow list too, which app-uses-ports-not-adapters already holds them to, and the package check cannot hold test imports alone. TestAppTestsUseFakesNotAdaptersProbe runs the rule over a probe module on every release target instead, and TestDepguardRulesArePinned pins its lists entry by entry",
 	compositionRootRule:          "go list -deps ./cmd/shift2eu/... lists the composition root's whole dependency tree, internal/cli and internal/version included, and no rule the check reads holds those (internal/cli's own rule allows $gostd and is skipped), so listing the composition root beside the other layers would flag them as outside every directory the check holds. TestCompositionRootRulesAreHeldToTheirRuleForEveryReleaseTarget holds cmd/shift2eu to this rule's allow list instead, on every release target",
 	serverCompositionRootRule:    "go list -deps ./cmd/shift2eu-server/... lists the server's whole dependency tree, the target adapters and the report adapters included, and the lax rule adapters-are-built-in-cmd holds those, which the check does not read, so listing the server's root beside the layers would flag them as outside every directory the check holds. TestCompositionRootRulesAreHeldToTheirRuleForEveryReleaseTarget holds cmd/shift2eu-server to this rule's allow list instead, on every release target",
 }
-
-// appTestsRule is the strict depguard rule that holds the application layer's
-// _test.go files (issue #144): a strict allow list of the domain packages, the
-// application package under test, internal/testutil, testing, go-cmp and the
-// pure standard packages an application-layer test needs.
-const appTestsRule = "app-tests-use-fakes-not-adapters"
 
 // sdkRule is the strict depguard rule that holds every cloud source adapter, and
 // every helper directory under internal/adapter/source, to its cloud's SDK: its
@@ -330,11 +323,12 @@ func rulesOf(t *testing.T, golangci []byte, name string) []check.Rule {
 
 	for _, dir := range files.Dirs {
 		rules = append(rules, check.Rule{
-			Name:     name,
-			Dir:      dir,
-			Excludes: files.Excludes,
-			Tests:    files.Tests,
-			Allow:    allow,
+			Name:      name,
+			Dir:       dir,
+			Excludes:  files.Excludes,
+			Tests:     files.Tests,
+			TestsOnly: files.TestsOnly,
+			Allow:     allow,
 		})
 	}
 

@@ -69,6 +69,12 @@
 // run --allow-serial-runners, and TestCILintMatrixCoversEveryReleaseTarget
 // wants only version and skip-cache in the golangci-lint step's with: block.
 //
+// app-tests-use-fakes-not-adapters, the strict allow list of the application
+// layer's _test.go files, is no skip either (issue #144): RuleDirs reads its
+// pair of test-file globs as the test files of internal/app, and
+// TestReleaseTargetDependencies holds the test imports of every package there
+// to its allow list on every release platform.
+//
 // TestCloudAdapterSDKRuleIsChecked pins that the SDK-only rule,
 // cloud-adapters-reach-the-cloud-through-the-sdk, is no skip (issue #79): the
 // check reads its SDK-root prefix entries, the two directories it excludes and

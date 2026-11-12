@@ -8,7 +8,11 @@
 // Packages holds each package of the module to the allow list of every
 // depguard rule whose directory covers it and does not exclude it, and, for a
 // rule that holds test files, the imports of its _test.go files too (issue
-// #79). An import is matched as depguard v2.2.1 matches it: the entries are
+// #79). A rule whose files: list names the test files of a directory alone
+// (the pair **/<dir>/**/*_test.go and **/<dir>/*_test.go, RuleFiles.TestsOnly)
+// holds only those imports (issue #144); a package held by such rules alone is
+// reported, since then no rule holds its own imports. AllowList follows a deny
+// list written as an alias of another rule's anchor. An import is matched as depguard v2.2.1 matches it: the entries are
 // sorted as written and only the one nearest before the import decides, exact
 // for an entry ending in $, by string prefix for one ending in /. AllowList
 // refuses a prefix entry that does not end in /, and a rule whose deny list
