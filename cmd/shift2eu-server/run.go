@@ -72,13 +72,15 @@ type config struct {
 	insecureNoAuth bool
 }
 
-// run is the server: it reads the flags in args and the environment through
-// lookupEnv, listens, calls listening (when not nil) with the bound address,
-// and serves the API until ctx is cancelled, then shuts down gracefully. It
-// writes startup errors, prefixed "shift2eu-server: ", and the access log to
-// stderr. It returns 0 after a graceful shutdown, 2 for a usage or
-// configuration error, before anything listens, and 1 for a runtime failure.
-func run(ctx context.Context, args []string, lookupEnv func(string) (string, bool),
+// run is the server: it reads the flags in args and the token variable
+// tokenEnvVar through tokenSource, which reports its value and whether it is
+// set (run reads no other variable), listens, calls listening (when not nil)
+// with the bound address, and serves the API until ctx is cancelled, then
+// shuts down gracefully. It writes startup errors, prefixed
+// "shift2eu-server: ", and the access log to stderr. It returns 0 after a
+// graceful shutdown, 2 for a usage or configuration error, before anything
+// listens, and 1 for a runtime failure.
+func run(ctx context.Context, args []string, tokenSource func() (string, bool),
 	stderr io.Writer, listening func(addr net.Addr),
 ) int {
 	stderr = &lockedWriter{w: stderr}
@@ -88,7 +90,7 @@ func run(ctx context.Context, args []string, lookupEnv func(string) (string, boo
 		return code
 	}
 
-	set, err := setUp(cfg, lookupEnv)
+	set, err := setUp(cfg, tokenSource)
 	if err != nil {
 		printError(stderr, err)
 
@@ -195,8 +197,8 @@ type setup struct {
 // Every check that can fail without the listener runs before it is opened, so a
 // refused configuration never opens a port; the one that needs it, that a
 // loopback listener bound a loopback address, closes it.
-func setUp(cfg config, lookupEnv func(string) (string, bool)) (setup, error) {
-	tok, err := readToken(lookupEnv, cfg.tokenFile)
+func setUp(cfg config, tokenSource func() (string, bool)) (setup, error) {
+	tok, err := readToken(tokenSource, cfg.tokenFile)
 	if err != nil {
 		return setup{}, err
 	}

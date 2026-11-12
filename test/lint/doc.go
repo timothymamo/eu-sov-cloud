@@ -71,15 +71,25 @@
 // os/exec, syscall.Exec, ForkExec, StartProcess, os.Environ, syscall.Environ),
 // the windows entry points (syscall.CreateProcess, CreateProcessAsUser,
 // GetEnvironmentStrings, LoadDLL, MustLoadDLL, NewLazyDLL, LoadLibrary,
-// LoadLibraryEx, GetProcAddress), the raw system calls (syscall.Syscall,
+// GetProcAddress), the raw system calls (syscall.Syscall,
 // Syscall6, 9, 12, 15, 18 and N, RawSyscall, RawSyscall6) and syscall.SYS_*,
 // and any use of unsafe; composition-root-env refuses reading a named variable
 // (os.Getenv, os.LookupEnv, os.ExpandEnv, syscall.Getenv,
 // syscall.GetEnvironmentVariable). The probe lints the roots natively and for
-// windows/amd64. TestCompositionRootPassesLookupEnvToRun holds os.LookupEnv in
-// cmd/shift2eu-server/main.go to the one argument of run, and
+// windows/amd64. Those names are defence in depth: the comprehensive guard is
+// TestCompositionRootsUseSyscallOnlyForSignals, an AST check under which the
+// roots, tests included, use package syscall for a ^SIG[A-Z0-9]+$ constant and
+// the type syscall.Signal only, and TestCompositionRootsLinkNoForeignSymbol
+// refuses //go:linkname in them. TestCompositionRootPassesLookupEnvToRun holds
+// cmd/shift2eu-server/main.go to one os.LookupEnv call, with the identifier
+// tokenEnvVar, as the sole return of the func() (string, bool) token source it
+// passes to run, so run reads no other variable, and
 // TestCompositionRootsNameNoEnvironmentPath refuses a /proc/ or /dev/fd/
-// literal in the roots, which no group can state. TestCompositionRootExclusions
+// literal in the roots; no group can state either. The depguard rule
+// composition-root-tests refuses go/build, net/http/cgi, os/exec, plugin,
+// runtime/cgo, syscall/js and unsafe in the roots' _test.go files, which the
+// strict composition-root rules skip; TestCompositionRootTestsReachNoForeignCodeProbe
+// runs it on a probe module (testdata/compositionroottests). TestCompositionRootExclusions
 // pins their one path-except each and the env group's one exception, whose text
 // is the group's form with the os.LookupEnv entry's exact msg in place of
 // [^"]*, so it drops that entry's issue in cmd/shift2eu-server/main.go alone;

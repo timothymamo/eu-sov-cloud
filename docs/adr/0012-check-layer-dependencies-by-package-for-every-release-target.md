@@ -124,18 +124,26 @@ forbidigo groups hold the composition roots `cmd/shift2eu` and `cmd/shift2eu-ser
 `os.StartProcess`, `syscall.Exec`, `syscall.ForkExec`, `syscall.StartProcess`, any use of `os/exec`,
 `os.Environ` and `syscall.Environ`, the windows entry points (`syscall.CreateProcess`,
 `CreateProcessAsUser`, `GetEnvironmentStrings`, `LoadDLL`, `MustLoadDLL`, `NewLazyDLL`,
-`LoadLibrary`, `LoadLibraryEx`, `GetProcAddress`), the raw system calls (`syscall.Syscall`,
+`LoadLibrary`, `GetProcAddress`), the raw system calls (`syscall.Syscall`,
 `Syscall6/9/12/15/18`, `SyscallN`, `RawSyscall`, `RawSyscall6`) and the `syscall.SYS_*` numbers, and
 any use of `unsafe`, in the roots' `_test.go` files too, with no exception; `composition-root-env`
 refuses `os.Getenv`, `os.LookupEnv`, `os.ExpandEnv`, `syscall.Getenv` and
-`syscall.GetEnvironmentVariable`, except `os.LookupEnv` in
-`cmd/shift2eu-server/main.go`, which passes it to `run` for `SHIFT2EU_SERVER_TOKEN` (ADR 0019). Each
+`syscall.GetEnvironmentVariable`, except one `os.LookupEnv(tokenEnvVar)` call in
+`cmd/shift2eu-server/main.go`, in the `func() (string, bool)` token source it hands to `run` for
+`SHIFT2EU_SERVER_TOKEN` (ADR 0019); `run`, `setUp` and `readToken` see only the token. Each
 group has one `path-except: ^cmd/shift2eu(?:-server)?/` exclusion rule, so it holds for both roots,
 `_test.go` files included, and the exception is a `path` rule for that one file whose text names the
-`os.LookupEnv` entry's msg alone. Two source checks in `test/lint` add what forbidigo cannot state:
-`TestCompositionRootPassesLookupEnvToRun` (`os.LookupEnv` in `cmd/shift2eu-server/main.go` only as
-the one argument to `run`) and `TestCompositionRootsNameNoEnvironmentPath` (no `/proc/` or `/dev/fd/`
-literal in the roots). The gap is narrowed, not closed: a root can delegate an environment read to
+`os.LookupEnv` entry's msg alone. The named `syscall` and `unsafe` entries are defence in depth (a
+deny list of names leaked, and `fmt` and `strconv` can produce an address without `unsafe`). Four
+source checks in `test/lint` add what forbidigo cannot state:
+`TestCompositionRootsUseSyscallOnlyForSignals`, the comprehensive guard (the roots use `syscall` only
+for a `SIG*` constant and `syscall.Signal`), `TestCompositionRootsLinkNoForeignSymbol` (no
+`//go:linkname` in the roots), `TestCompositionRootPassesLookupEnvToRun` (`os.LookupEnv` in
+`cmd/shift2eu-server/main.go` only as the call `os.LookupEnv(tokenEnvVar)` that the token source
+passed to `run` returns) and `TestCompositionRootsNameNoEnvironmentPath` (no `/proc/` or `/dev/fd/`
+literal in the roots). The roots' `_test.go` files, which the strict composition-root rules skip, are
+held by the lax depguard rule `composition-root-tests` (no `go/build`, `net/http/cgi`, `os/exec`,
+`plugin`, `runtime/cgo`, `syscall/js` or `unsafe`). The gap is narrowed, not closed: a root can delegate an environment read to
 `internal/cli`, which may import `os`; a `/proc` path built at run time passes the literal check; and
 `net/http`'s `DefaultTransport` reads the proxy variables implicitly, which is accepted
 (docs/architecture.md, Composition-root process and environment rule, Known gaps).

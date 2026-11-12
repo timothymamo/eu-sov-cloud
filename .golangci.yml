@@ -1165,6 +1165,38 @@ linters:
           deny:
             - pkg: github.com/google/go-cmp
               desc: go-cmp is a test-only dependency
+        # The composition roots' _test.go files (issue #111). The strict
+        # rules composition-root and server-composition-root skip test files
+        # (!$test), yet a test is compiled into the root's package and runs in
+        # the same process: it could start a program, load a plugin, hand a
+        # path to a CGI handler, build a package, reach C, or take a pointer
+        # apart for a raw system call or a foreign symbol through
+        # //go:linkname (test/lint refuses that directive in the roots). The
+        # rule is lax, so its deny list alone decides and no allow list has to
+        # follow every pure import a test makes. syscall/js builds for js/wasm
+        # only and is denied all the same.
+        composition-root-tests:
+          list-mode: lax
+          files:
+            - "**/cmd/shift2eu/*_test.go"
+            - "**/cmd/shift2eu/**/*_test.go"
+            - "**/cmd/shift2eu-server/*_test.go"
+            - "**/cmd/shift2eu-server/**/*_test.go"
+          deny:
+            - pkg: go/build
+              desc: a composition root's test builds no package; it runs the root's code in process
+            - pkg: net/http/cgi
+              desc: a composition root's test runs no CGI program; the cgi handler starts a process
+            - pkg: os/exec
+              desc: a composition root's test runs no program, such as a cloud CLI
+            - pkg: plugin
+              desc: a composition root's test loads no plugin, whose code would run in the process
+            - pkg: runtime/cgo
+              desc: a composition root's test reaches no C code
+            - pkg: syscall/js
+              desc: a composition root's test calls no JavaScript host function
+            - pkg: unsafe
+              desc: a composition root's test takes no pointer apart, which is how a raw system call or a linknamed symbol is reached
         # The e2e tier builds the binary and runs it as a black box, offline,
         # against the fixtures in test/e2e/testdata. It imports only the
         # standard library, go-cmp and internal/testutil: no adapter,
@@ -1469,15 +1501,18 @@ linters:
         #
         # Group composition-root-env: the composition roots read no named
         # variable either, with one narrow exception: cmd/shift2eu-server/main.go
-        # passes os.LookupEnv to run for SHIFT2EU_SERVER_TOKEN (ADR 0019). That
-        # entry stands alone, so the exception's exclusion rule names its msg
-        # and drops no other entry's issue.
+        # calls os.LookupEnv once, with tokenEnvVar (SHIFT2EU_SERVER_TOKEN),
+        # in the token source func() (string, bool) it passes to run (ADR
+        # 0019); run, setUp and readToken see only the token, never a lookup
+        # by name. test/lint's TestCompositionRootPassesLookupEnvToRun pins
+        # that shape. The entry stands alone, so the exception's exclusion
+        # rule names its msg and drops no other entry's issue.
         #
         # Scope of both: every file under cmd/shift2eu/ and
         # cmd/shift2eu-server/, _test.go files included. A test of a
         # composition root is compiled into the same package and runs with the
-        # same environment, and the server's tests hand run a fake lookup, so
-        # none needs a real one. Elsewhere the depguard rules keep os/exec out
+        # same environment, and the server's tests hand run a fake token
+        # source, so none needs a real one. Elsewhere the depguard rules keep os/exec out
         # by layer; these groups only add the call-level rule depguard cannot
         # state for the roots. The environment is not kept out elsewhere: the
         # CLI's rule (cli-gets-adapters-from-cmd) allows $gostd, so
@@ -1487,12 +1522,17 @@ linters:
         #
         # No-exec also refuses the windows entry points of syscall
         # (CreateProcess, CreateProcessAsUser, GetEnvironmentStrings, LoadDLL,
-        # MustLoadDLL, NewLazyDLL, LoadLibrary, LoadLibraryEx, GetProcAddress),
+        # MustLoadDLL, NewLazyDLL, LoadLibrary, GetProcAddress),
         # the raw system calls (Syscall, Syscall6/9/12/15/18, SyscallN,
         # RawSyscall, RawSyscall6) and the syscall.SYS_* numbers they take, and
         # any use of package unsafe, which takes a pointer apart for a raw
-        # system call; depguard's composition-root rules skip _test.go files,
-        # so these entries keep unsafe out of the roots' tests. Env also
+        # system call; depguard's composition-root-tests rule keeps unsafe out
+        # of the roots' tests as well. These names are defence in depth: the
+        # comprehensive guard is test/lint's syscall allow list
+        # (TestCompositionRootsUseSyscallOnlyForSignals), under which a root uses package
+        # syscall for a SIG* constant and the type syscall.Signal only, and
+        # the unsafe ban is no complete one either (fmt and strconv can print
+        # and parse an address). Env also
         # refuses windows's syscall.GetEnvironmentVariable. Every name is a
         # pattern, so the entries hold on every release target whether the
         # name exists there or not (syscall.Exec has no windows form,
@@ -1504,7 +1544,7 @@ linters:
         - pattern: '^syscall\.(?:Exec|ForkExec|StartProcess|Environ)$'
           pkg: '^syscall$'
           msg: 'composition-root-no-exec: a composition root starts or replaces no process and hands over no environment, where credentials live'
-        - pattern: '^syscall\.(?:CreateProcess|CreateProcessAsUser|GetEnvironmentStrings|LoadDLL|MustLoadDLL|NewLazyDLL|LoadLibrary|LoadLibraryEx|GetProcAddress)$'
+        - pattern: '^syscall\.(?:CreateProcess|CreateProcessAsUser|GetEnvironmentStrings|LoadDLL|MustLoadDLL|NewLazyDLL|LoadLibrary|GetProcAddress)$'
           pkg: '^syscall$'
           msg: 'composition-root-no-exec: a composition root starts no windows process, loads no library whose code would run and hands over no environment, where credentials live'
         - pattern: '^syscall\.(?:(?:Raw)?Syscall(?:6|9|12|15|18|N)?|SYS_\w+)$'
@@ -1579,6 +1619,15 @@ linters:
         linters:
           - gosec
         text: "^G101:"
+      # test/lint's token-source check names the server's token variable,
+      # SHIFT2EU_SERVER_TOKEN, and the identifier tokenEnvVar that holds it,
+      # and G101 reads both names as secrets. They are none: the check
+      # compares them with cmd/shift2eu-server/main.go. The rule covers G101
+      # in this one file only.
+      - path: test/lint/compositionrootsources_test\.go
+        linters:
+          - gosec
+        text: "^G101:"
       # domain-is-pure: the forbidigo group of that name holds for production
       # files under internal/domain/ only. These two rules drop its issues in
       # every other path and in every _test.go file. text has the form the
@@ -1604,7 +1653,8 @@ linters:
         linters:
           - forbidigo
         text: 'because "composition-root-env: [^"]*"$'
-      # The one exception (ADR 0019): os.LookupEnv, passed to run for
+      # The one exception (ADR 0019): os.LookupEnv(tokenEnvVar), the call the
+      # token source that main.go passes to run makes for
       # SHIFT2EU_SERVER_TOKEN, in cmd/shift2eu-server/main.go alone. text is
       # the os.LookupEnv entry's msg, so os.Getenv, os.ExpandEnv and
       # syscall.Getenv are still refused there.
