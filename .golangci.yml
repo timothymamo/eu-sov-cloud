@@ -1561,7 +1561,7 @@ linters:
           msg: 'composition-root-env: a composition root reads no environment variable; take the value as a flag'
         - pattern: '^os\.LookupEnv$'
           pkg: '^os$'
-          msg: 'composition-root-env: os.LookupEnv is passed to run in cmd/shift2eu-server/main.go only, for SHIFT2EU_SERVER_TOKEN (ADR 0019); take any other value as a flag'
+          msg: 'composition-root-env: os.LookupEnv is called in cmd/shift2eu-server/main.go only, for SHIFT2EU_SERVER_TOKEN, in the token source it hands to run (ADR 0019); take any other value as a flag'
         - pattern: '^syscall\.(?:Getenv|GetEnvironmentVariable)$'
           pkg: '^syscall$'
           msg: 'composition-root-env: a composition root reads no environment variable; take the value as a flag'
@@ -1619,15 +1619,6 @@ linters:
         linters:
           - gosec
         text: "^G101:"
-      # test/lint's token-source check names the server's token variable,
-      # SHIFT2EU_SERVER_TOKEN, and the identifier tokenEnvVar that holds it,
-      # and G101 reads both names as secrets. They are none: the check
-      # compares them with cmd/shift2eu-server/main.go. The rule covers G101
-      # in this one file only.
-      - path: test/lint/compositionrootsources_test\.go
-        linters:
-          - gosec
-        text: "^G101:"
       # domain-is-pure: the forbidigo group of that name holds for production
       # files under internal/domain/ only. These two rules drop its issues in
       # every other path and in every _test.go file. text has the form the
@@ -1661,7 +1652,7 @@ linters:
       - path: ^cmd/shift2eu-server/main\.go$
         linters:
           - forbidigo
-        text: 'because "composition-root-env: os\.LookupEnv is passed to run in cmd/shift2eu-server/main\.go only, for SHIFT2EU_SERVER_TOKEN \(ADR 0019\); take any other value as a flag"$'
+        text: 'because "composition-root-env: os\.LookupEnv is called in cmd/shift2eu-server/main\.go only, for SHIFT2EU_SERVER_TOKEN, in the token source it hands to run \(ADR 0019\); take any other value as a flag"$'
 
 formatters:
   enable:
