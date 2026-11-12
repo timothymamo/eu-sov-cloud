@@ -1,8 +1,16 @@
 // Package docs checks the repository's documentation as plain tests, without
-// the network: every relative link and #anchor in README.md, docs/**/*.md and
-// .claude/skills/**/*.md resolves to a file and a heading that exist, and every
-// page under docs/ and README.md starts with the single # heading that is its
-// title (docs/README.md, "Writing a page"). External URLs are not fetched.
-// make test, and so make check, run it. The package has no code of its own; the
-// checks are in test/internal/mdlink.
+// the network (docs/README.md, "Writing a page"):
+//
+//   - every relative link and #anchor in README.md, docs/**/*.md and
+//     .claude/skills/**/*.md resolves to a file and a heading that exist, and
+//     no link names the repository's files by URL; external URLs are not
+//     fetched;
+//   - README.md and every page under docs/ start with the single # heading
+//     that is its title;
+//   - docs/README.md, the index, links to every page under docs/;
+//   - README.md links only to files the release archives in .goreleaser.yaml
+//     ship, so its links work in an unpacked archive.
+//
+// make test, and so make check, run it. The link checker is
+// test/internal/mdlink.
 package docs

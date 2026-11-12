@@ -154,11 +154,12 @@ func Headings(data []byte) []Heading {
 	return headings
 }
 
-// anchors returns the anchors GitHub gives headings: the text as rendered
-// (links reduced to their text, emphasis and code markers dropped), lower
-// case, with every character but letters, digits, marks, spaces, hyphens and
-// underscores removed and each space made a hyphen; a repeated anchor gets
-// -1, -2, ... in order.
+// anchors returns the anchors GitHub gives headings: the text with links
+// reduced to their text, lower case, with every character but letters,
+// digits, marks, spaces, hyphens and underscores removed (so * and ` go) and
+// each space made a hyphen; a repeated anchor gets -1, -2, ... in order.
+// Underscores stay, as GitHub keeps them in snake_case words; a heading with
+// _emphasis_ would differ from GitHub's anchor, and the pages use none.
 func anchors(headings []Heading) map[string]bool {
 	seen := map[string]int{}
 	out := map[string]bool{}

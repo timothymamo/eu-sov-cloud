@@ -52,17 +52,19 @@ func archiveFiles(t *testing.T, fsys fs.FS) []string {
 	return nil
 }
 
-// shipped reports whether name is in an archive whose files are files: named
-// exactly, or under a directory D listed as D/**/*.
+// shipped reports whether name is in an archive whose files are files, read
+// as GoReleaser v2 reads them: D/**/* matches every file in a directory below
+// D, but not a file directly in D, and any other entry is a path.Match
+// pattern. A directory is shipped when a file in it is.
 func shipped(name string, files []string) bool {
 	for _, f := range files {
 		if dir, ok := strings.CutSuffix(f, "/**/*"); ok {
-			if name == dir || strings.HasPrefix(name, dir+"/") {
+			if rest, ok := strings.CutPrefix(name, dir+"/"); ok && strings.Contains(rest, "/") {
 				return true
 			}
 			continue
 		}
-		if name == f {
+		if ok, err := path.Match(f, name); err == nil && ok {
 			return true
 		}
 	}
