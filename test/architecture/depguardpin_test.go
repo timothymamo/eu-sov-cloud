@@ -194,6 +194,58 @@ var pinnedDepguardRules = []check.DepguardRule{
 		},
 	},
 	{
+		// The server's composition root (PRD #103, milestone 3), the sibling of
+		// composition-root and written the same way: its files: list names
+		// cmd/eusov-server and nothing beside it, its allow list is the module
+		// path as the one prefix entry plus the standard packages the server
+		// imports today, each exact, and its deny list names the four cloud
+		// SDKs. A third-party package the allow list does not name is refused by
+		// the allow list, so the server cannot gain a dependency unseen.
+		//
+		// test/architecture reads the rule the way it reads composition-root:
+		// TestCompositionRootRulesAreChecked pins its files, allow and prefix
+		// entries and its skip of the shared layer listing,
+		// TestCompositionRootRulesAreHeldToTheirRuleForEveryReleaseTarget holds
+		// cmd/eusov-server to it on every release target, and
+		// TestCompositionRootRulesHoldTheirProbesForEveryReleaseTarget fails a
+		// fixture server root that imports a third-party library or a cloud SDK.
+		Name:     "server-composition-root",
+		ListMode: "strict",
+		Files: []string{
+			"**/cmd/eusov-server/**",
+			"!$test",
+		},
+		Allow: []string{
+			"context$",
+			"errors$",
+			"flag$",
+			"fmt$",
+			"io$",
+			"log$",
+			"log/slog$",
+			"math$",
+			"net$",
+			"net/http$",
+			"os$",
+			"os/signal$",
+			"runtime$",
+			"runtime/debug$",
+			"slices$",
+			"strconv$",
+			"strings$",
+			"sync$",
+			"syscall$",
+			"time$",
+			"github.com/timothymamo/eu-sov-cloud/",
+		},
+		Deny: []string{
+			"github.com/aws/aws-sdk-go-v2",
+			"github.com/Azure/azure-sdk-for-go",
+			"cloud.google.com/go",
+			"google.golang.org/api",
+		},
+	},
+	{
 		Name:     "adapters-are-built-in-cmd",
 		ListMode: "lax",
 		Files: []string{
