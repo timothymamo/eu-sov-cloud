@@ -39,8 +39,9 @@ const (
 	// comes from, never a token.
 	serverTokenEnv = "EUSOV_SERVER_TOKEN" //nolint:gosec // this is the variable's name, not a credential
 	// testServerToken is the token the token cases configure. It is a test
-	// value, never a credential.
-	testServerToken = "e2e-0123456789abcdef"
+	// value, never a credential, and at least the 32 characters the server
+	// accepts as the shortest token.
+	testServerToken = "e2e-0123456789abcdef0123456789abcdef"
 	// serverStartBound bounds how long the server may take to announce its
 	// address, and how long a test waits for the announcement.
 	serverStartBound = 30 * time.Second
@@ -816,6 +817,9 @@ func TestServerPathHasNoCloudSDKOrProcess(t *testing.T) {
 // forbiddenServerDependency reports whether pkg is one the server must not depend
 // on: a cloud SDK, which would put a cloud client with credentials in a process
 // that serves untrusted clients, or os/exec, which would let it start a process.
+// A denied entry is a module path without a trailing slash, matched as the
+// package itself and as the prefix of its subpackages; the slash the prefix test
+// adds is why an entry that ends in one would match nothing.
 func forbiddenServerDependency(pkg string) bool {
 	if pkg == "os/exec" || strings.HasPrefix(pkg, "os/exec/") {
 		return true
@@ -826,9 +830,9 @@ func forbiddenServerDependency(pkg string) bool {
 		"github.com/Azure/azure-sdk-for-go",
 		"cloud.google.com/go",
 		"google.golang.org/api",
-		"github.com/scaleway/",
-		"github.com/ovh/",
-		"github.com/UpCloudLtd/",
+		"github.com/scaleway",
+		"github.com/ovh",
+		"github.com/UpCloudLtd",
 	} {
 		if pkg == denied || strings.HasPrefix(pkg, denied+"/") {
 			return true

@@ -9,13 +9,24 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 )
 
-// validToken is a token the API accepts (RFC 6750 token68) and that no error
-// line may ever quote.
-const validToken = "tok-0123456789abcdef"
+const (
+	// validToken is a token the API accepts (RFC 6750 token68) and that no error
+	// line may ever quote. It is exactly the shortest token the server accepts, so
+	// a server that demands longer than the minimum fails a case below.
+	validToken = "tok-0123456789abcdef0123456789ab"
+
+	// shortToken is one character short of the minimum: the server refuses it.
+	shortToken = "tok-0123456789012345678901234567"
+
+	// tokenMinLength is the shortest token the server accepts, as its error line
+	// names it.
+	tokenMinLength = "32"
+)
 
 // TestServerBearerToken pins the token from EUSOV_SERVER_TOKEN: every /v1/
 // request without Authorization: Bearer <token> is refused with 401 and without
@@ -141,6 +152,8 @@ func TestServerTokenConfigurationErrors(t *testing.T) {
 		// wantNames lists the values the error line must name, so the operator
 		// learns which source is wrong.
 		wantNames []string
+		// wantQuiet is a value the error line must never quote: a token.
+		wantQuiet string
 	}{
 		{
 			// Set to the empty string, which is not the same as unset: the
@@ -203,6 +216,32 @@ func TestServerTokenConfigurationErrors(t *testing.T) {
 			},
 			wantNames: []string{tokenEnv, "--token-file"},
 		},
+		{
+			// A token a client could guess at is no token: the line names the
+			// source and the minimum, never the token.
+			name:      "an environment token shorter than the minimum",
+			vars:      map[string]string{tokenEnv: shortToken},
+			wantNames: []string{tokenEnv, tokenMinLength},
+			wantQuiet: shortToken,
+		},
+		{
+			// The minimum is measured after the white space is trimmed, so a
+			// short token padded with it is refused as well.
+			name:      "an environment token that is short once trimmed",
+			vars:      map[string]string{tokenEnv: "  " + shortToken + "\n"},
+			wantNames: []string{tokenEnv, tokenMinLength},
+			wantQuiet: shortToken,
+		},
+		{
+			name: "a token file whose token is shorter than the minimum",
+			args: func(t *testing.T) []string {
+				t.Helper()
+
+				return []string{"--token-file", writeTokenFile(t, shortToken+"\n")}
+			},
+			wantNames: []string{"--token-file", tokenMinLength},
+			wantQuiet: shortToken,
+		},
 	}
 
 	for _, tc := range tests {
@@ -231,6 +270,10 @@ func TestServerTokenConfigurationErrors(t *testing.T) {
 			if strings.Contains(got.stderr, validToken) {
 				t.Errorf("stderr = %q, want it to quote no token", got.stderr)
 			}
+
+			if tc.wantQuiet != "" && strings.Contains(got.stderr, tc.wantQuiet) {
+				t.Errorf("stderr = %q, want it to quote none of the token %q", got.stderr, tc.wantQuiet)
+			}
 		})
 	}
 }
@@ -254,6 +297,69 @@ func TestServerHasNoTokenFlag(t *testing.T) {
 	}
 }
 
+// TestServerTokenFilePermissions pins the warning a token file that other users
+// of the host can read earns (audit L4): the server names the path, never the
+// token, and starts anyway, because refusing to start would turn a permission
+// mistake into an outage. A file only its owner can read warns nothing.
+func TestServerTokenFilePermissions(t *testing.T) {
+	t.Parallel()
+
+	if runtime.GOOS == "windows" {
+		t.Skip("Windows has no group and world permission bits")
+	}
+
+	tests := []struct {
+		name string
+		mode os.FileMode
+		// warns reports whether the server must say that the file is readable
+		// by others.
+		warns bool
+	}{
+		{name: "readable by everyone", mode: 0o644, warns: true},
+		{name: "readable by the group", mode: 0o640, warns: true},
+		{name: "executable by the group only", mode: 0o610, warns: true},
+		{name: "readable by its owner only", mode: 0o600},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			path := writeTokenFileWithMode(t, validToken+"\n", tc.mode)
+
+			s := startServer(t, loopbackListen, nil, "--token-file", path)
+
+			req := newRequest(t, http.MethodGet, "/v1/targets", nil)
+			req.Header.Set("Authorization", "Bearer "+validToken)
+
+			if got := s.do(t, req); got.status != http.StatusOK {
+				t.Fatalf("GET /v1/targets with the token from the file = %d, want %d; body: %q",
+					got.status, http.StatusOK, got.body)
+			}
+
+			logged := s.stderr.String()
+
+			if strings.Contains(logged, validToken) {
+				t.Errorf("stderr = %q, want it to quote no token", logged)
+			}
+
+			if !tc.warns {
+				if strings.Contains(logged, "warning:") {
+					t.Errorf("stderr = %q, want no warning for a token file only its owner can read", logged)
+				}
+
+				return
+			}
+
+			line := s.waitForLine(t, errorPrefix+"warning: ")
+
+			if !strings.Contains(line, path) {
+				t.Errorf("the warning line %q does not name the token file %s", line, path)
+			}
+		})
+	}
+}
+
 // writeTokenFile writes content to a file in a temporary directory and returns
 // its path.
 func writeTokenFile(t *testing.T, content string) string {
@@ -263,6 +369,21 @@ func writeTokenFile(t *testing.T, content string) string {
 
 	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
 		t.Fatalf("writing the token file: %v", err)
+	}
+
+	return path
+}
+
+// writeTokenFileWithMode writes content to a token file in a temporary directory
+// and gives it the permission bits of mode. os.WriteFile's perm is narrowed by
+// the process umask, so the mode is set afterwards, which no umask applies to.
+func writeTokenFileWithMode(t *testing.T, content string, mode os.FileMode) string {
+	t.Helper()
+
+	path := writeTokenFile(t, content)
+
+	if err := os.Chmod(path, mode); err != nil {
+		t.Fatalf("setting the token file's mode to %v: %v", mode, err)
 	}
 
 	return path

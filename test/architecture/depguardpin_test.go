@@ -222,7 +222,6 @@ var pinnedDepguardRules = []check.DepguardRule{
 			"fmt$",
 			"io$",
 			"log$",
-			"log/slog$",
 			"math$",
 			"net$",
 			"net/http$",

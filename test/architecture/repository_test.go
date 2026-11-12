@@ -75,14 +75,14 @@ const serverCompositionRootDir = "cmd/eusov-server"
 
 // serverCompositionRootStds are the standard packages the server imports: context
 // for the run and its shutdown, flag for the flags, fmt and io for the stderr a
-// run writes its errors and its access log to, log and log/slog for that log,
-// math for the memory limit debug.SetMemoryLimit reports when GOMEMLIMIT is
-// unset (math.MaxInt64), net and net/http for the listener and the server, os for
-// os.Args, os.Exit and the token file, os/signal and syscall for SIGTERM and
-// SIGINT, runtime and runtime/debug for the CPU count and the memory limit,
-// slices, strconv, strings and sync for the flags, the token and the allowed
-// hosts, and time for the server's timeouts. A standard package the server starts
-// to import needs an entry in .golangci.yml, in the pin and here.
+// run writes its errors and its access log to, log for the access log and the
+// server's own error log, math for the memory limit debug.SetMemoryLimit reports
+// when GOMEMLIMIT is unset (math.MaxInt64), net and net/http for the listener and
+// the server, os for os.Args, os.Exit and the token file, os/signal and syscall
+// for SIGTERM and SIGINT, runtime and runtime/debug for the CPU count and the
+// memory limit, slices, strconv, strings and sync for the flags, the token and
+// the allowed hosts, and time for the server's timeouts. A standard package the
+// server starts to import needs an entry in .golangci.yml, in the pin and here.
 var serverCompositionRootStds = []string{
 	"context",
 	"errors",
@@ -90,7 +90,6 @@ var serverCompositionRootStds = []string{
 	"fmt",
 	"io",
 	"log",
-	"log/slog",
 	"math",
 	"net",
 	"net/http",

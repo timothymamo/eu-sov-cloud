@@ -12,6 +12,7 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 )
 
 // accessMarker is the value the test plants wherever a request carries content
@@ -22,6 +23,9 @@ const accessMarker = "m3accessmarker9f2"
 // durationToken matches a duration as a log line writes it: a number with a unit
 // time.Duration.String() produces, such as 12.3ms, 1.000123s or 250µs.
 var durationToken = regexp.MustCompile(`\d+(?:\.\d+)?(?:ns|µs|μs|us|ms|s)\b`)
+
+// quotedPathField matches the quoted path an access log line carries.
+var quotedPathField = regexp.MustCompile(`path=("(?:[^"\\]|\\.)*")`)
 
 // TestServerAccessLog pins the access log of an assessment: one line per
 // request holding the method, the path, the status, a duration and the size of
@@ -119,6 +123,119 @@ func TestServerAccessLog(t *testing.T) {
 	if code := s.stop(t); code != 0 {
 		t.Errorf("run returned %d after a cancelled context, want 0; stderr = %q", code, s.stderr.String())
 	}
+}
+
+// TestServerAccessLogTruncatesLongPath pins the access log's handling of a long
+// request path (review S6): the line quotes at most a fixed number of bytes of
+// the path and marks it as cut, so a client cannot write an unbounded run of its
+// own choosing into whatever collects stderr, and a reader still sees that the
+// path was shortened. A path within the cap is logged whole and unmarked.
+func TestServerAccessLogTruncatesLongPath(t *testing.T) {
+	t.Parallel()
+
+	const (
+		// maxLoggedPathBytes is the path a line may quote: 256 bytes.
+		maxLoggedPathBytes = 256
+		// truncationMarker is what the line holds where the path was cut.
+		truncationMarker = "..."
+	)
+
+	longPath := "/" + strings.Repeat("a", 4096)
+
+	s := startServer(t, loopbackListen, nil)
+
+	s.get(t, longPath)
+
+	line := accessLineHolding(t, s, strings.Repeat("a", 8))
+
+	match := quotedPathField.FindStringSubmatch(line)
+	if match == nil {
+		t.Fatalf("the access log line %q carries no quoted path", shorten(line, 120))
+	}
+
+	quoted, err := strconv.Unquote(match[1])
+	if err != nil {
+		t.Fatalf("the access log line %q carries a path that does not unquote: %v", shorten(line, 120), err)
+	}
+
+	if len(quoted) > maxLoggedPathBytes+len(truncationMarker) {
+		t.Errorf("the access log quotes %d bytes of a request path of %d bytes, want at most %d: the log truncates a long path",
+			len(quoted), len(longPath), maxLoggedPathBytes)
+	}
+
+	if !strings.Contains(line, truncationMarker) {
+		t.Errorf("the access log line %q holds no %q marker, want a reader to see that the path was cut",
+			shorten(line, 120), truncationMarker)
+	}
+
+	// A short path is logged whole, and only a cut path carries the marker.
+	if status, body := s.get(t, "/healthz"); status != http.StatusOK {
+		t.Fatalf("GET /healthz = %d, want %d; body: %q", status, http.StatusOK, body)
+	}
+
+	var shortLine string
+
+	for _, candidate := range strings.Split(s.stderr.String(), "\n") {
+		if strings.Contains(candidate, "/healthz") && strings.Contains(candidate, "path=") {
+			shortLine = candidate
+		}
+	}
+
+	if shortLine == "" {
+		t.Fatalf("the log holds no access log line for GET /healthz; stderr = %q", s.stderr.String())
+	}
+
+	if !strings.Contains(shortLine, "/healthz") {
+		t.Errorf("the access log line %q does not hold the whole path /healthz", shortLine)
+	}
+
+	if strings.Contains(shortLine, truncationMarker) {
+		t.Errorf("the access log line %q holds the %q marker for a path within the cap, want it only on a cut path",
+			shortLine, truncationMarker)
+	}
+
+	if code := s.stop(t); code != 0 {
+		t.Errorf("run returned %d after a cancelled context, want 0; stderr = %q", code, s.stderr.String())
+	}
+}
+
+// accessLineHolding returns the access log line s wrote that holds want, polling
+// until the request's handler has written it, and fails the test when none
+// appears.
+func accessLineHolding(t *testing.T, s *server, want string) string {
+	t.Helper()
+
+	const bound = 5 * time.Second
+
+	deadline := time.Now().Add(bound)
+
+	for {
+		logged := s.stderr.String()
+
+		for _, line := range strings.Split(logged, "\n") {
+			if strings.Contains(line, "method=") && strings.Contains(line, "path=") && strings.Contains(line, want) {
+				return line
+			}
+		}
+
+		if time.Now().After(deadline) {
+			t.Fatalf("the log holds no access log line holding %q within %s; stderr = %q", want, bound, logged)
+		}
+
+		time.Sleep(10 * time.Millisecond)
+	}
+}
+
+// shorten returns s cut to at most n bytes, with a marker when it was cut: for a
+// failure message that would otherwise print a request path of kilobytes. The
+// marker is not the access log's own, so the message cannot be mistaken for a
+// line that marks its path.
+func shorten(s string, n int) string {
+	if len(s) <= n {
+		return s
+	}
+
+	return s[:n] + " [cut]"
 }
 
 // startLines returns the lines of stderr that are no startup line: the access

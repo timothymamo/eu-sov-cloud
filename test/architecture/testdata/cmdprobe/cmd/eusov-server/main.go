@@ -12,7 +12,7 @@ import (
 	"flag"
 	"fmt"
 	"io"
-	"log/slog"
+	"log"
 	"math"
 	"net"
 	"net/http"
@@ -57,7 +57,7 @@ func main() {
 	if err != nil {
 		var stderr io.Writer = os.Stderr
 
-		slog.New(slog.NewTextHandler(stderr, nil)).Error("listen", "error", errors.Unwrap(err), "limit", limit, "at", time.Now())
+		log.New(stderr, "cmdprobe: ", 0).Printf("listen: %v limit %d at %s", errors.Unwrap(err), limit, time.Now())
 		fmt.Fprintln(stderr, strconv.Itoa(slots), math.MaxInt64, http.MethodGet)
 
 		os.Exit(1)

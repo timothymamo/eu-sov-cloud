@@ -24,10 +24,9 @@ import (
 
 const (
 	// slowClientBound bounds how long the server may keep a stalled client, and
-	// how long a test waits for the reaction. It is well above the read-header
-	// and body-read timeouts ADR 0019 expects (a few seconds each) and well
-	// below a minute, so a regression shows as a failure and not as a stuck CI
-	// job.
+	// how long a test waits for the reaction. It is well above the 10 s
+	// read-header timeout and the 30 s body read timeout run sets (ADR 0019),
+	// so a regression shows as a failure rather than as a stuck CI job.
 	slowClientBound = 90 * time.Second
 
 	// pollInterval is how often a test asks the server whether a slot is free

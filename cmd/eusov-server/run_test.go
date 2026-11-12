@@ -16,12 +16,14 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net"
 	"net/http"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
 	"sync"
@@ -58,6 +60,11 @@ const (
 	// readyBound is how long /readyz may take to answer 200 once run is
 	// listening: every embedded catalog has to be loaded by then.
 	readyBound = 10 * time.Second
+
+	// connCapBound is how long a connection the server must close, or a slot it
+	// frees, may take to show its effect: the server closes it at once, so only
+	// a build under -race on a loaded machine needs this much.
+	connCapBound = 10 * time.Second
 )
 
 // syncBuffer is a stderr that run writes to while the test reads it: the
@@ -167,9 +174,16 @@ func startServer(t *testing.T, listen string, vars map[string]string, args ...st
 		}
 
 		s.port = strconv.Itoa(tcp.Port)
-		// 127.0.0.1 whichever address the listener bound: a test reaches a
-		// listener on 0.0.0.0 through loopback and never off the machine.
-		s.addr = net.JoinHostPort("127.0.0.1", s.port)
+		// The address a test dials: the loopback address the listener bound, so
+		// that a name resolving to another loopback address is still reached,
+		// and 127.0.0.1 for a listener on 0.0.0.0 or ::, which a test reaches on
+		// loopback and never off the machine.
+		host := "127.0.0.1"
+		if tcp.IP != nil && tcp.IP.IsLoopback() {
+			host = tcp.IP.String()
+		}
+
+		s.addr = net.JoinHostPort(host, s.port)
 	case <-s.exited:
 		t.Fatalf("run(%v) returned %d before listening; stderr = %q", argv, s.exitCode(), s.stderr.String())
 	case <-time.After(startBound):
@@ -185,6 +199,30 @@ func (s *server) exitCode() int {
 	defer s.mu.Unlock()
 
 	return s.code
+}
+
+// waitForLine polls stderr until it holds a line starting with prefix and returns
+// that line, failing the test when no such line appears within startBound: a
+// startup line may be written from the goroutine of the run, after the address is
+// announced.
+func (s *server) waitForLine(t *testing.T, prefix string) string {
+	t.Helper()
+
+	deadline := time.Now().Add(startBound)
+
+	for {
+		for _, line := range strings.Split(s.stderr.String(), "\n") {
+			if strings.HasPrefix(line, prefix) {
+				return line
+			}
+		}
+
+		if time.Now().After(deadline) {
+			t.Fatalf("stderr holds no line starting with %q within %s; stderr = %q", prefix, startBound, s.stderr.String())
+		}
+
+		time.Sleep(10 * time.Millisecond)
+	}
 }
 
 // stop cancels the context and returns the code run returned, failing the test
@@ -407,7 +445,7 @@ func TestServerLoopbackRule(t *testing.T) {
 		},
 		{
 			name: "non-loopback with a token starts",
-			vars: map[string]string{tokenEnv: "tok-0123456789abcdef"},
+			vars: map[string]string{tokenEnv: validToken},
 		},
 	}
 
@@ -444,6 +482,350 @@ func TestServerLoopbackRule(t *testing.T) {
 				tokenEnv, status, http.StatusOK, body)
 		}
 	})
+}
+
+// TestServerLocalhostListen pins the loopback decision for the name localhost: a
+// listener on localhost:0 is a loopback listener, so the server starts without a
+// token and serves, with and without the operator's --allowed-host. The decision
+// must rest on the address the listener bound, not on the name alone: a name that
+// resolves elsewhere still gets the non-loopback rule (audit M1).
+func TestServerLocalhostListen(t *testing.T) {
+	t.Parallel()
+
+	t.Run("without --allowed-host", func(t *testing.T) {
+		t.Parallel()
+
+		s := startServer(t, "localhost:0", nil)
+
+		if status, body := s.get(t, "/healthz"); status != http.StatusOK {
+			t.Errorf("GET /healthz on localhost = %d, want %d; body: %q", status, http.StatusOK, body)
+		}
+
+		// The allow-list a tokenless loopback listener resolves answers its own
+		// loopback names.
+		req := newRequest(t, http.MethodGet, "/v1/targets", nil)
+		req.Host = "localhost:" + s.port
+
+		if got := s.do(t, req); got.status != http.StatusOK {
+			t.Errorf("GET /v1/targets with Host localhost:%s on localhost = %d, want %d; body: %q",
+				s.port, got.status, http.StatusOK, got.body)
+		}
+	})
+
+	t.Run("with --allowed-host", func(t *testing.T) {
+		t.Parallel()
+
+		s := startServer(t, "localhost:0", nil, "--allowed-host", "app.example.com")
+
+		req := newRequest(t, http.MethodGet, "/v1/targets", nil)
+		req.Host = "app.example.com"
+
+		if got := s.do(t, req); got.status != http.StatusOK {
+			t.Errorf("GET /v1/targets with Host app.example.com on localhost = %d, want %d; body: %q",
+				got.status, http.StatusOK, got.body)
+		}
+
+		if code := s.stop(t); code != 0 {
+			t.Errorf("run returned %d after a cancelled context, want 0; stderr = %q", code, s.stderr.String())
+		}
+	})
+}
+
+// TestServerInsecureNoAuthWarning pins the warning of a server that serves
+// beyond loopback without authentication (audit L1): one stderr line at startup,
+// naming the address it serves, so an operator cannot leave such a server in
+// place without a trace. With a token configured the server authenticates and
+// says nothing.
+func TestServerInsecureNoAuthWarning(t *testing.T) {
+	t.Parallel()
+
+	const warning = "eusov-server: warning: serving without authentication on "
+
+	t.Run("a non-loopback listener warns", func(t *testing.T) {
+		t.Parallel()
+
+		s := startServer(t, "0.0.0.0:0", nil, "--insecure-no-auth")
+
+		line := s.waitForLine(t, "eusov-server: warning: ")
+		if !strings.HasPrefix(line, warning) {
+			t.Fatalf("the warning line = %q, want it to start with %q", line, warning)
+		}
+
+		host, port, err := net.SplitHostPort(strings.TrimPrefix(line, warning))
+		if err != nil {
+			t.Fatalf("the warning line %q does not end in a host:port address: %v", line, err)
+		}
+
+		if host == "" || port != s.port {
+			t.Errorf("the warning line %q names %q with the port %q, want the bound address with the port %q",
+				line, host, port, s.port)
+		}
+
+		if code := s.stop(t); code != 0 {
+			t.Errorf("run returned %d after a cancelled context, want 0; stderr = %q", code, s.stderr.String())
+		}
+	})
+
+	t.Run("a token configures authentication and warns not", func(t *testing.T) {
+		t.Parallel()
+
+		s := startServer(t, "0.0.0.0:0", map[string]string{tokenEnv: validToken})
+
+		if status, body := s.get(t, "/healthz"); status != http.StatusOK {
+			t.Errorf("GET /healthz = %d, want %d; body: %q", status, http.StatusOK, body)
+		}
+
+		if logged := s.stderr.String(); strings.Contains(logged, "warning:") {
+			t.Errorf("stderr = %q, want no warning: the server authenticates with a token", logged)
+		}
+	})
+}
+
+// TestServerConnectionCap pins --max-connections (audit M2): the server holds at
+// most the number of connections the operator names, a connection over the cap
+// is closed at once rather than queued for a slot, a slot is free again once a
+// connection closes, and a cap of zero or less is a configuration error. The
+// request-header cap is pinned too: a header far over it is refused rather than
+// served.
+func TestServerConnectionCap(t *testing.T) {
+	t.Parallel()
+
+	t.Run("a connection over the cap is closed at once", func(t *testing.T) {
+		t.Parallel()
+
+		s := startServer(t, loopbackListen, nil, "--max-connections", "2")
+
+		held := make([]net.Conn, 0, 2)
+
+		for range 2 {
+			conn, _ := dial(t, s)
+			held = append(held, conn)
+		}
+
+		// The cap is full, so the third connection is closed without an answer
+		// instead of waiting for a slot.
+		over, overReader := dial(t, s)
+
+		if err := over.SetReadDeadline(time.Now().Add(connCapBound)); err != nil {
+			t.Fatalf("setting the read deadline of the connection over the cap: %v", err)
+		}
+
+		switch b, err := overReader.ReadByte(); {
+		case err == nil:
+			t.Fatalf("the connection over the cap got the byte %q, want the server to close it without an answer", string(b))
+		case readTimedOut(err):
+			t.Fatalf("the connection over the cap was still open after %s, want the server to close it at once rather than queue it", connCapBound)
+		}
+
+		// Closing a connection frees its slot for the next client.
+		if err := held[0].Close(); err != nil {
+			t.Fatalf("closing one of the connections holding the cap: %v", err)
+		}
+
+		deadline := time.Now().Add(connCapBound)
+
+		var (
+			last   error
+			served bool
+		)
+
+		for time.Now().Before(deadline) {
+			status, err := s.probe(http.MethodGet, "/healthz", nil)
+			if err == nil && status == http.StatusOK {
+				served = true
+
+				break
+			}
+
+			last = err
+			time.Sleep(pollInterval)
+		}
+
+		if !served {
+			t.Fatalf("no request was served within %s of a connection closing, so the cap never frees a slot: %v; stderr = %q",
+				connCapBound, last, s.stderr.String())
+		}
+
+		if code := s.stop(t); code != 0 {
+			t.Errorf("run returned %d after a cancelled context, want 0; stderr = %q", code, s.stderr.String())
+		}
+	})
+
+	t.Run("a request header over the cap is not served", func(t *testing.T) {
+		t.Parallel()
+
+		s := startServer(t, loopbackListen, nil)
+
+		conn, reader := dial(t, s)
+
+		// One header far over the 16 KiB cap the server must set: the request is
+		// refused, never served. A refusal may reset a connection that still
+		// holds unread bytes, so a broken read is a refusal as well.
+		oversized := strings.Repeat("a", 32<<10)
+
+		if err := conn.SetWriteDeadline(time.Now().Add(connCapBound)); err != nil {
+			t.Fatalf("setting the write deadline of the oversized request: %v", err)
+		}
+
+		request := fmt.Sprintf("GET /healthz HTTP/1.1\r\nHost: %s\r\nX-Probe: %s\r\n\r\n", s.addr, oversized)
+
+		if _, err := conn.Write([]byte(request)); err != nil {
+			t.Fatalf("writing the request with a %d-byte header: %v", len(oversized), err)
+		}
+
+		if err := conn.SetReadDeadline(time.Now().Add(connCapBound)); err != nil {
+			t.Fatalf("setting the read deadline of the oversized request: %v", err)
+		}
+
+		resp, err := http.ReadResponse(reader, &http.Request{Method: http.MethodGet})
+		if err != nil {
+			if readTimedOut(err) {
+				t.Fatalf("the server neither answered nor closed the connection within %s, want it to refuse a %d-byte request header",
+					connCapBound, len(oversized))
+			}
+
+			return
+		}
+
+		defer func() { _ = resp.Body.Close() }()
+
+		if resp.StatusCode != http.StatusRequestHeaderFieldsTooLarge {
+			t.Errorf("GET /healthz with a %d-byte request header = %d, want %d: the server caps the request headers",
+				len(oversized), resp.StatusCode, http.StatusRequestHeaderFieldsTooLarge)
+		}
+	})
+
+	tests := []string{"0", "-1"}
+
+	for _, value := range tests {
+		t.Run("--max-connections "+value+" is a configuration error", func(t *testing.T) {
+			t.Parallel()
+
+			got := runOnce(t, nil, "--listen", loopbackListen, "--max-connections", value)
+
+			if got.listened {
+				t.Fatalf("run listened on %v with --max-connections %s, want a startup error", got.addr, value)
+			}
+
+			requireStartupError(t, got)
+
+			if !strings.Contains(got.stderr, "max-connections") {
+				t.Errorf("stderr = %q, want it to name --max-connections", got.stderr)
+			}
+		})
+	}
+}
+
+// readTimedOut reports whether err is a deadline that passed on a connection,
+// which is how a test sees a server that neither answered nor closed.
+func readTimedOut(err error) bool {
+	var netErr net.Error
+
+	return errors.As(err, &netErr) && netErr.Timeout()
+}
+
+// TestServerListenFailure pins a listener that cannot open (review S2): an
+// address already in use is a runtime failure, exit 1 with one line prefixed
+// "eusov-server: ", not the exit 2 of a configuration error and not a silent
+// exit 0.
+func TestServerListenFailure(t *testing.T) {
+	t.Parallel()
+
+	held, err := net.Listen("tcp", loopbackListen)
+	if err != nil {
+		t.Fatalf("listening on %s to hold the address: %v", loopbackListen, err)
+	}
+
+	t.Cleanup(func() { _ = held.Close() })
+
+	got := runOnce(t, nil, "--listen", held.Addr().String())
+
+	if got.listened {
+		t.Fatalf("run listened on %v beside the listener that holds the address", got.addr)
+	}
+
+	if got.code != 1 {
+		t.Errorf("exit code = %d, want 1 for a listener that cannot open; stderr = %q", got.code, got.stderr)
+	}
+
+	lines := strings.Split(strings.TrimSuffix(got.stderr, "\n"), "\n")
+	if len(lines) != 1 || lines[0] == "" {
+		t.Fatalf("stderr = %q, want exactly one line", got.stderr)
+	}
+
+	if !strings.HasPrefix(lines[0], errorPrefix) {
+		t.Errorf("stderr = %q, want it to start with %q", got.stderr, errorPrefix)
+	}
+
+	if !strings.Contains(lines[0], held.Addr().String()) {
+		t.Errorf("the error line %q does not name the address %s, so the operator cannot tell which listener failed",
+			lines[0], held.Addr())
+	}
+}
+
+// TestServerConcurrencyLine pins the effective concurrency the server reports
+// after it announces its address (review S5): a run that sized itself from the
+// CPUs and GOMEMLIMIT says what it picked, so the operator can see it rather
+// than infer it.
+func TestServerConcurrencyLine(t *testing.T) {
+	t.Parallel()
+
+	const (
+		prefix    = "eusov-server: concurrency "
+		listening = "eusov-server: listening on "
+	)
+
+	tests := []struct {
+		name string
+		args []string
+		// want is the value the line must hold; 0 means the computed default,
+		// which the bounds below cover.
+		want int
+	}{
+		{name: "--concurrency names it", args: []string{"--concurrency", "3"}, want: 3},
+		{name: "the computed default", args: nil},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			s := startServer(t, loopbackListen, nil, tc.args...)
+
+			line := s.waitForLine(t, prefix)
+
+			value, err := strconv.Atoi(strings.TrimPrefix(line, prefix))
+			if err != nil {
+				t.Fatalf("the concurrency line %q holds no number: %v; stderr = %q", line, err, s.stderr.String())
+			}
+
+			if tc.want != 0 && value != tc.want {
+				t.Errorf("the concurrency line %q names %d, want %d", line, value, tc.want)
+			}
+
+			if value < 1 || value > runtime.GOMAXPROCS(0) {
+				t.Errorf("the concurrency line %q names %d, want between 1 and the CPU count %d",
+					line, value, runtime.GOMAXPROCS(0))
+			}
+
+			// The operator reads the two lines in the order the server writes
+			// them: the address first, then what serves it.
+			logged := s.stderr.String()
+
+			announced := strings.Index(logged, listening)
+			if announced < 0 {
+				t.Fatalf("stderr holds no listening line; stderr = %q", logged)
+			}
+
+			if reported := strings.Index(logged, prefix); reported < announced {
+				t.Errorf("the concurrency line comes before the listening line; stderr = %q", logged)
+			}
+
+			if code := s.stop(t); code != 0 {
+				t.Errorf("run returned %d after a cancelled context, want 0; stderr = %q", code, s.stderr.String())
+			}
+		})
+	}
 }
 
 // TestServerGracefulShutdown pins the shutdown: cancelling the context stops the
