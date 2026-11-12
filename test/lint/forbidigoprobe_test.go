@@ -31,10 +31,11 @@ const astPrefix = "test/lint: "
 // refused, with the messages the comment names, and no other line may be.
 type forbidigoProbe struct {
 	dir string // the directory under testdata
-	// tag is the forbidigo group's tag, which starts each of its msgs. A probe
-	// of a depguard rule that no forbidigo group backs leaves it empty, and
-	// then forbidigo does not run at all.
-	tag string
+	// tags are the tags of the forbidigo groups the probe covers, each of which
+	// starts the msg of every entry in its group. A probe of a depguard rule
+	// that no forbidigo group backs leaves them empty, and then forbidigo does
+	// not run at all.
+	tags []string
 	// stubs maps each directory under testdata/<dir>/stub to the module path
 	// its stub stands in for.
 	stubs map[string]string
@@ -43,18 +44,20 @@ type forbidigoProbe struct {
 }
 
 // runForbidigoProbe runs golangci-lint, with the repository's .golangci.yml and
-// the linters the probe asks for enabled (forbidigo for a tag, depguard if it
+// the linters the probe asks for enabled (forbidigo for its tags, depguard if it
 // asks for it), on a scratch copy of the probe's module, offline and with no
-// credentials. A line that ends in
+// credentials. A forbidigo issue's msg must start with one of the probe's tags.
+// A line that ends in
 //
 //	// want "<message prefix>" ["<message prefix>" ...]
 //
 // must get, for each prefix, an issue whose message starts with it, and every
 // issue must match a want on its line. A forbidigo issue's message is its msg,
 // a depguard issue's its text. Lines are not merged (--uniq-by-line=false), so
-// two entries refusing one line are told apart. Every entry of the group must
-// refuse at least one line, so an entry that silently stops matching fails the
-// probe; a probe with no tag holds no such group and skips that check. Without
+// two entries refusing one line are told apart. Every entry of every group the
+// probe tags must refuse at least one line, so an entry that silently stops
+// matching fails the probe; a probe with no tag holds no such group and skips
+// that check. Without
 // golangci-lint on PATH it skips, unless SHIFT2EU_LINT_PROBES=require.
 func runForbidigoProbe(t *testing.T, p forbidigoProbe) {
 	t.Helper()
@@ -115,14 +118,14 @@ func runForbidigoProbe(t *testing.T, p forbidigoProbe) {
 	mod := filepath.Join(scratch, "mod")
 
 	var enabled []string
-	if p.tag != "" {
+	if len(p.tags) > 0 {
 		enabled = append(enabled, "forbidigo")
 	}
 	if p.depguard {
 		enabled = append(enabled, "depguard")
 	}
 	if len(enabled) == 0 {
-		t.Fatal("the probe enables no linter: set its tag for forbidigo, depguard for an import rule, or both")
+		t.Fatal("the probe enables no linter: set its tags for forbidigo, depguard for an import rule, or both")
 	}
 	linters := strings.Join(enabled, ",")
 	// Probes run in parallel, each with a cache of its own in its scratch
@@ -171,8 +174,8 @@ func runForbidigoProbe(t *testing.T, p forbidigoProbe) {
 		switch issue.FromLinter {
 		case "forbidigo":
 			m := forbidigoMsg.FindStringSubmatch(issue.Text)
-			if m == nil || !strings.HasPrefix(m[1], p.tag+": ") {
-				t.Errorf("%s: forbidigo issue outside group %s: %s", line, p.tag, issue.Text)
+			if m == nil || !slices.ContainsFunc(p.tags, func(tag string) bool { return strings.HasPrefix(m[1], tag+": ") }) {
+				t.Errorf("%s: forbidigo issue outside the groups %q: %s", line, p.tags, issue.Text)
 				continue
 			}
 			msg = m[1]
@@ -208,11 +211,14 @@ func runForbidigoProbe(t *testing.T, p forbidigoProbe) {
 			}
 		}
 	}
-	if p.tag == "" {
+	if len(p.tags) == 0 {
 		return
 	}
 	for _, e := range forbidigoEntries(t, root) {
-		if strings.HasPrefix(e.msg, p.tag+": ") && !refusedBy[e.msg] {
+		if !slices.ContainsFunc(p.tags, func(tag string) bool { return strings.HasPrefix(e.msg, tag+": ") }) {
+			continue
+		}
+		if !refusedBy[e.msg] {
 			t.Errorf(".golangci.yml:%d: no probe line in testdata/%s is refused by the entry with msg %q; "+
 				"add a line only it refuses", e.line, p.dir, e.msg)
 		}

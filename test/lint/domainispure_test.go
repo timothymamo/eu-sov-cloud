@@ -19,7 +19,7 @@ import (
 func TestDomainIsPureProbe(t *testing.T) {
 	t.Parallel()
 
-	runForbidigoProbe(t, forbidigoProbe{dir: "domainispure", tag: "domain-is-pure"})
+	runForbidigoProbe(t, forbidigoProbe{dir: "domainispure", tags: []string{"domain-is-pure"}})
 }
 
 // domainName is a name as forbidigo renders it, with the import path its pkg

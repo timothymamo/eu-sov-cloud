@@ -23,7 +23,7 @@ func TestCloudReadOnlyProbe(t *testing.T) {
 
 	runForbidigoProbe(t, forbidigoProbe{
 		dir:      "cloudreadonly",
-		tag:      "cloud-read-only",
+		tags:     []string{"cloud-read-only"},
 		depguard: true,
 		// Each stub has the real SDK's import path, package name and shapes,
 		// so forbidigo matches it as it would the real SDK, with no network
