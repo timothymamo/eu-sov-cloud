@@ -324,9 +324,13 @@ repo-relative path, which a reader outside the repository cannot follow.
   allow list and the pin on purpose. A new test that needs the handler goes in `internal/httpapi` or
   `test/apiparity`, or widens `httpapi-imported-only-by-the-server` on purpose. `cmd/eusov-server` is
   held by `server-composition-root`, which is pinned too. It constructs adapters, so
-  `adapters-are-built-in-cmd` should exclude it as it does `cmd/eusov`; milestone 3 leaves that rule as
-  pinned, because depguard does not report that rule's deny entries today, which is a follow-up of its
-  own.
+  `adapters-are-built-in-cmd` excludes it as it does `cmd/eusov`, and the depguard pin holds both
+  exclusions. That rule has a known gap, left for a follow-up of its own: depguard (v2.2.1) compares an
+  import only with the one list entry that sorts nearest before it, as a prefix unless the entry ends
+  in `$`, and the deny entry `internal/adapter/internal/` sorts after `internal/adapter/` and before
+  every real adapter subpackage (`report/`, `request/`, `source/`, `target/`), so an import of an
+  adapter is compared with that entry alone and nothing is reported. No probe in `test/lint` or
+  `test/architecture` covers the rule, which is lax with `$all`, a form `check.RuleDirs` skips.
 - A change to a route, a status code or an error code updates `api/openapi.json` in the same change,
   and a breaking one is a `/v2/` route and an ADR.
 - Operators must put the server behind a proxy for TLS and users; a token alone protects it from direct
