@@ -4,8 +4,9 @@
 # what it should. The CLI's archives, shift2eu_<version>_<os>_<arch>, hold shift2eu (shift2eu.exe on
 # Windows) and not shift2eu-server; the server's, shift2eu-server_<version>_<os>_<arch>, hold
 # shift2eu-server (.exe) and not shift2eu. Besides its own binary an archive may hold only LICENSE,
-# README.md and Markdown pages under docs/: any other entry fails the run, so a stray file under docs/
-# never ships unnoticed. Every built platform has one archive of each, and checksums.txt lists and
+# README.md and Markdown pages under docs/ (no path segment may start with a dot, so no ., .. or hidden
+# file): any other entry fails the run, so a stray file under docs/ never ships unnoticed. Every entry
+# must be a regular file or a directory: a symbolic link, hard link or device fails the run too. Every built platform has one archive of each, and checksums.txt lists and
 # matches every archive. check.GoReleaserArchives pins the configuration itself.
 #
 # GoReleaser writes into a temporary directory, removed on exit, so the caller's dist/ is left alone.
@@ -18,7 +19,12 @@ for tool in goreleaser jq; do
 done
 
 # goreleaser release takes no --dist flag: it builds from a copy of .goreleaser.yaml whose dist: names a
-# fresh temporary directory (the original sets no dist:, so its default, dist/, is never touched).
+# fresh temporary directory (the original sets no dist:, so its default, dist/, is never touched). Should
+# .goreleaser.yaml ever set a top-level dist:, the appended one would duplicate it, so that fails here.
+if grep -qE '^dist[[:space:]]*:' .goreleaser.yaml; then
+  echo ".goreleaser.yaml sets a top-level dist:, which this dry run replaces: remove it or update this script" >&2
+  exit 1
+fi
 work="$(mktemp -d)"
 trap 'rm -rf "${work}"' EXIT
 dist="${work}/dist"
@@ -42,17 +48,38 @@ entries() {
   esac
 }
 
+# details prints an archive's long listing, one line per entry, each starting with the entry's mode,
+# whose first character is its type: - for a regular file, d for a directory, l for a symbolic link, h
+# for a hard link (tar) and so on. zipinfo prints a header and a trailer around the entries; the entries
+# are its lines that start with a mode, and check_archive holds their count to the number of entries,
+# so a listing this misreads fails the run rather than passing it.
+details() {
+  case "$1" in
+    *.tar.gz) tar -tvzf "$1" ;;
+    *.zip) unzip -Z -s "$1" | grep -E '^[-a-z?][-rwxsStTlL?]{6,9}[[:space:]]' ;;
+    *) echo "$1 is neither .tar.gz nor .zip" >&2; return 1 ;;
+  esac
+}
+
 # check_archive archive own: the archive holds exactly one binary, own (or own.exe), at its root, and
-# otherwise only LICENSE, README.md and Markdown pages under docs/ (with their directories). The other
-# binary is not on that list, so an archive holding it fails too.
+# otherwise only LICENSE, README.md and Markdown pages under docs/ (with their directories), each a
+# regular file or a directory. The other binary is not on that list, so an archive holding it fails too.
 check_archive() {
-  local archive="$1" own="$2" list owns stray
+  local archive="$1" own="$2" list long special owns stray
   list="$(entries "${archive}")" || { problem "${archive}: cannot list its entries"; return; }
+  long="$(details "${archive}")" || { problem "${archive}: cannot list its entries' types"; return; }
+  if [ "$(wc -l <<<"${long}")" != "$(wc -l <<<"${list}")" ]; then
+    problem "${archive}: lists $(wc -l <<<"${list}") entries but the types of $(wc -l <<<"${long}")"
+  fi
+  special="$(grep -v '^[-d]' <<<"${long}" || true)"
+  if [ -n "${special}" ]; then
+    problem "${archive}: holds entries that are neither a regular file nor a directory:"$'\n'"${special}"
+  fi
   owns="$(grep -cxE "${own}(\\.exe)?" <<<"${list}" || true)"
   if [ "${owns}" != 1 ]; then
     problem "${archive}: holds ${owns} ${own} binaries at its root, want exactly 1"
   fi
-  stray="$(grep -vxE "${own}(\\.exe)?|LICENSE|README\\.md|docs/([^/]+/)*[^/]+\\.md|docs/([^/]+/)*" <<<"${list}" || true)"
+  stray="$(grep -vxE "${own}(\\.exe)?|LICENSE|README\\.md|docs/([^/.][^/]*/)*[^/.][^/]*\\.md|docs/([^/.][^/]*/)*" <<<"${list}" || true)"
   if [ -n "${stray}" ]; then
     problem "${archive}: holds entries outside its allow list:"$'\n'"${stray}"
   fi
