@@ -6,10 +6,13 @@ import "testing"
 // .golangci.yml on a probe module laid out like the repository
 // (testdata/adaptersbuiltincmd/mod). adapters-are-built-in-cmd must refuse an
 // import of an adapter from the HTTP API, one under each adapter subtree
-// (report, request, source, target), and an import of a helper under
-// adapters/internal/ that the rule does not name, with the helper's own
-// message. The two helpers the rule names stay allowed, and the two
-// composition roots may import every adapter. An import of each adapter
+// (report, request, source, target), the package at the root of each of those
+// subtrees, and an import of a helper under adapters/internal/ that the rule
+// does not name, with the helper's own message. The two helpers the rule names
+// stay allowed, and the two composition roots may import every adapter, the
+// package at a subtree root included. A subtree's entries end in "/" and cover
+// only what is under it, so the package at its root needs an entry of its own
+// (issue #119). An import of each adapter
 // subtree from internal/foo, a package no strict rule holds, is refused by
 // adapters-are-built-in-cmd alone: the HTTP API's imports are refused by
 // httpapi-gets-adapters-from-cmd too, so without that package the probe would

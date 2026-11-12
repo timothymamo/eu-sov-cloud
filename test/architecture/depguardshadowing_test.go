@@ -198,6 +198,16 @@ func TestShadowedEntries(t *testing.T) {
 			entries: []string{"github.com/x/adapter$", "github.com/x/adapter$more"},
 		},
 		{
+			// The fix for issue #119: the exact entry of a subtree root beside
+			// the prefix entry of the packages under it. Neither is a strict
+			// prefix of the other, because the entry ends in / and the exact one
+			// in $, so the pair shadows nothing: depguard compares an import of
+			// the root with the exact entry and an import below it with the
+			// prefix entry.
+			name:    "an exact entry beside the prefix entry of the packages under it",
+			entries: []string{"github.com/x/adapter/report/", "github.com/x/adapter/report$"},
+		},
+		{
 			// A prefix entry is shadowed below an exact entry too: an import of
 			// a package under that one is decided by the exact entry alone.
 			name:    "a prefix entry and the exact entry of a package below it",
