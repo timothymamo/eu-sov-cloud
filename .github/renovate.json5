@@ -5,11 +5,14 @@
     // Keep workflow actions pinned to commit SHAs, with the version in a trailing comment.
     'helpers:pinGitHubActionDigests',
     ':semanticCommits',
-    'schedule:weekly',
   ],
+  // Run every night. Renovate schedules by the hour, not the minute, so PRs open on its first run
+  // between 00:00 and 00:59 Amsterdam time.
+  timezone: 'Europe/Amsterdam',
+  schedule: ['* 0 * * *'],
   labels: ['dependencies'],
   postUpdateOptions: ['gomodTidy'],
-  // Open security PRs from the OSV database straight away, outside the weekly schedule.
+  // Open security PRs from the OSV database straight away, outside the nightly schedule.
   osvVulnerabilityAlerts: true,
   packageRules: [
     {
