@@ -309,10 +309,13 @@ A second review added `os.UserHomeDir`, `os.UserConfigDir`, `os.UserCacheDir` an
 reads `$HOME`, `$XDG_CONFIG_HOME`, `$XDG_CACHE_HOME` or `$TMPDIR` without naming it, so a helper could
 build the path to `~/.config/dot-agent-deck/daemon.env` or `~/.aws/credentials` and read it.
 
-These rules are a guardrail on imports and named calls, not a sandbox. The only I/O they leave an
-application test is file access through `os` in `internal/testutil`, which the golden files use; no
-import or call rule can refuse `os.ReadFile("/proc/self/environ")` or another hard-coded path there,
-so any new file path or `os` call in `internal/testutil` is a widening a reviewer must read.
+These rules are a guardrail on imports and named calls, not a sandbox. The I/O they leave an
+application test is what `internal/testutil` can do through `os` (file access, the golden files),
+`fmt` (stdout and stdin), `time` (the clock; `time.LoadLocation` reads zoneinfo and `$ZONEINFO`) and
+`flag` (`os.Args`), and what `testing` itself offers (`t.TempDir` under `$TMPDIR`, `t.Log` and
+`t.Output`, and `t.Setenv` and `t.Chdir`). No import or call rule can refuse
+`os.ReadFile("/proc/self/environ")` or another hard-coded path there, so any new file path or `os`,
+`fmt`, `time` or `flag` call in `internal/testutil` is a widening a reviewer must read.
 `testing.T.Setenv` and `testing.T.Chdir`, which application tests and `internal/testutil` can still
 call, are left to follow-up issue #153. `test/lint`'s `TestTestutilImportsProbe` pins both rules on a probe module, and
 `TestAppTestsUseFakesNotAdaptersProbe` now runs a second time for `darwin/amd64` with cgo off.

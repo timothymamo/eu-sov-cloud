@@ -266,11 +266,13 @@ linters:
         # reason given at domain-is-pure. Anything else fails lint, a standard
         # package added to Go later included. Add a package only when a test
         # needs it, never one that does I/O. These rules are a guardrail on
-        # imports and named calls, not a sandbox: the one I/O they leave an
-        # application test is file access through os in internal/testutil
-        # (the golden files), whose own imports testutil-imports holds. No
-        # import or call rule can refuse a hard-coded path there, so a new
-        # file path or os call in internal/testutil is a widening a reviewer
+        # imports and named calls, not a sandbox: the I/O they leave an
+        # application test is what internal/testutil can do through os (file
+        # access, the golden files), fmt, time and flag, whose own imports
+        # testutil-imports holds, and what testing itself offers (t.TempDir,
+        # test output, and t.Setenv/t.Chdir until #153). No import or call
+        # rule can refuse a hard-coded path, so a new file path or os, fmt,
+        # time or flag call in internal/testutil is a widening a reviewer
         # must read. The deny list is the one
         # app-uses-ports-not-adapters writes, shared through *app-deny: under
         # a strict list it only says why.
@@ -315,8 +317,9 @@ linters:
         # that I/O with lint green. The files: entry has no !$test, so the
         # helpers' own _test.go files are held too. An import rule sees no
         # call, so the forbidigo group testutil-no-env refuses the environment
-        # reads, directory lookups and process start that os alone allows. A new import needs an
-        # entry here and in test/architecture's pin in the same commit.
+        # reads, directory lookups and process start that os alone allows.
+        # A new import needs an entry here and in test/architecture's pin in
+        # the same commit.
         testutil-imports:
           list-mode: strict
           files:

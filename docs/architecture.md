@@ -32,10 +32,11 @@ Arrows are imports. They point inwards only:
   `internal/testutil`'s own imports are a strict allow list too (`testutil-imports`, its tests
   included), and the forbidigo group `testutil-no-env` keeps its helpers from reading the environment,
   locating the home, config, cache or temp directory, or starting a process. These rules are a
-  guardrail on imports and named calls, not a sandbox: the only I/O they leave an application test is
-  file access through `os` in `internal/testutil`, which the golden files use, and no lint rule can
-  refuse a hard-coded path there, so any new file path or `os` call in `internal/testutil` is a
-  widening a reviewer must read. `test/architecture`
+  guardrail on imports and named calls, not a sandbox: the I/O they leave an application test is what
+  `internal/testutil` can do through `os` (file access, the golden files), `fmt`, `time` and `flag`,
+  and what `testing` itself offers (`t.TempDir`, test output, and `t.Setenv`/`t.Chdir` until #153).
+  No lint rule can refuse a hard-coded path, so any new file path or `os`, `fmt`, `time` or `flag`
+  call in `internal/testutil` is a widening a reviewer must read. `test/architecture`
   holds it package by package for every release target, as it holds the other strict rules
   ([ADR 0012](adr/0012-check-layer-dependencies-by-package-for-every-release-target.md)).
 - **Adapters** (`internal/adapter/...`) implement ports. Each cloud SDK is confined to one adapter
