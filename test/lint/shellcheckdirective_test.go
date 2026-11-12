@@ -262,13 +262,13 @@ func TestIsShellScript(t *testing.T) {
 		src  string
 		want bool
 	}{
-		{name: "the .sh extension", path: "dev/worktree.sh", src: "#!/usr/bin/env bash\n"},
-		{name: "the .sh extension without a shebang", path: "dev/worktree.sh", src: "echo hello\n"},
-		{name: "a sh shebang", path: ".githooks/pre-commit", src: "#!/bin/sh\n"},
-		{name: "an env bash shebang", path: ".githooks/pre-push", src: "#!/usr/bin/env bash\n"},
-		{name: "a bash shebang with options", path: ".githooks/pre-commit", src: "#!/bin/bash -eu\n"},
-		{name: "an env shebang with options", path: ".githooks/pre-commit", src: "#!/usr/bin/env -S bash -eu\n"},
-		{name: "an env shebang with an assignment", path: ".githooks/pre-commit", src: "#!/usr/bin/env LC_ALL=C sh\n"},
+		{name: "the .sh extension", path: "dev/worktree.sh", src: "#!/usr/bin/env bash\n", want: true},
+		{name: "the .sh extension without a shebang", path: "dev/worktree.sh", src: "echo hello\n", want: true},
+		{name: "a sh shebang", path: ".githooks/pre-commit", src: "#!/bin/sh\n", want: true},
+		{name: "an env bash shebang", path: ".githooks/pre-push", src: "#!/usr/bin/env bash\n", want: true},
+		{name: "a bash shebang with options", path: ".githooks/pre-commit", src: "#!/bin/bash -eu\n", want: true},
+		{name: "an env shebang with options", path: ".githooks/pre-commit", src: "#!/usr/bin/env -S bash -eu\n", want: true},
+		{name: "an env shebang with an assignment", path: ".githooks/pre-commit", src: "#!/usr/bin/env LC_ALL=C sh\n", want: true},
 		{name: "a sh shebang on a later line", path: ".githooks/pre-commit", src: "echo hello\n#!/bin/sh\n", want: false},
 		{name: "another shell", path: ".githooks/pre-commit", src: "#!/bin/dash\n", want: false},
 		{name: "another language", path: ".githooks/pre-commit", src: "#!/usr/bin/env python3\n", want: false},
