@@ -195,6 +195,94 @@ func (r strictRuleCoverage) allowsOS() bool {
 	return slices.Contains(r.allow, "os$") || slices.Contains(r.allow, "os")
 }
 
+// allowsGostd reports whether the rule's allow list lets a package import any
+// standard package: the $gostd entry, which depguard expands to one prefix entry
+// per top-level directory of GOROOT/src. It is read as written and not expanded:
+// the written entry is what a reviewer reads, and no other entry of a rule means
+// the whole standard library.
+func (r strictRuleCoverage) allowsGostd() bool {
+	return slices.Contains(r.allow, gostdEntry)
+}
+
+// gostdOnlyExempt are the non-test module packages a strict depguard rule may
+// hold alone while allowing $gostd, each with the reason the package needs no
+// second rule naming its imports. It is empty on purpose: since issue #152 (the
+// reviewer's finding B1, the auditor's L-1) every non-test module package a
+// composition root can import that a $gostd rule holds is held by a strict allow
+// list of its own names as well, so an entry here accepts a package behind a rule
+// that allows every standard package, os/exec, syscall and unsafe among them, and
+// a reviewer reads the entry as that acceptance.
+var gostdOnlyExempt = map[string]string{}
+
+// TestNoPackageIsHeldOnlyByAGostdRule closes the last hole issue #152 opened (the
+// reviewer's finding B1 and the auditor's L-1): a strict rule that allows $gostd
+// allows every standard package, os/exec, syscall and unsafe among them, so a
+// package such a rule holds alone is a place a composition root hands the work to
+// and nobody has written down what the package may import. test/e2e was that
+// place: its doc.go carries no build tag, so it is a production package
+// cmd/shift2eu may import, and e2e-is-black-box, the only rule that held it,
+// allows $gostd. An untagged file there that read os.Getenv and started
+// exec.Command stayed lint green with every test passing, because no rule refused
+// it and go list -deps never lists a package only a _test.go file imports.
+//
+// The property is a coverage one, read from .golangci.yml and go list, offline and
+// without golangci-lint: every non-test module package a composition root can
+// import (modulePackageDirs) that a strict rule holds is held by at least one
+// holding rule that does not allow $gostd, or it is named in gostdOnlyExempt with
+// the reason it may stand behind a rule that allows the whole standard library. A
+// package no strict rule holds at all is left to
+// TestEveryModulePackageIsHeldByAStrictRule, which names it.
+func TestNoPackageIsHeldOnlyByAGostdRule(t *testing.T) {
+	t.Parallel()
+
+	golangci := readRepositoryFile(t, ".golangci.yml")
+	strict := strictRules(t, golangci)
+
+	for dir, reason := range gostdOnlyExempt {
+		if strings.TrimSpace(reason) == "" {
+			t.Errorf("gostdOnlyExempt names %s with no reason: say why the package may stand behind a rule that allows $gostd", dir)
+		}
+	}
+
+	// holders returns the strict rules that hold dir, in document order.
+	holders := func(dir string) []strictRuleCoverage {
+		return slices.DeleteFunc(slices.Clone(strict), func(r strictRuleCoverage) bool { return !r.holds(dir) })
+	}
+
+	checked := 0
+
+	for _, dir := range modulePackageDirs(t) {
+		holding := holders(dir)
+		if len(holding) == 0 {
+			// A package no strict rule holds is
+			// TestEveryModulePackageIsHeldByAStrictRule's finding.
+			continue
+		}
+
+		checked++
+
+		if slices.ContainsFunc(holding, func(r strictRuleCoverage) bool { return !r.allowsGostd() }) {
+			continue
+		}
+
+		if _, exempt := gostdOnlyExempt[dir]; exempt {
+			continue
+		}
+
+		names := make([]string, 0, len(holding))
+		for _, r := range holding {
+			names = append(names, r.name)
+		}
+
+		t.Errorf("%s/%s: the strict rules that hold it, %s, all allow $gostd, so no rule says what the package may import: a composition root could hand it work, and an untagged file there could read the environment or start a process with lint green. Hold it to a strict allow list of what it imports today, as test-docs-are-pure holds the test trees' documentation packages, or name it in gostdOnlyExempt with the reason it may stand behind $gostd (issue #152)",
+			modulePath, dir, strings.Join(names, ", "))
+	}
+
+	if checked == 0 {
+		t.Fatal("no non-test module package a composition root can import is held by a strict rule, so this check read nothing")
+	}
+}
+
 // TestEveryModulePackageIsHeldByAStrictRule closes the delegation gap issue #152
 // opened (the auditor's finding M-A): a composition root may import every package
 // of the module, so a package no strict depguard rule holds is a place a root

@@ -980,9 +980,15 @@ var pinnedDepguardRules = []check.DepguardRule{
 		// their own. It is one shared strict allow list, the smallest AllowList
 		// reads (check.AllowList refuses an empty one, the place S1 records); the
 		// day one of these packages imports a package, it names it here and in
-		// .golangci.yml in the same commit. test/e2e is left out: e2e-is-black-box
-		// holds it. The files: list takes the test files out (!$test), whose
-		// imports these packages' tests would not fit this list: a test of
+		// .golangci.yml in the same commit. test/e2e belongs here too since issue
+		// #152 (the reviewer's B1, the auditor's L-1): its doc.go carries no build
+		// tag, so test/e2e is a production package a composition root may import,
+		// and e2e-is-black-box, the only rule that held it, allows $gostd. An
+		// untagged file there that read os.Getenv and started exec.Command stayed
+		// lint green with every test passing. The glob sits before !$test, so the
+		// e2e test files stay on e2e-is-black-box, which is the black-box rule with
+		// a $gostd of its own. The files: list takes the test files out (!$test),
+		// whose imports these packages' tests would not fit this list: a test of
 		// test/architecture reads the repository, go-cmp included. The nested
 		// internal tree under test/architecture is taken out with a negated glob,
 		// as a rule's files: list cannot say "this directory only": without it the
@@ -997,6 +1003,7 @@ var pinnedDepguardRules = []check.DepguardRule{
 			"**/test/container/**",
 			"**/test/devenv/**",
 			"**/test/docs/**",
+			"**/test/e2e/**",
 			"**/test/lint/**",
 			"!$test",
 		},
