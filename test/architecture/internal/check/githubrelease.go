@@ -3,20 +3,36 @@ package check
 import (
 	"errors"
 	"fmt"
+	"strings"
 
 	"github.com/timothymamo/shift2eu/test/internal/yamlread"
 )
 
 // GitHubRelease checks how a .goreleaser.yaml document publishes the GitHub
-// release: its top-level release section must hold exactly one key,
-// prerelease, set to auto (issue #92). goreleaser then marks a tag with a
-// pre-release suffix (v0.1.0-rc.2) as a GitHub pre-release, which never
-// becomes the latest release, and a plain vX.Y.Z as a normal release, as the
-// image gets no X.Y and no latest tag for a pre-release (ADR 0015).
+// release: its top-level release section must hold exactly draft: true and
+// prerelease: auto, in that order, and may add replace_existing_draft: true
+// after them.
+//
+//   - draft: true (issue #156): goreleaser uploads every asset to a draft and
+//     leaves it a draft, and release.yml's publish job publishes it last,
+//     after the archives are attested. A published release whose repository
+//     has release immutability on can then never gain or lose an asset (ADR
+//     0015). goreleaser's default publishes the release itself, as soon as
+//     its own uploads are done.
+//   - prerelease: auto (issue #92): goreleaser marks a tag with a pre-release
+//     suffix (v0.1.0-rc.2) as a GitHub pre-release, which never becomes the
+//     latest release, and a plain vX.Y.Z as a normal release, as the image
+//     gets no X.Y and no latest tag for a pre-release (ADR 0015).
+//   - replace_existing_draft: true: a re-run of a failed goreleaser job
+//     deletes the draft the failed run left for the tag and starts a new one,
+//     rather than leave two drafts for one tag. GitHub finds no draft by its
+//     tag, so without it goreleaser creates a second one.
 //
 // It fails closed: a missing release section is refused, because goreleaser's
-// default publishes every tag as a normal release, and so is any other key in
-// it: make_latest, for one, would override what prerelease: auto decides.
+// default publishes every tag as a normal release, and so is any other key or
+// value in it: make_latest, for one, would override what prerelease: auto
+// decides, and draft: false would publish assets that could no longer change
+// before they are attested.
 func GitHubRelease(goreleaser []byte) error {
 	lines, err := yamlread.SplitLines(goreleaser)
 	if err != nil {
@@ -38,11 +54,19 @@ func GitHubRelease(goreleaser []byte) error {
 		}
 	}
 
-	return errors.New("read .goreleaser.yaml: no release section, want release: prerelease: auto: goreleaser's default publishes a pre-release tag as a normal release, the latest one")
+	return errors.New("read .goreleaser.yaml: no release section, want release: draft: true and prerelease: auto: goreleaser's default publishes a pre-release tag as a normal release, the latest one, and publishes the assets before they are attested")
 }
 
-// checkRelease refuses a release section that holds anything but
-// prerelease: auto.
+// releaseKeys are the keys of the release section, in order, each with the
+// one plain value it must have; the last may be left out.
+var releaseKeys = []struct{ key, value string }{
+	{"draft", "true"},
+	{"prerelease", "auto"},
+	{"replace_existing_draft", "true"},
+}
+
+// checkRelease refuses a release section that holds anything but draft: true
+// and prerelease: auto, optionally followed by replace_existing_draft: true.
 func checkRelease(release yamlread.Entry) error {
 	block, err := yamlread.BlockValue(release, "release")
 	if err != nil {
@@ -54,17 +78,30 @@ func checkRelease(release yamlread.Entry) error {
 		return fmt.Errorf("release: %w", err)
 	}
 
-	if len(entries) != 1 || entries[0].Key != "prerelease" {
-		return fmt.Errorf("line %d: release holds %d keys, want exactly prerelease: any other key may change which release GitHub shows as the latest", release.Num, len(entries))
+	if len(entries) < len(releaseKeys)-1 || len(entries) > len(releaseKeys) {
+		return fmt.Errorf("line %d: release holds %d keys, want exactly draft: true and prerelease: auto, and optionally replace_existing_draft: true: any other key may change which release GitHub shows as the latest or publish it before its archives are attested", release.Num, len(entries))
 	}
 
-	value, err := yamlread.Single(entries[0])
-	if err != nil {
-		return fmt.Errorf("release: %w", err)
-	}
+	for i, e := range entries {
+		want := releaseKeys[i]
+		if e.Key != want.key {
+			return fmt.Errorf("line %d: release holds %s where it wants %s, in the order draft, prerelease, replace_existing_draft", e.Num, e.Key, want.key)
+		}
 
-	if value != "auto" {
-		return fmt.Errorf("line %d: release.prerelease is %q, want auto, so a pre-release tag is a GitHub pre-release", entries[0].Num, value)
+		value, err := yamlread.Single(e)
+		if err != nil {
+			return fmt.Errorf("release: %w", err)
+		}
+
+		// draft and replace_existing_draft are booleans: a quoted "true" is a
+		// string goreleaser refuses, so only the plain word is taken.
+		if want.key != "prerelease" && strings.ContainsAny(e.Value[:min(1, len(e.Value))], `"'`) {
+			value = e.Value
+		}
+
+		if value != want.value {
+			return fmt.Errorf("line %d: release.%s is %q, want %s", e.Num, want.key, value, want.value)
+		}
 	}
 
 	return nil

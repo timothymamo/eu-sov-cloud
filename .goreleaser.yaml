@@ -108,8 +108,15 @@ changelog:
       - '^test:'
       - '^chore:'
 
-# A tag with a pre-release suffix (v0.1.0-rc.2) is a GitHub pre-release, never
-# the latest release, as its image gets no X.Y and no latest tag (ADR 0015,
-# issue #92). test/architecture (check.GitHubRelease) pins this section.
+# Every asset goes to a draft release, which release.yml's publish job
+# publishes after the archives are attested, so an immutable release never
+# gains or loses an asset once it is public (issue #156, ADR 0015). A re-run
+# of a failed goreleaser job replaces the draft the failed run left rather
+# than add a second one. A tag with a pre-release suffix (v0.1.0-rc.2) is a
+# GitHub pre-release, never the latest release, as its image gets no X.Y and
+# no latest tag (ADR 0015, issue #92). test/architecture (check.GitHubRelease)
+# pins this section.
 release:
+  draft: true
   prerelease: auto
+  replace_existing_draft: true
