@@ -67,7 +67,8 @@ release builds, with cgo off and on, and with no build tag, `e2e`, `integration`
 Every strict rule in `.golangci.yml` must be a layer of that check or a skip with a written reason
 (`TestEveryStrictRuleIsChecked`): `cli-gets-adapters-from-cmd` allows `$gostd`, which no package list
 can spell out, `e2e-is-black-box` holds a directory of test files only, which `go list -deps`
-does not list as a layer, and `composition-root` is held on its own (*Amended (issue #101)*, below).
+does not list as a layer (`app-tests-use-fakes-not-adapters`, which holds the test files of a layer's
+packages, is checked: *Amended (issue #144)*, below), and `composition-root` is held on its own (*Amended (issue #101)*, below).
 
 *Amended (issue #79):* the check first required every allow entry to end in `$` and every rule to
 name `!$test`, so it skipped `cloud-adapters-reach-the-cloud-through-the-sdk`, whose allow list
@@ -259,6 +260,27 @@ names the packages known to do I/O and does not claim to be complete. `test/lint
 imports each of them, which must be refused, and pure controls (`net/url`, `net/netip`, `strings`,
 `context`, `testing`, `runtime`), which must not. `path/filepath` stays allowed on purpose: `Join` and
 `Base` are pure, and nothing in `internal/app` imports it.
+
+*Amended (issue #144):* a deny list blocks only what someone thought to name, so
+`app-tests-use-fakes-not-adapters` is now a strict allow list, like the production layers' rules: the
+application package under test, the six domain packages, `internal/testutil`, `go-cmp`'s `cmp`,
+`testing`, the domain's pure standard packages (the allow list of `domain-is-pure`, repeated because
+YAML cannot join two lists, so the domain and its caller's tests agree on what pure means) and
+`bytes`, `context`, `io` and `sync`, every entry exact. Anything else fails lint, a standard package
+added to Go later included; the shared `*app-deny` list stays and only says why. The rule's files are
+the pair `**/internal/app/**/*_test.go` and `**/internal/app/*_test.go`, the layer's test files alone,
+so it is no longer a lax rule held by depguard alone: `check.RuleDirs` reads that pair as the test
+files of `internal/app` (`TestsOnly`), and `check.Packages` holds the `TestImports` and
+`XTestImports` of every package under the directory to the rule's allow list, and none of their own
+imports, which `app-uses-ports-not-adapters` holds, package by package on every release target, cgo
+mode and tag set, as `TestReleaseTargetDependencies` holds the other strict rules. `RuleDirs` refuses
+a list that names one glob of the pair without the other, mixes the pair with a directory, an
+exclusion or `!$test`, and `check.Packages` flags a package held by test-file rules alone, since then
+no rule holds its production imports. `check.AllowList` now follows a deny list written as an alias
+(`deny: *app-deny`), as `check.DepguardRules` does, so the shadowing check between the allow and deny
+lists covers the shared list too. `test/lint`'s `TestAppTestsUseFakesNotAdaptersProbe` pins both
+halves: every allowed package must pass, and the I/O packages above, `encoding/xml` and `expvar` (on
+no list) and `runtime` and `go/build/constraint` (pure but unneeded) must be refused.
 
 The checks are ordinary tests, so `make test`, `make check` and CI's `make cover` run them with no
 workflow change.

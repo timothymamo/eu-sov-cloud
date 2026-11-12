@@ -24,7 +24,13 @@ Arrows are imports. They point inwards only:
   pure standard packages. No I/O, no `context`, no clock, no logging. This is where the value of the
   project lives, so it is the most heavily unit-tested code.
 - **Application** (`internal/app/analysis`) orchestrates a use case and declares the interfaces (ports)
-  it needs, next to where they are consumed. It never imports an adapter.
+  it needs, next to where they are consumed. It never imports an adapter. Its tests use fakes, not
+  adapters, and do no I/O: `app-tests-use-fakes-not-adapters` holds its `_test.go` files to a strict
+  allow list (issue #144) of the application package, the domain, `internal/testutil`, `go-cmp`,
+  `testing`, the domain's pure standard packages and `bytes`, `context`, `io` and `sync`, so a
+  standard package on no list, one added to Go later included, is refused as well. `test/architecture`
+  holds it package by package for every release target, as it holds the other strict rules
+  ([ADR 0012](adr/0012-check-layer-dependencies-by-package-for-every-release-target.md)).
 - **Adapters** (`internal/adapter/...`) implement ports. Each cloud SDK is confined to one adapter
   package, and its types are translated to domain types at the boundary. They never import the CLI
   or `cmd/`. Helpers that adapters share live in `internal/adapter/internal/`: every adapter that
@@ -99,7 +105,7 @@ the ways code could be hidden from it, and what refuses each:
   fails on any Go file the `./...` pattern reaches that is a symlink, git-ignored ones included, as
   deliberate defence in depth.
 - A file name. `test/architecture` checks every directory a strict depguard rule names (the domain, the
-  application layer, the snapshot reader, the adapter helpers, the inventory file reader, the
+  application layer and its tests, the snapshot reader, the adapter helpers, the inventory file reader, the
   request decoders, the HTTP API and the targets that embed a snapshot) package by package, for every platform `.goreleaser.yaml` builds. It
   reads those directories from `.golangci.yml`, lists them with `go list` and holds each package to the
   allow list of every rule that covers it, and it holds every package of the module in the release
