@@ -398,11 +398,15 @@ them; the `//go:linkname` and `/proc` checks read both driving adapters, `intern
   of a `func() (string, bool)` literal passed directly to the package-level `run`, which `main.go`
   neither declares nor assigns (the forbidigo exception is a path and a msg, so a second use in that
   file, or handing `os.LookupEnv` itself to `run`, would lint clean).
-- `TestRootsAndCLINameNoEnvironmentPath` refuses a string literal holding `proc/` or `dev/fd/`, at
-  its start or after a `/`, in any Go file of the roots, the driving adapters and the inventory-file
-  reader, as `os.ReadFile("/proc/self/environ")` dumps every variable. The leading slash is optional
-  since the audit of #152: `fs.ReadFile(os.DirFS("/"), "proc/self/environ")` reads the same file, and
-  a relative `proc/...` resolves to it from `/`. A name that only ends in `proc` (`myproc/...`) passes.
+- `TestRootsAndCLINameNoEnvironmentPath` refuses a string literal holding the path segment `proc`
+  or `dev/fd`, at its start or after a `/` and followed by a `/` or the end of the literal, in any Go
+  file of the roots, the driving adapters and the inventory-file reader, as
+  `os.ReadFile("/proc/self/environ")` dumps every variable. The leading slash is optional since the
+  audit of #152: `fs.ReadFile(os.DirFS("/"), "proc/self/environ")` reads the same file, and a
+  relative `proc/...` resolves to it from `/`. The trailing slash is optional since the next audit:
+  `os.DirFS("/proc")`, `os.OpenRoot("/proc")` and `os.Open("/dev/fd")` name the directory itself, so
+  `/proc`, `proc` and `/dev/fd` are refused too. A name that only ends or starts in `proc`
+  (`myproc/...`, `/procfs/...`) passes.
 
 The roots' `_test.go` files are compiled into the same package and run in the same process, but the
 strict depguard rules `composition-root` and `server-composition-root` skip them. The lax depguard
@@ -476,12 +480,15 @@ suites) and one allowed `os` with no call rule (`inventoryfile`). Issue #152 clo
 properties that `test/architecture` checks over every package `go list` reports for every release
 target, with the `e2e` and `integration` tags (`strictcoverage_test.go`):
 
-- **Every module package under `internal/` and `cmd/` is held by a strict depguard rule**
-  (`TestEveryModulePackageIsHeldByAStrictRule`). A new package without one fails the test, so
-  whatever a root reaches has a strict allow list. Packages under `test/` are left out: each is
-  either `_test.go`-only or under a directory named `internal` (`test/internal/...`,
-  `test/architecture/internal/...`), which Go's internal rule keeps the roots out of whatever their
-  allow lists say.
+- **Every non-test module package a root can import is held by a strict depguard rule**
+  (`TestEveryModulePackageIsHeldByAStrictRule`), over `go list ./...`: `internal/`, `cmd/`, the
+  doc-only packages under `test/`, and a new top-level package such as `pkg/` the day it is added. A
+  new package without one fails the test, so whatever a root reaches has a strict allow list. The
+  only packages left out are those Go's internal rule hides from `cmd/` and `internal/`, whatever
+  the roots' allow lists say: a path with an `internal` element whose parent is not the module root
+  (`test/internal/...`, `test/architecture/internal/...`). The round that widened the property from
+  `internal/` and `cmd/` (the next audit of #152 found that `test/devenv/leak.go` or a new `pkg/leak`
+  stayed lint-green) added `test-docs-are-pure` for the doc-only `test/*` packages.
 - **Every package whose strict rule allows `os` is held by a forbidigo group refusing the nine `os`
   reads** (`TestEveryOsAllowingRuleHasAnEnvironmentGroup`): `os.Getenv`, `os.LookupEnv`,
   `os.ExpandEnv`, `os.Environ`, `os.StartProcess`, `os.UserHomeDir`, `os.UserConfigDir`,
@@ -489,12 +496,14 @@ target, with the `e2e` and `integration` tags (`strictcoverage_test.go`):
   Today those are the roots (`composition-root-env`, `composition-root-no-exec`), `internal/cli`
   (`cli-no-env-or-process`), `internal/testutil` (`testutil-no-env`) and the inventory-file reader
   (`inventoryfile-no-env`). A rule that gains `os$` fails the test until its package has a group.
+  The property reads `os` only: extending it to the `syscall` reads (`Getenv`, `Environ`, `Exec`,
+  `ForkExec`, `StartProcess`) and treating `$gostd` as allowing both is follow-up issue #167.
 
 `TestStrictRuleCoverageHolds` pins the helpers both tests share. The rules the properties called for:
 
 - **`config-is-pure`** (depguard, strict) holds `internal/config`, which has only a `doc.go` today,
   to `errors$`: the smallest allow list `check.AllowList` reads, as it refuses a strict rule with
-  none. Its `doc.go` announces flags, the environment and a file; a future `os` import comes with a
+  none (follow-up issue #166 lets it accept an empty list and drops these placeholders). Its `doc.go` announces flags, the environment and a file; a future `os` import comes with a
   forbidigo group for its reads (the second property fails until it does), and any read of a named
   variable needs an exception decided in an ADR, as `composition-root-env`'s for
   `SHIFT2EU_SERVER_TOKEN` (ADR 0019).
@@ -514,6 +523,13 @@ target, with the `e2e` and `integration` tags (`strictcoverage_test.go`):
   rule). `inventory-file-reader-reads-one-file` must allow `os` for `os.Open`, and `cmd/shift2eu`
   imports the reader. The writes are `tests-no-process-state`'s. `TestInventoryFileNoEnvProbe` and
   `TestInventoryFileNoEnvForbidigoPatterns` pin it.
+- **`test-docs-are-pure`** (depguard, strict) holds the doc-only packages `test/apiparity`,
+  `test/architecture`, `test/container`, `test/devenv`, `test/docs` and `test/lint` to the same
+  `errors$` placeholder (issue #166). Each is a production package a root could import through the
+  module prefix. `!$test` leaves their tests out, and a negated glob takes out
+  `test/architecture/internal/...`, which Go's internal rule hides from the roots and which reads
+  `os` and `os/exec`. `test/e2e` is held by `e2e-is-black-box`. A package that starts importing
+  something names it there and in the pin in the same commit.
 
 ### Tests change no process state
 

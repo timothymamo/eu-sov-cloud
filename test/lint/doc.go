@@ -138,10 +138,12 @@
 // cmd/shift2eu-server/main.go to one os.LookupEnv call, with the identifier
 // tokenEnvVar, as the sole return of the func() (string, bool) token source it
 // passes to run, so run reads no other variable, and
-// TestRootsAndCLINameNoEnvironmentPath refuses a literal holding proc/ or
-// dev/fd/, at its start or after a /, in the roots, both driving adapters and
-// the inventory-file reader (proc/self/environ read through os.DirFS("/") has
-// no leading slash); no group can state either.
+// TestRootsAndCLINameNoEnvironmentPath refuses a literal holding the path
+// segment proc or dev/fd, at its start or after a /, with or without a
+// trailing /, but not myproc, in the roots, both driving adapters and the
+// inventory-file reader (proc/self/environ read through os.DirFS("/") has no
+// leading slash, and os.DirFS("/proc") no trailing one); no group can state
+// either.
 // The depguard rule composition-root-tests refuses go/build, net/http/cgi,
 // os/exec, os/user, plugin, runtime/cgo, syscall/js and unsafe in the roots'
 // _test.go files, which the strict composition-root rules skip, and in the
