@@ -313,8 +313,8 @@ attestations, pushed to the registry beside the image.
     uploads to it and undrafts it as its last step (`PublishRelease`), and fails fast on an existing
     immutable release for the tag; with `release.draft: true` it skips that last step and leaves the
     draft. `.goreleaser.yaml` sets `draft: true`, so a job of `release.yml`, `publish`, publishes it
-    (`gh release edit "$TAG" --draft=false`) after `attest-archives`, holding `contents: write` and
-    nothing else. Publishing sends no `make_latest`, as GoReleaser's own step did not either, so
+    (`gh release edit "$TAG" --repo timothymamo/shift2eu --draft=false`; the job checks nothing out,
+    so `gh` is given the repository) after `attest-archives`, holding `contents: write` and nothing else. Publishing sends no `make_latest`, as GoReleaser's own step did not either, so
     GitHub's default for a published, non-pre-release release applies, as before; `prerelease: auto`
     still marks a pre-release tag at creation. GitHub finds no draft by its tag, so a re-run of a failed
     `goreleaser` job would create a second draft for the tag beside the one the failed run left:
@@ -322,8 +322,8 @@ attestations, pushed to the registry beside the image.
     tag) and start again. A re-run after `publish` succeeded fails in GoReleaser rather than change the
     published release: on an immutable release it refuses at once, and without immutability its first
     upload finds the asset already there and fails, as `replace_existing_artifacts` is off.
-    `check.GitHubRelease` holds the section to exactly `draft: true` and `prerelease: auto`, and
-    accepts `replace_existing_draft: true` after them. The image jobs still need only `goreleaser`, and
+    `check.GitHubRelease` holds the section to exactly `draft: true`, `prerelease: auto` and
+    `replace_existing_draft: true`, in that order. The image jobs still need only `goreleaser`, and
     push and sign while the release is a draft; the signing identity
     (`release.yml@refs/tags/vX.Y.Z`), the `verify` job and release-please (`skip-github-release`, ADR
     0021) do not change. The maintainer turns release immutability on once this lands; no workflow
@@ -331,7 +331,10 @@ attestations, pushed to the registry beside the image.
   - **Archive attestations.** The `goreleaser` job hands `checksums.txt` and the archives on as a
     workflow artifact kept for one day; `attest-archives` downloads it on a runner of its own, checks
     it with `sha256sum -c checksums.txt`, and attests every archive and `checksums.txt` with
-    `actions/attest-build-provenance`, by `subject-path`. One attestation then names each file as a
+    `actions/attest-build-provenance`, by `subject-path`. Both the upload and the subjects name each
+    archive by its extension (`shift2eu_*.tar.gz`, `shift2eu_*.zip`, and the same for
+    `shift2eu-server_*`): a bare `shift2eu_*` in `dist/` also matches GoReleaser's build directories and
+    would attest the bare binaries beside the archives. One attestation then names each file as a
     subject, so a single archive verifies on its own with `gh attestation verify <archive>`, and so does
     `checksums.txt`; `subject-checksums` would have attested the archives through `checksums.txt` but
     not `checksums.txt` itself. The job holds `id-token: write`, `attestations: write` and
