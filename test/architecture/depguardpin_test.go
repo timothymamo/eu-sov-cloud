@@ -116,13 +116,67 @@ var pinnedDepguardRules = []check.DepguardRule{
 		},
 	},
 	{
+		// The application layer's _test.go files (issue #144): the rule is a
+		// strict allow list, as the production layers' rules are, so it names
+		// what an application-layer test may import and refuses everything
+		// else. The standard packages are exactly the ones the application
+		// layer's tests import today (issue #144's review, finding B1): bytes,
+		// context, which the use case takes, errors, io, slices, strings, sync
+		// for a fake's mutex, and testing. Every one of them is pure:
+		// errors, slices and strings are on the domain's pure list
+		// (domain-is-pure above), and the five beyond it (bytes, context, io,
+		// sync, testing) are the extras
+		// TestAppTestsRuleAllowsOnlyPurePackagesAndItsExtras holds, each with
+		// the reason a test gives; that test fails when an extra is no entry
+		// of this allow list or is one the domain's list already names, so the
+		// extras cannot go stale. The domain's fmt, time, net/netip, net/url,
+		// strconv, unicode and unicode/utf8 are deliberately not here: the
+		// application layer's tests import none of them, and fmt and time can
+		// print to stdout, read stdin and read zoneinfo files and the clock,
+		// which no forbidigo group refuses in a test. A test that needs one
+		// adds it to this list, that test and .golangci.yml in the same commit.
+		// The module's packages are the application package under test, the
+		// six domain packages and internal/testutil; go-cmp is the one
+		// third-party package a test may import. Every entry is exact, and no
+		// deny entry names a package an allow entry allows.
+		//
+		// The deny list is the one app-uses-ports-not-adapters writes, which the
+		// alias *app-deny shares: under a strict list it only says why a
+		// package the allow list already refuses is refused.
+		//
+		// The files: list holds the _test.go files of internal/app and of the
+		// layer's subdirectories, and no production file, so app-uses-ports-
+		// not-adapters holds those. RuleDirs reads the pair as the test files of
+		// the directory alone (RuleFiles.TestsOnly, issue #144), so the package
+		// check holds the test imports of every package under internal/app to
+		// this list, package by package for every release target, and
+		// TestAppTestsUseFakesNotAdaptersProbe (test/lint) holds the imports a
+		// test must still be refused.
 		Name:     "app-tests-use-fakes-not-adapters",
-		ListMode: "lax",
+		ListMode: "strict",
 		Files: []string{
 			"**/internal/app/**/*_test.go",
 			"**/internal/app/*_test.go",
 		},
-		Allow: nil,
+		Allow: []string{
+			"bytes$",
+			"context$",
+			"errors$",
+			"github.com/google/go-cmp/cmp$",
+			"github.com/timothymamo/shift2eu/internal/app/analysis$",
+			"github.com/timothymamo/shift2eu/internal/domain/assessment$",
+			"github.com/timothymamo/shift2eu/internal/domain/catalog$",
+			"github.com/timothymamo/shift2eu/internal/domain/inventory$",
+			"github.com/timothymamo/shift2eu/internal/domain/mapping$",
+			"github.com/timothymamo/shift2eu/internal/domain/taxonomy$",
+			"github.com/timothymamo/shift2eu/internal/domain/text$",
+			"github.com/timothymamo/shift2eu/internal/testutil$",
+			"io$",
+			"slices$",
+			"strings$",
+			"sync$",
+			"testing$",
+		},
 		Deny: []string{
 			"github.com/timothymamo/shift2eu/internal/adapter",
 			"github.com/timothymamo/shift2eu/internal/cli",
@@ -157,6 +211,58 @@ var pinnedDepguardRules = []check.DepguardRule{
 			"runtime/coverage",
 			"unsafe",
 		},
+	},
+	{
+		// internal/testutil (issue #144, the auditor's finding M-1 and the
+		// reviewer's S1): the application layer's tests may import it, and it
+		// reads and writes golden files, so it imports os and path/filepath
+		// today. Nothing held those imports to anything: a helper that reached
+		// the network (net/http), started a program (os/exec) or read the
+		// environment (os.Getenv) would have given an application test I/O with
+		// lint green, since the test's own rule allows internal/testutil
+		// whatever it imports. So testutil has a strict rule of its own, and
+		// its allow list is exactly the imports its files make today, each
+		// exact: the standard packages, the two domain packages it builds
+		// values of, and internal/testutil itself, which its external test
+		// package imports. A new import needs an entry here, in .golangci.yml
+		// and in this pin, in the same commit, and a reviewer reads it as a
+		// widening of the helpers every test shares.
+		//
+		// The files: list names the directory whole and no !$test, so the rule
+		// holds the helpers' _test.go files too: a test of testutil runs with
+		// the same privileges as the helpers. RuleDirs reads it as one
+		// directory holding test files (RuleFiles.Tests), so
+		// TestReleaseTargetDependencies holds the package's own and its test
+		// files' imports to this list, package by package for every release
+		// target. An import rule sees no call, so the forbidigo group
+		// testutil-no-env refuses the calls that reach the environment and
+		// start a process, which os and path/filepath alone cannot say.
+		Name:     "testutil-imports",
+		ListMode: "strict",
+		Files: []string{
+			"**/internal/testutil/**",
+		},
+		Allow: []string{
+			"bytes$",
+			"encoding/json$",
+			"flag$",
+			"fmt$",
+			"github.com/timothymamo/shift2eu/internal/domain/catalog$",
+			"github.com/timothymamo/shift2eu/internal/domain/taxonomy$",
+			"github.com/timothymamo/shift2eu/internal/testutil$",
+			"maps$",
+			"math$",
+			"os$",
+			"path/filepath$",
+			"reflect$",
+			"regexp$",
+			"slices$",
+			"strconv$",
+			"strings$",
+			"testing$",
+			"time$",
+		},
+		Deny: nil,
 	},
 	{
 		Name:     "cli-gets-adapters-from-cmd",
@@ -1253,5 +1359,159 @@ func requireMutationReported(t *testing.T, mutation depguardMutation) {
 		return strings.HasPrefix(message, mutation.rule+": ")
 	}) {
 		t.Errorf("the mutated document reads as the pinned rules: DepguardRules() = %v and PinnedRules() reported nothing about %s, so the pin would miss this mutation", rules, mutation.rule)
+	}
+}
+
+// appTestsExtras are the standard packages app-tests-use-fakes-not-adapters
+// allows beyond the ones domain-is-pure names, each with the reason the
+// application layer's tests give for it (issue #144). The list is deliberately
+// short: the rule is a strict allow list holding tests that use fakes, so a
+// package here is one a test cannot do without, not one a test might find
+// convenient. A package outside this list and outside domain-is-pure's is
+// refused by the rule, and TestAppTestsRuleAllowsOnlyPurePackagesAndItsExtras
+// fails when .golangci.yml allows one.
+var appTestsExtras = []struct {
+	path   string
+	reason string
+}{
+	{path: "bytes", reason: "a test compares what the use case returned, byte for byte"},
+	{path: "context", reason: "the use case takes a context.Context, so a test passes one"},
+	{path: "io", reason: "a test writes through an io.Writer, which is how a use case hands output to a port"},
+	{path: "sync", reason: "a fake records what it was handed behind a sync.Mutex, as two goroutines may reach it"},
+	{path: "testing", reason: "a test is written with package testing"},
+}
+
+// appTestsThirdParty is the one third-party package
+// app-tests-use-fakes-not-adapters allows: the comparison the testing section of
+// CLAUDE.md asks for. It is no standard package, so the check below names it
+// rather than compare it with the domain's list.
+const appTestsThirdParty = "github.com/google/go-cmp/cmp"
+
+// TestAppTestsRuleAllowsOnlyPurePackagesAndItsExtras pins that the application
+// layer's test rule allows no standard package beyond the two sets it is built
+// from (issue #144, the reviewer's finding B1 and the auditor's L-2): the
+// packages domain-is-pure names, whose list the app-tests rule shares so the
+// domain and the tests of its caller agree on what pure means, and the extras
+// above, each of which a test of the layer gives a reason for.
+//
+// It is a subset check, not a superset one: the rule need not allow every
+// package the domain allows. fmt and time are the domain's, and a test's copy
+// of them would print to stdout, read stdin or read zoneinfo files and the
+// clock, which no forbidigo group refuses in a test (its groups hold for
+// internal/domain's production files). The other direction is the pin's job:
+// pinnedDepguardRules holds the rule's allow list whole, so a package the tests
+// need that is dropped from this list fails TestDepguardRulesArePinned, and the
+// imports of the layer's tests fail TestReleaseTargetDependencies too.
+//
+// The entries compared are the rule's standard packages: every allow entry that
+// is neither a package of the module nor the one third-party package. Each must
+// be an exact entry — a prefix entry would allow every package under it and
+// would let a look-alike in — and each must be one the domain allows or one of
+// the extras.
+//
+// So that the extras cannot go stale, each of them must also be an exact entry of
+// the rule's allow list and no entry of domain-is-pure: an extra a package of the
+// layer stops importing, or one the domain's list starts to name, is dropped from
+// appTestsExtras in the same commit.
+func TestAppTestsRuleAllowsOnlyPurePackagesAndItsExtras(t *testing.T) {
+	t.Parallel()
+
+	golangci := readRepositoryFile(t, ".golangci.yml")
+
+	pure, err := check.AllowList(golangci, "domain-is-pure")
+	if err != nil {
+		t.Fatalf("AllowList(.golangci.yml, domain-is-pure): %v", err)
+	}
+
+	tests, err := check.AllowList(golangci, "app-tests-use-fakes-not-adapters")
+	if err != nil {
+		t.Fatalf("AllowList(.golangci.yml, app-tests-use-fakes-not-adapters): %v", err)
+	}
+
+	purePaths := make(map[string]bool, len(pure))
+
+	for _, entry := range pure {
+		if entry.Prefix {
+			t.Errorf("domain-is-pure allows %s by prefix, and a prefix entry allows every package under it: write %s$ for the package the domain may import", entry.Path, entry.Path)
+
+			continue
+		}
+
+		purePaths[entry.Path] = true
+	}
+
+	extras := make(map[string]bool, len(appTestsExtras))
+
+	for _, extra := range appTestsExtras {
+		if extra.reason == "" {
+			t.Errorf("appTestsExtras names %s with no reason: say why the application layer's tests need it", extra.path)
+		}
+
+		extras[extra.path] = true
+	}
+
+	var (
+		checked int
+		refused []string
+	)
+
+	for _, entry := range tests {
+		// The module's own packages and the one third-party package are not
+		// the standard library's: which of them a test may import is its own
+		// question, and the pin answers it.
+		if strings.HasPrefix(entry.Path, modulePath+"/") || entry.Path == appTestsThirdParty {
+			continue
+		}
+
+		checked++
+
+		if entry.Prefix {
+			refused = append(refused, entry.Path+" (a prefix entry, not an exact one)")
+
+			continue
+		}
+
+		if purePaths[entry.Path] || extras[entry.Path] {
+			continue
+		}
+
+		refused = append(refused, entry.Path+"$")
+	}
+
+	if checked == 0 {
+		t.Fatal("app-tests-use-fakes-not-adapters allows no standard package, so this test would check nothing")
+	}
+
+	if len(refused) != 0 {
+		slices.Sort(refused)
+
+		names := make([]string, 0, len(appTestsExtras))
+		for _, extra := range appTestsExtras {
+			names = append(names, extra.path)
+		}
+
+		t.Errorf("app-tests-use-fakes-not-adapters allows %s, which domain-is-pure does not name and appTestsExtras does not hold (it holds %s): the application layer's tests may import the domain's pure packages and those extras and nothing else; drop the entry from .golangci.yml and pinnedDepguardRules in the same commit, or add it to appTestsExtras with the reason a test needs it",
+			strings.Join(refused, ", "), strings.Join(names, ", "))
+	}
+
+	// The other direction, so the extras cannot go stale: an extra the rule no
+	// longer allows is one the layer's tests stopped importing, and one the
+	// domain's list names is no extra at all.
+	allowed := make(map[string]bool, len(tests))
+
+	for _, entry := range tests {
+		if !entry.Prefix {
+			allowed[entry.Path] = true
+		}
+	}
+
+	for _, extra := range appTestsExtras {
+		if !allowed[extra.path] {
+			t.Errorf("appTestsExtras names %s, which is no exact allow entry of app-tests-use-fakes-not-adapters: drop it from appTestsExtras, and from .golangci.yml and pinnedDepguardRules if the rule no longer allows it", extra.path)
+		}
+
+		if purePaths[extra.path] {
+			t.Errorf("appTestsExtras names %s, which domain-is-pure already allows: it is no extra, so drop it from appTestsExtras", extra.path)
+		}
 	}
 }

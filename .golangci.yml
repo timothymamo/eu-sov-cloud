@@ -6,9 +6,10 @@ version: "2"
 # which run with real read-only cloud credentials. What applies to them:
 #   - gosec runs on every _test.go file except for G204 and G304, which tests
 #     trip by design (see the exclusion rules at the end of this file).
-#   - test/e2e has a depguard rule of its own, e2e-is-black-box. Every other
-#     depguard rule but app-tests-use-fakes-not-adapters leaves _test.go files
-#     out, so an integration test gets no depguard rule.
+#   - test/e2e has a depguard rule of its own, e2e-is-black-box, and the
+#     application layer's tests have the strict app-tests-use-fakes-not-adapters.
+#     Every other depguard rule leaves _test.go files out, so an integration
+#     test elsewhere gets no depguard rule.
 #   - forbidigo's cloud-read-only group checks them like any other file,
 #     which matters most here, where the credentials are real.
 # e2e and integration are the only custom build tags. Never negate them: lint
@@ -73,8 +74,10 @@ linters:
         # test/architecture reads every strict rule's files: and allow: lists
         # and checks the rule package by package (ADR 0012): write a strict
         # rule's directories as "**/<dir>/**", whole directories it takes out
-        # as "!**/<dir>/**", and "!$test" unless it holds test files, or give
-        # it a reasoned skip there. An allow entry without $ is a prefix.
+        # as "!**/<dir>/**", and "!$test" unless it holds test files; a rule
+        # for the test files of a directory alone as the pair
+        # "**/<dir>/**/*_test.go" and "**/<dir>/*_test.go"; or give it a
+        # reasoned skip there. An allow entry without $ is a prefix.
         #
         # test/architecture also pins every rule here whole
         # (TestDepguardRulesArePinned, issue #80): list-mode, files, allow and
@@ -156,11 +159,11 @@ linters:
             - pkg: google.golang.org/api
               desc: cloud SDKs belong in internal/adapter/source/gcp
             # The assess path needs no network, process or OS access in the
-            # application layer: adapters do I/O behind the ports. The strict
-            # app-uses-ports-not-adapters rule refuses everything its allow list
-            # leaves out, so for it the entries below only say why. The lax
-            # app-tests-use-fakes-not-adapters rule shares this list and allows
-            # any package not named here, so the list is not complete: it names
+            # application layer: adapters do I/O behind the ports. Both rules
+            # that share this list are strict, app-uses-ports-not-adapters for
+            # the layer's production files and app-tests-use-fakes-not-adapters
+            # for its tests (issue #144), so each refuses everything its allow
+            # list leaves out, and for them the entries below only say why:
             # the standard packages known to reach files, sockets, processes or
             # shared libraries. Every net/* package that can open a connection
             # (and crypto/tls, whose Dial opens one), os and os/exec, os/user
@@ -173,14 +176,14 @@ linters:
             # temporary files), runtime/coverage (WriteMetaDir,
             # WriteCountersDir) and runtime/debug (WriteHeapDump,
             # SetCrashOutput); and unsafe, whose //go:linkname would reach a
-            # denied function without importing its package. A standard
-            # package that can do I/O and is added to Go must be added here;
-            # test/lint, TestAppTestsUseFakesNotAdaptersProbe, pins the list
-            # (issue #119). The pure packages are left out on purpose: net/url
-            # and net/netip, and path/filepath, whose Join and Base touch no
-            # file (its Walk and Glob do, but nothing in internal/app imports
-            # it); the strict rule refuses them through its allow list, with
-            # depguard's generic message, and the tests may use them.
+            # denied function without importing its package. The list need not
+            # be complete, since the allow lists refuse a package it misses,
+            # one added to Go later included: test/lint,
+            # TestAppTestsUseFakesNotAdaptersProbe, pins that these stay
+            # refused (issues #119 and #144). No deny entry may name a package
+            # an allow list allows (net/url and net/netip are pure and allowed),
+            # since depguard then decides by entry length; test/architecture's
+            # AllowList refuses that.
             #
             # depguard prefix-matches, so net/http also covers
             # net/http/httptest and every other net/http/* package, net/rpc
@@ -245,15 +248,101 @@ linters:
               desc: the application layer writes no coverage data (WriteMetaDir and WriteCountersDir write files)
             - pkg: unsafe
               desc: the application layer and its tests need no unsafe code; //go:linkname would reach functions denied here
-        # The application layer's tests use fakes, not adapters, and keep the
-        # same deny list. They are left out of the strict rule above because
-        # they also need testing, go-cmp and testutil.
+        # The application layer's tests use fakes, not adapters, and do no
+        # I/O. They are left out of the strict rule above because they also
+        # need testing, go-cmp and internal/testutil, so they have a strict
+        # allow list of their own (issue #144): the application package under
+        # test, the domain packages, internal/testutil, go-cmp, and exactly
+        # the standard packages the layer's tests import: bytes, context (the
+        # use case takes one), errors, io, slices, strings, sync (a fake's
+        # mutex) and testing. They are a subset of the domain's pure packages
+        # (the allow list of domain-is-pure) plus a few named extras, each with
+        # its reason, and test/architecture's
+        # TestAppTestsRuleAllowsOnlyPurePackagesAndItsExtras keeps them so.
+        # The domain's fmt, time, net/netip, net/url, strconv, unicode and
+        # unicode/utf8 are deliberately left out: no test needs them, and fmt
+        # and time can print, scan, read zoneinfo files and the clock, which
+        # no forbidigo group refuses in a test. Every entry ends in $, for the
+        # reason given at domain-is-pure. Anything else fails lint, a standard
+        # package added to Go later included. Add a package only when a test
+        # needs it, never one that does I/O. These rules are a guardrail on
+        # imports and named calls, not a sandbox: the I/O they leave an
+        # application test is what internal/testutil can do through os (file
+        # access, the golden files), fmt, time and flag, whose own imports
+        # testutil-imports holds, and what testing itself offers (t.TempDir,
+        # test output, and t.Setenv/t.Chdir until #153). No import or call
+        # rule can refuse a hard-coded path, so a new file path or os, fmt,
+        # time or flag call in internal/testutil is a widening a reviewer
+        # must read. The deny list is the one
+        # app-uses-ports-not-adapters writes, shared through *app-deny: under
+        # a strict list it only says why.
+        #
+        # The files: entries are the _test.go files of internal/app and of the
+        # directories below it, and no production file, which
+        # app-uses-ports-not-adapters holds. test/architecture reads this pair
+        # of globs as the test files of internal/app and holds the test
+        # imports of every package under it to this allow list, package by
+        # package for every release target (ADR 0012).
         app-tests-use-fakes-not-adapters:
-          list-mode: lax
+          list-mode: strict
           files:
             - "**/internal/app/**/*_test.go"
             - "**/internal/app/*_test.go"
+          allow:
+            - bytes$
+            - context$
+            - errors$
+            - io$
+            - slices$
+            - strings$
+            - sync$
+            - testing$
+            - github.com/google/go-cmp/cmp$
+            - github.com/timothymamo/shift2eu/internal/app/analysis$
+            - github.com/timothymamo/shift2eu/internal/domain/assessment$
+            - github.com/timothymamo/shift2eu/internal/domain/catalog$
+            - github.com/timothymamo/shift2eu/internal/domain/inventory$
+            - github.com/timothymamo/shift2eu/internal/domain/mapping$
+            - github.com/timothymamo/shift2eu/internal/domain/taxonomy$
+            - github.com/timothymamo/shift2eu/internal/domain/text$
+            - github.com/timothymamo/shift2eu/internal/testutil$
           deny: *app-deny
+        # The test helpers (issue #144, the audit's M-1 and the review's S1).
+        # Application tests may import internal/testutil, and its helpers read
+        # and write golden files, the one I/O those tests are allowed. Its own
+        # imports are therefore a strict allow list as well: exactly the
+        # packages its files import today, each ending in $. Without it a
+        # helper could reach the network (net/http), start a program
+        # (os/exec) or read the environment and hand every application test
+        # that I/O with lint green. The files: entry has no !$test, so the
+        # helpers' own _test.go files are held too. An import rule sees no
+        # call, so the forbidigo group testutil-no-env refuses the environment
+        # reads, directory lookups and process start that os alone allows.
+        # A new import needs an entry here and in test/architecture's pin in
+        # the same commit.
+        testutil-imports:
+          list-mode: strict
+          files:
+            - "**/internal/testutil/**"
+          allow:
+            - bytes$
+            - encoding/json$
+            - flag$
+            - fmt$
+            - maps$
+            - math$
+            - os$
+            - path/filepath$
+            - reflect$
+            - regexp$
+            - slices$
+            - strconv$
+            - strings$
+            - testing$
+            - time$
+            - github.com/timothymamo/shift2eu/internal/domain/catalog$
+            - github.com/timothymamo/shift2eu/internal/domain/taxonomy$
+            - github.com/timothymamo/shift2eu/internal/testutil$
         # The driving adapter gets its adapters from the composition root
         # through cli.Deps and never constructs one, so it imports only the
         # application, the domain, the build metadata and the standard library.
@@ -1565,6 +1654,21 @@ linters:
         - pattern: '^syscall\.(?:Getenv|GetEnvironmentVariable)$'
           pkg: '^syscall$'
           msg: 'composition-root-env: a composition root reads no environment variable; take the value as a flag'
+        # Group testutil-no-env (issue #144): the test helpers of
+        # internal/testutil read no environment variable, locate no home,
+        # config, cache or temp directory and start no process. depguard's
+        # testutil-imports must allow os, which the golden files are read and
+        # written with, and os also reads, writes and hands over the
+        # environment, where credentials live (CLAUDE.md rule 3), and
+        # UserHomeDir, UserConfigDir, UserCacheDir and TempDir read $HOME,
+        # $XDG_CONFIG_HOME, $XDG_CACHE_HOME and $TMPDIR without naming them,
+        # so a helper could build the path to a credentials file. The group
+        # refuses those calls. Scope: every file under
+        # internal/testutil/, _test.go files included; its exclusion rule
+        # drops it everywhere else.
+        - pattern: '^os\.(?:Getenv|LookupEnv|ExpandEnv|Environ|Setenv|Unsetenv|Clearenv|StartProcess|UserHomeDir|UserConfigDir|UserCacheDir|TempDir)$'
+          pkg: '^os$'
+          msg: 'testutil-no-env: a test helper reads no environment variable, locates no home, config, cache or temp directory and starts no process, where credentials live; take what it needs as a parameter (CLAUDE.md rule 3)'
     gosec:
       excludes:
         - G104 # unchecked errors are already reported by errcheck
@@ -1644,6 +1748,12 @@ linters:
         linters:
           - forbidigo
         text: 'because "composition-root-env: [^"]*"$'
+      # testutil-no-env: the group holds for every file under
+      # internal/testutil/, _test.go files included, and nowhere else.
+      - path-except: ^internal/testutil/
+        linters:
+          - forbidigo
+        text: 'because "testutil-no-env: [^"]*"$'
       # The one exception (ADR 0019): os.LookupEnv(tokenEnvVar), the call the
       # token source that main.go passes to run makes for
       # SHIFT2EU_SERVER_TOKEN, in cmd/shift2eu-server/main.go alone. text is

@@ -323,11 +323,12 @@ func rulesOf(t *testing.T, golangci []byte, name string) []check.Rule {
 
 	for _, dir := range files.Dirs {
 		rules = append(rules, check.Rule{
-			Name:     name,
-			Dir:      dir,
-			Excludes: files.Excludes,
-			Tests:    files.Tests,
-			Allow:    allow,
+			Name:      name,
+			Dir:       dir,
+			Excludes:  files.Excludes,
+			Tests:     files.Tests,
+			TestsOnly: files.TestsOnly,
+			Allow:     allow,
 		})
 	}
 

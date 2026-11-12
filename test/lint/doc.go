@@ -54,11 +54,23 @@
 // imports, in an application-layer _test.go file, the standard packages that
 // do file, network or process I/O, os and net among them and those that need
 // neither (io/ioutil, text/template, debug/elf, runtime/debug, go/parser,
-// mime/multipart, runtime/coverage, unsafe, ...), and must be
-// refused by the lax app-tests-use-fakes-not-adapters rule, while its pure
-// controls (net/url, net/netip, strings, context, testing, runtime) must not:
-// the rule allows any package its deny list does not name, so the probe pins
-// that list. TestCloudReadOnlyPatterns and
+// mime/multipart, runtime/coverage, unsafe, ...), and packages on no list
+// (encoding/xml, expvar) or pure but unneeded (runtime, go/build/constraint),
+// and must be refused by the strict app-tests-use-fakes-not-adapters rule
+// (issue #144), while every package its allow list names (bytes, errors,
+// strings, context, testing, go-cmp, internal/testutil, ...) must not: the
+// rule refuses everything its allow list leaves out, so the probe pins both
+// the allow list and that no deny entry shadows an allowed package. fmt and
+// time, which the allow list no longer names, must be refused as well. The
+// probe runs twice: for the host with cgo on, and for darwin/amd64 with cgo
+// off, a release target that is not the host's. TestTestutilImportsProbe
+// (testdata/testutilimports) holds internal/testutil, production and _test.go
+// files alike, to the strict testutil-imports rule (net/http and os/exec are
+// refused, os and path/filepath for the golden files pass) and runs forbidigo's
+// testutil-no-env group on env.go, whose environment reads and writes and
+// os.StartProcess must each be refused; TestTestutilNoEnvForbidigoPatterns
+// pins that group's pattern against lists of refused and allowed names.
+// TestCloudReadOnlyPatterns and
 // TestCloudReadOnlyPackages check the group's allowlist patterns, read from
 // .golangci.yml, against lists of write and read names and of import paths,
 // without golangci-lint. TestForbidigoExclusionsDropOneGroup checks every

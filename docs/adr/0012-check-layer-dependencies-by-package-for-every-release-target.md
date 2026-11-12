@@ -67,7 +67,8 @@ release builds, with cgo off and on, and with no build tag, `e2e`, `integration`
 Every strict rule in `.golangci.yml` must be a layer of that check or a skip with a written reason
 (`TestEveryStrictRuleIsChecked`): `cli-gets-adapters-from-cmd` allows `$gostd`, which no package list
 can spell out, `e2e-is-black-box` holds a directory of test files only, which `go list -deps`
-does not list as a layer, and `composition-root` is held on its own (*Amended (issue #101)*, below).
+does not list as a layer (`app-tests-use-fakes-not-adapters`, which holds the test files of a layer's
+packages, is checked: *Amended (issue #144)*, below), and `composition-root` is held on its own (*Amended (issue #101)*, below).
 
 *Amended (issue #79):* the check first required every allow entry to end in `$` and every rule to
 name `!$test`, so it skipped `cloud-adapters-reach-the-cloud-through-the-sdk`, whose allow list
@@ -248,8 +249,9 @@ or a file placed there directly, so a new adapter subtree cannot escape the rule
 module that imports an adapter from each subtree, and each subtree's root, outside the composition roots, and runs with
 `SHIFT2EU_LINT_PROBES=require` in `make lint` and every lint-target matrix entry.
 
-The lax rule `app-tests-use-fakes-not-adapters` shares the `&app-deny` list of the strict
-`app-uses-ports-not-adapters` and allows any package that list does not name, so the application
+The lax rule `app-tests-use-fakes-not-adapters` (superseded by *Amended (issue #144)* below) shares
+the `&app-deny` list of the strict `app-uses-ports-not-adapters` and allows any package that list does
+not name, so the application
 layer's tests could import a standard package that does I/O without importing `os` or `net`. The list
 now also names `io/ioutil`, `log/syslog`, `text/template`, `html/template`, `archive/zip`, every
 `debug/*` package, `go/build`, `go/importer`, `go/parser`, `mime/multipart`, `runtime/coverage`,
@@ -259,6 +261,64 @@ names the packages known to do I/O and does not claim to be complete. `test/lint
 imports each of them, which must be refused, and pure controls (`net/url`, `net/netip`, `strings`,
 `context`, `testing`, `runtime`), which must not. `path/filepath` stays allowed on purpose: `Join` and
 `Base` are pure, and nothing in `internal/app` imports it.
+
+*Amended (issue #144):* a deny list blocks only what someone thought to name, so
+`app-tests-use-fakes-not-adapters` is now a strict allow list, like the production layers' rules: the
+application package under test, the six domain packages, `internal/testutil`, `go-cmp`'s `cmp`,
+`testing`, the domain's pure standard packages (the allow list of `domain-is-pure`, repeated because
+YAML cannot join two lists, so the domain and its caller's tests agree on what pure means) and
+`bytes`, `context`, `io` and `sync`, every entry exact. Anything else fails lint, a standard package
+added to Go later included; the shared `*app-deny` list stays and only says why. The rule's files are
+the pair `**/internal/app/**/*_test.go` and `**/internal/app/*_test.go`, the layer's test files alone,
+so it is no longer a lax rule held by depguard alone: `check.RuleDirs` reads that pair as the test
+files of `internal/app` (`TestsOnly`), and `check.Packages` holds the `TestImports` and
+`XTestImports` of every package under the directory to the rule's allow list, and none of their own
+imports, which `app-uses-ports-not-adapters` holds, package by package on every release target, cgo
+mode and tag set, as `TestReleaseTargetDependencies` holds the other strict rules. `RuleDirs` refuses
+a list that names one glob of the pair without the other, mixes the pair with a directory, an
+exclusion or `!$test`, and `check.Packages` flags a package held by test-file rules alone, since then
+no rule holds its production imports. `check.AllowList` now follows a deny list written as an alias
+(`deny: *app-deny`), as `check.DepguardRules` does, so the shadowing check between the allow and deny
+lists covers the shared list too. `test/lint`'s `TestAppTestsUseFakesNotAdaptersProbe` pins both
+halves: every allowed package must pass, and the I/O packages above, `encoding/xml` and `expvar` (on
+no list) and `runtime` and `go/build/constraint` (pure but unneeded) must be refused.
+
+*Amended (issue #144, review):* the allow list first repeated the domain's whole pure list, so the
+application layer's tests could import `fmt` and `time`, which can print to stdout, read stdin, read
+zoneinfo files (`time.LoadLocation`) and the clock, while the forbidigo group `domain-is-pure` holds
+for the domain's production files only. The list is now minimal: exactly the standard packages the
+layer's tests import, `bytes`, `context`, `errors`, `io`, `slices`, `strings`, `sync` and `testing`,
+besides the module's packages and `go-cmp`. The domain's `fmt`, `time`, `net/netip`, `net/url`,
+`strconv`, `unicode` and `unicode/utf8` are gone. `test/architecture`'s
+`TestAppTestsRuleAllowsOnlyPurePackagesAndItsExtras` replaces the check that the rule repeats the
+domain's list: it is a subset check, under which every standard entry of the rule is exact and is
+either one `domain-is-pure` allows or one of a short list of named extras (`bytes`, `context`, `io`,
+`sync`, `testing`), each with the reason a test gives; the pin holds the other direction.
+
+`internal/testutil`, which the rule allows, had no bound on its own imports, and its helpers already
+read and write golden files. It now has a strict depguard rule of its own, `testutil-imports`, over
+`**/internal/testutil/**` with no `!$test`, so the helpers' own tests are held too: its allow list is
+exactly what its files import today (the standard packages it uses, `os` and `path/filepath` among
+them, the domain's `catalog` and `taxonomy`, and `internal/testutil` itself), every entry exact, with
+no deny list. `check.RuleDirs` reads it as a directory holding test files, so
+`TestReleaseTargetDependencies` holds it package by package on every release target. An import rule
+sees no call, so the forbidigo group `testutil-no-env` refuses `os.Getenv`, `os.LookupEnv`,
+`os.ExpandEnv`, `os.Environ`, `os.Setenv`, `os.Unsetenv`, `os.Clearenv` and `os.StartProcess` under
+`internal/testutil/` (one `path-except` exclusion rule drops it everywhere else; CLAUDE.md rule 3).
+A second review added `os.UserHomeDir`, `os.UserConfigDir`, `os.UserCacheDir` and `os.TempDir`: each
+reads `$HOME`, `$XDG_CONFIG_HOME`, `$XDG_CACHE_HOME` or `$TMPDIR` without naming it, so a helper could
+build the path to `~/.config/dot-agent-deck/daemon.env` or `~/.aws/credentials` and read it.
+
+These rules are a guardrail on imports and named calls, not a sandbox. The I/O they leave an
+application test is what `internal/testutil` can do through `os` (file access, the golden files),
+`fmt` (stdout and stdin), `time` (the clock; `time.LoadLocation` reads zoneinfo and `$ZONEINFO`) and
+`flag` (`os.Args`), and what `testing` itself offers (`t.TempDir` under `$TMPDIR`, `t.Log` and
+`t.Output`, and `t.Setenv` and `t.Chdir`). No import or call rule can refuse
+`os.ReadFile("/proc/self/environ")` or another hard-coded path there, so any new file path or `os`,
+`fmt`, `time` or `flag` call in `internal/testutil` is a widening a reviewer must read.
+`testing.T.Setenv` and `testing.T.Chdir`, which application tests and `internal/testutil` can still
+call, are left to follow-up issue #153. `test/lint`'s `TestTestutilImportsProbe` pins both rules on a probe module, and
+`TestAppTestsUseFakesNotAdaptersProbe` now runs a second time for `darwin/amd64` with cgo off.
 
 The checks are ordinary tests, so `make test`, `make check` and CI's `make cover` run them with no
 workflow change.

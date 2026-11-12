@@ -27,6 +27,12 @@ type RuleFiles struct {
 	// Tests is set when the list names no !$test, so the rule holds the
 	// _test.go files of its packages too, integration-tagged ones included.
 	Tests bool
+	// TestsOnly is set when the list names the test files of its
+	// directories alone, each directory written as the pair
+	// **/<dir>/**/*_test.go and **/<dir>/*_test.go (issue #144): the rule
+	// holds the _test.go files of every package in or below the directory,
+	// and none of their production files. Tests is set too.
+	TestsOnly bool
 }
 
 // RuleDirs returns what the files: list of the depguard rule named rule in a
@@ -37,7 +43,13 @@ type RuleFiles struct {
 // directory written **/<dir>/**, a whole directory taken out written
 // !**/<dir>/**, and !$test, which takes the test files out; without !$test
 // the rule holds test files, whose imports the check reads from go list's
-// TestImports and XTestImports. It fails closed on every other shape: an
+// TestImports and XTestImports. A list may instead name the test files of
+// its directories alone (TestsOnly), each directory as the pair
+// **/<dir>/**/*_test.go, the files below it, and **/<dir>/*_test.go, the
+// files in it: a list of that shape holds no other entry, no directory and
+// no exclusion, and names both globs of each directory, since either one
+// alone holds only part of the directory's test files, which the check
+// cannot model. It fails closed on every other shape: an
 // error when the rule or its files: list is missing, when the list holds no
 // directory (an empty list, or one that only takes directories out), and for
 // any other entry, such as $all, $test, a file glob, a negated file glob, a
@@ -94,7 +106,23 @@ func readFiles(body []yamlread.Line) (RuleFiles, error) {
 
 	out := RuleFiles{Tests: true}
 
+	// below and in are the directories whose test files below and in them a
+	// test-file glob names, in file order.
+	var below, in []string
+
 	for _, value := range values {
+		if dir, ok := testGlobDir(value, "/**/*_test.go"); ok {
+			below = append(below, dir)
+
+			continue
+		}
+
+		if dir, ok := testGlobDir(value, "/*_test.go"); ok {
+			in = append(in, dir)
+
+			continue
+		}
+
 		if value == testFiles {
 			out.Tests = false
 
@@ -120,6 +148,10 @@ func readFiles(body []yamlread.Line) (RuleFiles, error) {
 		out.Dirs = append(out.Dirs, dir)
 	}
 
+	if len(below) != 0 || len(in) != 0 {
+		return testFilesOnly(files.Num, out, below, in)
+	}
+
 	if len(out.Dirs) == 0 {
 		return RuleFiles{}, fmt.Errorf("line %d: the files list names no directory", files.Num)
 	}
@@ -135,6 +167,60 @@ func readFiles(body []yamlread.Line) (RuleFiles, error) {
 	}
 
 	return out, nil
+}
+
+// testFilesOnly returns the RuleFiles of a files list that names test-file
+// globs, read so far as out with the directories whose test files below them
+// (below) and in them (in) the globs name. It refuses a list that also names
+// a directory, an exclusion or !$test, and a directory that does not have
+// both globs, or has one twice.
+func testFilesOnly(line int, out RuleFiles, below, in []string) (RuleFiles, error) {
+	switch {
+	case len(out.Dirs) != 0:
+		return RuleFiles{}, fmt.Errorf("line %d: the files list names test-file globs and the directory %s, which would hold its production files too: hold the test files of a directory alone", line, out.Dirs[0])
+	case len(out.Excludes) != 0:
+		return RuleFiles{}, fmt.Errorf("line %d: the files list names test-file globs and takes out %s, a shape the package check does not hold", line, out.Excludes[0])
+	case !out.Tests:
+		return RuleFiles{}, fmt.Errorf("line %d: the files list names test-file globs and %s, so it holds no file", line, testFiles)
+	}
+
+	for _, dirs := range [][]string{below, in} {
+		seen := make(map[string]bool, len(dirs))
+
+		for _, dir := range dirs {
+			if seen[dir] {
+				return RuleFiles{}, fmt.Errorf("line %d: the files list names a test-file glob of %s twice", line, dir)
+			}
+
+			seen[dir] = true
+		}
+	}
+
+	for _, dir := range below {
+		if !slices.Contains(in, dir) {
+			return RuleFiles{}, fmt.Errorf("line %d: the files list names **/%s/**/*_test.go without **/%s/*_test.go, so it leaves out the test files directly in %s", line, dir, dir, dir)
+		}
+	}
+
+	for _, dir := range in {
+		if !slices.Contains(below, dir) {
+			return RuleFiles{}, fmt.Errorf("line %d: the files list names **/%s/*_test.go without **/%s/**/*_test.go, so it leaves out the test files below %s", line, dir, dir, dir)
+		}
+	}
+
+	return RuleFiles{Dirs: below, Tests: true, TestsOnly: true}, nil
+}
+
+// testGlobDir returns dir for a files entry written **/<dir><suffix>, where
+// suffix is /**/*_test.go or /*_test.go and dir is a directory as globDir
+// reads one, and whether entry has that shape.
+func testGlobDir(entry, suffix string) (string, bool) {
+	dir, ok := strings.CutSuffix(entry, suffix)
+	if !ok {
+		return "", false
+	}
+
+	return globDir(dir + "/**")
 }
 
 // globDir returns dir for a files entry written **/<dir>/**, where dir is a

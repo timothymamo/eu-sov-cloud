@@ -85,6 +85,10 @@ type Rule struct {
 	// Tests is set when the rule holds test files too: their imports
 	// (TestImports and XTestImports) are held to the allow list as well.
 	Tests bool
+	// TestsOnly is set when the rule holds the test files alone (issue
+	// #144): only their imports are held to the allow list, and the rule
+	// holds none of the package's own. Tests is set too.
+	TestsOnly bool
 	// Allow are the entries the imports are held to, each exact or a prefix
 	// as depguard reads it. An import is tested against the entry that sorts
 	// nearest before it only, as depguard does (allowedBy).
@@ -290,7 +294,13 @@ func decodePackages(r io.Reader) ([]Package, error) {
 //     not hold. Every covering rule applies, not only the one with the longest
 //     directory, as depguard holds a file to every rule whose globs match it;
 //     each refusing rule earns its own message, naming the rule. A rule that
-//     holds test files holds the imports of the package's _test.go files too.
+//     holds test files holds the imports of the package's _test.go files too;
+//   - be held by at least one rule that holds its own imports, not by rules
+//     for its test files alone (TestsOnly, issue #144), or no rule would hold
+//     its production imports. This check is skipped when any rule excludes
+//     the package, deliberately: an excluded package is one a rule's files:
+//     list takes out on purpose, so, as for the other checks below, its
+//     being held by no rule is not reported.
 //
 // A package under a directory a rule excludes is not held by that rule: it is
 // checked against the rules that do hold it, and when none does, it is still
@@ -361,6 +371,12 @@ func Packages(root, module string, rules []Rule, pkgs []Package) []string {
 			for _, rule := range covering {
 				c.imports(rule)
 			}
+
+			// Skipped for an excluded package, as its being outside every
+			// rule is (see the doc comment).
+			if !excluded && !slices.ContainsFunc(covering, func(r Rule) bool { return !r.TestsOnly }) {
+				c.report("is held by rules for its test files alone, so no rule of %s the check reads holds its own imports", module)
+			}
 		} else {
 			c.module(module)
 			c.sources()
@@ -392,8 +408,9 @@ func Packages(root, module string, rules []Rule, pkgs []Package) []string {
 // a dependency.
 //
 // A test file's import counts as held only by the covering rules that hold
-// tests (Tests), as depguard lints a test file only under a rule whose files:
-// list matches it. The check cannot observe that today: go list -deps without
+// tests (Tests), and a package's own import only by those that hold its
+// production files (not TestsOnly), as depguard lints a file only under a
+// rule whose files: list matches it. The check cannot observe that today: go list -deps without
 // -test never lists a package that only a test imports. It is kept for parity
 // with depguard and with packageCheck.imports.
 //
@@ -443,9 +460,10 @@ func allowedThirdParty(m moduleRoot, rules []Rule, pkgs []Package) map[string]bo
 
 		covering, _ := rulesFor(rules, rel)
 		testing := slices.DeleteFunc(slices.Clone(covering), func(r Rule) bool { return !r.Tests })
+		production := slices.DeleteFunc(slices.Clone(covering), func(r Rule) bool { return r.TestsOnly })
 
 		for _, imp := range pkg.Imports {
-			judge(covering, imp)
+			judge(production, imp)
 		}
 
 		for _, imp := range slices.Concat(pkg.TestImports, pkg.XTestImports) {
@@ -630,7 +648,8 @@ func (c *packageCheck) directory(m moduleRoot, rel string) {
 }
 
 // imports flags every import the rule's allow list does not hold: the
-// package's own and, when the rule holds test files, its test files'. An
+// package's own unless the rule holds test files alone (TestsOnly) and, when
+// the rule holds test files, its test files'. An
 // import named by more than one of them earns one message.
 func (c *packageCheck) imports(rule Rule) {
 	holder := "the allow list for " + rule.Dir
@@ -643,7 +662,11 @@ func (c *packageCheck) imports(rule Rule) {
 		where   string
 	}
 
-	groups := []importGroup{{imports: c.pkg.Imports}}
+	var groups []importGroup
+
+	if !rule.TestsOnly {
+		groups = append(groups, importGroup{imports: c.pkg.Imports})
+	}
 
 	if rule.Tests {
 		groups = append(groups,

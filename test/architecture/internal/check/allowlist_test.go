@@ -1,6 +1,7 @@
 package check_test
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
@@ -120,6 +121,8 @@ func TestAllowList(t *testing.T) {
 		rule     string
 		want     []check.AllowEntry
 		wantErr  bool
+		// wantErrFragment is the text a refusal message must name.
+		wantErrFragment string
 	}{
 		{
 			name: "a strict rule returns its entries in file order",
@@ -236,6 +239,48 @@ func TestAllowList(t *testing.T) {
 			wantErr: true,
 		},
 
+		{
+			// app-tests-use-fakes-not-adapters shares the deny list of
+			// app-uses-ports-not-adapters through *app-deny (issue #144): the
+			// check reads the alias as the anchor's entries, so the
+			// allow/deny shadowing check covers the shared list too. The anchor
+			// sits in the rule above, which this reader of one rule never
+			// reads.
+			name:     "a deny list written as an alias is read from its anchor above",
+			golangci: golangciDoc("        anchor-rule:\n          list-mode: strict\n          allow:\n            - errors$\n          deny: &shared\n            - pkg: net\n              desc: the application layer has no network access\n        r:\n          list-mode: strict\n          allow:\n            - errors$\n            - net/netip$\n          deny: *shared\n"),
+			rule:     "r",
+			want:     []check.AllowEntry{{Path: "errors"}, {Path: "net/netip"}},
+		},
+		{
+			// The alias is followed, so an allow entry that allows a deny entry
+			// of the anchored list is refused as one written in the rule itself
+			// would be: depguard would decide that import by entry length.
+			name:            "an allow entry that allows an aliased deny entry is an error",
+			golangci:        golangciDoc("        anchor-rule:\n          list-mode: strict\n          allow:\n            - errors$\n          deny: &shared\n            - pkg: os\n              desc: the application layer has no OS access\n        r:\n          list-mode: strict\n          allow:\n            - errors$\n            - os$\n          deny: *shared\n"),
+			rule:            "r",
+			wantErr:         true,
+			wantErrFragment: "deny entry os is allowed by allow entry os$",
+		},
+		{
+			// An alias is the whole list: entries written below it would be a
+			// second list the anchor does not hold.
+			name:            "an alias with lines below it is an error",
+			golangci:        golangciDoc("        anchor-rule:\n          list-mode: strict\n          allow:\n            - errors$\n          deny: &shared\n            - pkg: net\n              desc: the application layer has no network access\n        r:\n          list-mode: strict\n          allow:\n            - errors$\n          deny: *shared\n            - pkg: os\n              desc: the application layer has no OS access\n"),
+			rule:            "r",
+			wantErr:         true,
+			wantErrFragment: "has lines below it",
+		},
+		{
+			// Nothing above the alias anchors that name, so the check cannot
+			// tell what the rule's deny list holds: fail closed rather than read
+			// the allow list as if it shadowed nothing.
+			name:            "an alias to an anchor the document does not hold is an error",
+			golangci:        golangciDoc("        r:\n          list-mode: strict\n          allow:\n            - errors$\n          deny: *nope\n"),
+			rule:            "r",
+			wantErr:         true,
+			wantErrFragment: "*nope",
+		},
+
 		// The character rules are the same as the ones releasetarget.Read holds
 		// the release document to: no two YAML readers agree on what the
 		// characters that look like line breaks do.
@@ -321,6 +366,10 @@ func TestAllowList(t *testing.T) {
 			if tc.wantErr {
 				if err == nil {
 					t.Fatalf("AllowList(%q) = %v, nil; want an error", tc.rule, got)
+				}
+
+				if tc.wantErrFragment != "" && !strings.Contains(err.Error(), tc.wantErrFragment) {
+					t.Errorf("AllowList(%q) error does not name %q: %v", tc.rule, tc.wantErrFragment, err)
 				}
 
 				return
