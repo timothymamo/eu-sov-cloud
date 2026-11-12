@@ -76,13 +76,15 @@ VERSION="${TAG#v}"
 ARCHIVE="shift2eu_${VERSION}_linux_amd64.tar.gz"   # the HTTP API's: shift2eu-server_${VERSION}_linux_amd64.tar.gz
 
 gh release download "$TAG" --repo timothymamo/shift2eu --pattern "$ARCHIVE" --pattern checksums.txt
-grep -E "  ${ARCHIVE}\$" checksums.txt | sha256sum --check -   # macOS: ... | shasum -a 256 --check -
+awk -v a="$ARCHIVE" '$2 == a' checksums.txt > "$ARCHIVE.sha256"
+sha256sum --check "$ARCHIVE.sha256"   # macOS: shasum -a 256 --check "$ARCHIVE.sha256"
 tar -xzf "$ARCHIVE"
 ```
 
-The check reads exactly the archive's line of `checksums.txt`, so it must print `<archive>: OK`. A
-wrong digest prints `FAILED`, and a name missing from `checksums.txt` fails too (`no properly formatted
-checksum lines found`) instead of checking nothing. On Windows, in PowerShell, for a `.zip` archive:
+`awk` copies the line of `checksums.txt` whose name is exactly the archive's, and the check must print
+`<archive>: OK`. A wrong digest prints `FAILED` and exits non-zero; a name missing from `checksums.txt`
+leaves the copied file empty, which fails the check too (non-zero exit, no `OK`) instead of checking
+nothing. On Windows, in PowerShell, for a `.zip` archive:
 
 ```powershell
 $Tag = "vX.Y.Z"
