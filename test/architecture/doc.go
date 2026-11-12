@@ -133,9 +133,9 @@
 //
 // TestReleaseArchivesHoldOneBinary holds .goreleaser.yaml to one archive per
 // binary, each with its own id and name and one checksums.txt for all
-// (check.GoReleaserArchives), and ci.yml's test job to building those
-// archives and checking each holds exactly its own binary
-// (check.DryRunVerifiesArchives), issue #147.
+// (check.GoReleaserArchives), and ci.yml's test job to installing the
+// GoReleaser release.yml runs, building those archives with it and checking
+// each holds exactly its own binary (check.DryRunVerifiesArchives), issue #147.
 //
 // The checks are tests: they run in make test, make check and CI's make cover,
 // with no workflow of their own. They need no network and no credentials.

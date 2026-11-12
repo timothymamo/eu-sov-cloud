@@ -23,7 +23,17 @@ const (
 	archiveCheckStep   = "Each archive holds its own binary"
 	archiveCheckScript = ".github/scripts/verify-archives.sh"
 	archiveCheckJob    = "test"
+
+	// goreleaserActionName is the action that installs GoReleaser in the dry
+	// run and runs it in releaseGoReleaserJob, the release.yml job that
+	// publishes the archives.
+	goreleaserActionName = "goreleaser/goreleaser-action"
+	releaseGoReleaserJob = "goreleaser"
 )
+
+// goreleaserSettings are the with: keys of goreleaser-action compared between
+// the dry run and the release: which GoReleaser each installs.
+var goreleaserSettings = []string{"distribution", "version"}
 
 // archiveNames are the name_template of each binary's archive, by binary.
 var archiveNames = map[string]string{
@@ -454,7 +464,15 @@ func (r *schemaReader) checksum(top []yamlread.Entry) {
 // holds a step of that name (issue #147). The script builds the release's
 // archives with a goreleaser snapshot and fails unless each holds exactly its
 // own binary.
-func DryRunVerifiesArchives(ci []byte) []string {
+//
+// The snapshot must be the GoReleaser that publishes the archives, so that a
+// Renovate pull request bumping one workflow cannot let the dry run check them
+// with another: the test job also holds exactly one goreleaser-action step,
+// before the archive check's, whose uses: (the full commit), with:
+// distribution and with: version are those of the goreleaser-action step of
+// the release.yml document release's goreleaser job, and whose with:
+// install-only is true, so the step installs GoReleaser and publishes nothing.
+func DryRunVerifiesArchives(ci, release []byte) []string {
 	r := &schemaReader{raw: rawLines(ci)}
 
 	lines, err := yamlread.SplitLines(ci)
@@ -496,11 +514,61 @@ func DryRunVerifiesArchives(ci []byte) []string {
 		if step != nil {
 			r.run(step["run"], path+": run", archiveCheckScript)
 		}
+
+		r.dryRunGoReleaser(ci, release, found[0].Num)
 	default:
 		r.fail("jobs: %s holds %d steps named %q, want exactly one running %s", archiveCheckJob, len(found), archiveCheckStep, archiveCheckScript)
 	}
 
 	return r.messages
+}
+
+// dryRunGoReleaser checks the goreleaser-action step of the ci.yml document
+// ci's test job against the one of the release.yml document release's
+// goreleaser job: one step, before the archive check's step at line
+// checkLine, at the release's commit, distribution and version, install-only.
+func (r *schemaReader) dryRunGoReleaser(ci, release []byte, checkLine int) {
+	ciJob, ok := r.readJob(ci, "ci.yml", archiveCheckJob)
+	if !ok {
+		return
+	}
+
+	releaseJob, ok := r.readJob(release, "release.yml", releaseGoReleaserJob)
+	if !ok {
+		return
+	}
+
+	d := dryRun{r: r, ciRaw: rawLines(ci), releaseRaw: rawLines(release)}
+
+	installs := stepsOf(ciJob.steps, goreleaserActionName)
+	if len(installs) != 1 {
+		r.fail("ci.yml: jobs: %s holds %d %s steps, want exactly 1, before the step %q: it installs the GoReleaser release.yml runs, so the snapshot builds the archives the release publishes", archiveCheckJob, len(installs), goreleaserActionName, archiveCheckStep)
+
+		return
+	}
+
+	install := installs[0]
+
+	if install.num > checkLine {
+		r.fail("ci.yml: jobs: %s: the %s step (line %d) comes after the step %q (line %d), want it before: the archive check runs the GoReleaser it installs", archiveCheckJob, goreleaserActionName, install.num, archiveCheckStep, checkLine)
+	}
+
+	releaseStep, ok := d.one(releaseJob.steps, "release.yml's "+releaseGoReleaserJob+" job", goreleaserActionName)
+	if !ok {
+		return
+	}
+
+	if install.commit != releaseStep.commit {
+		r.fail("ci.yml: %s (line %d): uses is %s@%s, release.yml's (line %d) %s@%s: the dry run must build the archives with the GoReleaser the release runs", goreleaserActionName, install.num, goreleaserActionName, install.commit, releaseStep.num, goreleaserActionName, releaseStep.commit)
+	}
+
+	for _, key := range goreleaserSettings {
+		d.same(install, releaseStep, goreleaserActionName, key)
+	}
+
+	if got, ok := d.withValue(d.ciRaw, install, "ci.yml: "+goreleaserActionName, "install-only"); ok && got != "true" {
+		r.fail("ci.yml: %s (line %d): with: install-only is %q, want true: without it the action runs goreleaser release itself", goreleaserActionName, install.num, got)
+	}
 }
 
 // namedSteps returns the steps of job named name, each as an Entry whose Num

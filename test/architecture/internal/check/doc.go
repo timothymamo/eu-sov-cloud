@@ -99,7 +99,9 @@
 // and one checksums.txt covering every archive. DryRunVerifiesArchives holds
 // ci.yml's test job to one step running .github/scripts/verify-archives.sh,
 // which builds a goreleaser snapshot and fails unless each archive holds
-// exactly its own binary.
+// exactly its own binary, after one goreleaser-action step that installs
+// (install-only) the GoReleaser release.yml's goreleaser job runs: the same
+// commit, distribution and version.
 //
 // Nothing is copied: the release platforms are read from .goreleaser.yaml
 // (releasetarget.Read, in test/internal/releasetarget, which test/lint reads
