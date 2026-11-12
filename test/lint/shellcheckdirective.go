@@ -13,7 +13,10 @@ import (
 // order, each of the form "path:line: <why>"; nil when nothing does.
 //
 // A directive is a comment whose text, after its "#" and the spaces that
-// follow it, starts with the word shellcheck, as ShellCheck reads it. Only its
+// follow it, starts with the word shellcheck, as ShellCheck reads it; a
+// comment starts at any "#" that starts a word. The same rule holds for the
+// run: scripts of a workflow, which actionlint hands to shellcheck, so path
+// may name a workflow file too. Only its
 // disable field is checked: every code must be SC and four digits, and the
 // reason is the text after the next "#" on the same line.
 func CheckShellcheckDirectives(path string, src []byte) []string {
@@ -27,31 +30,41 @@ func CheckShellcheckDirectives(path string, src []byte) []string {
 	return problems
 }
 
-// checkDirectiveLine returns why the shellcheck directive on line breaks the
-// rule, or "" when line holds no directive or a good one.
+// checkDirectiveLine returns why a shellcheck directive on line breaks the
+// rule, or "" when line holds no directive or only good ones. Every "#" that
+// can start a comment is tried, as the checker cannot tell a "#" inside a
+// quoted word from one that starts a comment without parsing the shell: a
+// "#" inside quotes that looks like a directive is reported too, which errs
+// on the side of the rule.
 func checkDirectiveLine(line string) string {
-	comment, ok := commentText(line)
-	if !ok {
-		return ""
-	}
-	directive, reason, hasReason := strings.Cut(comment, "#")
-	fields := strings.Fields(directive)
-	if len(fields) == 0 || fields[0] != "shellcheck" {
-		return ""
-	}
-	return checkDirective(fields[1:], strings.TrimSpace(reason), hasReason)
-}
-
-// commentText returns the text after the "#" that starts the comment on line,
-// the first "#" at the start of the line or after a blank, as the shell reads
-// it (so the "#" of $# starts none), and whether line has a comment.
-func commentText(line string) (string, bool) {
-	for i := 0; i < len(line); i++ {
-		if line[i] == '#' && (i == 0 || line[i-1] == ' ' || line[i-1] == '\t') {
-			return line[i+1:], true
+	for i := range len(line) {
+		if !startsComment(line, i) {
+			continue
+		}
+		directive, reason, hasReason := strings.Cut(line[i+1:], "#")
+		fields := strings.Fields(directive)
+		if len(fields) == 0 || fields[0] != "shellcheck" {
+			continue
+		}
+		if why := checkDirective(fields[1:], strings.TrimSpace(reason), hasReason); why != "" {
+			return why
 		}
 	}
-	return "", false
+	return ""
+}
+
+// startsComment reports whether the byte at i in line is a "#" that starts a
+// word, and so a comment, as the shell reads it: at the start of the line,
+// after a blank, or right after one of the operator characters ; & | ( ).
+// The "#" of $# or of a#b starts none.
+func startsComment(line string, i int) bool {
+	if line[i] != '#' {
+		return false
+	}
+	if i == 0 {
+		return true
+	}
+	return strings.IndexByte(" \t;&|()", line[i-1]) >= 0
 }
 
 // checkDirective returns why a directive with the key=value fields, and the
