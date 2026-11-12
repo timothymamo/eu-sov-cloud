@@ -702,6 +702,37 @@ func TestReleasePleaseWorkflow(t *testing.T) {
 			workflow: mutate(t, acceptedWorkflow, taggingStepEnv, taggingStepEnv+"          GH_DEBUG: \"1\"\n"),
 			wantIn:   "GH_DEBUG",
 		},
+		{
+			// The guard's env: is exactly its token, the repository and the
+			// release-please App's slug, as the tagging step's is: a variable it
+			// holds is a value its script reads and one more thing the tag job
+			// trusts, whatever the value reads.
+			name:     "an extra env key on the guard",
+			workflow: mutate(t, acceptedWorkflow, guardStepEnv, guardStepEnv+"          EXTRA: x\n"),
+			wantIn:   "EXTRA",
+		},
+
+		// The only needs expressions the workflow holds are the tag job's two
+		// outputs, read by the relabel job's if: and by its step's env:. Every
+		// other reach for a job's outputs is a value a job trusts: the bracket
+		// form reads the same outputs under another spelling, toJSON(needs)
+		// hands the shell every output of every job before it, and a third
+		// output of the tag job is one no step of it ever wrote.
+		{
+			name:     "a needs expression in the bracket form on the tagging step",
+			workflow: mutate(t, acceptedWorkflow, taggingStepEnv, taggingStepEnv+"          RELEASE_SLUG: ${{ needs['release-please'].outputs.x }}\n"),
+			wantIn:   "needs[",
+		},
+		{
+			name:     "toJSON(needs) on the relabelling step",
+			workflow: mutate(t, acceptedWorkflow, "          TAG: ${{ needs.tag.outputs.tag }}\n", "          TAG: ${{ needs.tag.outputs.tag }}\n          ALL_OUTPUTS: ${{ toJSON(needs) }}\n"),
+			wantIn:   "needs",
+		},
+		{
+			name:     "another output of the tag job on the relabelling step",
+			workflow: mutate(t, acceptedWorkflow, "          TAG: ${{ needs.tag.outputs.tag }}\n", "          TAG: ${{ needs.tag.outputs.tag }}\n          OTHER: ${{ needs.tag.outputs.other }}\n"),
+			wantIn:   "needs.tag.outputs.other",
+		},
 
 		// The tagging step creates a tag and nothing else: a GitHub Release is
 		// GoReleaser's, from release.yml, and no script calls a host of its own.
