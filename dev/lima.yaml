@@ -94,10 +94,15 @@ provision:
 
       # Stops provisioning unless <file> has the SHA-256 pinned in dev/lima.yaml as param <name><Arch>
       # (ghSha256Amd64, ...). A version bump whose digests were not updated with it stops here too. Called
-      # in the subshells below, whose EXIT trap removes the rejected download.
-      check_pinned_sha256() { # <file> <param name without the architecture>
-        local param="PARAM_${2}${arch^}" actual
-        local expected="${!param:-}"
+      # in the subshells below, whose EXIT trap removes the rejected download. Callers pass both digests as
+      # PARAM_<name>Amd64 and PARAM_<name>Arm64, by name: Lima refuses a param that no script names, and
+      # cannot see one read through ${!var}.
+      check_pinned_sha256() { # <file> <param name without the architecture> <amd64 digest> <arm64 digest>
+        local expected actual
+        case "${arch}" in
+          amd64) expected="$3" ;;
+          arm64) expected="$4" ;;
+        esac
         actual="$(sha256sum "$1" | cut -d' ' -f1)"
         if [ -z "${expected}" ] || [ "${actual}" != "${expected}" ]; then
           echo >&2 "$(basename "$1"): SHA-256 ${actual} does not match ${2}${arch^} (${expected:-not set})" \
@@ -150,7 +155,8 @@ provision:
           trap 'rm -rf "${tmp}"' EXIT
           curl -fsSL -o "${tmp}/${asset}" "${base}/${asset}"
           curl -fsSL -o "${tmp}/${asset}.sigstore.json" "${base}/${asset}.sigstore.json"
-          check_pinned_sha256 "${tmp}/${asset}" cosignSha256
+          check_pinned_sha256 "${tmp}/${asset}" cosignSha256 \
+            "${PARAM_cosignSha256Amd64}" "${PARAM_cosignSha256Arm64}"
           chmod 0755 "${tmp}/${asset}"
           mkdir -m 0700 "${tmp}/home" "${tmp}/sigstore"
           if ! HOME="${tmp}/home" TUF_ROOT="${tmp}/sigstore" "${tmp}/${asset}" verify-blob \
@@ -174,7 +180,8 @@ provision:
           tmp="$(mktemp -d)"
           trap 'rm -rf "${tmp}"' EXIT
           curl -fsSL -o "${tmp}/${name}.tar.gz" "${base}/${name}.tar.gz"
-          check_pinned_sha256 "${tmp}/${name}.tar.gz" ghSha256
+          check_pinned_sha256 "${tmp}/${name}.tar.gz" ghSha256 \
+            "${PARAM_ghSha256Amd64}" "${PARAM_ghSha256Arm64}"
           tar -C "${tmp}" --no-same-owner -xzf "${tmp}/${name}.tar.gz"
           install -m 0755 "${tmp}/${name}/bin/gh" /usr/local/bin/gh
         )
