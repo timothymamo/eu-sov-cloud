@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/timothymamo/shift2eu/test/internal/openapibundle"
 	"github.com/timothymamo/shift2eu/test/internal/yamlread"
 )
 
@@ -12,13 +13,18 @@ import (
 // the bundled OpenAPI document, under a versionless name, so that
 // releases/latest/download/<name> is a stable URL. Both release: and
 // checksum: hold it, so checksums.txt covers it.
+//
+// BundleGlob is the file the bundler writes, openapibundle.Path, as
+// .goreleaser.yaml names a repository-relative file: one source for the
+// bundle's path, so the release cannot publish a file the bundler never
+// writes.
 const (
-	bundleGlob = "./api/openapi.bundled.json"
+	BundleGlob = "./" + openapibundle.Path
 	bundleName = "shift2eu-server_openapi.json"
 )
 
 // bundleWant is how a message names the extra_files entry it wants.
-const bundleWant = "exactly one extra_files entry, glob: " + bundleGlob + " and name_template: " + bundleName
+const bundleWant = "exactly one extra_files entry, glob: " + BundleGlob + " and name_template: " + bundleName
 
 // GitHubRelease checks how a .goreleaser.yaml document publishes the GitHub
 // release: its top-level release section must hold exactly draft: true,
@@ -159,7 +165,7 @@ func bundleExtraFile(entries []yamlread.Entry, path string) error {
 		return fmt.Errorf("%s: %w: want %s", path, err, bundleWant)
 	}
 
-	want := map[string]string{"glob": bundleGlob, "name_template": bundleName}
+	want := map[string]string{"glob": BundleGlob, "name_template": bundleName}
 
 	if len(fields) != len(want) {
 		return fmt.Errorf("line %d: %s holds an entry of %d keys, want %s", items[0].Num, path, len(fields), bundleWant)

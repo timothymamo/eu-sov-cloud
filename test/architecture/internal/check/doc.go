@@ -112,9 +112,11 @@
 // draft: true, prerelease: auto and replace_existing_draft: true, so every
 // asset is uploaded to a draft that release.yml publishes last (issue #156),
 // and a pre-release tag is a GitHub pre-release and never the latest release
-// (issue #92), and one extra file, the bundled OpenAPI document
-// ./api/openapi.bundled.json published as the asset
-// shift2eu-server_openapi.json (issue #139).
+// (issue #92), and one extra file, the bundled OpenAPI document published as
+// the asset shift2eu-server_openapi.json (issue #139). Its glob is BundleGlob,
+// "./" + openapibundle.Path: the path test/internal/openapibundle names and
+// test/openapibundle writes, so the release publishes exactly the file the
+// bundler writes.
 //
 // GoReleaserArchives and DryRunVerifiesArchives hold the release to shipping
 // each binary in archives of its own, under one tag and version (issue #147).

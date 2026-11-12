@@ -71,8 +71,9 @@ var archiveFiles = []string{"LICENSE", "README.md", "docs/*.md", "docs/**/*"}
 //   - checksum: holds exactly name_template: checksums.txt, one file covering
 //     every archive, and extra_files: with exactly the bundled OpenAPI
 //     document the release publishes beside the archives,
-//     ./api/openapi.bundled.json as shift2eu-server_openapi.json (issue
-//     #139), so checksums.txt covers it too.
+//     BundleGlob (./api/openapi.bundled.json) as
+//     shift2eu-server_openapi.json (issue #139), so checksums.txt covers it
+//     too.
 func GoReleaserArchives(goreleaser []byte) []string {
 	r := &schemaReader{}
 
