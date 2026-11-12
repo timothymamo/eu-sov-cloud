@@ -26,14 +26,18 @@ import (
 // test, and every e2e test, could set a variable with lint green: the likely case
 // is a source adapter's test that sets AWS_PROFILE.
 //
-// Two entries refuse the calls. One names the receivers a testing helper hands a
-// test — *testing.T, *testing.B, *testing.F and the testing.TB interface — and the
-// other matches any selector named Setenv or Chdir, whatever it is called on and
-// whichever package it is reached through: a struct that embeds a *testing.T
-// promotes its methods, and forbidigo renders that call on the embedding type
-// (wrap.Setenv, not testing.T.Setenv), while os.Setenv, os.Unsetenv, os.Clearenv
-// and os.Chdir change the same process state one package further out. The names
-// that only extend a refused one (Setenvs, Chdirs) stay allowed.
+// Two entries refuse the calls, as the group writes them in .golangci.yml. The
+// first matches any selector named Setenv or Chdir, whatever it is called on and
+// whichever package it is reached through: a test's own method on *testing.T,
+// *testing.B, *testing.F or the testing.TB interface, a struct that embeds a
+// *testing.T (whose promoted method forbidigo renders on the embedding type,
+// wrap.Setenv, not testing.T.Setenv) and os.Setenv and os.Chdir one package
+// further out. The second names the os and syscall calls that write the
+// environment or the working directory without the word Setenv or Chdir: the
+// os.Unsetenv, os.Clearenv and syscall.Unsetenv and syscall.Clearenv writes, and
+// syscall.Fchdir, which changes the directory of the process from an open
+// descriptor. The names that only extend a refused one (Setenvs, Chdirs,
+// Unsetenvs, Clearenvs, Fchdirs) stay allowed.
 //
 // forbidigo cannot see every one of those calls: a call through an interface
 // literal (var s interface{ Setenv(string, string) } = t) or through a type
@@ -80,6 +84,12 @@ var testsNoProcessStateRefused = []rootName{
 	{"os", "os.Unsetenv"},
 	{"os", "os.Clearenv"},
 	{"os", "os.Chdir"},
+	// The same writes of syscall, which names neither Setenv nor Chdir, and
+	// syscall.Fchdir, which changes the working directory from a descriptor
+	// (the round-2 review's finding S1).
+	{"syscall", "syscall.Unsetenv"},
+	{"syscall", "syscall.Clearenv"},
+	{"syscall", "syscall.Fchdir"},
 }
 
 // testsNoProcessStateAllowed are names no tests-no-process-state entry may
@@ -87,8 +97,9 @@ var testsNoProcessStateRefused = []rootName{
 // os.MkdirTemp does and is the one way a test gets a directory, the rest of what
 // testing hands a test, the names that only extend a refused one
 // (testing.T.Setenvs, testing.T.Chdirs, testing.TB.Setenvs, testing.TB.Chdirs,
-// analysis.wrapper.Setenvs) and catch a pattern that lost its $, and a call of a
-// package that only has a name in common with os.
+// analysis_test.wrapper.Setenvs, os.Unsetenvs, os.Clearenvs, syscall.Unsetenvs,
+// syscall.Clearenvs, syscall.Fchdirs) and catch a pattern that lost its $, and a
+// call of a package that only has a name in common with os or syscall.
 var testsNoProcessStateAllowed = []rootName{
 	{"testing", "testing.T.TempDir"},
 	{"testing", "testing.B.TempDir"},
@@ -111,6 +122,13 @@ var testsNoProcessStateAllowed = []rootName{
 	{"os", "os.Environ"},
 	{"os", "os.Setenvs"},
 	{"os", "os.Chdirs"},
+	{"os", "os.Unsetenvs"},
+	{"os", "os.Clearenvs"},
+	{"syscall", "syscall.Mkfifo"},
+	{"syscall", "syscall.Unsetenvs"},
+	{"syscall", "syscall.Clearenvs"},
+	{"syscall", "syscall.Fchdirs"},
+	{"example.com/othersyscall", "syscall.Unsetenv"},
 }
 
 // TestTestsNoProcessStateProbe runs forbidigo with the repository's .golangci.yml
@@ -194,10 +212,16 @@ func TestTestsNoProcessStateForbidigoPatterns(t *testing.T) {
 
 // msgProcessStateSelector is the message of processStateSelectorFindings, which a
 // reader of a failing test sees.
-const msgProcessStateSelector = astPrefix + "a call named Setenv or Chdir changes the environment or the working directory of the whole test binary"
+const msgProcessStateSelector = astPrefix + "a call named Setenv, Unsetenv, Clearenv, Chdir or Fchdir changes the environment or the working directory of the whole test binary"
 
-// processStateSelectorFindings returns a finding for every selector named Setenv
-// or Chdir in files, the tests of a module or of a probe, wherever the call is
+// processStateSelectorNames are the selector names the source check refuses: the
+// names the two entries of tests-no-process-state refuse, so the AST check and
+// the group agree on what a test may not call.
+var processStateSelectorNames = []string{"Setenv", "Unsetenv", "Clearenv", "Chdir", "Fchdir"}
+
+// processStateSelectorFindings returns a finding for every selector named Setenv,
+// Unsetenv, Clearenv, Chdir or Fchdir in the Go files of a module or a probe,
+// wherever the call is
 // made and whatever it is made on. forbidigo's analyze-types matching refuses a
 // call on a named type — testing.T.Setenv, a struct that embeds a *testing.T, os
 // .Setenv — but it renders nothing for a call through an interface literal
@@ -217,7 +241,7 @@ func processStateSelectorFindings(t *testing.T, files []goFile) []finding {
 		fset, file := parseGoFile(t, f)
 		ast.Inspect(file, func(n ast.Node) bool {
 			sel, ok := n.(*ast.SelectorExpr)
-			if !ok || (sel.Sel.Name != "Setenv" && sel.Sel.Name != "Chdir") {
+			if !ok || !slices.Contains(processStateSelectorNames, sel.Sel.Name) {
 				return true
 			}
 			found = append(found, finding{
@@ -240,12 +264,12 @@ func processStateScope(rel string) bool {
 	return !strings.HasPrefix(rel, "test/lint/") && !strings.HasPrefix(rel, "test/architecture/")
 }
 
-// TestTestsChangeNoProcessStateByNoSelector fails on every selector named Setenv
-// or Chdir in the module, in the scope the group holds, which
-// processStateSelectorFindings returns: the calls forbidigo cannot see, a call
-// through an interface literal and a call through a type parameter, are refused
-// here, and so is every call it does see, so the two checks agree on what a test
-// may not do.
+// TestTestsChangeNoProcessStateByNoSelector fails on every selector that
+// processStateSelectorNames holds in the module, in the scope the group has,
+// which processStateSelectorFindings returns: the calls forbidigo cannot see, a
+// call through an interface literal and a call through a type parameter, are
+// refused here, and so is every call it does see, so the two checks agree on
+// what a test may not do.
 func TestTestsChangeNoProcessStateByNoSelector(t *testing.T) {
 	t.Parallel()
 
@@ -268,9 +292,9 @@ func TestTestsChangeNoProcessStateByNoSelector(t *testing.T) {
 // TestTestsChangeNoProcessStateByNoSelector: a call through an interface literal
 // and one through a type parameter — which forbidigo renders nothing for — a
 // promoted method of an embedded *testing.T (which it renders on the wrapper) and
-// the calls of os are refused, while a method that is no Setenv or Chdir, a name
-// that only extends one and a declaration are no finding. The col is dropped from
-// the position: the line and the message are the contract.
+// the calls of os and syscall are refused, while another testing method, a name
+// that only extends a refused one and a declaration are no finding. The col is
+// dropped from the position: the line and the message are the contract.
 func TestProcessStateSelectorFindings(t *testing.T) {
 	t.Parallel()
 
@@ -335,8 +359,7 @@ func viaConstraint[T setenver](t T) {
 		},
 		{
 			// forbidigo renders this one on the wrapper (analysis_test.wrapper.Setenv),
-			// which the testing entry no longer matches and the
-			// receiver-agnostic one does.
+			// which the receiver-agnostic entry catches.
 			name: "a promoted method of an embedded struct",
 			src: `package analysis_test
 
@@ -353,10 +376,8 @@ func TestA(t *testing.T) {
 		},
 		{
 			// The review's finding S1: the same process state, one package
-			// further out. os.Unsetenv and os.Clearenv are no selector named
-			// Setenv or Chdir, so they are the forbidigo entry's to refuse: the
-			// source check pins that it reads no more than the two names the
-			// group's entries cannot always see.
+			// further out. The source check reads every name the group's two
+			// entries refuse, so os.Unsetenv and os.Clearenv are findings too.
 			name: "the calls of os",
 			src: `package analysis_test
 
@@ -371,7 +392,29 @@ func set() {
 `,
 			want: []string{
 				rel + ":6: " + msgProcessStateSelector,
+				rel + ":7: " + msgProcessStateSelector,
+				rel + ":8: " + msgProcessStateSelector,
 				rel + ":9: " + msgProcessStateSelector,
+			},
+		},
+		{
+			// The round-2 review's finding S1: syscall writes the environment
+			// and changes the working directory under names of its own.
+			name: "the calls of syscall",
+			src: `package analysis_test
+
+import "syscall"
+
+func set() {
+	_ = syscall.Unsetenv("SHIFT2EU_TOKEN")
+	syscall.Clearenv()
+	_ = syscall.Fchdir(3)
+}
+`,
+			want: []string{
+				rel + ":6: " + msgProcessStateSelector,
+				rel + ":7: " + msgProcessStateSelector,
+				rel + ":8: " + msgProcessStateSelector,
 			},
 		},
 		{
@@ -382,10 +425,16 @@ type wrapper struct{}
 
 func (wrapper) Setenvs(k, v string) {}
 func (wrapper) Chdirs(dir string)    {}
+func (wrapper) Unsetenvs(k string)   {}
+func (wrapper) Clearenvs()           {}
+func (wrapper) Fchdirs(fd int)       {}
 
 func set(w wrapper) {
 	w.Setenvs("SHIFT2EU_TOKEN", "example")
 	w.Chdirs("example")
+	w.Unsetenvs("SHIFT2EU_TOKEN")
+	w.Clearenvs()
+	w.Fchdirs(3)
 }
 `,
 		},

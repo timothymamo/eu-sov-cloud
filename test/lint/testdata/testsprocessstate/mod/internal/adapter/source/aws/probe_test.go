@@ -15,6 +15,7 @@ package aws_test
 
 import (
 	"os"
+	"syscall"
 	"testing"
 )
 
@@ -37,6 +38,18 @@ func TestEnvironmentWrites(t *testing.T) {
 	_ = os.Unsetenv("AWS_PROFILE")          // want "tests-no-process-state: "
 	os.Clearenv()                           // want "tests-no-process-state: "
 	_ = os.Chdir("example")                 // want "tests-no-process-state: "
+
+	t.TempDir()
+}
+
+// TestSyscallEnvironmentWrites holds the calls of syscall that write the
+// environment or change the working directory under names of their own, which
+// the group's second entry refuses (the round-2 review's finding S1: syscall
+// names neither Setenv nor Chdir, so the receiver-agnostic entry misses them).
+func TestSyscallEnvironmentWrites(t *testing.T) {
+	_ = syscall.Unsetenv("AWS_PROFILE") // want "tests-no-process-state: "
+	syscall.Clearenv()                  // want "tests-no-process-state: "
+	_ = syscall.Fchdir(3)               // want "tests-no-process-state: "
 
 	t.TempDir()
 }
