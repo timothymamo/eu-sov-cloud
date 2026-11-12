@@ -184,7 +184,8 @@ vm-claude-settings: ## Merge dev/claude-user-settings.json into Claude Code's us
 	limactl shell --workdir "$(CURDIR)" "$(LIMA_INSTANCE)" dev/claude-settings.sh "$(WORKSPACE)"
 
 # A login shell (bash -l), because only a login shell loads the credentials vm-env wrote
-# (/etc/profile.d/shift2eu.sh). Safe to run again: it changes only what is not set up yet.
+# (/etc/profile.d/shift2eu.sh). Safe to run again: it changes only what is not set up yet, and the theme
+# when CLAUDE_THEME differs. Run it before make deck (docs/dev-environment.md, What make vm-init does).
 .PHONY: vm-init
 vm-init: ## Once-only VM setup after vm-env and vm-claude-settings: Claude Code first run, git identity, credential checks, daemon service
 	limactl shell --workdir "$(CURDIR)" "$(LIMA_INSTANCE)" bash -l dev/vm-init.sh \

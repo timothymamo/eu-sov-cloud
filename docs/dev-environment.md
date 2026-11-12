@@ -87,6 +87,10 @@ again: it changes only what is not set up yet, so running it on a VM that is set
 
 It never prints a credential: the checks show only the field they test.
 
+- **Run it while no Claude Code session runs in the VM**, as before the first `make deck`. Claude Code
+  keeps `~/.claude.json` in memory and writes it back, so a session running at the same time can undo
+  the trust flags `make vm-init` just wrote.
+
 - **Trust follows the repository root.** Claude Code looks up a folder's trust by the session's git
   repository root, which for the repository, every dispatch worktree and every PR worktree is the main
   checkout, so `make vm-init` trusts the main checkout as well as the workspace. Trusting the workspace
@@ -194,8 +198,8 @@ make vm-up
 direnv allow                                                   # direnv tracks .envrc files by path
 ```
 
-Then run `make vm-init`, which trusts the new workspace and repository paths: the trust given to the old
-paths does not carry over.
+Then, before `make deck`, run `make vm-init`, which trusts the new workspace and repository paths: the
+trust given to the old paths does not carry over.
 
 ## Credentials
 

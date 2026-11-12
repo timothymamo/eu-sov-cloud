@@ -19,9 +19,11 @@
 #   7. deck        .dot-agent-deck.toml is valid.
 #   8. daemon      The deck's daemon is installed as a systemd user service, if it is not yet.
 #
-# Running it again changes nothing: a file or setting is written only when its value differs. It never
-# prints a credential: the tools whose output can include one are run quietly or filtered to the field
-# checked.
+# Running it again changes nothing: a file is written only when a flag in it is not set yet, the theme only
+# when it differs from the one asked for, and the git identity only where the VM has none. Run it while no
+# Claude Code session runs in the VM (before `make deck`): a running session can write its own copy of
+# ~/.claude.json back over the trust flags. It never prints a credential: the tools whose output can
+# include one are run quietly or filtered to the field checked.
 set -euo pipefail
 
 usage="usage: $0 <workspace directory> <main checkout> <git user.name> <git user.email> <claude theme>"
