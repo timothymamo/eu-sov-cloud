@@ -396,6 +396,23 @@ linters:
           deny:
             - pkg: github.com/timothymamo/shift2eu/internal/adapter
               desc: the CLI gets its adapters through cli.Deps; construct them in cmd/shift2eu
+        # internal/version is the build metadata: three variables the release
+        # sets with -X and the one function that formats them. Both driving
+        # adapters may import it, so without a rule of its own it would be a
+        # delegation path (issue #152): a root hands the work to the CLI, the
+        # CLI calls internal/version, and a package nobody had thought to
+        # deny would do there what the root and the CLI may not. The rule is
+        # a strict allow list of what the package imports today, fmt, each
+        # entry ending in $ for the reason given at domain-is-pure; os,
+        # syscall, os/exec, unsafe and everything else are refused because
+        # nothing here names them. Its test is held by the test rules.
+        version-is-build-metadata:
+          list-mode: strict
+          files:
+            - "**/internal/version/**"
+            - "!$test"
+          allow:
+            - fmt$
         # The composition root constructs the adapters, hands them to the CLI
         # and does nothing else (issue #101). So its imports are a strict
         # allow list: the module's own packages and the standard packages it
@@ -1244,12 +1261,19 @@ linters:
         # follow every pure import a test makes. syscall/js builds for js/wasm
         # only and is denied all the same.
         #
+        # os/user is denied too: a lookup returns a user's home directory,
+        # where the environment's variables and credential files point.
+        #
         # Since issue #152 the rule also holds the _test.go files of the two
         # driving adapters, internal/cli and internal/httpapi: a root hands
         # them the work, and their tests run in the same process as the code
-        # under test, so they get the limits the roots' tests have. The CLI's
-        # tests import syscall for syscall.Mkfifo (output_unix_test.go), which
-        # this deny list does not name.
+        # under test. This import rule is half of the roots' limits; the call
+        # half is forbidigo's: composition-root-no-exec and composition-root-env
+        # hold under cmd/ only, cli-no-env-or-process holds every file of
+        # internal/cli, its tests included, and httpapi-tests-no-env-or-process
+        # holds internal/httpapi's tests. The CLI's tests import syscall for
+        # syscall.Mkfifo (output_unix_test.go), which neither this deny list
+        # nor cli-no-env-or-process names.
         composition-root-tests:
           list-mode: lax
           files:
@@ -1276,6 +1300,8 @@ linters:
               desc: a composition root's test calls no JavaScript host function
             - pkg: unsafe
               desc: a composition root's test takes no pointer apart, which is how a raw system call or a linknamed symbol is reached
+            - pkg: os/user
+              desc: a composition root's test looks up no OS user, whose home directory is where the environment's variables point
         # The e2e tier builds the binary and runs it as a black box, offline,
         # against the fixtures in test/e2e/testdata. It imports only the
         # standard library, go-cmp and internal/testutil: no adapter,
@@ -1596,9 +1622,12 @@ linters:
         # state for the roots. A root cannot delegate a read to the driving
         # adapter it hands the work to either: internal/cli's strict allow
         # list leaves syscall, unsafe and os/exec out and the group
-        # cli-no-env-or-process refuses the calls of os that reach the
-        # environment (issue #152); internal/httpapi's strict allow list
-        # leaves os and syscall out.
+        # cli-no-env-or-process refuses the calls of os and syscall that
+        # reach the environment or start a process, in its tests too (issue
+        # #152); internal/httpapi's strict allow list leaves os and syscall
+        # out, and httpapi-tests-no-env-or-process holds its tests; and
+        # internal/version, which the CLI imports, is held to fmt by
+        # depguard's version-is-build-metadata.
         #
         # No-exec also refuses the windows entry points of syscall
         # (CreateProcess, CreateProcessAsUser, GetEnvironmentStrings, LoadDLL,
@@ -1660,24 +1689,54 @@ linters:
         - pattern: '^os\.(?:Getenv|LookupEnv|ExpandEnv|Environ|Setenv|Unsetenv|Clearenv|StartProcess|UserHomeDir|UserConfigDir|UserCacheDir|TempDir)$'
           pkg: '^os$'
           msg: 'testutil-no-env: a test helper reads no environment variable, locates no home, config, cache or temp directory and starts no process, where credentials live; take what it needs as a parameter (CLAUDE.md rule 3)'
-        # Group cli-no-env-or-process (issue #152): the CLI's code reads,
-        # writes and hands over no environment variable, locates no home,
-        # config, cache or temp directory and starts no process. A
-        # composition root may not do any of that itself (composition-root-env,
-        # composition-root-no-exec), and without this group it could hand the
-        # call to the CLI, where it would happen one call deeper with lint
-        # green. cli-gets-adapters-from-cmd must allow os, which the CLI reads
-        # the inventory a user names and creates the report with, and os also
-        # reaches the environment, where credentials live (CLAUDE.md rule 3).
-        # The entry mirrors the roots' and testutil-no-env's os names;
-        # syscall, unsafe and os/exec need no entry, as the CLI's strict allow
-        # list refuses them at the import. The CLI reads no named variable
-        # today, so the group has no exception. Scope: every file under
-        # internal/cli/, _test.go files included; its exclusion rule drops it
-        # everywhere else.
+        # Group cli-no-env-or-process (issue #152): the CLI's code reads and
+        # hands over no environment variable, locates no home, config, cache
+        # or temp directory, starts no process and makes no raw system call.
+        # A composition root may not do any of that itself
+        # (composition-root-env, composition-root-no-exec), and without this
+        # group it could hand the call to the CLI, where it would happen one
+        # call deeper with lint green. cli-gets-adapters-from-cmd must allow
+        # os, which the CLI reads the inventory a user names and creates the
+        # report with, and os also reaches the environment, where credentials
+        # live (CLAUDE.md rule 3). The os entry mirrors the roots' and
+        # testutil-no-env's names, reads and writes. In production files syscall, unsafe
+        # and os/exec are refused at the import by the CLI's strict allow
+        # list; its tests may import syscall, for syscall.Mkfifo
+        # (output_unix_test.go), so the syscall entry holds the roots' names
+        # there: the environment reads, the process starts, the windows
+        # entry points and DLL loaders, the raw system calls and the SYS_*
+        # numbers. It is one entry with one msg, not the roots' three: the
+        # windows names exist on windows only, test/lint's windows probe
+        # lints cmd/ alone, and test/lint pins every name of the pattern
+        # offline instead. depguard's composition-root-tests keeps unsafe,
+        # os/exec and os/user out of the tests. The CLI reads no named
+        # variable today, so the group has no exception. Scope: every file
+        # under internal/cli/, _test.go files included; its exclusion rule
+        # drops it everywhere else.
         - pattern: '^os\.(?:Getenv|LookupEnv|ExpandEnv|Environ|Setenv|Unsetenv|Clearenv|StartProcess|UserHomeDir|UserConfigDir|UserCacheDir|TempDir)$'
           pkg: '^os$'
           msg: 'cli-no-env-or-process: the CLI reads, writes and hands over no environment variable, locates no home, config, cache or temp directory and starts no process, where credentials live; the composition root passes what it needs as a flag value (CLAUDE.md rule 3)'
+        - pattern: '^syscall\.(?:Getenv|GetEnvironmentVariable|Environ|Exec|ForkExec|StartProcess|CreateProcess|CreateProcessAsUser|GetEnvironmentStrings|LoadDLL|MustLoadDLL|NewLazyDLL|LoadLibrary|GetProcAddress|(?:(?:Raw)?Syscall(?:6|9|12|15|18|N)?|SYS_\w+))$'
+          pkg: '^syscall$'
+          msg: 'cli-no-env-or-process: the CLI has no call that starts or replaces a process, makes a raw system call or reads the environment, in its tests either; pass the value to the code under test (CLAUDE.md rule 3)'
+        # Group httpapi-tests-no-env-or-process (issue #152): the HTTP API's
+        # tests read no environment variable, locate no home, config, cache or
+        # temp directory, start no process and make no raw system call. The
+        # production files need no group: internal/httpapi's strict allow list
+        # (httpapi-gets-adapters-from-cmd) leaves os and syscall out. Its
+        # tests are compiled into the same package and run in the same process
+        # as the code a root hands the work to, so they get the roots' call
+        # limits, with the same names and for the same reasons as
+        # cli-no-env-or-process (one syscall entry, pinned offline), the
+        # writes aside; depguard's composition-root-tests keeps unsafe,
+        # os/exec and os/user out. Scope: the _test.go files
+        # under internal/httpapi/; its exclusion rule drops it everywhere else.
+        - pattern: '^os\.(?:Getenv|LookupEnv|ExpandEnv|Environ|StartProcess|UserHomeDir|UserConfigDir|UserCacheDir|TempDir)$'
+          pkg: '^os$'
+          msg: 'httpapi-tests-no-env-or-process: a test of the HTTP API reads no environment variable and locates no home, config, cache or temp directory, where credentials live; pass the value to the code under test (CLAUDE.md rule 3)'
+        - pattern: '^syscall\.(?:Getenv|GetEnvironmentVariable|Environ|Exec|ForkExec|StartProcess|CreateProcess|CreateProcessAsUser|GetEnvironmentStrings|LoadDLL|MustLoadDLL|NewLazyDLL|LoadLibrary|GetProcAddress|(?:(?:Raw)?Syscall(?:6|9|12|15|18|N)?|SYS_\w+))$'
+          pkg: '^syscall$'
+          msg: 'httpapi-tests-no-env-or-process: a test of the HTTP API starts or replaces no process, makes a raw system call or reads the environment; pass the value to the code under test (CLAUDE.md rule 3)'
         # Group tests-no-process-state (issue #153): t.Setenv and t.Chdir.
         # t.Setenv changes the environment of the whole test binary, so every
         # test in the process sees the variable, a credential's name among
@@ -1796,6 +1855,13 @@ linters:
         linters:
           - forbidigo
         text: 'because "cli-no-env-or-process: [^"]*"$'
+      # httpapi-tests-no-env-or-process: the group holds for the _test.go
+      # files under internal/httpapi/ and nowhere else; the production files
+      # are held by their strict import rule.
+      - path-except: ^internal/httpapi/.*_test\.go$
+        linters:
+          - forbidigo
+        text: 'because "httpapi-tests-no-env-or-process: [^"]*"$'
       # tests-no-process-state: the group holds for every file under the
       # application layer, the test helpers, the driving adapters and the
       # composition roots, and nowhere else: test/lint and test/architecture

@@ -378,13 +378,15 @@ natively and with `GOOS=windows GOARCH=amd64 CGO_ENABLED=0`, where the windows n
 and `TestCompositionRootExclusions` pins the scope and the one exception.
 
 Four source checks in `test/lint` read the real roots, tests included, as the groups cannot state
-them; the `//go:linkname` and `/proc` checks read `internal/cli` as well (issue #152):
+them; the `//go:linkname` and `/proc` checks read both driving adapters, `internal/cli` and
+`internal/httpapi`, as well (issue #152):
 
 - `TestCompositionRootsUseSyscallOnlyForSignals` is the comprehensive guard on `syscall`: an AST
   check under which a root uses package `syscall` only for a `^SIG[A-Z0-9]+$` constant and the type
   `syscall.Signal`, read through the import name the file gives it; a dot or blank import of
   `syscall` is refused. Any other name, whether forbidigo lists it or not, fails.
-- `TestRootsAndCLILinkNoForeignSymbol` refuses a `//go:linkname` directive in the roots and the CLI, which
+- `TestRootsAndCLILinkNoForeignSymbol` refuses a `//go:linkname` directive in the roots and the
+  driving adapters, which
   would reach an unexported runtime or `syscall` symbol past every name rule.
 - `TestCompositionRootPassesLookupEnvToRun` holds `cmd/shift2eu-server/main.go` to exactly one
   reference to `os.LookupEnv`: a call with the one argument `tokenEnvVar`, the sole return expression
@@ -392,22 +394,27 @@ them; the `//go:linkname` and `/proc` checks read `internal/cli` as well (issue 
   neither declares nor assigns (the forbidigo exception is a path and a msg, so a second use in that
   file, or handing `os.LookupEnv` itself to `run`, would lint clean).
 - `TestRootsAndCLINameNoEnvironmentPath` refuses a string literal holding `/proc/` or `/dev/fd/`
-  in any Go file of the roots and of `internal/cli`, as `os.ReadFile("/proc/self/environ")` dumps every variable.
+  in any Go file of the roots and of the driving adapters, as `os.ReadFile("/proc/self/environ")` dumps every variable.
 
 The roots' `_test.go` files are compiled into the same package and run in the same process, but the
 strict depguard rules `composition-root` and `server-composition-root` skip them. The lax depguard
 rule `composition-root-tests` covers them: it denies `go/build`, `net/http/cgi`, `os/exec`, `plugin`,
-`runtime/cgo`, `syscall/js` and `unsafe`. Since issue #152 it holds the `_test.go` files of the two
-driving adapters, `internal/cli` and `internal/httpapi`, as well: a root hands them the work, and
-their tests run in the same process as the code under test. `TestCompositionRootTestsReachNoForeignCodeProbe`
-runs it on a probe module (`test/lint/testdata/compositionroottests`) for both roots and both driving
-adapters, and `test/architecture` pins it with the other depguard rules.
+`os/user` (a lookup returns a home directory), `runtime/cgo`, `syscall/js` and `unsafe`. Since issue
+#152 it holds the `_test.go` files of the two driving adapters, `internal/cli` and `internal/httpapi`,
+as well: a root hands them the work, and their tests run in the same process as the code under test.
+This import rule is only half of the roots' limits; the call half is in "The driving adapters" below.
+`TestCompositionRootTestsReachNoForeignCodeProbe` runs it on a probe module
+(`test/lint/testdata/compositionroottests`) for both roots and both driving adapters, and
+`test/architecture` pins it with the other depguard rules.
 
 ### The driving adapters
 
 A root could pass a call it may not make itself to the driving adapter it hands the work to, where
 it would happen one call deeper with lint green. Issue #152 closes that for the class, not for named
-members:
+members. An earlier version of this section said the adapters' tests already had the roots' limits
+through `composition-root-tests`; they had the import half only, and the review of #152 showed a test
+of either adapter could still call `os.Getenv` or `syscall.Exec` with lint green. The call half is
+now held as well:
 
 - **`cli-gets-adapters-from-cmd`** is a strict allow list. It used to allow `$gostd` and deny a list
   of packages beside it, so any standard package nobody thought to deny, `unsafe` among them, was
@@ -415,19 +422,40 @@ members:
   imports today (`bytes`, `context`, `errors`, `flag`, `fmt`, `io`, `io/fs`, `maps`, `os`,
   `path/filepath`, `slices`, `strconv`, `strings`, `unicode`, `unicode/utf8`), each ending in `$`.
   `syscall`, `unsafe`, `os/exec`, `os/signal`, `plugin`, the network and everything else are refused
-  because nothing names them. `os` is named because the CLI reads the inventory a user names
-  (`--inventory`) and creates the report the user asked for (`--output`).
+  in its production files because nothing names them. `os` is named because the CLI reads the
+  inventory a user names (`--inventory`) and creates the report the user asked for (`--output`).
   `TestCLIImportsProbe` lints the rule on a probe module, and `test/architecture`'s
-  `TestCLIImportRuleAllowsNoProcessOrPointer` holds the property beside the exact pin.
+  `TestCLIImportRuleAllowsNoProcessOrPointer` holds the property beside the exact pin. The rule is no
+  longer skipped by `test/architecture`'s per-release-target `go list` check
+  (`TestReleaseTargetDependencies`), so every package the CLI reaches on every release target is
+  held by a strict rule.
+- **`version-is-build-metadata`** (depguard, strict) holds `internal/version`, which the CLI imports,
+  to `fmt`, the one package it imports today. Without it the build metadata was a delegation path of
+  its own: a root hands the CLI the work, the CLI calls `internal/version`, and `internal/version`
+  could import `os` or `os/exec` with lint green. `TestVersionImportsProbe` lints it on a probe
+  module, and `test/architecture` pins it (`TestVersionRuleIsBuildMetadata`).
 - **`cli-no-env-or-process`** (forbidigo, `analyze-types`) refuses what `os` reaches beyond files:
   `os.Getenv`, `os.LookupEnv`, `os.ExpandEnv`, `os.Environ`, `os.Setenv`, `os.Unsetenv`,
   `os.Clearenv`, `os.StartProcess`, `os.UserHomeDir`, `os.UserConfigDir`, `os.UserCacheDir` and
-  `os.TempDir`, the roots' `os` names and `testutil-no-env`'s. It has no exception: the CLI reads no
-  named variable. Its one exclusion rule, `path-except: ^internal/cli/`, makes it hold for every file
-  there, `_test.go` files included. `TestCompositionRootForbidigoProbe` runs it on the probe's
-  `internal/cli`, and `TestCLINoEnvOrProcessForbidigoPatterns` pins the pattern.
-- `internal/httpapi`'s strict allow list already leaves `os` and `syscall` out; its tests, and the
-  CLI's, are held by `composition-root-tests` (above).
+  `os.TempDir`, the roots' `os` names and `testutil-no-env`'s. The CLI's tests import `syscall` for `syscall.Mkfifo` (`output_unix_test.go`),
+  so a second entry refuses the roots' `syscall` names: `Getenv`, `GetEnvironmentVariable`,
+  `Environ`, `Exec`, `ForkExec`, `StartProcess`, the windows `CreateProcess`, `CreateProcessAsUser`,
+  `GetEnvironmentStrings` and DLL loaders, the raw `(Raw)Syscall*` calls and the `SYS_*` numbers.
+  It is one entry with one msg rather than the roots' three: the windows names exist on windows
+  only, the probe's windows run lints `cmd/` alone, so `TestCLINoEnvOrProcessForbidigoPatterns` pins
+  every name offline instead. The group has no exception: the CLI reads no named variable. Its one
+  exclusion rule, `path-except: ^internal/cli/`, makes it hold for every file there, `_test.go` files
+  included. `TestCompositionRootForbidigoProbe` runs it on the probe's `internal/cli`, an aliased
+  `os` import included.
+- **`httpapi-tests-no-env-or-process`** (forbidigo, `analyze-types`) holds the `_test.go` files of
+  `internal/httpapi` to the same `os` reads and `syscall` names, for the same reasons. Its production files
+  need no group: `httpapi-gets-adapters-from-cmd` is a strict allow list that leaves `os` and
+  `syscall` out. Its exclusion rule is `path-except: ^internal/httpapi/.*_test\.go$`.
+  `TestCompositionRootForbidigoProbe` runs it on the probe's `internal/httpapi`, and
+  `TestHTTPAPITestsNoEnvOrProcessForbidigoPatterns` pins the patterns.
+
+`os.Getwd` stays allowed in the CLI: it reads `$PWD` (when it names the working directory) and
+returns a path only, the one the user ran the CLI in.
 
 ### Tests change no process state
 
@@ -457,7 +485,12 @@ Known gaps, which these rules do not close:
   `$TMPDIR` through `os.TempDir` (issue #153): they return only a fresh temporary path, never a home,
   config or credential path, and `t.TempDir` goes through the same read, so refusing them would leave
   a test no way to get a temporary directory. They are accepted; `os.TempDir` named directly stays
-  refused where `testutil-no-env` and `cli-no-env-or-process` refuse it.
+  refused where `testutil-no-env`, `cli-no-env-or-process` and `httpapi-tests-no-env-or-process`
+  refuse it. That refusal is no confidentiality control: `filepath.Dir` of any temporary path
+  recovers `$TMPDIR`. It is acceptable because `$TMPDIR` holds no secret; the refusal keeps a helper
+  from building paths off the temporary directory by habit, nothing more.
+- **`os.Getwd` reads `$PWD`.** It returns the working directory only, a path the user chose, and
+  stays allowed in the CLI and in tests.
 
 ## Domain-is-pure rule
 

@@ -79,7 +79,8 @@
 // imports on every release platform. version-is-build-metadata, the strict allow
 // list of the build metadata, is read the same way: TestVersionRuleIsBuildMetadata
 // pins its shape and TestReleaseTargetDependencies holds internal/version's
-// imports to it, while both release binaries must list the package.
+// imports to it, while the CLI's release listing must name the package (the
+// server reaches no internal/version).
 //
 // TestCloudAdapterSDKRuleIsChecked pins that the SDK-only rule,
 // cloud-adapters-reach-the-cloud-through-the-sdk, is no skip (issue #79): the
@@ -98,7 +99,7 @@
 // entries and named module packages (issue #152, which took its $gostd away so
 // the rule is no skip). One in internal/version is refused by depguard alone too:
 // version-is-build-metadata, a strict allow list of fmt and nothing else, because
-// both driving adapters import the build metadata and no rule held what it does
+// the driving adapters may import the build metadata and no rule held what it does
 // (the same issue). One in cmd/shift2eu is refused by the strict rule
 // composition-root (issue #101), which allows the module path as its one prefix
 // entry and the standard packages cmd/shift2eu imports today, each exact:

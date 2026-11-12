@@ -72,11 +72,19 @@
 // pins that group's pattern against lists of refused and allowed names.
 // TestCLIImportsProbe (testdata/cliimports) holds internal/cli to the strict
 // cli-gets-adapters-from-cmd rule (issue #152): os/exec, syscall and unsafe are
-// refused, the packages the CLI imports today pass; the forbidigo group
-// cli-no-env-or-process refuses the CLI's environment reads and writes, home,
-// config, cache and temp lookups and os.StartProcess, on the internal/cli of
-// TestCompositionRootForbidigoProbe's module, and
-// TestCLINoEnvOrProcessForbidigoPatterns pins its pattern.
+// refused in its production files, the packages the CLI imports today pass; the
+// forbidigo group cli-no-env-or-process refuses the CLI's environment reads
+// and writes, home, config, cache and temp lookups, os.StartProcess and, for its tests,
+// which import syscall for syscall.Mkfifo, the roots' syscall names, on the
+// internal/cli of TestCompositionRootForbidigoProbe's module (an aliased os
+// import included), and TestCLINoEnvOrProcessForbidigoPatterns pins its
+// patterns, the windows names offline. The group
+// httpapi-tests-no-env-or-process does the same for internal/httpapi's
+// _test.go files, on the same module's internal/httpapi, and
+// TestHTTPAPITestsNoEnvOrProcessForbidigoPatterns pins it.
+// TestVersionImportsProbe (testdata/versionimports) holds internal/version to
+// the strict version-is-build-metadata rule: fmt passes, os and os/exec are
+// refused.
 // TestTestsNoProcessStateProbe (testdata/testsprocessstate) runs the forbidigo
 // group tests-no-process-state (issue #153) on t.Setenv and t.Chdir through
 // *testing.T, B, F and testing.TB in the application layer, the test helpers,
@@ -105,15 +113,17 @@
 // TestCompositionRootsUseSyscallOnlyForSignals, an AST check under which the
 // roots, tests included, use package syscall for a ^SIG[A-Z0-9]+$ constant and
 // the type syscall.Signal only, and TestRootsAndCLILinkNoForeignSymbol
-// refuses //go:linkname in them and in internal/cli. TestCompositionRootPassesLookupEnvToRun holds
+// refuses //go:linkname in them and in both driving adapters, internal/cli
+// and internal/httpapi. TestCompositionRootPassesLookupEnvToRun holds
 // cmd/shift2eu-server/main.go to one os.LookupEnv call, with the identifier
 // tokenEnvVar, as the sole return of the func() (string, bool) token source it
 // passes to run, so run reads no other variable, and
 // TestRootsAndCLINameNoEnvironmentPath refuses a /proc/ or /dev/fd/
-// literal in the roots and internal/cli; no group can state either. The depguard rule
-// composition-root-tests refuses go/build, net/http/cgi, os/exec, plugin,
-// runtime/cgo, syscall/js and unsafe in the roots' _test.go files, which the
-// strict composition-root rules skip; TestCompositionRootTestsReachNoForeignCodeProbe
+// literal in the roots and both driving adapters; no group can state either.
+// The depguard rule composition-root-tests refuses go/build, net/http/cgi,
+// os/exec, os/user, plugin, runtime/cgo, syscall/js and unsafe in the roots'
+// _test.go files, which the strict composition-root rules skip, and in the
+// driving adapters' _test.go files; TestCompositionRootTestsReachNoForeignCodeProbe
 // runs it on a probe module (testdata/compositionroottests). TestCompositionRootExclusions
 // pins their one path-except each and the env group's one exception, whose text
 // is the group's form with the os.LookupEnv entry's exact msg in place of

@@ -333,15 +333,34 @@ stays for its message. `os` stays because the CLI reads the inventory a user nam
 report the user asked for. An import rule sees no call, so the forbidigo group
 `cli-no-env-or-process` refuses, under `internal/cli/` with its tests (one `path-except` exclusion
 rule), the `os` names the roots and `testutil-no-env` refuse: `os.Getenv`, `os.LookupEnv`,
-`os.ExpandEnv`, `os.Environ`, `os.Setenv`, `os.Unsetenv`, `os.Clearenv`, `os.StartProcess`,
-`os.UserHomeDir`, `os.UserConfigDir`, `os.UserCacheDir` and `os.TempDir`, with no exception, as the
-CLI reads no named variable. The `//go:linkname` and `/proc` literal source checks read `internal/cli`
-as well (`TestRootsAndCLILinkNoForeignSymbol`, `TestRootsAndCLINameNoEnvironmentPath`). The lax
-depguard rule `composition-root-tests` now also holds the `_test.go` files of `internal/cli` and
-`internal/httpapi`, so the driving adapters' tests have the limits the roots' tests have. The rules are
-pinned by `TestCLIImportsProbe`, `TestCLINoEnvOrProcessForbidigoPatterns`,
-`TestCompositionRootForbidigoProbe`, `TestCompositionRootTestsReachNoForeignCodeProbe`,
-`TestForbidigoExclusionsDropOneGroup`, `TestDepguardRulesArePinned` and
+`os.ExpandEnv`, `os.Environ`, `os.Setenv`, `os.Unsetenv`, `os.Clearenv`, `os.StartProcess`, `os.UserHomeDir`, `os.UserConfigDir`,
+`os.UserCacheDir` and `os.TempDir`, with no exception, as the CLI reads no named variable. The
+CLI's tests may import `syscall` (for `syscall.Mkfifo`), so a second entry refuses the roots'
+`syscall` names there: the environment reads, the process starts, the windows entry points and DLL
+loaders, the raw system calls and the `SYS_*` numbers, in one entry whose windows names are pinned
+offline, since the probe's windows run lints `cmd/` alone.
+
+The lax depguard rule `composition-root-tests` now also holds the `_test.go` files of `internal/cli`
+and `internal/httpapi`, and denies `os/user` besides. The first version of this amendment said that
+gave the driving adapters' tests the limits the roots' tests have; it gave them the import half only,
+and a test of either adapter could still call `os.Getenv` or `syscall.Exec` with lint green. The call
+half is `cli-no-env-or-process` for the CLI and a new forbidigo group,
+`httpapi-tests-no-env-or-process`, with the same `os` and `syscall` names, for the HTTP API's tests
+(`path-except: ^internal/httpapi/.*_test\.go$`); its production files need none, as their strict
+allow list leaves `os` and `syscall` out. The `//go:linkname` and `/proc` literal source checks read
+both driving adapters (`TestRootsAndCLILinkNoForeignSymbol`, `TestRootsAndCLINameNoEnvironmentPath`).
+
+Both driving adapters may import `internal/version`, which no rule held, so it was a delegation path
+of its own. A strict depguard rule, `version-is-build-metadata`, holds it to `fmt`, the one package it
+imports. `test/architecture` no longer skips `cli-gets-adapters-from-cmd` in its per-release-target
+`go list` check, so every package `internal/cli` reaches, `internal/version` included, is held by a
+strict rule on every release target.
+
+The rules are pinned by `TestCLIImportsProbe`, `TestCLINoEnvOrProcessForbidigoPatterns`,
+`TestHTTPAPITestsNoEnvOrProcessForbidigoPatterns`, `TestCompositionRootForbidigoProbe`,
+`TestCompositionRootTestsReachNoForeignCodeProbe`, `TestVersionImportsProbe`,
+`TestForbidigoExclusionsDropOneGroup`, `TestDepguardRulesArePinned`,
+`TestVersionRuleIsBuildMetadata`, `TestReleaseTargetDependencies` and
 `TestCLIImportRuleAllowsNoProcessOrPointer`, which holds the property (strict, no `$gostd`, `os`
 allowed, no `os/exec`, `syscall`, `unsafe`, `plugin`, `runtime/cgo`, `os/signal`, `net/http/cgi` or
 `go/build`) whatever the exact entries.
