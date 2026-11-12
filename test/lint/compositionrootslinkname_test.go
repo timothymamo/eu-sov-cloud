@@ -95,7 +95,7 @@ func TestRootsAndCLILinkNoForeignSymbol(t *testing.T) {
 }
 
 // TestLinknameProblems pins linknameProblems, the seam of
-// TestCompositionRootsLinkNoForeignSymbol, on fixtures: the tree holds no
+// TestRootsAndCLILinkNoForeignSymbol, on fixtures: the tree holds no
 // directive, so the fixture is what proves the check would refuse one.
 func TestLinknameProblems(t *testing.T) {
 	t.Parallel()

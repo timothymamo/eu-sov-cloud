@@ -838,7 +838,7 @@ func TestRootsAndCLINameNoEnvironmentPath(t *testing.T) {
 }
 
 // TestEnvironmentPathProblems pins environmentPathProblems, the seam of
-// TestCompositionRootsNameNoEnvironmentPath, on fixtures: the tree holds no such
+// TestRootsAndCLINameNoEnvironmentPath, on fixtures: the tree holds no such
 // literal, so a fixture is what proves the check would refuse one. A case's rel
 // is the file the literal is read in: a root's own Go file, or its _test.go,
 // which the check holds alike.
