@@ -31,12 +31,13 @@ builds:
 archives:
 `
 
-// cliArchive is the archive entry of the CLI's build: the name the CLI's
-// archives have always had, goreleaser's default template written out, tar.gz
-// on every platform, zip on Windows, and the files the archive ships beside
-// the binary (LICENSE and README.md, with the pages under docs/ that README.md
-// links to, issue #149).
-const cliArchive = `  - ids: [shift2eu]
+// cliArchive is the archive entry of the CLI's build: its own id, the builds
+// it holds (shift2eu alone), the name the CLI's archives have always had,
+// goreleaser's default template written out, tar.gz on every platform, zip on
+// Windows, and the files the archive ships beside the binary (LICENSE and
+// README.md, with the pages under docs/ that README.md links to, issue #149).
+const cliArchive = `  - id: shift2eu
+    ids: [shift2eu]
     name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
     formats: [tar.gz]
     format_overrides:
@@ -50,10 +51,12 @@ const cliArchive = `  - ids: [shift2eu]
 
 `
 
-// serverArchive is the archive entry of the HTTP API's build: its own name,
+// serverArchive is the archive entry of the HTTP API's build: its own id, the
+// build it holds (shift2eu-server alone), its own name,
 // shift2eu-server_<version>_<os>_<arch>, the same formats and the same files
 // as the CLI's.
-const serverArchive = `  - ids: [shift2eu-server]
+const serverArchive = `  - id: shift2eu-server
+    ids: [shift2eu-server]
     name_template: "{{ .ProjectName }}-server_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
     formats: [tar.gz]
     format_overrides:
@@ -91,6 +94,13 @@ func goreleaserArchives(cli, server string) string {
 //     is shift2eu, and the server's, whose binary is shift2eu-server, each
 //     with the ids of its own build alone. The message names the build that
 //     is in no archive, or the id that names no build;
+//   - each entry's id: is the one build its ids: names, and no two entries
+//     share one: goreleaser defaults an entry's id to "default", so two
+//     entries that leave it out are both the archive "default" to it and
+//     `goreleaser check` refuses the document ("found 2 archives with the ID
+//     'default'"). An entry with no id:, two entries with the same id:, and
+//     an id: that is not the build its ids: names are refused, worded with
+//     id;
 //   - each entry's name_template is the one that build's downloads expect:
 //     {{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }} for the CLI,
 //     whose archive names stay exactly as they were, and
@@ -106,7 +116,7 @@ func goreleaserArchives(cli, server string) string {
 //     checksums.txt covers every archive: a missing section, another name and
 //     any other key in it (split: for one) are refused, worded with what it
 //     holds instead;
-//   - an archive entry holds no key beyond ids, name_template, formats,
+//   - an archive entry holds no key beyond id, ids, name_template, formats,
 //     format_overrides and files: the section is a closed schema, so a key
 //     the check never lists cannot change what an archive is.
 //
@@ -146,7 +156,7 @@ func TestGoReleaserArchives(t *testing.T) {
 			// hold both binaries again.
 			name: "an archive entry with no ids",
 			goreleaser: goreleaserArchives(
-				mutate(t, cliArchive, "  - ids: [shift2eu]\n    name_template:", "  - name_template:"),
+				mutate(t, cliArchive, "    ids: [shift2eu]\n    name_template:", "    name_template:"),
 				serverArchive,
 			),
 			wantIn: "ids",
@@ -176,6 +186,41 @@ func TestGoReleaserArchives(t *testing.T) {
 				mutate(t, serverArchive, "ids: [shift2eu-server]", "ids: [shift2eu-http]"),
 			),
 			wantIn: "shift2eu-http",
+		},
+
+		// The archive ids: goreleaser defaults an entry's id to "default", so
+		// two entries that leave it out are the same archive to it and
+		// `goreleaser check` refuses the document. The rule is one id per
+		// entry, equal to the one build its ids names, so each case below
+		// pins that the message names that id: the one the entry wants
+		// (shift2eu) or the one it wrongly carries (shift2eu-api). Wording the
+		// message with the id is what tells the reader which archive to fix.
+		{
+			name: "an archive entry with no id",
+			goreleaser: goreleaserArchives(
+				mutate(t, cliArchive, "  - id: shift2eu\n    ids: [shift2eu]\n", "  - ids: [shift2eu]\n"),
+				serverArchive,
+			),
+			wantIn: "shift2eu",
+		},
+		{
+			name: "two archive entries with the same id",
+			goreleaser: goreleaserArchives(
+				cliArchive,
+				mutate(t, serverArchive, "  - id: shift2eu-server\n", "  - id: shift2eu\n"),
+			),
+			wantIn: "shift2eu",
+		},
+		{
+			// The id of an entry is the one build its ids names: here the
+			// server's entry holds shift2eu-server but is called
+			// shift2eu-api, an id no build has.
+			name: "an archive whose id differs from its single ids value",
+			goreleaser: goreleaserArchives(
+				cliArchive,
+				mutate(t, serverArchive, "  - id: shift2eu-server\n", "  - id: shift2eu-api\n"),
+			),
+			wantIn: "shift2eu-api",
 		},
 
 		// The archive names: the CLI's must not change, and the server's must
