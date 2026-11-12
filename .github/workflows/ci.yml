@@ -105,6 +105,21 @@ jobs:
       - name: End-to-end tests
         run: make test-e2e
 
+  # The dry run of release-please.yml (issue #142, ADR 0021): its guard and tag steps' own scripts, read
+  # from the workflow, run against a fake gh with canned API responses, so a change to how the tag's
+  # version is read and validated, or to when the step refuses to tag, fails the pull request. Nothing
+  # reaches the network; the workflow's shape and permissions are held by check.ReleasePleaseWorkflow.
+  release-please:
+    name: Release please dry run
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Tag and guard scripts on sample API responses
+        run: .github/scripts/release-please-dry-run.sh
+
   # Builds the container images for both release platforms without pushing them, then
   # smoke-tests the amd64 images: a broken Dockerfile fails the pull request. It is
   # also the dry run of release.yml's image and sbom jobs (ADR 0015): the same latest

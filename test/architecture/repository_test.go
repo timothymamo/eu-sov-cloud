@@ -1176,6 +1176,34 @@ func TestRCTagsArePreReleases(t *testing.T) {
 	}
 }
 
+// TestReleasePleaseProposesTheNextVersion pins issue #142: release-please keeps
+// one release PR open on main, computes the next version from the Conventional
+// Commits since the last tag with the release-tag skill's rules, and maintains
+// CHANGELOG.md; merging the PR pushes the vX.Y.Z tag with the release App's
+// short-lived token, and that tag starts .github/workflows/release.yml exactly
+// as it runs today. The workflow is held to check.ReleasePleaseWorkflow and the
+// document it reads to check.ReleasePleaseConfig, so the version rules, the tag
+// form, the App's permissions and the one-release-at-a-time group stay read
+// from the files the workflow reads. ci.yml is held to
+// check.ReleasePleaseDryRun, so the dry run of the workflow's guard and tag
+// steps runs on every pull request and every push to main, with no write and no
+// secret.
+func TestReleasePleaseProposesTheNextVersion(t *testing.T) {
+	t.Parallel()
+
+	for _, message := range check.ReleasePleaseWorkflow(readRepositoryFile(t, ".github/workflows/release-please.yml")) {
+		t.Error(message)
+	}
+
+	for _, message := range check.ReleasePleaseConfig(readRepositoryFile(t, "release-please-config.json")) {
+		t.Error(message)
+	}
+
+	for _, message := range check.ReleasePleaseDryRun(readRepositoryFile(t, ".github/workflows/ci.yml")) {
+		t.Error(message)
+	}
+}
+
 // TestWorkflowPrivilegesAreClosed pins the audit's finding of issue #72: no
 // workflow but .github/workflows/release.yml may hold a packages: write,
 // id-token: write or attestations: write permission, a write-all, or an

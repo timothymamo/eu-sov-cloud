@@ -122,10 +122,12 @@
 // prefix entries, which must end in /, to that rule and to composition-root,
 // whose one prefix entry is the module path.
 //
-// TestDevScriptsAreExecutable fails on a script under dev/, a file whose
-// staged content starts with #!, that is not 100755 in the git index (issue
-// #125): the Makefile runs those scripts directly, and the rename in #117 lost
-// dev/claude-settings.sh's executable bit without any check noticing. It reads
+// TestScriptsRunDirectlyAreExecutable fails on a script under dev/ or
+// .github/scripts/, a file whose staged content starts with #!, that is not
+// 100755 in the git index: the Makefile runs the scripts under dev/ directly,
+// and the rename in #117 lost dev/claude-settings.sh's executable bit without
+// any check noticing (issue #125); CI runs
+// .github/scripts/release-please-dry-run.sh directly (issue #142). It reads
 // mode and content from the index, not the checkout's file system.
 //
 // The checks are tests: they run in make test, make check and CI's make cover,
