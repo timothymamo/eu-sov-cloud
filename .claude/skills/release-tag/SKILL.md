@@ -44,10 +44,14 @@ the tagged commit is on `main`: always tag a commit of `main`.
    images", which `check.ReleaseWorkflow` pins:
    `gh run view <id> --json jobs --jq '.jobs[] | select(.name == "Verify the published images") | .conclusion'`.
    It must be `success`. When a higher release tag merged into `main` has no published image, `verify`
-   skips the `latest` check and passes with a notice instead (ADR 0015). Look for it in the job's log:
-   `gh run view <id> --log --job <verify job id> | grep '::notice::'` (the job id is
-   `gh run view <id> --json jobs --jq '.jobs[] | select(.name == "Verify the published images") | .databaseId'`),
-   or among the run's annotations on its summary page. A notice must be acted on, not only reported.
+   skips the `latest` check and passes with a notice instead (ADR 0015). Read it from the job's
+   annotations, never by searching the job's log for `::notice::`: the log echoes the step's script,
+   which holds that literal line, so such a search matches on every run. A job's id is its check-run
+   id, so list the job's notices with
+   `gh api repos/timothymamo/shift2eu/check-runs/<verify job id>/annotations --jq '.[] | select(.annotation_level == "notice") | .message'`
+   (the job id is
+   `gh run view <id> --json jobs --jq '.jobs[] | select(.name == "Verify the published images") | .databaseId'`).
+   Empty output means `verify` raised no notice. A notice must be acted on, not only reported.
    For each `<image>:<higher tag> is not published yet` it names, check that the higher tag has a
    release run queued or in progress:
    `gh run list --workflow release.yml --branch <higher tag> --json status,conclusion,databaseId`.
