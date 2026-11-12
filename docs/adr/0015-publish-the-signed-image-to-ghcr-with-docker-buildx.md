@@ -242,9 +242,13 @@ attestations, pushed to the registry beside the image.
   maintainer, who decides whether to remove it or re-run its release. A re-run of an older release's
   `verify` after a newer release has shipped passes, since `latest` is then the newer release's. Only the
   registry's own answer that this tag does not exist counts as an absent tag: the inspect exits with
-  status 1 and its stderr holds `<image>:<tag>: not found` for this very reference, or
-  `MANIFEST_UNKNOWN` (fixed, case-sensitive strings). The rule allows an absent tag for `X.Y` and
-  `latest` of a pre-release and for the higher tag above. The digest is read from stdout alone, with
+  status 1 and its stderr holds `<image>:<tag>: not found` (a fixed, case-sensitive string) for this
+  very reference, and nothing else is absence: a `MANIFEST_UNKNOWN` that does not name the reference
+  fails the job like any other error. That not-found text was derived from containerd's resolver
+  source, which buildx uses, and from the registry's 404, not observed on a runner; if buildx words
+  it otherwise, the job fails closed (a pre-release, or a release whose higher tag is unpublished,
+  fails `verify`) and the step must be corrected, not worked around. The rule allows an absent tag
+  for `X.Y` and `latest` of a pre-release and for the higher tag above. The digest is read from stdout alone, with
   stderr kept apart, so a warning docker writes there is never read as the digest, and a read that
   succeeds must print exactly one `sha256:` digest of 64 hex digits. Any other answer on any read, a
   5xx, a rate limit, a failed login, a missing docker, a broken credential helper or another
