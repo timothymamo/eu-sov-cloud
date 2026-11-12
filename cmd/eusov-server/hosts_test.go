@@ -5,6 +5,7 @@
 package main
 
 import (
+	"net"
 	"net/http"
 	"testing"
 )
@@ -115,6 +116,81 @@ func TestServerAllowedHostErrors(t *testing.T) {
 			}
 
 			requireStartupError(t, got)
+		})
+	}
+}
+
+// TestServerLoopbackBound pins the decision ADR 0019's bound-address check rests
+// on (audit M1): a listener --listen named as loopback counts as loopback only
+// when the address it bound is a loopback IP. The name localhost is resolved by
+// the system, which may map it elsewhere, so the bound address decides; a
+// listener not named as loopback stays non-loopback whatever it bound.
+func TestServerLoopbackBound(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name  string
+		named bool
+		bound net.Addr
+		want  bool
+	}{
+		{
+			name:  "named loopback that bound IPv4 loopback",
+			named: true,
+			bound: &net.TCPAddr{IP: net.ParseIP("127.0.0.1"), Port: 8080},
+			want:  true,
+		},
+		{
+			name:  "named loopback that bound IPv6 loopback",
+			named: true,
+			bound: &net.TCPAddr{IP: net.ParseIP("::1"), Port: 8080},
+			want:  true,
+		},
+		{
+			name:  "named loopback that bound another loopback address",
+			named: true,
+			bound: &net.TCPAddr{IP: net.ParseIP("127.0.0.2"), Port: 8080},
+			want:  true,
+		},
+		{
+			name:  "named loopback that bound a documentation address",
+			named: true,
+			bound: &net.TCPAddr{IP: net.ParseIP("192.0.2.1"), Port: 8080},
+		},
+		{
+			name:  "named loopback that bound every IPv4 address",
+			named: true,
+			bound: &net.TCPAddr{IP: net.ParseIP("0.0.0.0"), Port: 8080},
+		},
+		{
+			name:  "named loopback that bound no IP",
+			named: true,
+			bound: &net.TCPAddr{Port: 8080},
+		},
+		{
+			name:  "named loopback that bound no TCP address",
+			named: true,
+			bound: &net.UnixAddr{Name: "/tmp/eusov.sock", Net: "unix"},
+		},
+		{
+			name:  "named loopback with no bound address",
+			named: true,
+		},
+		{
+			name:  "not named as loopback that bound IPv4 loopback",
+			named: false,
+			bound: &net.TCPAddr{IP: net.ParseIP("127.0.0.1"), Port: 8080},
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			if got := loopbackBound(tc.named, tc.bound); got != tc.want {
+				t.Errorf("loopbackBound(named=%v, bound=%v) = %v, want %v",
+					tc.named, tc.bound, got, tc.want)
+			}
 		})
 	}
 }

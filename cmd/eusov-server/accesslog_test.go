@@ -239,9 +239,15 @@ func shorten(s string, n int) string {
 }
 
 // startLines returns the lines of stderr that are no startup line: the access
-// log lines. The startup line is the one that announces the address, which a
-// test needs before it can send a request.
+// log lines. The startup lines are the ones that announce the address, which a
+// test needs before it can send a request, the effective concurrency, and any
+// warning (audit L1, L4): none of them describes a request.
 func startLines(stderr string) []string {
+	startupPrefixes := []string{
+		"eusov-server: concurrency ",
+		"eusov-server: warning: ",
+	}
+
 	var lines []string
 
 	for _, line := range strings.Split(stderr, "\n") {
@@ -250,6 +256,20 @@ func startLines(stderr string) []string {
 		}
 
 		if _, announced, ok := strings.Cut(line, "listening on "); ok && announced != "" {
+			continue
+		}
+
+		var startup bool
+
+		for _, prefix := range startupPrefixes {
+			if strings.HasPrefix(line, prefix) {
+				startup = true
+
+				break
+			}
+		}
+
+		if startup {
 			continue
 		}
 

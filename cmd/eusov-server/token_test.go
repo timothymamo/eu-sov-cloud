@@ -21,7 +21,7 @@ const (
 	validToken = "tok-0123456789abcdef0123456789ab"
 
 	// shortToken is one character short of the minimum: the server refuses it.
-	shortToken = "tok-0123456789012345678901234567"
+	shortToken = "tok-012345678901234567890123456"
 
 	// tokenMinLength is the shortest token the server accepts, as its error line
 	// names it.

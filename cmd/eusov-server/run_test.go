@@ -484,6 +484,64 @@ func TestServerLoopbackRule(t *testing.T) {
 	})
 }
 
+// TestServerCheckAuth pins the rule the listener must satisfy, factored out of
+// setUp so it can be applied twice: before the port is opened, to the --listen
+// value, and after it, to the address the listener bound (audit M1). Loopback
+// needs neither a credential nor an override; anything else needs the token or
+// the operator's explicit --insecure-no-auth, and the refusal names the
+// address, both token sources and the override, never a token.
+func TestServerCheckAuth(t *testing.T) {
+	t.Parallel()
+
+	// addr is an address in the documentation range, so a failure message never
+	// quotes a real one.
+	const addr = "192.0.2.10:8080"
+
+	tests := []struct {
+		name           string
+		loopback       bool
+		hasToken       bool
+		insecureNoAuth bool
+		wantErr        bool
+	}{
+		{name: "loopback without a token", loopback: true},
+		{name: "loopback with a token", loopback: true, hasToken: true},
+		{name: "loopback with --insecure-no-auth", loopback: true, insecureNoAuth: true},
+		{name: "non-loopback with a token", hasToken: true},
+		{name: "non-loopback with --insecure-no-auth", insecureNoAuth: true},
+		{name: "non-loopback with a token and --insecure-no-auth", hasToken: true, insecureNoAuth: true},
+		{name: "non-loopback without a token or --insecure-no-auth", wantErr: true},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			err := checkAuth(tc.loopback, tc.hasToken, tc.insecureNoAuth, addr)
+
+			if !tc.wantErr {
+				if err != nil {
+					t.Fatalf("checkAuth(loopback=%v, token=%v, insecureNoAuth=%v, %s) = %v, want nil",
+						tc.loopback, tc.hasToken, tc.insecureNoAuth, addr, err)
+				}
+
+				return
+			}
+
+			if err == nil {
+				t.Fatalf("checkAuth(loopback=%v, token=%v, insecureNoAuth=%v, %s) = nil, want the non-loopback rule to refuse it",
+					tc.loopback, tc.hasToken, tc.insecureNoAuth, addr)
+			}
+
+			for _, want := range []string{addr, tokenEnv, "--token-file", "--insecure-no-auth"} {
+				if !strings.Contains(err.Error(), want) {
+					t.Errorf("the refusal %q does not name %q", err, want)
+				}
+			}
+		})
+	}
+}
+
 // TestServerLocalhostListen pins the loopback decision for the name localhost: a
 // listener on localhost:0 is a loopback listener, so the server starts without a
 // token and serves, with and without the operator's --allowed-host. The decision
