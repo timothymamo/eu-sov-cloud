@@ -130,8 +130,8 @@ use `net/http/httptest` and a server on `127.0.0.1`), unless marked *review*.
   `ChangesToList`), shared by both renderers, with the Markdown output unchanged. An ADR records the
   separate binary, the API's versioning, and the security model.
 - [x] `make check` passes. The security-audit skill is run on milestones 2 to 4. *Done:* `make check`
-  passes on every milestone; the audit ran on milestones 2 and 3, and runs on milestone 4 once its
-  change is committed (the orchestrator confirms it).
+  passes on every milestone; the audit ran on milestones 2, 3 and 4. On milestone 4 it found nothing
+  critical, high or medium, and five low or informational findings, all resolved in the same PR.
 
 **Packaging**
 
@@ -243,7 +243,7 @@ Each milestone ships as one PR, in this order.
    nginx example), every flag and variable, and example requests. ADR 0013 and 0015 record the second
    image as amendments. Left open: ADR 0019 also names a published OpenAPI document that bundles the
    report's JSON Schemas, which `api/openapi.json` still refers to by relative path; it is not part of
-   this milestone's criteria and is not done.
+   this milestone's criteria and is deferred to [issue #139](https://github.com/timothymamo/shift2eu/issues/139).
 
 ## Decisions and open questions
 

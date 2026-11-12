@@ -58,7 +58,8 @@ Arrows are imports. They point inwards only:
   and of the tests only the parity test in `test/apiparity` (`httpapi-imported-only-by-the-server`);
   `cmd/shift2eu` never does, so the CLI stays offline. `api/openapi.json` (OpenAPI 3.1) describes the API
   and refers to the JSON report's schemas by relative path rather than copying them; a document that
-  bundles them, for readers outside the repository, is not published yet. The release ships the server
+  bundles them, for readers outside the repository, is not published yet
+  ([issue #139](https://github.com/timothymamo/shift2eu/issues/139)). The release ships the server
   as its own binary and its own image, `ghcr.io/timothymamo/shift2eu-server`, built from the
   `Dockerfile`'s `server` stage and signed and attested as the CLI's is (ADR 0013, ADR 0015); the
   README's "Run the HTTP API" section documents running it behind a reverse proxy.
