@@ -189,7 +189,8 @@ release workflow's GitHub identity for that tag, and carries build provenance an
 GitHub attestations. You need cosign v3 or later, which reads the signature from the registry in the
 bundle format the release writes, and the [GitHub CLI](https://cli.github.com/). The release
 workflow's `verify` job runs these same checks on every release, on a fresh GitHub-hosted runner with
-read-only permissions, and fails the release when one fails; run them yourself before you trust an image.
+read-only permissions, and fails the release when one fails. It runs after the images are published, so
+it detects a bad release rather than prevents one; run the checks yourself before you trust an image.
 
 A tag can be moved; a digest cannot. Resolve the release tag to its digest once, then verify and run
 that digest:
@@ -348,7 +349,8 @@ Each release, from the first after `v0.2.0`, publishes `ghcr.io/timothymamo/shif
 It is signed and attested by the same release workflow of the same repository, so only the image name
 changes: the certificate identity, `--repo` and `--signer-workflow` stay the CLI's
 ([Verify the image](#verify-the-image) explains each check). The release's `verify` job runs these
-checks on every release too, on a fresh runner, with `--help` as the server image's smoke test:
+checks on every release too, on a fresh runner, with `--help` as the server image's smoke test; it runs
+after the image is published, so it detects a bad release rather than prevents one:
 
 ```bash
 TAG=<version>

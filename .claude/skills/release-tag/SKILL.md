@@ -40,11 +40,17 @@ the tagged commit is on `main`: always tag a commit of `main`.
    If a pending run was cancelled, re-run it with `gh run rerun <id>`. On failure, report the failed
    step's log and stop; never delete or move a pushed tag.
    Report the result of the run's `verify` job too, the independent check of both published images
-   on a fresh GitHub-hosted runner (issue #99, ADR 0015):
+   on a fresh GitHub-hosted runner (issue #99, ADR 0015). Find it by its name, "Verify the published
+   images", which `check.ReleaseWorkflow` pins:
    `gh run view <id> --json jobs --jq '.jobs[] | select(.name == "Verify the published images") | .conclusion'`.
-   It must be `success`. A failed `verify` job is a failed release: report it with the failed step's
-   log (`gh run view <id> --log-failed`) and stop. Do not re-run it to get past the failure, and do not
-   count the VM check below as a substitute for it.
+   It must be `success`. A run where a newer release's images are not published yet passes the
+   `latest` check with a `::notice::` instead (ADR 0015); report the notice. `verify` runs after the
+   images are published, so it detects a bad release, it does not prevent one. A failed `verify` job is
+   a failed release: report it with the failed step's log (`gh run view <id> --log-failed`) and stop. Do
+   not re-run it to get past the failure, and do not count the VM check below as a substitute for it.
+   In the report, give the maintainer the recovery ADR 0015 states, which only they carry out: mark the
+   GitHub release as bad, point `latest` (and `X.Y` if wrong) back at the last good release's digest or
+   delete the bad image tag, and fix forward with a new patch release.
 8. Check the published image yourself; do not hand this to the user. The Lima VM has cosign, a `gh`
    with `gh attestation`, `crane` and rootless `nerdctl` (ADR 0017); this is the README's "Verify the
    image" in its VM form, for the new tag. Run it from the repository root, with no registry login, and

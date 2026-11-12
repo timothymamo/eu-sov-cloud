@@ -206,24 +206,51 @@ attestations, pushed to the registry beside the image.
   the agents. Until then the published images were checked by hand, or by the `release-tag` skill inside
   the agents' Lima VM ([ADR 0017](0017-run-a-rootless-container-runtime-in-the-lima-vm.md)); audit
   finding M1 of PR #96 noted that this check is not independent: the agents that run it share the VM,
-  and what runs there can alter the check. `verify` needs `sign` and `server-sign` and runs on a fresh
-  GitHub-hosted runner. For each image it resolves the tag to the digest it points to now (a tag can be
-  moved, a digest cannot) and, by that digest, runs the README's "Verify the image": `cosign verify` with
-  the exact release identity (`release.yml@refs/tags/<tag>`, GitHub's OIDC issuer, the `push` trigger);
-  `gh attestation verify` of the build provenance and of the SPDX SBOM, with the repository, the signer
-  workflow, the tag as source ref and self-hosted runners denied; and the image itself with
+  and what runs there can alter the check. `verify` needs `image`, `sign`, `server-image` and
+  `server-sign` and runs on a fresh GitHub-hosted runner; every script in it starts with
+  `set -euo pipefail`. For each image it resolves the tag to a digest and fails unless that is the
+  digest this run's image job built (a tag can be moved between the build and the check, a digest
+  cannot), and, by that digest, runs the README's "Verify the image": `cosign verify` with the exact
+  release identity (`release.yml@refs/tags/<tag>`, GitHub's OIDC issuer, the `push` trigger) and the
+  tagged commit (`--certificate-github-workflow-sha`); `gh attestation verify` of the build provenance
+  and of the SPDX SBOM, with the repository, the signer workflow, the tag as source ref, the tagged
+  commit as source digest (`--source-digest`) and self-hosted runners denied; and the image itself with
   `docker run --rm --read-only --network none`: the CLI's `version`, which must report the tag's
   version, and the server's `--help`, which must exit 0, since `shift2eu-server` has no `version`
-  subcommand. Then it checks the tag rule above for both images: `vX.Y.Z` always, `X.Y` for a release
-  and never for a pre-release, and `latest` exactly when the tag is the highest release tag. That
-  highest tag is read with `git ls-remote` and the stamp's filter, sort and pick, not from GitHub's
-  "latest release", which is the most recently created release rather than the highest version, and
-  without a checkout. Its permissions are `packages: read` (the images and their signatures) and
-  `attestations: read` (`gh attestation verify` reads the attestations through the repository's API),
-  nothing else: no `id-token`, so nothing in it can sign, and no `contents`, as it checks out no
-  repository code; its only actions are `sigstore/cosign-installer`, by commit, with cosign by exact
-  release. A failed `verify` is a failed release: the `release-tag` skill reports the job's result,
-  and a failure is investigated and fixed forward, never retried around. `check.ReleaseWorkflow` pins the
-  job's keys, permissions and steps, and `check.DryRunMirrorsRelease` holds CI's dry run to run each
-  image it built with the same `docker run` flags and command as `verify`; pushing, signing and
-  attesting still need a tag, so the rest of `verify` runs only in a release.
+  subcommand. So the signature and both attestations are bound to the tagged commit, not only to the
+  tag name. The image run is the runner's platform, `linux/amd64`; `linux/arm64` is checked by its
+  signature (cosign signed the index recursively) and its attestations only, never run.
+
+  Then it checks the tag rule above for both images, on the digests this run built: `vX.Y.Z` always;
+  `X.Y` for every release; and a pre-release moves neither `X.Y` nor `latest`, so a pre-release fails
+  only if `X.Y` or `latest` resolves to its digest (a shipped `X.Y` of an earlier release is fine).
+  `latest` follows the highest release tag, which, as in the stamp, is the highest of the release tags
+  merged into `main`, read by ancestry: the job fetches `main` and the `v*` tags of the public repository
+  treeless (`git init` and `git fetch --filter=tree:0`, no token) into a repository of its own, with no
+  checkout, so no repository code runs, and picks the highest with the stamp's filter, sort and pick. Not
+  GitHub's "latest release", which is the most recently created release rather than the highest version,
+  and not every tag on the remote, which would count a tag off `main`. No release tag merged into `main`
+  is an error. When the tag is the highest, `latest` must be its digest. When a higher release's images
+  are published, `latest` must not be this digest. When a higher release tag exists but its images are
+  not published yet (its own run is still in flight), the `latest` check is skipped with a `::notice::`:
+  that window is not covered, so a release that should have moved `latest` and did not passes while the
+  newer run is in flight. A re-run of an older release's `verify` after a newer release has shipped
+  passes, since `latest` is then the newer release's. A registry error on a tag the rule requires fails
+  the job; only the reads whose absence the rule allows are silenced.
+
+  Its permissions are `packages: read` (the images and their signatures) and `attestations: read`
+  (`gh attestation verify` reads the attestations through the repository's API), nothing else: no
+  `id-token`, so nothing in it can sign, and no `contents`, as it checks out no repository code; its
+  only action is `sigstore/cosign-installer`, by commit, with cosign by exact release.
+
+  `verify` runs after the images and tags are published, so it detects a bad release, it does not
+  prevent one. A failed `verify` is a failed release, never retried around: the `release-tag` skill
+  reports the job's result, and on a failure the maintainer marks the GitHub release as bad (edits its
+  notes, or deletes it), points `latest` (and `X.Y` if wrong) back at the last good release's digest or
+  deletes the bad image tag, and fixes forward with a new patch release; a published tag and digest are
+  never reused. `check.ReleaseWorkflow` pins the job's keys, needs, permissions and steps, and
+  `check.DryRunMirrorsRelease` holds CI's dry run to run each image it built with the same
+  `docker run` flags and command as `verify`, each image's run on that image's own dry-run build
+  (`$IMAGE` for the CLI, `$SERVER_IMAGE` for the server), and refuses a `docker run` line of `verify`
+  continued onto the next line, which it could not compare whole; pushing, signing and attesting still
+  need a tag, so the rest of `verify` runs only in a release.
