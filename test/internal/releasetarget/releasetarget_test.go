@@ -15,7 +15,10 @@ import (
 // build, the environment Env names (CGO_ENABLED=0, GOWORK=off and
 // GOFLAGS=-mod=readonly, in that order; issue #102), and three goos by two
 // goarch: six platforms, which is the list every case below compares against
-// or breaks.
+// or breaks. A document with a before section carries the one hook Read
+// accepts, `go mod tidy -diff`: it fails and writes nothing when the module is
+// not tidy, where plain `go mod tidy` would rewrite go.mod and go.sum before
+// the -mod=readonly build.
 //
 // buildFlow and buildReal live in testdata, as files: the tests of
 // test/architecture/internal/check add a release section to the same two
@@ -28,11 +31,12 @@ var (
 	buildFlow string
 
 	// buildReal is a snapshot of the shape of this repository's
-	// .goreleaser.yaml: before hooks, archives, checksum and changelog around
-	// one build. It is not a copy of that file. The check may refuse a
-	// top-level key that could change what the release builds, so a document
-	// of this shape must stay accepted; test/architecture/repository_test.go
-	// checks the real .goreleaser.yaml itself.
+	// .goreleaser.yaml: the before hook `go mod tidy -diff`, archives, checksum
+	// and changelog around one build. It is not a copy of that file. The check
+	// may refuse a top-level key that could change what the release builds, so
+	// a document of this shape must stay accepted;
+	// test/architecture/repository_test.go checks the real .goreleaser.yaml
+	// itself.
 	//
 	//go:embed testdata/real.goreleaser.yaml
 	buildReal string
@@ -202,13 +206,13 @@ builds:
     goarch: [amd64, arm64]
 `
 
-	// buildBeforeGenerate runs a second hook before the build, which could
-	// generate, rewrite or delete the files the release compiles.
+	// buildBeforeGenerate runs the go mod tidy hook and then a second one,
+	// which could generate, rewrite or delete the files the release compiles.
 	buildBeforeGenerate = `version: 2
 
 before:
   hooks:
-    - go mod tidy
+    - go mod tidy -diff
     - go generate ./...
 
 builds:
@@ -349,6 +353,13 @@ const envDoc = "    env:\n      - CGO_ENABLED=0\n      - GOWORK=off\n      - GOF
 func buildDoc(lines string) string {
 	return "version: 2\n\nbuilds:\n  - id: eusov\n    main: ./cmd/eusov\n" + lines +
 		"    goos: [linux, darwin, windows]\n    goarch: [amd64, arm64]\n"
+}
+
+// buildWithBefore returns buildFlow with a before section whose hooks are the
+// given lines, each already written as a list item: the accepted build with one
+// thing about it changed.
+func buildWithBefore(hooks string) string {
+	return buildFlow + "\nbefore:\n  hooks:\n" + hooks
 }
 
 // buildLists returns a .goreleaser.yaml with one build whose goos and goarch
@@ -492,10 +503,39 @@ func TestRead(t *testing.T) {
 		},
 
 		// before: hooks run before the build, so a hook the check does not
-		// know could generate or rewrite what the release compiles.
+		// know could generate or rewrite what the release compiles. The only
+		// accepted hook is go mod tidy -diff, which fails and writes nothing
+		// when the module is not tidy (issue #102): plain go mod tidy would
+		// rewrite go.mod and go.sum before the -mod=readonly build, and the
+		// release would compile a module the commit does not hold.
 		{
-			name:       "an added before hook is refused",
+			name:       "a before hook of go mod tidy -diff and a second hook is refused",
 			goreleaser: buildBeforeGenerate,
+			wantErr:    true,
+		},
+		{
+			name:       "a before hook of plain go mod tidy is refused, since it writes where -diff fails",
+			goreleaser: buildWithBefore("    - go mod tidy\n"),
+			wantErr:    true,
+		},
+		{
+			name:       "a before hook of go mod tidy -e is refused, since -e reports no error either",
+			goreleaser: buildWithBefore("    - go mod tidy -e\n"),
+			wantErr:    true,
+		},
+		{
+			name:       "a before hook of go mod tidy -diff -e is refused, since -e hides the difference -diff reports",
+			goreleaser: buildWithBefore("    - go mod tidy -diff -e\n"),
+			wantErr:    true,
+		},
+		{
+			name:       "a before hook of go mod tidy -diff with another argument is refused",
+			goreleaser: buildWithBefore("    - go mod tidy -diff -v\n"),
+			wantErr:    true,
+		},
+		{
+			name:       "a before hook of go mod tidy -diff and a second hook is refused",
+			goreleaser: buildWithBefore("    - go mod tidy -diff\n    - go mod vendor\n"),
 			wantErr:    true,
 		},
 		{
