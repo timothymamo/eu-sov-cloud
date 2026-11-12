@@ -1163,6 +1163,26 @@ func TestReleaseWorkflowIsClosed(t *testing.T) {
 	}
 }
 
+// TestReleaseArchivesHoldOneBinary pins issue #147: the release ships the CLI
+// and the HTTP API as two archives of their own, under one tag and version.
+// .goreleaser.yaml holds two archive entries, each limited by ids: to one build,
+// the CLI's archive keeping the name it has always had and the server's its own
+// (check.GoReleaserArchives), both with the same formats and the same files and
+// one checksums.txt covering every archive; and ci.yml's test job, the dry run
+// that runs on every pull request, builds those archives and fails unless each
+// holds exactly its own binary (check.DryRunVerifiesArchives).
+func TestReleaseArchivesHoldOneBinary(t *testing.T) {
+	t.Parallel()
+
+	for _, message := range check.GoReleaserArchives(readRepositoryFile(t, ".goreleaser.yaml")) {
+		t.Error(message)
+	}
+
+	for _, message := range check.DryRunVerifiesArchives(readRepositoryFile(t, ".github/workflows/ci.yml")) {
+		t.Error(message)
+	}
+}
+
 // TestRCTagsArePreReleases pins how .goreleaser.yaml publishes the GitHub
 // release: release.prerelease: auto and nothing else, so a tag with a
 // pre-release suffix (v0.1.0-rc.2) is a GitHub pre-release and never the
