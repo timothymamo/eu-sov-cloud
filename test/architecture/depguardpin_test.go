@@ -166,6 +166,34 @@ var pinnedDepguardRules = []check.DepguardRule{
 		},
 	},
 	{
+		// The composition root (issue #101): main wires every adapter into the
+		// application, so it may import every package of the module, named by
+		// the one prefix entry, and the standard packages it imports today,
+		// each exact. A third-party import is refused by the allow list, and
+		// the cloud SDKs by the deny list too, as in app-uses-ports-not-adapters.
+		// A sibling such as cmd/eusov-server gets a rule of its own, written
+		// the same way, with its own files: entry.
+		Name:     "composition-root",
+		ListMode: "strict",
+		Files: []string{
+			"**/cmd/eusov/**",
+			"!$test",
+		},
+		Allow: []string{
+			"context$",
+			"os$",
+			"os/signal$",
+			"syscall$",
+			"github.com/timothymamo/eu-sov-cloud/",
+		},
+		Deny: []string{
+			"github.com/aws/aws-sdk-go-v2",
+			"github.com/Azure/azure-sdk-for-go",
+			"cloud.google.com/go",
+			"google.golang.org/api",
+		},
+	},
+	{
 		Name:     "adapters-are-built-in-cmd",
 		ListMode: "lax",
 		Files: []string{

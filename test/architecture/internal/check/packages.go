@@ -318,14 +318,15 @@ func decodePackages(r io.Reader) ([]Package, error) {
 // by depguard in make lint alone: a non-test go-cmp import in a layer, or an
 // SDK import in a new helper package beside the provider adapters, passes
 // this check where depguard refuses it. Nor does this check speak for the
-// release binary as a whole: its patterns are the layers, not cmd/eusov, and
-// Sources skips every package outside the module. A third-party import in
-// internal/cli, whose rule allows $gostd and is skipped here, is refused by
-// depguard alone: that strict rule allows only $gostd and named module
-// packages. One in cmd/eusov is refused by no rule but the lax SDK and go-cmp
-// denies, so a new third-party dependency of the composition root is held
-// only by review of the import and of go.mod. That gap is known: a strict
-// depguard rule for **/cmd/eusov/** would close it (a follow-up to #79).
+// release binary as a whole: the shared layer listing's patterns are the
+// layers, not cmd/eusov, and Sources skips every package outside the module.
+// A third-party import in internal/cli, whose rule allows $gostd and is
+// skipped here, is refused by depguard alone: that strict rule allows only
+// $gostd and named module packages. One in cmd/eusov is refused by the strict
+// rule composition-root (issue #101): the architecture tests pass this
+// function that rule and the packages of cmd/eusov alone, since the composition
+// root's listing also reaches internal/cli and internal/version, which no rule
+// it reads holds.
 func Packages(root, module string, rules []Rule, pkgs []Package) []string {
 	m := newModuleRoot(root, module)
 	rules = sortedAllowLists(rules)

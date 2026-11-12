@@ -42,7 +42,11 @@ Arrows are imports. They point inwards only:
   (Cloud read-only rule below).
 - **CLI** (`internal/cli`) turns user input into use-case calls and prints results. No business rules.
   Only `cmd/eusov` imports it.
-- **`cmd/eusov`** is the only place that constructs adapters and injects them.
+- **`cmd/eusov`** is the only place that constructs adapters and injects them. Its imports are a
+  strict allow list (`composition-root`, issue #101): the module's own packages and the standard
+  packages it needs today (`context`, `os`, `os/signal`, `syscall`), and no third-party package. The
+  rule holds `cmd/eusov` only; a sibling binary such as a future `cmd/eusov-server` (PRD #103) gets a
+  sibling rule written the same way, with its own `files:` entry.
 
 The rule is enforced by `depguard` in `.golangci.yml`, so `make lint`, which lints the host natively and
 then every GOOS/GOARCH `.goreleaser.yaml` builds with cgo off, fails on a violating import. These are all
@@ -236,13 +240,19 @@ hand-written GCP package, add an entry for it, a probe line only it refuses and 
   strict allow lists only: the lax deny rules (`go-cmp-only-in-tests`,
   `cloud-sdks-only-in-provider-adapters`) are held by depguard in `make lint` alone. A third-party
   import in `internal/cli` is refused by depguard alone, whose strict rule there allows only `$gostd`
-  and named module packages; one in `cmd/eusov` is refused by no rule but the lax SDK and go-cmp
-  denies, so a new third-party dependency of the composition root is held only by review of the
-  import and of `go.mod`. That is a known gap: a strict depguard rule for `**/cmd/eusov/**` would
-  close it (a follow-up to issue #79).
+  and named module packages; one in `cmd/eusov` is refused by the strict rule `composition-root`
+  (issue #101), which `test/architecture` holds the composition root to on every release target,
+  cgo mode and tag set, apart from the shared layer listing, and whose listing must hold no package
+  under the module path from a module other than the main one, since the rule's prefix entry would
+  allow a nested module.
   `go list -deps` lists the imports of a held package's tests but not those imported packages
   themselves, so a package only a test imports is checked against the test's allow list, not for
   its own module, directory or non-Go sources.
+- **Process and environment calls in `cmd/eusov`.** The `composition-root` rule allows `os` and
+  `syscall`, so the composition root could call `os.StartProcess`, `syscall.Exec` or
+  `syscall.ForkExec`, shelling out to a cloud CLI, or `os.Environ` and `os.Getenv`, dumping the
+  environment, and only review catches it (the security audit's LOW-2 on issue #101). A forbidigo
+  group scoped to `cmd/eusov` would close it; that is follow-up work outside issue #101.
 - **Files lint never loads**: a file behind a build tag other than `integration` and `e2e`, a
   `//go:build ignore` helper, and the `testdata`, `_` and `.` directories `./...` skips. `test/lint`
   fails on such a file, and on an imported package in such a directory. A main package there, run
