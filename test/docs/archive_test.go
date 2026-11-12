@@ -11,9 +11,10 @@ import (
 	"github.com/timothymamo/shift2eu/test/internal/yamlread"
 )
 
-// archiveFiles reads the files every archive in .goreleaser.yaml ships beside
-// the binaries.
-func archiveFiles(t *testing.T, fsys fs.FS) []string {
+// archiveFiles reads the files each archive in .goreleaser.yaml ships beside
+// its binary: one list per archives: entry, in the order the document writes
+// them, since issue #147 gives each binary an archive of its own.
+func archiveFiles(t *testing.T, fsys fs.FS) [][]string {
 	t.Helper()
 
 	data, err := fs.ReadFile(fsys, ".goreleaser.yaml")
@@ -32,24 +33,30 @@ func archiveFiles(t *testing.T, fsys fs.FS) []string {
 	if err != nil {
 		t.Fatalf(".goreleaser.yaml: archives: %v", err)
 	}
-	if len(archives) != 1 {
-		t.Fatalf(".goreleaser.yaml: %d archives, want 1: this test reads the files of one", len(archives))
+	if len(archives) == 0 {
+		t.Fatal(".goreleaser.yaml: archives: holds no entry, so the release ships nothing this test could read")
 	}
-	entries, err := yamlread.Mapping(archives[0].Lines)
-	if err != nil {
-		t.Fatalf(".goreleaser.yaml: archives: %v", err)
-	}
-	for _, e := range entries {
-		if e.Key == "files" {
-			files, err := yamlread.List(e)
-			if err != nil {
-				t.Fatalf(".goreleaser.yaml: archives: %v", err)
-			}
-			return files
+	lists := make([][]string, 0, len(archives))
+	for i, archive := range archives {
+		entries, err := yamlread.Mapping(archive.Lines)
+		if err != nil {
+			t.Fatalf(".goreleaser.yaml: archive %d: %v", i+1, err)
 		}
+		files := []string(nil)
+		for _, e := range entries {
+			if e.Key == "files" {
+				files, err = yamlread.List(e)
+				if err != nil {
+					t.Fatalf(".goreleaser.yaml: archive %d: files: %v", i+1, err)
+				}
+			}
+		}
+		if files == nil {
+			t.Fatalf(".goreleaser.yaml: archive %d lists no files", i+1)
+		}
+		lists = append(lists, files)
 	}
-	t.Fatal(".goreleaser.yaml: the archive lists no files")
-	return nil
+	return lists
 }
 
 // shipped reports whether name is in an archive whose files are files, read
@@ -72,16 +79,19 @@ func shipped(name string, files []string) bool {
 }
 
 // TestReadmeLinksStayInTheArchive fails on a relative link in README.md to a
-// file or directory the release archives do not ship: the archives ship
-// README.md, so its links must work in an unpacked archive too. Deep links
-// into the source belong in the pages under docs/.
+// file or directory a release archive does not ship: every archive ships
+// README.md, so its links must work in an unpacked archive too, whichever
+// binary's archive it is. Deep links into the source belong in the pages under
+// docs/.
 func TestReadmeLinksStayInTheArchive(t *testing.T) {
 	t.Parallel()
 
 	fsys := os.DirFS(repoRoot)
-	files := archiveFiles(t, fsys)
-	if !shipped("README.md", files) {
-		t.Fatalf(".goreleaser.yaml: the archives do not ship README.md; files: %q", files)
+	archives := archiveFiles(t, fsys)
+	for i, files := range archives {
+		if !shipped("README.md", files) {
+			t.Fatalf(".goreleaser.yaml: archive %d does not ship README.md; files: %q", i+1, files)
+		}
 	}
 
 	data, err := fs.ReadFile(fsys, "README.md")
@@ -93,8 +103,11 @@ func TestReadmeLinksStayInTheArchive(t *testing.T) {
 		if target == "" || strings.Contains(target, ":") {
 			continue
 		}
-		if name := path.Clean(target); !shipped(name, files) {
-			t.Errorf("README.md:%d: link %q: the release archives do not ship %s (.goreleaser.yaml, archives: files: %q)", l.Line, l.Dest, name, files)
+		name := path.Clean(target)
+		for i, files := range archives {
+			if !shipped(name, files) {
+				t.Errorf("README.md:%d: link %q: archive %d of .goreleaser.yaml does not ship %s (archives: files: %q)", l.Line, l.Dest, i+1, name, files)
+			}
 		}
 	}
 }

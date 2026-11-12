@@ -1,8 +1,8 @@
 # Verify a release
 
 Every published image is signed and carries build provenance and an SBOM. This page shows how to check
-all three for a release before you run it, inside the project's Lima VM too, and how to verify the
-releases published before the project's rename.
+all three for a release before you run it, inside the project's Lima VM too, how to check a release
+archive against its checksums, and how to verify the releases published before the project's rename.
 
 ## Verify the image
 
@@ -59,6 +59,46 @@ the same source, Go modules and distroless base (`crane digest --platform linux/
 platform's digest). The image's labels
 name the source repository (`org.opencontainers.image.source`) and the commit
 (`org.opencontainers.image.revision`).
+
+## Verify an archive
+
+The release archives, the CLI's `shift2eu_*` and the HTTP API's `shift2eu-server_*`
+([Install](install.md#the-release-archives)), are listed in one `checksums.txt`, published with the
+release. The archives and `checksums.txt` are neither signed nor attested: only the images are.
+`checksums.txt` comes from the same release as the archive, so a match detects a download corrupted
+in transit or on a mirror, not a compromised release or repository: whoever can replace a release's
+archive can replace its `checksums.txt` too. Where you need to know who published the binary, run the
+signed image instead. Check either archive the same way, with `TAG` set to the release you want:
+
+```bash
+TAG=vX.Y.Z
+VERSION="${TAG#v}"
+ARCHIVE="shift2eu_${VERSION}_linux_amd64.tar.gz"   # the HTTP API's: shift2eu-server_${VERSION}_linux_amd64.tar.gz
+
+gh release download "$TAG" --repo timothymamo/shift2eu --pattern "$ARCHIVE" --pattern checksums.txt
+awk -v a="$ARCHIVE" '$2 == a' checksums.txt > "$ARCHIVE.sha256"
+sha256sum --check "$ARCHIVE.sha256"   # macOS: shasum -a 256 --check "$ARCHIVE.sha256"
+tar -xzf "$ARCHIVE"
+```
+
+`awk` copies the line of `checksums.txt` whose name is exactly the archive's, and the check must print
+`<archive>: OK`. A wrong digest prints `FAILED` and exits non-zero; a name missing from `checksums.txt`
+leaves the copied file empty, which fails the check too (non-zero exit, no `OK`) instead of checking
+nothing. On Windows, in PowerShell, for a `.zip` archive:
+
+```powershell
+$Tag = "vX.Y.Z"
+$Archive = "shift2eu_$($Tag.TrimStart('v'))_windows_amd64.zip"   # the HTTP API's: shift2eu-server_...
+gh release download $Tag --repo timothymamo/shift2eu --pattern $Archive --pattern checksums.txt
+$Want = @(Get-Content checksums.txt | Where-Object { $_.EndsWith("  $Archive") })
+if ($Want.Count -ne 1) { throw "$Archive is not in checksums.txt exactly once" }
+if ((Get-FileHash -Algorithm SHA256 $Archive).Hash -ne $Want[0].Split(' ')[0]) { throw "$Archive does not match checksums.txt" }   # -ne ignores case
+Expand-Archive $Archive
+```
+
+Each archive holds only its own binary (`shift2eu` or `shift2eu-server`, `.exe` on Windows), with
+`README.md`, `LICENSE` and the Markdown pages under `docs/`. The `shift2eu-server_*` archives start
+with the first release after `v0.2.0`: `v0.2.0` and earlier shipped the CLI only, in `shift2eu_*`.
 
 ## Releases before the rename: v0.1.0 and v0.1.0-rc.1
 

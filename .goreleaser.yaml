@@ -46,18 +46,41 @@ builds:
     goos: [linux, darwin, windows]
     goarch: [amd64, arm64]
 
-# One archive per platform holds both binaries, shift2eu and shift2eu-server:
-# an archive without ids takes every build, so the archive names stay as they
-# were and a download gives the CLI and the server of the same release.
+# One archive per binary and platform, under the same tag and version (issue
+# #147): ids limits each entry to its own build, so the CLI's archive holds
+# shift2eu alone and keeps the name it has always had (goreleaser's default,
+# written out), and the server's holds shift2eu-server alone, named
+# shift2eu-server_<version>_<os>_<arch>. One checksums.txt covers every
+# archive, so both are verified the same way (ADR 0015).
+# test/architecture (check.GoReleaserArchives) pins this section and the
+# checksum one, and ci.yml's test job builds a snapshot and checks each
+# archive's binary (.github/scripts/verify-archives.sh).
+#
+# README.md links only to LICENSE and the pages under docs/ (test/docs holds
+# it to that), so each archive ships docs/ beside it and the links work in an
+# unpacked archive too (issue #149). docs/**/* matches only the files in
+# docs/'s subdirectories, so docs/*.md takes those directly in it.
 archives:
-  - formats: [tar.gz]
+  - id: shift2eu
+    ids: [shift2eu]
+    name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+    formats: [tar.gz]
     format_overrides:
       - goos: windows
         formats: [zip]
-    # README.md links only to LICENSE and the pages under docs/ (test/docs
-    # holds it to that), so the archive ships docs/ beside it and the links
-    # work in an unpacked archive too (issue #149). docs/**/* matches only the
-    # files in docs/'s subdirectories, so docs/*.md takes those directly in it.
+    files:
+      - LICENSE
+      - README.md
+      - docs/*.md
+      - docs/**/*
+
+  - id: shift2eu-server
+    ids: [shift2eu-server]
+    name_template: "{{ .ProjectName }}-server_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+    formats: [tar.gz]
+    format_overrides:
+      - goos: windows
+        formats: [zip]
     files:
       - LICENSE
       - README.md
