@@ -39,7 +39,8 @@ and smoke-tests it on every pull request; publishing it to a registry is a follo
   final stage has no `RUN`, so nothing executes on the target platform either: the arm64 build needs no
   QEMU, and CI installs none (no privileged `binfmt` container). The builder's libc does not matter, as
   the binary links none; alpine is the smallest to pull.
-- **Same build as the release.** `CGO_ENABLED=0`, `-trimpath`, `-ldflags "-s -w"` and the
+- **Same build as the release.** `CGO_ENABLED=0`, `GOWORK=off` and `GOFLAGS=-mod=readonly` (issue
+  #102, ADR 0012), `-trimpath`, `-ldflags "-s -w"` and the
   `internal/version` `-X` flags, as in `.goreleaser.yaml`. `test/container` reads those settings from
   `.goreleaser.yaml` and fails when the `Dockerfile` drifts from them, or from the `go.mod` version.
 - **Versioning from git.** `VERSION`, `COMMIT` and `DATE` are build args, defaulting to the values in
