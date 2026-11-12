@@ -60,8 +60,10 @@ var limaBreakages = []limaBreakage{
 		// Anchored on containerd's user flag, not on cpus: a CPU count is something people tune in
 		// dev/lima.yaml, and re-anchoring the case with every such change is noise. maybe is no
 		// boolean in any YAML version (unlike yes/no/on/off), so Lima cannot unmarshal it as a bool.
+		// The refusal names the field and its type, once CI had confirmed the wording against Lima
+		// 2.3.0: bare "of type bool" matched a mistyped bool anywhere, whatever the field.
 		why:     "containerd's user is not a boolean",
-		refusal: "of type bool",
+		refusal: "Go struct field LimaYAML.Containerd of type bool",
 		old:     `  user: false`,
 		new:     `  user: maybe`,
 	},
