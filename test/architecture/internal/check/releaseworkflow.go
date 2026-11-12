@@ -163,8 +163,9 @@ var (
 
 	// goreleaserSteps are the goreleaser job's steps: no repository code runs
 	// before goreleaser, which is asked for exactly release --clean, and the
-	// archives and checksums.txt leave the job as a short-lived workflow
-	// artifact for the attest-archives job (issue #163).
+	// archives and checksums.txt leave the job as a workflow artifact for the
+	// attest-archives and publish jobs, kept a week so a failed attestation or
+	// publication is recovered by re-running the failed jobs (issue #163).
 	goreleaserSteps = []releaseStep{
 		fullCheckoutStep,
 		setupGoStep,
@@ -183,16 +184,16 @@ var (
 				"name":              exactly(archivesArtifact),
 				"path":              exactly("dist/" + strings.Join(attestedArchives, "\ndist/")),
 				"if-no-files-found": exactly("error"),
-				"retention-days":    exactly("1"),
+				"retention-days":    exactly("7"),
 			},
 		},
 	}
 )
 
 // The release's archives and checksums.txt: the workflow artifact that hands
-// them from the goreleaser job to the attest-archives job, and the patterns
-// of the files that job attests, which verify-archives downloads from the
-// published release and verifies (issue #163).
+// them from the goreleaser job to the attest-archives and publish jobs, and
+// the patterns of the files that job attests, which verify-archives verifies
+// on the published release (issue #163).
 const archivesArtifact = "archives"
 
 // attestedArchives are the files handed on and attested, each archive named by
@@ -205,9 +206,9 @@ var attestedArchives = []string{
 	"checksums.txt",
 }
 
-// archiveSubjects are the patterns verify-archives downloads and verifies: a
-// published release holds only the archives and checksums.txt, so a bare
-// pattern names exactly them there.
+// archiveSubjects are the patterns whose attestations verify-archives
+// verifies: it checks first that the release holds only checksums.txt and the
+// archives it lists, so a bare pattern names exactly them there.
 var archiveSubjects = []string{"shift2eu_*", "shift2eu-server_*", "checksums.txt"}
 
 // attestArchivesSteps are the attest-archives job's steps: GitHub's own
@@ -229,34 +230,105 @@ var attestArchivesSteps = []releaseStep{
 // ghEnv is the env: of a gh step: the tag, and the job's own token for gh.
 var ghEnv = []string{tagEnv, "GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}"}
 
-// publishSteps are the publish job's steps: the one command that publishes
-// the draft release GoReleaser uploaded to (issue #156). gh is given the
-// repository with --repo: the job checks nothing out, so gh has no git
-// repository to read it from.
-var publishSteps = []releaseStep{{
-	what: "the publication of the draft release", name: "Publish the draft release",
-	env: ghEnv,
-	run: `gh release edit "$TAG" --repo ` + releaseRepo + ` --draft=false`,
-}}
+// publishSteps are the publish job's steps (issue #156): GitHub's own
+// download of the archives' workflow artifact, for the checksums.txt the
+// attest-archives job attested; the check that the draft release GoReleaser
+// uploaded to holds exactly that file and the files it lists, each with the
+// digest it records, read from the API's list of the releases since a draft
+// is not readable by its tag; and the one command that publishes the draft.
+// gh is given the repository with --repo: the job checks nothing out, so gh
+// has no git repository to read it from.
+var publishSteps = []releaseStep{
+	{
+		what: "actions/download-artifact (the archives)", uses: downloadArtifactAction,
+		with: map[string]*regexp.Regexp{"name": exactly(archivesArtifact)},
+	},
+	{
+		what: "the check of the draft's assets", name: "Check the draft's assets against checksums.txt",
+		env: ghEnv,
+		run: strings.Join([]string{
+			strictShell,
+			`tmp="$(mktemp -d)"`,
+			`# A draft release is not readable by its tag. The API lists it among`,
+			`# the releases, with draft: true, and gives every asset the digest of`,
+			`# its bytes. --paginate --slurp hands the pages over as one array of`,
+			`# pages, which add joins into one list of releases.`,
+			`gh api --paginate --slurp "repos/` + releaseRepo + `/releases" > "$tmp/releases.json"`,
+			`if [ "$(jq --arg tag "$TAG" 'add | map(select(.draft and .tag_name == $tag)) | length' "$tmp/releases.json")" != 1 ]; then`,
+			`  echo "repos/` + releaseRepo + ` holds no single draft release for $TAG" >&2`,
+			`  exit 1`,
+			`fi`,
+			`# The names checksums.txt lists, and checksums.txt itself: what the`,
+			`# draft release must hold exactly, so nothing is published that the`,
+			`# attestation never covered.`,
+			`{`,
+			`  sed -e 's/^[0-9a-f]\{64\}  //' checksums.txt`,
+			`  echo checksums.txt`,
+			`} | sort > "$tmp/attested.txt"`,
+			`jq --arg tag "$TAG" -r 'add | map(select(.draft and .tag_name == $tag)) | .[0].assets[] | .name' "$tmp/releases.json" | sort > "$tmp/published.txt"`,
+			`if ! cmp -s "$tmp/attested.txt" "$tmp/published.txt"; then`,
+			`  echo "the draft release for $TAG does not hold what checksums.txt lists:" >&2`,
+			`  diff -u "$tmp/attested.txt" "$tmp/published.txt" >&2 || true`,
+			`  exit 1`,
+			`fi`,
+			`# Every asset's digest is the one checksums.txt lists: the bytes the`,
+			`# attestation covers are the bytes that are published.`,
+			`while read -r hash name; do printf 'sha256:%s %s\n' "$hash" "$name"; done < checksums.txt | sort > "$tmp/attested-digests.txt"`,
+			`jq --arg tag "$TAG" -r 'add | map(select(.draft and .tag_name == $tag)) | .[0].assets[] | select(.name != "checksums.txt") | "\(.digest) \(.name)"' "$tmp/releases.json" | sort > "$tmp/published-digests.txt"`,
+			`if ! cmp -s "$tmp/attested-digests.txt" "$tmp/published-digests.txt"; then`,
+			`  echo "the draft release for $TAG holds an asset whose digest checksums.txt does not list:" >&2`,
+			`  diff -u "$tmp/attested-digests.txt" "$tmp/published-digests.txt" >&2 || true`,
+			`  exit 1`,
+			`fi`,
+			`# checksums.txt is attested too: the draft's copy must be the very`,
+			`# file this run attested, not one written after the attestation.`,
+			`if [ "$(jq --arg tag "$TAG" -r 'add | map(select(.draft and .tag_name == $tag)) | .[0].assets[] | select(.name == "checksums.txt") | .digest' "$tmp/releases.json")" != "sha256:$(sha256sum checksums.txt | cut -d' ' -f1)" ]; then`,
+			`  echo "the draft release's checksums.txt is not the one this run attested" >&2`,
+			`  exit 1`,
+			`fi`,
+		}, "\n"),
+	},
+	{
+		what: "the publication of the draft release", name: "Publish the draft release",
+		env: ghEnv,
+		run: `gh release edit "$TAG" --repo ` + releaseRepo + ` --draft=false`,
+	},
+}
 
-// verifyArchivesSteps are the verify-archives job's steps: the published
-// release's own archives and checksums.txt, their digests, and the build
+// verifyArchivesSteps are the verify-archives job's steps: every asset of the
+// published release, the check that it is published and holds exactly
+// checksums.txt and the files it lists, their digests, and the build
 // provenance of each, made by the release workflow for this tag and this
 // commit on GitHub's runners (docs/guide/verify-releases.md, issue #163).
 var verifyArchivesSteps = []releaseStep{
 	{
 		what: "the download of the published archives", name: "Download the published archives",
 		env: ghEnv,
-		run: strings.Join([]string{
-			`gh release download "$TAG" --repo ` + releaseRepo + ` \`,
-			`  --pattern 'shift2eu_*' --pattern 'shift2eu-server_*' --pattern checksums.txt`,
-		}, "\n"),
+		run: `gh release download "$TAG" --repo ` + releaseRepo,
 	},
 	{
 		what: "the archives' verification", name: "Verify the published archives",
 		env: ghEnv,
 		run: strings.Join([]string{
 			strictShell,
+			`if [ "$(gh release view "$TAG" --repo ` + releaseRepo + ` --json isDraft --jq '.isDraft')" != false ]; then`,
+			`  echo "the release of $TAG is still a draft, so it was never published" >&2`,
+			`  exit 1`,
+			`fi`,
+			`tmp="$(mktemp -d)"`,
+			`# The files checksums.txt lists, and checksums.txt itself: what the`,
+			`# release must hold exactly, so nothing is verified that the`,
+			`# release does not carry, and nothing is left unverified.`,
+			`{`,
+			`  sed -e 's/^[0-9a-f]\{64\}  //' checksums.txt`,
+			`  echo checksums.txt`,
+			`} | sort > "$tmp/attested.txt"`,
+			`ls -1 | sort > "$tmp/downloaded.txt"`,
+			`if ! cmp -s "$tmp/attested.txt" "$tmp/downloaded.txt"; then`,
+			`  echo "the release of $TAG does not hold what checksums.txt lists:" >&2`,
+			`  diff -u "$tmp/attested.txt" "$tmp/downloaded.txt" >&2 || true`,
+			`  exit 1`,
+			`fi`,
 			`sha256sum -c checksums.txt`,
 			`for subject in ` + strings.Join(archiveSubjects, " ") + `; do`,
 			`  gh attestation verify "$subject" --repo ` + releaseRepo + ` \`,
@@ -688,20 +760,20 @@ var releaseJobs = func() []releaseJob {
 //     run may be replaced by a newer tag's and must then be re-run by hand,
 //     ADR 0015) and jobs, so no workflow-level env: or defaults:;
 //   - jobs holds exactly test, goreleaser, attest-archives, publish, an
-//     image, an sbom and a sign job for each image the release publishes: image, sbom and sign for the
-//     CLI's, ghcr.io/timothymamo/shift2eu; server-image, server-sbom and
-//     server-sign for the HTTP API's, ghcr.io/timothymamo/shift2eu-server
-//     (PRD #103), whose job names end " (shift2eu-server)"; verify, the
-//     independent check of the images the release published (issue #99); and
-//     verify-archives, that of its archives (issue #163). Each holds
-//     exactly name, runs-on (ubuntu-latest), permissions and steps, and needs
-//     for all but test (goreleaser needs test; attest-archives goreleaser;
-//     publish [test, goreleaser, attest-archives]; an image job [test,
-//     goreleaser]; an sbom job its image job; a sign job [its image job, its
-//     sbom job], in that order; verify [image, sign, server-image,
-//     server-sign]; verify-archives publish), and an image job
-//     an outputs: of exactly its build's digest, so no job-level env:,
-//     container:, if: or other key;
+//     image, an sbom and a sign job for each image the release publishes
+//     (image, sbom and sign for the CLI's, ghcr.io/timothymamo/shift2eu;
+//     server-image, server-sbom and server-sign for the HTTP API's,
+//     ghcr.io/timothymamo/shift2eu-server, PRD #103, whose job names end
+//     " (shift2eu-server)"), verify, the independent check of the images
+//     the release published (issue #99), and verify-archives, that of its
+//     archives (issue #163). Each holds exactly name, runs-on
+//     (ubuntu-latest), permissions and steps, and needs for all but test
+//     (goreleaser needs test; attest-archives goreleaser; publish [test,
+//     goreleaser, attest-archives]; an image job [test, goreleaser]; an sbom
+//     job its image job; a sign job [its image job, its sbom job], in that
+//     order; verify [image, sign, server-image, server-sign]; verify-archives
+//     publish), and an image job an outputs: of exactly its build's digest,
+//     so no job-level env:, container:, if: or other key;
 //   - the permissions are exactly contents: read for test; contents: write
 //     for goreleaser and for publish; id-token: write, attestations: write
 //     and contents: read for attest-archives; contents: read and packages:
@@ -715,17 +787,24 @@ var releaseJobs = func() []releaseJob {
 //     actions/setup-go and make test; the goreleaser job's exactly
 //     actions/checkout, actions/setup-go, goreleaser/goreleaser-action and
 //     actions/upload-artifact of the archives, each named by its extension,
-//     and checksums.txt (archives, kept one day), setup-go with cache: false in both jobs, goreleaser
-//     asked for exactly release --clean at an exact version, with an env: of
-//     exactly GITHUB_TOKEN from secrets.GITHUB_TOKEN;
+//     and checksums.txt (archives, kept seven days so a failed attestation or
+//     publication can be re-run); setup-go with cache: false in both jobs,
+//     goreleaser asked for exactly release --clean at an exact version, with
+//     an env: of exactly GITHUB_TOKEN from secrets.GITHUB_TOKEN;
 //   - the attest-archives job's steps are exactly actions/download-artifact
 //     of that artifact, sha256sum -c checksums.txt and
 //     actions/attest-build-provenance with a subject-path of every archive,
-//     by its extension, and checksums.txt; the publish job's exactly gh
-//     release edit "$TAG" --repo timothymamo/shift2eu --draft=false, which publishes the draft release GoReleaser uploaded
-//     to (.goreleaser.yaml's release.draft, check.GitHubRelease), with the tag
-//     and token through env:, the one step of the workflow that publishes it
-//     (issue #156);
+//     by its extension, and checksums.txt;
+//   - the publish job's steps are exactly actions/download-artifact of that
+//     artifact, the check of the draft release (an exact run: script under
+//     set -euo pipefail, reading the API's list of the releases: exactly one
+//     draft for the tag, holding exactly checksums.txt and the files it
+//     lists, each asset's digest the one it records, and its checksums.txt
+//     the attested one), and gh release edit "$TAG" --repo
+//     timothymamo/shift2eu --draft=false, which publishes the draft release
+//     GoReleaser uploaded to (.goreleaser.yaml's release.draft,
+//     check.GitHubRelease), the tag and token through env: in both gh steps;
+//     the one step of the workflow that publishes it (issue #156);
 //   - an image job's steps are exactly actions/checkout, the stamp of the
 //     build arguments and of the latest decision (a run: script, with the
 //     tag through env:, counting only the release tags merged into
@@ -759,10 +838,12 @@ var releaseJobs = func() []releaseJob {
 //     tags merged into main, read by ancestry from a treeless fetch into a
 //     repository of the job's own, with no checkout;
 //   - the verify-archives job's steps are exactly gh release download, with
-//     --repo, of the published release's archives and checksums.txt, and, under set -euo
-//     pipefail, sha256sum -c checksums.txt and gh attestation verify of every
-//     archive and of checksums.txt with the release identity, bound to this
-//     tag and commit, on GitHub's runners only;
+//     --repo, of every asset of the published release, and, under set -euo
+//     pipefail, the check that the release is not a draft and holds exactly
+//     checksums.txt and the files it lists, sha256sum -c checksums.txt, and
+//     gh attestation verify of every archive and of checksums.txt with the
+//     release identity, bound to this tag and commit, on GitHub's runners
+//     only;
 //   - every step holds exactly the keys listed (name, id, uses, with, env,
 //     run), in that order of steps, each action pinned by commit, each with:
 //     key and value, env: line and run: command as listed. A run: command is
