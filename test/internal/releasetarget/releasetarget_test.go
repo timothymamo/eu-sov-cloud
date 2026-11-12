@@ -11,9 +11,11 @@ import (
 )
 
 // The .goreleaser.yaml documents below are hand-written copies of this
-// repository's build, cut down to the keys Read reads. The build has
-// one build, CGO_ENABLED=0, and three goos by two goarch: six platforms, which
-// is the list every case below compares against or breaks.
+// repository's build, cut down to the keys Read reads. The build has one
+// build, the environment Env names (CGO_ENABLED=0, GOWORK=off and
+// GOFLAGS=-mod=readonly, in that order; issue #102), and three goos by two
+// goarch: six platforms, which is the list every case below compares against
+// or breaks.
 //
 // buildFlow and buildReal live in testdata, as files: the tests of
 // test/architecture/internal/check add a release section to the same two
@@ -46,6 +48,8 @@ builds:
     binary: eusov
     env:
       - CGO_ENABLED=0
+      - GOWORK=off
+      - GOFLAGS=-mod=readonly
     goos:
       - linux
       - darwin
@@ -62,13 +66,14 @@ builds:
 builds:
   - id: eusov
     main: ./cmd/eusov
-    env: [CGO_ENABLED=0]
+    env: [CGO_ENABLED=0, GOWORK=off, GOFLAGS=-mod=readonly]
     goos: [linux, darwin, windows]
     goarch: [amd64, arm64]
 `
 
 	// buildCgoOn turns cgo on: a release build that would link the host's C
-	// library and so depend on what the host has installed.
+	// library and so depend on what the host has installed. It is Env with its
+	// first entry turned on, so a case using it fails for cgo alone.
 	buildCgoOn = `version: 2
 
 builds:
@@ -76,6 +81,8 @@ builds:
     main: ./cmd/eusov
     env:
       - CGO_ENABLED=1
+      - GOWORK=off
+      - GOFLAGS=-mod=readonly
     goos: [linux, darwin, windows]
     goarch: [amd64, arm64]
 `
@@ -99,6 +106,8 @@ builds:
     main: ./cmd/eusov
     env:
       - CGO_ENABLED=0
+      - GOWORK=off
+      - GOFLAGS=-mod=readonly
     goos: []
     goarch: [amd64, arm64]
 `
@@ -112,6 +121,8 @@ builds:
     main: ./cmd/eusov
     env:
       - CGO_ENABLED=0
+      - GOWORK=off
+      - GOFLAGS=-mod=readonly
     goos: [linux, darwin, windows]
 `
 
@@ -124,12 +135,16 @@ builds:
     main: ./cmd/eusov
     env:
       - CGO_ENABLED=0
+      - GOWORK=off
+      - GOFLAGS=-mod=readonly
     goos: [linux, darwin, windows]
     goarch: [amd64, arm64]
   - id: eusov-helper
     main: ./cmd/eusov-helper
     env:
       - CGO_ENABLED=0
+      - GOWORK=off
+      - GOFLAGS=-mod=readonly
     goos: [linux]
     goarch: [amd64]
 `
@@ -143,6 +158,8 @@ builds:
     main: ./cmd/eusov
     env:
       - CGO_ENABLED=0
+      - GOWORK=off
+      - GOFLAGS=-mod=readonly
     goos: [linux, darwin, windows]
     goarch: [amd64, arm64]
     ignore:
@@ -159,6 +176,8 @@ builds:
     main: ./cmd/eusov
     env:
       - CGO_ENABLED=0
+      - GOWORK=off
+      - GOFLAGS=-mod=readonly
     targets:
       - linux_amd64
       - darwin_arm64
@@ -177,6 +196,8 @@ builds:
     main: ./cmd/eusov
     env:
       - CGO_ENABLED=0
+      - GOWORK=off
+      - GOFLAGS=-mod=readonly
     goos: [linux, darwin, windows]
     goarch: [amd64, arm64]
 `
@@ -195,6 +216,8 @@ builds:
     main: ./cmd/eusov
     env:
       - CGO_ENABLED=0
+      - GOWORK=off
+      - GOFLAGS=-mod=readonly
     goos: [linux, darwin, windows]
     goarch: [amd64, arm64]
 `
@@ -212,6 +235,8 @@ builds:
     main: ./cmd/eusov
     env:
       - CGO_ENABLED=0
+      - GOWORK=off
+      - GOFLAGS=-mod=readonly
     goos: [linux, darwin, windows]
     goarch: [amd64, arm64]
 `
@@ -225,6 +250,8 @@ builds:
     main: ./cmd/eusov
     env:
       - CGO_ENABLED=0
+      - GOWORK=off
+      - GOFLAGS=-mod=readonly
     goos: [linux]
     goos: [linux, darwin, windows]
     goarch: [amd64, arm64]
@@ -240,6 +267,8 @@ builds:
     main: ./cmd/eusov
     env:
       - CGO_ENABLED=0
+      - GOWORK=off
+      - GOFLAGS=-mod=readonly
     goos: [linux, darwin, '{{ .GOOS }}']
     goarch: [amd64, arm64]
 `
@@ -255,6 +284,8 @@ builds:
     main: ./cmd/eusov
     env:
       - CGO_ENABLED=0
+      - GOWORK=off
+      - GOFLAGS=-mod=readonly
     goos: [linux, darwin, windows]
     goarch: [amd64, arm64]
 `
@@ -268,6 +299,8 @@ builds:
     main: ./cmd/eusov
     env: &envs
       - CGO_ENABLED=0
+      - GOWORK=off
+      - GOFLAGS=-mod=readonly
     goos: [linux, darwin, windows]
     goarch: [amd64, arm64]
 `
@@ -281,6 +314,8 @@ builds:
     main: ./cmd/eusov
     env:
       - CGO_ENABLED=0
+      - GOWORK=off
+      - GOFLAGS=-mod=readonly
     goos: *gos
     goarch: [amd64, arm64]
 `
@@ -295,12 +330,18 @@ builds:
     main: ./cmd/eusov
     env:
       - CGO_ENABLED=0
+      - GOWORK=off
+      - GOFLAGS=-mod=readonly
     goos: [linux, darwin, windows]
     goarch: # amd64 and arm64 only` + "\r" + `      - riscv64
       - amd64
       - arm64
 `
 )
+
+// envDoc is the build environment Read requires, in block form: the entries of
+// Env, in its order, each line already indented under the build's dash.
+const envDoc = "    env:\n      - CGO_ENABLED=0\n      - GOWORK=off\n      - GOFLAGS=-mod=readonly\n"
 
 // buildDoc returns a .goreleaser.yaml with one build: the lines given, each
 // already indented under the build's dash, then the six-platform goos and
@@ -315,7 +356,7 @@ func buildDoc(lines string) string {
 // build's dash: for a case about a list itself rather than about the keys
 // around it.
 func buildLists(goos, goarch string) string {
-	return "version: 2\n\nbuilds:\n  - id: eusov\n    main: ./cmd/eusov\n    env:\n      - CGO_ENABLED=0\n" +
+	return "version: 2\n\nbuilds:\n  - id: eusov\n    main: ./cmd/eusov\n" + envDoc +
 		goos + "\n" + goarch + "\n"
 }
 
@@ -463,26 +504,69 @@ func TestRead(t *testing.T) {
 			wantErr:    true,
 		},
 
-		// The build environment the release was reviewed for is exactly one
-		// entry, CGO_ENABLED=0.
+		// The build environment the release was reviewed for is exactly the
+		// three entries Env names, in its order: cgo off, so the binary links no
+		// C library; GOWORK=off, so no go.work in a parent directory puts the
+		// build in workspace mode; and GOFLAGS=-mod=readonly, so the build never
+		// rewrites go.mod, go.sum or a vendor tree (issue #102).
 		{
-			name:       "a second env entry beside CGO_ENABLED=0 is refused",
-			goreleaser: buildDoc("    env:\n      - CGO_ENABLED=0\n      - FOO=bar\n"),
+			name:       "an env of only CGO_ENABLED=0 is refused",
+			goreleaser: buildDoc("    env:\n      - CGO_ENABLED=0\n"),
 			wantErr:    true,
 		},
 		{
-			name:       "a GOFLAGS entry beside CGO_ENABLED=0 is refused",
-			goreleaser: buildDoc("    env:\n      - CGO_ENABLED=0\n      - GOFLAGS=-tags=x\n"),
+			name:       "an env without GOWORK=off is refused",
+			goreleaser: buildDoc("    env:\n      - CGO_ENABLED=0\n      - GOFLAGS=-mod=readonly\n"),
 			wantErr:    true,
 		},
 		{
-			name:       "a templated env name is refused",
-			goreleaser: buildDoc("    env:\n      - CGO_ENABLED=0\n      - '{{ \"GOFLAGS\" }}=-tags=sneaky'\n"),
+			name:       "an env without GOFLAGS=-mod=readonly is refused",
+			goreleaser: buildDoc("    env:\n      - CGO_ENABLED=0\n      - GOWORK=off\n"),
+			wantErr:    true,
+		},
+		{
+			name:       "the entries in another order are refused",
+			goreleaser: buildDoc("    env:\n      - GOWORK=off\n      - CGO_ENABLED=0\n      - GOFLAGS=-mod=readonly\n"),
+			wantErr:    true,
+		},
+		{
+			name:       "GOWORK=on is refused",
+			goreleaser: buildDoc("    env:\n      - CGO_ENABLED=0\n      - GOWORK=on\n      - GOFLAGS=-mod=readonly\n"),
+			wantErr:    true,
+		},
+		{
+			name:       "GOWORK naming a go.work file is refused",
+			goreleaser: buildDoc("    env:\n      - CGO_ENABLED=0\n      - GOWORK=/some/go.work\n      - GOFLAGS=-mod=readonly\n"),
+			wantErr:    true,
+		},
+		{
+			name:       "GOFLAGS=-mod=mod is refused",
+			goreleaser: buildDoc("    env:\n      - CGO_ENABLED=0\n      - GOWORK=off\n      - GOFLAGS=-mod=mod\n"),
+			wantErr:    true,
+		},
+		{
+			name:       "GOFLAGS=-mod=vendor is refused",
+			goreleaser: buildDoc("    env:\n      - CGO_ENABLED=0\n      - GOWORK=off\n      - GOFLAGS=-mod=vendor\n"),
+			wantErr:    true,
+		},
+		{
+			name:       "GOFLAGS=-mod=readonly with another flag is refused",
+			goreleaser: buildDoc("    env:\n      - CGO_ENABLED=0\n      - GOWORK=off\n      - GOFLAGS=-mod=readonly -tags=x\n"),
+			wantErr:    true,
+		},
+		{
+			name:       "a fourth env entry is refused",
+			goreleaser: buildDoc(envDoc + "      - FOO=bar\n"),
+			wantErr:    true,
+		},
+		{
+			name:       "a templated env entry is refused",
+			goreleaser: buildDoc("    env:\n      - CGO_ENABLED=0\n      - GOWORK=off\n      - GOFLAGS=-mod=readonly\n      - '{{ \"GOFLAGS\" }}=-tags=sneaky'\n"),
 			wantErr:    true,
 		},
 		{
 			name:       "CGO_ENABLED=0 listed twice is refused",
-			goreleaser: buildDoc("    env:\n      - CGO_ENABLED=0\n      - CGO_ENABLED=0\n"),
+			goreleaser: buildDoc("    env:\n      - CGO_ENABLED=0\n      - CGO_ENABLED=0\n      - GOWORK=off\n      - GOFLAGS=-mod=readonly\n"),
 			wantErr:    true,
 		},
 
@@ -490,22 +574,22 @@ func TestRead(t *testing.T) {
 		// cannot change which files the release compiles.
 		{
 			name:       "a tags key is refused",
-			goreleaser: buildDoc("    env:\n      - CGO_ENABLED=0\n    tags:\n      - sneaky\n"),
+			goreleaser: buildDoc(envDoc + "    tags:\n      - sneaky\n"),
 			wantErr:    true,
 		},
 		{
 			name:       "an overrides key is refused",
-			goreleaser: buildDoc("    env:\n      - CGO_ENABLED=0\n    overrides:\n      - goos: linux\n        goarch: arm64\n"),
+			goreleaser: buildDoc(envDoc + "    overrides:\n      - goos: linux\n        goarch: arm64\n"),
 			wantErr:    true,
 		},
 		{
 			name:       "a goamd64 key is refused",
-			goreleaser: buildDoc("    env:\n      - CGO_ENABLED=0\n    goamd64:\n      - v3\n"),
+			goreleaser: buildDoc(envDoc + "    goamd64:\n      - v3\n"),
 			wantErr:    true,
 		},
 		{
 			name:       "a flag other than -trimpath is refused",
-			goreleaser: buildDoc("    env:\n      - CGO_ENABLED=0\n    flags:\n      - -trimpath\n      - -tags=x\n"),
+			goreleaser: buildDoc(envDoc + "    flags:\n      - -trimpath\n      - -tags=x\n"),
 			wantErr:    true,
 		},
 		{
@@ -620,5 +704,32 @@ func TestRead(t *testing.T) {
 				t.Errorf("Read() mismatch (-want +got):\n%s", diff)
 			}
 		})
+	}
+}
+
+// TestEnv pins the build environment Read requires, the one the release and
+// the image must both build with: cgo off, no Go workspace and modules
+// read-only, in that order (issue #102). Env returns a fresh copy each time,
+// so a caller that reorders, truncates or edits the slice it got cannot change
+// what the next call, and so the next build, is held to.
+func TestEnv(t *testing.T) {
+	t.Parallel()
+
+	want := []string{"CGO_ENABLED=0", "GOWORK=off", "GOFLAGS=-mod=readonly"}
+
+	got := releasetarget.Env()
+	if diff := cmp.Diff(want, got); diff != "" {
+		t.Errorf("Env() mismatch (-want +got):\n%s", diff)
+	}
+
+	// The caller that mutates the slice it was given must not change what a
+	// later call returns: Read holds every build entry to Env, and a caller
+	// that edited the shared slice would loosen that rule for everyone.
+	for i := range got {
+		got[i] = "MUTATED"
+	}
+
+	if diff := cmp.Diff(want, releasetarget.Env()); diff != "" {
+		t.Errorf("Env() changed after a caller mutated the slice it returned (-want +got):\n%s\nwant a fresh copy on every call", diff)
 	}
 }

@@ -92,7 +92,8 @@ func TestEveryBaseImageIsDigestPinned(t *testing.T) {
 }
 
 // TestBuildMatchesGoReleaser pins that the image's build carries the settings
-// .goreleaser.yaml gives the release binary: cgo off, -trimpath, the -s -w
+// .goreleaser.yaml gives the release binary: the build environment the release
+// requires (cgo off, no Go workspace, modules read-only), -trimpath, the -s -w
 // linker flags and the internal/version -X flags, the same main package, and a
 // cross build from TARGETOS and TARGETARCH. The test reads the settings from
 // .goreleaser.yaml rather than pinning a copy of them here.
@@ -102,12 +103,22 @@ func TestBuildMatchesGoReleaser(t *testing.T) {
 	settings := parseBuildSettings(t, readRepoFile(t, goreleaserName))
 	dockerfile := joinedInstructions(dockerfileInstructions(t, readRepoFile(t, dockerfileName)))
 
+	// The env entries are the ones test/internal/releasetarget.Env names, which
+	// releasetarget.Read holds the builds entry to (issue #102): cgo off, so
+	// nothing links a C library; GOWORK=off, so no go.work in a parent directory
+	// puts the build in workspace mode; and GOFLAGS=-mod=readonly, so the build
+	// never rewrites go.mod, go.sum or a vendor tree. They are listed here rather
+	// than read from Env so a missing setting is reported against the document
+	// and the Dockerfile, in this package, and not as a build failure of the
+	// package that will export them.
 	settingsToMatch := []struct {
 		setting string
 		list    string
 		in      []string
 	}{
 		{setting: "CGO_ENABLED=0", list: "env", in: settings.env},
+		{setting: "GOWORK=off", list: "env", in: settings.env},
+		{setting: "GOFLAGS=-mod=readonly", list: "env", in: settings.env},
 		{setting: "-trimpath", list: "flags", in: settings.flags},
 		{setting: "-s -w", list: "ldflags", in: settings.ldflags},
 	}
