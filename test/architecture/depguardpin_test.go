@@ -264,9 +264,13 @@ var pinnedDepguardRules = []check.DepguardRule{
 		Deny: []string{
 			"github.com/timothymamo/shift2eu/internal/adapter/internal/",
 			"github.com/timothymamo/shift2eu/internal/adapter/report/",
+			"github.com/timothymamo/shift2eu/internal/adapter/report$",
 			"github.com/timothymamo/shift2eu/internal/adapter/request/",
+			"github.com/timothymamo/shift2eu/internal/adapter/request$",
 			"github.com/timothymamo/shift2eu/internal/adapter/source/",
+			"github.com/timothymamo/shift2eu/internal/adapter/source$",
 			"github.com/timothymamo/shift2eu/internal/adapter/target/",
+			"github.com/timothymamo/shift2eu/internal/adapter/target$",
 		},
 	},
 	{

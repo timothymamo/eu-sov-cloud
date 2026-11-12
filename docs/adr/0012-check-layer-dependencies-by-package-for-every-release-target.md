@@ -216,10 +216,11 @@ reader of the depguard pin, aliased deny lists included, and fails on any allow 
 without `$` that is a strict prefix of another entry in the same list, the shape that makes depguard
 ignore the shorter one; a bare `net` or `os` beside `net/http` or `os/exec` is written `net$` or
 `os$` instead, with each subpackage named. `TestAdaptersBuiltInCmdNamesEveryAdapterSubtree` fails on
-a directory under `internal/adapter` that has no deny entry of its own in `adapters-are-built-in-cmd`,
+a directory under `internal/adapter` that has no deny entry of its own in `adapters-are-built-in-cmd`
+(both `<dir>/` and, but for `internal/`, the exact `<dir>$` for a package at the subtree's root),
 or a file placed there directly, so a new adapter subtree cannot escape the rule. `test/lint`'s
 `TestAdaptersBuiltInCmdProbe` runs depguard alone, through the forbidigo probe harness, on a probe
-module that imports an adapter from each subtree outside the composition roots, and runs with
+module that imports an adapter from each subtree, and each subtree's root, outside the composition roots, and runs with
 `SHIFT2EU_LINT_PROBES=require` in `make lint` and every lint-target matrix entry.
 
 The checks are ordinary tests, so `make test`, `make check` and CI's `make cover` run them with no

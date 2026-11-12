@@ -365,9 +365,11 @@ repo-relative path, which a reader outside the repository cannot follow.
   `internal/adapter/internal/` sorted after `internal/adapter/` and before every real adapter
   subpackage, so an import of an adapter was compared with that entry alone. Issue #119 replaced
   `internal/adapter/` with one deny entry per subtree (`report/`, `request/`, `source/`, `target/`)
-  beside `internal/adapter/internal/`. `test/lint` runs depguard on a probe that imports an adapter
-  from each subtree in `internal/httpapi` (`TestAdaptersBuiltInCmdProbe`), and `test/architecture`
-  fails on a deny or allow entry that is a strict prefix of another in the same list
+  beside `internal/adapter/internal/`, and an exact entry (`report$`, `request$`, `source$`,
+  `target$`) for the package at each subtree's root, which the `/` entry does not cover. `test/lint`
+  runs depguard on a probe that imports an adapter from each subtree in `internal/httpapi`, and both
+  an adapter and the root package of each subtree in `internal/foo`, which no strict rule holds
+  (`TestAdaptersBuiltInCmdProbe`), and `test/architecture` fails on a deny or allow entry that is a strict prefix of another in the same list
   (`TestDepguardEntriesShadowNothing`) and on a directory under `internal/adapter` the rule does not
   name (`TestAdaptersBuiltInCmdNamesEveryAdapterSubtree`).
 - A change to a route, a status code or an error code updates `api/openapi.json` in the same change,

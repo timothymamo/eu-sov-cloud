@@ -402,15 +402,19 @@ linters:
         # adapter/ beside internal/adapter/internal/, every adapter under
         # report/, request/, source/ or target/ sorts after internal/, was
         # compared with that entry alone, and the rule reported nothing
-        # (issue #119). Siblings never shadow each other. A new subtree
+        # (issue #119). Siblings never shadow each other. An entry ending in
+        # / does not cover the package at its own root, so report$,
+        # request$, source$ and target$ deny a package placed directly in
+        # each subtree (internal/ has none, its helpers are named one by
+        # one above); an exact entry shadows nothing. A new subtree
         # under internal/adapter would match no entry and escape the rule, so
         # test/architecture fails on an entry of internal/adapter that is not
         # a directory with a deny entry of its own here
         # (TestAdaptersBuiltInCmdNamesEveryAdapterSubtree), and on any entry
         # that is a strict prefix of another in the same list
         # (TestDepguardEntriesShadowNothing). test/lint runs depguard on a
-        # probe that imports an adapter from each subtree
-        # (TestAdaptersBuiltInCmdProbe).
+        # probe that imports an adapter from each subtree and each subtree's
+        # root (TestAdaptersBuiltInCmdProbe).
         #
         # The deny entry for internal/adapter/internal/ gives the reason for a
         # helper not named here. Every adapter that must stay offline also
@@ -437,11 +441,19 @@ linters:
               desc: an adapter imports only the shared helpers named in adapters-are-built-in-cmd; name a new helper there first (a helper under a testdata or _ directory is never linted) (ADR 0009)
             - pkg: github.com/timothymamo/shift2eu/internal/adapter/report/
               desc: adapters are constructed only in cmd/shift2eu and cmd/shift2eu-server
+            - pkg: github.com/timothymamo/shift2eu/internal/adapter/report$
+              desc: adapters are constructed only in cmd/shift2eu and cmd/shift2eu-server
             - pkg: github.com/timothymamo/shift2eu/internal/adapter/request/
+              desc: adapters are constructed only in cmd/shift2eu and cmd/shift2eu-server
+            - pkg: github.com/timothymamo/shift2eu/internal/adapter/request$
               desc: adapters are constructed only in cmd/shift2eu and cmd/shift2eu-server
             - pkg: github.com/timothymamo/shift2eu/internal/adapter/source/
               desc: adapters are constructed only in cmd/shift2eu and cmd/shift2eu-server
+            - pkg: github.com/timothymamo/shift2eu/internal/adapter/source$
+              desc: adapters are constructed only in cmd/shift2eu and cmd/shift2eu-server
             - pkg: github.com/timothymamo/shift2eu/internal/adapter/target/
+              desc: adapters are constructed only in cmd/shift2eu and cmd/shift2eu-server
+            - pkg: github.com/timothymamo/shift2eu/internal/adapter/target$
               desc: adapters are constructed only in cmd/shift2eu and cmd/shift2eu-server
         # Dependencies point inwards only: the composition root imports the
         # driving adapter, and nothing imports the composition root. So no

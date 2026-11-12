@@ -37,7 +37,8 @@ Arrows are imports. They point inwards only:
   imports a helper it does not name, such as one under a `testdata` or `_` directory, which lint
   never visits. The same rule stops any package but the two composition roots from importing an
   adapter: its deny list names each adapter subtree (`report/`, `request/`, `source/`, `target/`)
-  beside `internal/`, because depguard compares an import only with the entry that sorts nearest
+  beside `internal/`, and the package at each subtree's root by an exact entry (`report$`, ...),
+  which the `/` entry does not cover, because depguard compares an import only with the entry that sorts nearest
   before it and a broad `internal/adapter/` entry was shadowed by `internal/adapter/internal/`
   (issue #119). `test/architecture` fails on a list entry that is a strict prefix of another and on
   a directory under `internal/adapter` the rule does not name; `test/lint` probes the rule with
