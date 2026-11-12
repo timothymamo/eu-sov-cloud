@@ -252,6 +252,7 @@ var pinnedDepguardRules = []check.DepguardRule{
 			"$all",
 			"!$test",
 			"!**/cmd/eusov/**",
+			"!**/cmd/eusov-server/**",
 		},
 		Allow: []string{
 			"github.com/timothymamo/eu-sov-cloud/internal/adapter/internal/jsondoc$",
