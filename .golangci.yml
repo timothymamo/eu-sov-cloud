@@ -1477,17 +1477,42 @@ linters:
         # cmd/shift2eu-server/, _test.go files included. A test of a
         # composition root is compiled into the same package and runs with the
         # same environment, and the server's tests hand run a fake lookup, so
-        # none needs a real one. Elsewhere the depguard rules keep os/exec and
-        # the environment out by layer; these groups only add the call-level
-        # rule depguard cannot state for the roots. Every name is a pattern,
-        # so the entries also hold on release targets that lack syscall.Exec
-        # or syscall.ForkExec, such as windows.
+        # none needs a real one. Elsewhere the depguard rules keep os/exec out
+        # by layer; these groups only add the call-level rule depguard cannot
+        # state for the roots. The environment is not kept out elsewhere: the
+        # CLI's rule (cli-gets-adapters-from-cmd) allows $gostd, so
+        # internal/cli may import os and read a variable a root delegates to
+        # it, a known gap (docs/architecture.md). internal/httpapi's strict
+        # allow list leaves os and syscall out.
+        #
+        # No-exec also refuses the windows entry points of syscall
+        # (CreateProcess, CreateProcessAsUser, GetEnvironmentStrings, LoadDLL,
+        # MustLoadDLL, NewLazyDLL, LoadLibrary, LoadLibraryEx, GetProcAddress),
+        # the raw system calls (Syscall, Syscall6/9/12/15/18, SyscallN,
+        # RawSyscall, RawSyscall6) and the syscall.SYS_* numbers they take, and
+        # any use of package unsafe, which takes a pointer apart for a raw
+        # system call; depguard's composition-root rules skip _test.go files,
+        # so these entries keep unsafe out of the roots' tests. Env also
+        # refuses windows's syscall.GetEnvironmentVariable. Every name is a
+        # pattern, so the entries hold on every release target whether the
+        # name exists there or not (syscall.Exec has no windows form,
+        # syscall.CreateProcess no unix one); test/lint's probe lints the roots
+        # natively and for windows/amd64.
         - pattern: '^os\.(?:StartProcess|Environ)$'
           pkg: '^os$'
           msg: 'composition-root-no-exec: a composition root starts no process and hands over no environment, where credentials live; take what it needs as a flag or a named variable'
         - pattern: '^syscall\.(?:Exec|ForkExec|StartProcess|Environ)$'
           pkg: '^syscall$'
           msg: 'composition-root-no-exec: a composition root starts or replaces no process and hands over no environment, where credentials live'
+        - pattern: '^syscall\.(?:CreateProcess|CreateProcessAsUser|GetEnvironmentStrings|LoadDLL|MustLoadDLL|NewLazyDLL|LoadLibrary|LoadLibraryEx|GetProcAddress)$'
+          pkg: '^syscall$'
+          msg: 'composition-root-no-exec: a composition root starts no windows process, loads no library whose code would run and hands over no environment, where credentials live'
+        - pattern: '^syscall\.(?:(?:Raw)?Syscall(?:6|9|12|15|18|N)?|SYS_\w+)$'
+          pkg: '^syscall$'
+          msg: 'composition-root-no-exec: a composition root makes no raw system call, which starts a process as well as syscall.Exec does'
+        - pattern: '^\w+\.\w+'
+          pkg: '^unsafe$'
+          msg: 'composition-root-no-exec: a composition root takes no pointer apart, which is how a raw system call is handed an address; package unsafe is refused as a whole'
         - pattern: '^\w+\.\w+'
           pkg: '^os/exec$'
           msg: 'composition-root-no-exec: a composition root runs no program, such as a cloud CLI; os/exec is refused as a whole'
@@ -1497,7 +1522,7 @@ linters:
         - pattern: '^os\.LookupEnv$'
           pkg: '^os$'
           msg: 'composition-root-env: os.LookupEnv is passed to run in cmd/shift2eu-server/main.go only, for SHIFT2EU_SERVER_TOKEN (ADR 0019); take any other value as a flag'
-        - pattern: '^syscall\.Getenv$'
+        - pattern: '^syscall\.(?:Getenv|GetEnvironmentVariable)$'
           pkg: '^syscall$'
           msg: 'composition-root-env: a composition root reads no environment variable; take the value as a flag'
     gosec:

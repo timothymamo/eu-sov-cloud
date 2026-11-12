@@ -322,9 +322,18 @@ credentials live (CLAUDE.md rule 3). An import rule cannot see a call, so two fo
 
 - **`composition-root-no-exec`** refuses `os.StartProcess`, `syscall.Exec`, `syscall.ForkExec`,
   `syscall.StartProcess`, every use of `os/exec` (pattern `^\w+\.\w+` with `pkg: '^os/exec$'`), and
-  dumping the whole environment, `os.Environ` and `syscall.Environ`. It has no exception.
+  dumping the whole environment, `os.Environ` and `syscall.Environ`. On windows it refuses the same
+  through `syscall.CreateProcess`, `syscall.CreateProcessAsUser` and `syscall.GetEnvironmentStrings`,
+  and loading a library whose code would run: `syscall.LoadDLL`, `MustLoadDLL`, `NewLazyDLL`,
+  `LoadLibrary`, `LoadLibraryEx` and `GetProcAddress`. It refuses the raw system calls a process can
+  be started with just as well (`syscall.Syscall`, `Syscall6`, `Syscall9`, `Syscall12`, `Syscall15`,
+  `Syscall18`, `SyscallN`, `RawSyscall`, `RawSyscall6`) and the `syscall.SYS_*` numbers they take,
+  and every use of package `unsafe`, which hands a raw system call an address. depguard's
+  composition-root rules skip `_test.go` files, so this entry is what keeps `unsafe` out of the roots'
+  tests. Every pattern is anchored with `^...$`, so a longer name (`syscall.CreateProcessX`,
+  `syscall.Syscalls`, `syscall.SYSCTL`) passes. It has no exception.
 - **`composition-root-env`** refuses reading a named variable: `os.Getenv`, `os.LookupEnv`,
-  `os.ExpandEnv` and `syscall.Getenv`. Its one exception is `os.LookupEnv` in
+  `os.ExpandEnv`, `syscall.Getenv` and, on windows, `syscall.GetEnvironmentVariable`. Its one exception is `os.LookupEnv` in
   `cmd/shift2eu-server/main.go`, which passes it to `run` for `SHIFT2EU_SERVER_TOKEN` (ADR 0019).
   `os.LookupEnv` has an entry of its own, and the exception's exclusion rule has
   `path: ^cmd/shift2eu-server/main\.go$` and a text that is the group's form instantiated with that
@@ -333,11 +342,32 @@ credentials live (CLAUDE.md rule 3). An import rule cannot see a call, so two fo
 Each group has one exclusion rule, `path-except: ^cmd/shift2eu(?:-server)?/` (two per-root rules would
 each drop the other root's issues). Both hold for `_test.go` files under the roots too: a test there
 runs in the same package and environment, and the server's tests hand `run` a fake lookup. The
-patterns are names, so they hold on release targets such as windows where `syscall.Exec` does not
-exist. `TestCompositionRootForbidigoProbe` runs forbidigo on a probe module
+patterns are names, so they hold on every release target whether a name exists there or not
+(`syscall.Exec` has no windows form, `syscall.CreateProcess` no unix one).
+`TestCompositionRootForbidigoProbe` runs forbidigo on a probe module
 (`test/lint/testdata/compositionroot`) with every refused call in both roots and in `internal/cli`,
+natively and with `GOOS=windows GOARCH=amd64 CGO_ENABLED=0`, where the windows names type-check.
 `TestCompositionRootForbidigoPatterns` pins the patterns against lists of refused and allowed names,
 and `TestCompositionRootExclusions` pins the scope and the one exception.
+
+Two source checks in `test/lint` read the real roots, as the groups cannot state them:
+`TestCompositionRootPassesLookupEnvToRun` holds `cmd/shift2eu-server/main.go` to exactly one
+reference to `os.LookupEnv`, as the direct argument of a call to `run` (the forbidigo exception is a
+path and a msg, so a second use in that file would lint clean), and
+`TestCompositionRootsNameNoEnvironmentPath` refuses a string literal holding `/proc/` or `/dev/fd/` in
+any Go file of the roots, tests included, as `os.ReadFile("/proc/self/environ")` dumps every variable.
+
+Known gaps, which these rules do not close:
+
+- **Delegation to a driving adapter.** A root can pass the work to `internal/cli`, whose depguard rule
+  allows `$gostd`: it may import `os` and read a variable (or `syscall` and start a process; only
+  `os/exec` is denied to it). `internal/httpapi`'s strict allow list leaves `os` and `syscall` out, but
+  its tests may import them. Review holds that line.
+- **`/proc` reached another way.** The source check sees a literal only; a path built at run time
+  (`"/pr" + "oc"`, `filepath.Join`) or a file descriptor reached otherwise gets through.
+- **Implicit reads.** `net/http`'s `DefaultTransport` reads `HTTP_PROXY`, `HTTPS_PROXY` and
+  `NO_PROXY` (and their lower-case forms) itself. It reads named variables and exposes none, so this
+  is accepted.
 
 ## Domain-is-pure rule
 

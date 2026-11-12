@@ -67,8 +67,19 @@
 // exactly those it states: none for cloud-read-only, and for domain-is-pure
 // one path and one path-except. Two groups hold the composition roots
 // cmd/shift2eu and cmd/shift2eu-server (issue #111): composition-root-no-exec
-// refuses starting a process and dumping the environment, and
-// composition-root-env reading a named variable. TestCompositionRootExclusions
+// refuses starting a process and dumping the environment (os.StartProcess,
+// os/exec, syscall.Exec, ForkExec, StartProcess, os.Environ, syscall.Environ),
+// the windows entry points (syscall.CreateProcess, CreateProcessAsUser,
+// GetEnvironmentStrings, LoadDLL, MustLoadDLL, NewLazyDLL, LoadLibrary,
+// LoadLibraryEx, GetProcAddress), the raw system calls (syscall.Syscall,
+// Syscall6, 9, 12, 15, 18 and N, RawSyscall, RawSyscall6) and syscall.SYS_*,
+// and any use of unsafe; composition-root-env refuses reading a named variable
+// (os.Getenv, os.LookupEnv, os.ExpandEnv, syscall.Getenv,
+// syscall.GetEnvironmentVariable). The probe lints the roots natively and for
+// windows/amd64. TestCompositionRootPassesLookupEnvToRun holds os.LookupEnv in
+// cmd/shift2eu-server/main.go to the one argument of run, and
+// TestCompositionRootsNameNoEnvironmentPath refuses a /proc/ or /dev/fd/
+// literal in the roots, which no group can state. TestCompositionRootExclusions
 // pins their one path-except each and the env group's one exception, whose text
 // is the group's form with the os.LookupEnv entry's exact msg in place of
 // [^"]*, so it drops that entry's issue in cmd/shift2eu-server/main.go alone;
