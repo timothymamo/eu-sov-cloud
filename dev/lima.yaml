@@ -299,6 +299,13 @@ provision:
       EnvironmentFile=-%h/.config/dot-agent-deck/daemon.env
       UNIT
 
+      # The daemon starts every agent pane with its own environment, which systemd leaves without a
+      # TERM, so Claude Code and pi would print no colour. The deck's terminal emulator handles 24-bit colour.
+      cat > "$HOME/.config/systemd/user/dot-agent-deck.service.d/terminal.conf" <<'UNIT'
+      [Service]
+      Environment=TERM=xterm-256color COLORTERM=truecolor
+      UNIT
+
       # Claude Code (native installer, no Node.js needed): every role except the tester.
       command -v claude >/dev/null 2>&1 || curl -fsSL https://claude.ai/install.sh | bash
 
