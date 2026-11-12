@@ -159,20 +159,22 @@ linters:
             # application layer: adapters do I/O behind the ports. The allow
             # list already refuses everything below; these entries only say
             # why. depguard prefix-matches, so net/http also covers
-            # net/http/httptest and every other net/http/* package. net$ and
-            # os$ end in $ and cover that package only: depguard compares an
-            # import with the one entry that sorts nearest before it, so a
-            # bare net or os would be a strict prefix of net/http or os/exec
-            # and never decide an import under them, so the subpackages that
-            # need a reason are named one by one (issue #119; test/architecture,
-            # TestDepguardEntriesShadowNothing). This list does not cover every
-            # net/* or os/* package. In the strict app-uses-ports-not-adapters
-            # rule the allow list refuses any import it does not list, even a
-            # pure package such as net/netip, net/url or net/textproto, with
-            # depguard's generic message when no entry here names it. In the
-            # lax app-tests-use-fakes-not-adapters rule, which shares this list,
-            # a net/* or os/* package not named here is allowed, as it was
-            # before issue #119.
+            # net/http/httptest and every other net/http/* package, and net/rpc
+            # covers net/rpc/jsonrpc. net$ and os$ end in $ and cover that
+            # package only: depguard compares an import with the one entry that
+            # sorts nearest before it, so a bare net or os would be a strict
+            # prefix of net/http or os/exec and never decide an import under
+            # them, so the subpackages that need a reason are named one by one
+            # (issue #119; test/architecture, TestDepguardEntriesShadowNothing).
+            # Every net/* package that can open a connection is named, and so
+            # is crypto/tls, whose Dial opens one too, as are os/exec, os/user
+            # and os/signal: the lax app-tests-use-fakes-not-adapters rule
+            # shares this list and allows any package not named here, and the
+            # application layer's tests never touch the network. The pure net
+            # subpackages, net/url and net/netip, are left out on purpose: the
+            # strict app-uses-ports-not-adapters rule refuses them through its
+            # allow list, with depguard's generic message, and its tests may
+            # use them.
             - pkg: net/http
               desc: the application layer makes no HTTP calls; an adapter behind a port does
             - pkg: net/rpc
@@ -181,6 +183,10 @@ linters:
               desc: the application layer sends no mail; an adapter behind a port does
             - pkg: net/mail
               desc: the application layer parses no mail; an adapter behind a port does
+            - pkg: net/textproto
+              desc: the application layer speaks no network protocol; an adapter behind a port does
+            - pkg: crypto/tls
+              desc: the application layer opens no TLS connections; an adapter behind a port does
             - pkg: net$
               desc: the application layer has no network access; an adapter behind a port does
             - pkg: os/exec
