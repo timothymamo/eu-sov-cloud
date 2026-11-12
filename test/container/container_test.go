@@ -117,8 +117,9 @@ func TestEveryBaseImageIsDigestPinned(t *testing.T) {
 func TestBuildMatchesGoReleaser(t *testing.T) {
 	t.Parallel()
 
+	dockerfile := readRepoFile(t, dockerfileName)
 	settings := parseBuildSettings(t, readRepoFile(t, goreleaserName))
-	build := goBuildRun(t, readRepoFile(t, dockerfileName))
+	build := goBuildRun(t, dockerfile)
 	command := parseBuildCommand(t, build)
 
 	// The env entries are releasetarget.Env(), the list releasetarget.Read
@@ -188,6 +189,18 @@ func TestBuildMatchesGoReleaser(t *testing.T) {
 			dockerfileName, build.line, command.pkg, mainPackage, goreleaserName)
 	}
 
+	// The -o value is where this build writes the binary, and the one path the
+	// final stage copies it from is the binary the image ships. It is pinned to
+	// that path rather than read as an opaque value: a shell reads
+	// `/out/eusov;GOFLAGS=-mod=mod${IFS}go${IFS}build ...` as the end of this go
+	// build and a second command, so an -o value that is not the copied path
+	// leaves the image shipping a binary built outside the release env.
+	copied := copiedBinaryPath(t, dockerfile)
+	if command.output != copied {
+		t.Errorf("%s:%d: the RUN instruction that runs `go build` writes the binary to %q, want %q, the path the final stage copies it from: any other value, such as a path followed by a `;` and a second go build, overwrites the binary outside this env",
+			dockerfileName, build.line, command.output, copied)
+	}
+
 	// The prefix may name no other variable, and must assign each name exactly
 	// once. The go command takes the last value a variable is assigned, so
 	// `GOFLAGS=-mod=readonly GOFLAGS=-mod=mod` would build with modules on the
@@ -224,6 +237,97 @@ func TestBuildMatchesGoReleaser(t *testing.T) {
 			t.Errorf("%s:%d: the RUN instruction that runs `go build` does not set %s from %s (as $%s or ${%s}), so docker buildx --platform builds every platform for the builder's own",
 				dockerfileName, build.line, tc.env, tc.buildArg, tc.buildArg, tc.buildArg)
 		}
+	}
+}
+
+// TestBuildCommandFields pins how the command of the RUN instruction that runs
+// `go build` is read: fields are split the way a shell splits them, keep their
+// quotation marks, and a field that carries a shell operator outside any
+// quotation marks is refused. The -o value and an unquoted -ldflags= value are
+// one field each however long they are, so without the refusal a payload such as
+// `/out/eusov;GOFLAGS=-mod=mod${IFS}go${IFS}build${IFS}-o${IFS}/out/eusov ...`
+// reads as a path here while the shell runs a second build with it.
+func TestBuildCommandFields(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name    string
+		command string
+		want    []string
+		wantErr string
+	}{
+		{
+			name:    "a quoted value reads as one field and keeps its quotes",
+			command: `go build -trimpath -ldflags "-s -w -X pkg.version=${VERSION}" -o /out/eusov ./cmd/eusov`,
+			want:    []string{"go", "build", "-trimpath", "-ldflags", `"-s -w -X pkg.version=${VERSION}"`, "-o", "/out/eusov", "./cmd/eusov"},
+		},
+		{
+			name:    "an operator inside the quotation marks is part of the value",
+			command: `go build -trimpath -ldflags "-s -w" -o "/out/eusov;true" ./cmd/eusov`,
+			want:    []string{"go", "build", "-trimpath", "-ldflags", `"-s -w"`, "-o", `"/out/eusov;true"`, "./cmd/eusov"},
+		},
+		{
+			name:    "an unquoted semicolon in the -o value is refused",
+			command: `go build -trimpath -ldflags "-s -w" -o /out/eusov;GOFLAGS=-mod=mod${IFS}go${IFS}build${IFS}-o${IFS}/out/eusov${IFS}./cmd/eusov;: ./cmd/eusov`,
+			wantErr: ";",
+		},
+		{
+			name:    "an unquoted semicolon in an unquoted -ldflags value is refused",
+			command: `go build -trimpath -ldflags=-s;true -o /out/eusov ./cmd/eusov`,
+			wantErr: ";",
+		},
+		{
+			name:    "an unquoted ampersand is refused",
+			command: `go build -trimpath -ldflags "-s -w" -o /out/eusov&&true ./cmd/eusov`,
+			wantErr: "&",
+		},
+		{
+			name:    "an unquoted pipe is refused",
+			command: `go build -trimpath -ldflags "-s -w" -o /out/eusov|true ./cmd/eusov`,
+			wantErr: "|",
+		},
+		{
+			name:    "an unquoted backtick is refused",
+			command: "go build -trimpath -ldflags \"-s -w\" -o /out/`true` ./cmd/eusov",
+			wantErr: "`",
+		},
+		{
+			name:    "an unquoted command substitution is refused",
+			command: `go build -trimpath -ldflags "-s -w" -o /out/$(true) ./cmd/eusov`,
+			wantErr: "$(",
+		},
+		{
+			name:    "a quote the command never closes is refused",
+			command: `go build -trimpath -ldflags "-s -w -o /out/eusov ./cmd/eusov`,
+			wantErr: "unclosed",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			got, err := splitCommandFields(tc.command)
+			if tc.wantErr != "" {
+				if err == nil {
+					t.Fatalf("splitCommandFields(%q) = %q, want an error naming %q", tc.command, got, tc.wantErr)
+				}
+
+				if !strings.Contains(err.Error(), tc.wantErr) {
+					t.Errorf("splitCommandFields(%q) error = %v, want it to name %q", tc.command, err, tc.wantErr)
+				}
+
+				return
+			}
+
+			if err != nil {
+				t.Fatalf("splitCommandFields(%q) error = %v, want no error", tc.command, err)
+			}
+
+			if diff := cmp.Diff(tc.want, got); diff != "" {
+				t.Errorf("splitCommandFields(%q) fields mismatch (-want +got):\n%s", tc.command, diff)
+			}
+		})
 	}
 }
 
@@ -848,11 +952,13 @@ func goBuildRun(t *testing.T, dockerfile string) instruction {
 // buildCommand is the command of the one RUN instruction that builds the
 // image's binary, read the way a shell reads it: the environment assignments
 // in front of it, the flags the go build itself carries, the value of its
-// -ldflags flag and the package it builds.
+// -ldflags flag, the path its -o flag writes the binary to and the package it
+// builds.
 type buildCommand struct {
 	env     []string
 	flags   []string
 	ldflags string
+	output  string
 	pkg     string
 }
 
@@ -929,8 +1035,11 @@ func parseBuildCommand(t *testing.T, build instruction) buildCommand {
 			value = rest[i]
 		}
 
-		if name == "-ldflags" {
+		switch name {
+		case "-ldflags":
 			command.ldflags = value
+		case "-o":
+			command.output = value
 		}
 
 		command.flags = append(command.flags, name)
@@ -980,10 +1089,30 @@ func commandEnv(t *testing.T, command string) (env, args []string) {
 // would, except that it keeps the quote characters in the field: a quoted value
 // reads as the quoted text, so a caller that compares it with an unquoted
 // setting refuses it rather than unquoting a value it has not read. A quote the
-// command never closes fails the test, since no shell could run the command.
+// command never closes fails the test, since no shell could run the command, and
+// so does a field that carries a shell operator outside its quotation marks.
 func commandFields(t *testing.T, command string) []string {
 	t.Helper()
 
+	fields, err := splitCommandFields(command)
+	if err != nil {
+		t.Fatalf("%s: %v", dockerfileName, err)
+	}
+
+	return fields
+}
+
+// splitCommandFields is commandFields without a *testing.T: it returns the
+// error commandFields fails the test with, so a table can pin which command
+// lines are refused and which are read into which fields.
+//
+// A field that carries a shell operator outside any quotes is refused rather
+// than kept as an opaque value: the -o value and an unquoted -ldflags= value are
+// one field each however much of a command line they hold, so
+// `/out/eusov;GOFLAGS=-mod=mod${IFS}go${IFS}build${IFS}-o${IFS}/out/eusov ...`
+// would read as a path while the shell reads it as a second build that
+// overwrites the binary outside the release env.
+func splitCommandFields(command string) ([]string, error) {
 	var (
 		fields     []string
 		field      strings.Builder
@@ -1010,15 +1139,47 @@ func commandFields(t *testing.T, command string) []string {
 	}
 
 	if insideMark {
-		t.Fatalf("%s: the command %q has an unclosed %c, so no shell could run it and this test cannot read its fields",
-			dockerfileName, command, quote)
+		return nil, fmt.Errorf("the command %q has an unclosed %c, so no shell could run it and this test cannot read its fields", command, quote)
 	}
 
 	if field.Len() > 0 {
 		fields = append(fields, field.String())
 	}
 
-	return fields
+	for _, field := range fields {
+		if operator := unquotedShellOperator(field); operator != "" {
+			return nil, fmt.Errorf("the command field %q carries the shell operator %q outside any quotes, so the RUN instruction runs more than `go build`: an unquoted ;, &, |, ` or $( ends this command or starts another, such as a second go build with other settings that overwrites the binary; want the operator inside quotes, for a value that is not a command, or no operator at all",
+				field, operator)
+		}
+	}
+
+	return fields, nil
+}
+
+// unquotedShellOperator returns the first shell operator in field that a shell
+// reads outside the quotation marks the field carries, and "" when the field
+// holds none: the operators that end a command or start another, ;, &, |, the
+// backtick substitution and $(. A field holding one is not a flag value but
+// part of a command line.
+func unquotedShellOperator(field string) string {
+	var quote rune
+
+	for i, r := range field {
+		switch {
+		case quote != 0:
+			if r == quote {
+				quote = 0
+			}
+		case r == '"' || r == '\'':
+			quote = r
+		case r == ';' || r == '&' || r == '|' || r == '`':
+			return string(r)
+		case strings.HasPrefix(field[i:], "$("):
+			return "$("
+		}
+	}
+
+	return ""
 }
 
 // isEnvName reports whether name is a shell variable name: a letter or an
@@ -1177,6 +1338,68 @@ func builderStage(t *testing.T, dockerfile string) instruction {
 		dockerfileName)
 
 	return instruction{}
+}
+
+// copiedBinaryPath returns the path in the build stage that the final stage
+// copies to become the image's binary: the source of its COPY --from=<builder>
+// instruction, /out/eusov for the committed Dockerfile. It fails the test when
+// the final stage copies nothing from the stage that runs `go build`, or copies
+// more than one thing from it, so the path the build writes and the path the
+// image ships cannot drift apart.
+func copiedBinaryPath(t *testing.T, dockerfile string) string {
+	t.Helper()
+
+	builderFields := fromFields(builderStage(t, dockerfile))
+	if len(builderFields) < 3 || !strings.EqualFold(builderFields[1], "AS") {
+		t.Fatalf("%s: the stage that runs `go build` starts FROM %q and names no stage: want a named stage such as `FROM ... AS build`, so the final stage can copy the binary from it and this test can check the path the build writes it to",
+			dockerfileName, fromImage(builderStage(t, dockerfile)))
+	}
+
+	builderName := builderFields[2]
+	var sources []string
+
+	for _, in := range finalStage(t, dockerfileInstructions(t, dockerfile)) {
+		if in.keyword() != "COPY" {
+			continue
+		}
+
+		stage := ""
+		var paths []string
+
+		for _, field := range strings.Fields(in.arguments()) {
+			switch {
+			case strings.HasPrefix(field, "--from="):
+				stage = strings.TrimPrefix(field, "--from=")
+			case strings.HasPrefix(field, "--"):
+			default:
+				paths = append(paths, field)
+			}
+		}
+
+		if !strings.EqualFold(stage, builderName) {
+			continue
+		}
+
+		if len(paths) < 2 {
+			t.Fatalf("%s:%d: the COPY instruction copies %q from the stage %q that runs `go build`: want `COPY --from=%s <source> <destination>`, so this test can read the path the binary is built to",
+				dockerfileName, in.line, in.arguments(), builderName, builderName)
+		}
+
+		sources = append(sources, paths[len(paths)-2])
+	}
+
+	switch len(sources) {
+	case 1:
+		return sources[0]
+	case 0:
+		t.Fatalf("%s: the final stage has no COPY instruction with --from=%s, the stage that runs `go build`: want one, such as `COPY --from=%s /out/eusov /eusov`, so the binary the image ships is the one that build writes",
+			dockerfileName, builderName, builderName)
+	}
+
+	t.Fatalf("%s: the final stage has %d COPY instructions with --from=%s, the stage that runs `go build`: want exactly one, so it is clear which of the paths the build writes the image ships",
+		dockerfileName, len(sources), builderName)
+
+	return ""
 }
 
 // assertBuilderCrossCompiles fails unless the stage that runs `go build` starts

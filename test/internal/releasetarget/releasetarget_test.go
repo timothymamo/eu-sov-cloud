@@ -509,7 +509,7 @@ func TestRead(t *testing.T) {
 		// rewrite go.mod and go.sum before the -mod=readonly build, and the
 		// release would compile a module the commit does not hold.
 		{
-			name:       "a before hook of go mod tidy -diff and a second hook is refused",
+			name:       "a before hook of go mod tidy -diff and go generate is refused",
 			goreleaser: buildBeforeGenerate,
 			wantErr:    true,
 		},
@@ -534,7 +534,7 @@ func TestRead(t *testing.T) {
 			wantErr:    true,
 		},
 		{
-			name:       "a before hook of go mod tidy -diff and a second hook is refused",
+			name:       "a before hook of go mod tidy -diff and go mod vendor is refused",
 			goreleaser: buildWithBefore("    - go mod tidy -diff\n    - go mod vendor\n"),
 			wantErr:    true,
 		},
