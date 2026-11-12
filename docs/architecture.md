@@ -65,7 +65,7 @@ Arrows are imports. They point inwards only:
   standard packages it needs today (`context`, `os`, `os/signal`, `syscall`), and no third-party package.
   The rule holds `cmd/eusov` only. `cmd/eusov-server` (PRD #103 milestone 3) is held by its sibling,
   `server-composition-root`, written the same way: the module's own packages and the standard packages
-  the server needs (`context`, `errors`, `flag`, `fmt`, `io`, `log`, `log/slog`, `math`, `net`,
+  the server needs (`context`, `errors`, `flag`, `fmt`, `io`, `log`, `math`, `net`,
   `net/http`, `os`, `os/signal`, `runtime`, `runtime/debug`, `slices`, `strconv`, `strings`, `sync`,
   `syscall`, `time`), no third-party package and no cloud SDK. `test/architecture` holds it to that
   list on every release target, and `TestServerPathHasNoCloudSDKOrProcess` (`test/e2e`) refuses a cloud
