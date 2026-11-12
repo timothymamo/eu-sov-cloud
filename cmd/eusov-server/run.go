@@ -125,6 +125,9 @@ func run(ctx context.Context, args []string, lookupEnv func(string) (string, boo
 	return serve(ctx, srv, ln, stderr)
 }
 
+// errMaxConnections is the configuration error of a cap below one.
+var errMaxConnections = errors.New("--max-connections must be 1 or more")
+
 // parseFlags reads args into a config. It returns false with the exit code
 // when the run ends here: 0 for -h, 2 for a usage error, which the flag package
 // or this function has already reported on stderr.

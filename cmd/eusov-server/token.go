@@ -18,8 +18,8 @@ const tokenEnvVar = "EUSOV_SERVER_TOKEN" //nolint:gosec // the variable's name, 
 const maxTokenFileSize = 64 << 10
 
 // minTokenLength is the shortest bearer token the server accepts, in
-// characters after trimming (bytes: a bearer token is ASCII, RFC 6750 token68): a shorter one is within reach of a client that
-// guesses (ADR 0019).
+// characters after trimming (bytes: a bearer token is ASCII, RFC 6750
+// token68): a shorter one is within reach of a client that guesses (ADR 0019).
 const minTokenLength = 32
 
 // tokenConfig is the bearer token the server is configured with.
@@ -77,6 +77,9 @@ func readToken(lookupEnv func(string) (string, bool), tokenFile string) (tokenCo
 // checkTokenLength refuses a token shorter than minTokenLength, without
 // quoting it.
 func checkTokenLength(token string) error {
+	// len counts bytes, which equals characters here: httpapi.WithBearerToken
+	// refuses any token that is not an RFC 6750 token68 (printable ASCII), so
+	// a non-ASCII token is a startup error anyway.
 	if len(token) < minTokenLength {
 		return fmt.Errorf("the token is shorter than %d characters", minTokenLength)
 	}
@@ -106,7 +109,7 @@ func readTokenFile(path string) (token, warning string, err error) {
 	}
 
 	if runtime.GOOS != "windows" && info.Mode().Perm()&0o077 != 0 {
-		warning = fmt.Sprintf("the token file %s is accessible to other users (mode %v); restrict it to its owner (chmod 600)",
+		warning = fmt.Sprintf("the token file %q is accessible to other users (mode %v); restrict it to its owner (chmod 600)",
 			path, info.Mode().Perm())
 	}
 

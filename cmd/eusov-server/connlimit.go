@@ -1,7 +1,6 @@
 package main
 
 import (
-	"errors"
 	"net"
 	"sync"
 )
@@ -58,6 +57,3 @@ func (c *limitConn) Close() error {
 
 	return err
 }
-
-// errMaxConnections is the configuration error of a cap below one.
-var errMaxConnections = errors.New("--max-connections must be 1 or more")
