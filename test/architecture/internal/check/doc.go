@@ -64,11 +64,19 @@
 // environment, with permissions: {} at the top level, job permissions that
 // only read, and a concurrency group of its own that never cancels a run in
 // progress; it runs only the App token action and release-please, pinned by
-// commit, mints the App's token with exactly Contents and Pull requests
-// write, hands it to release-please and to the step that creates the tag
-// through the API, behind a step that waits for no release.yml run to be
-// queued or in progress, publishes nothing, and pastes no expression but
-// github.repository into a script. The configuration holds the release-tag
+// commit, runs on ubuntu-latest alone, mints the App's token with exactly
+// Contents and Pull requests write, and hands it to release-please and to the
+// step that creates the tag through the API, and to nothing else. That step's
+// env: is exactly the App's token, the repository and the App's slug, and it
+// calls only the release PR's, the manifest's, the merge commit's and the
+// tag's API endpoints: no Release, no gh release, no curl. It runs behind a
+// step that, with GITHUB_TOKEN, waits for no release.yml run to be requested,
+// waiting, pending, queued or in progress. The workflow publishes nothing and
+// pastes no expression but github.repository into a script.
+// ReleasePleaseDryRun holds ci.yml to running the dry run of the guard and
+// tag steps, .github/scripts/release-please-dry-run.sh, on every pull request
+// and every push to main, in a job with no write permission and no secret.
+// The configuration holds the release-tag
 // skill's version rules, vX.Y.Z tags with no component,
 // skip-github-release, no key that could move the version or the tag
 // unreviewed, and one package at the repository root.

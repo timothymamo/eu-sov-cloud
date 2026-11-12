@@ -31,7 +31,57 @@ const (
 	// releaseRuns is the API path of release.yml's runs, which the guard
 	// reads.
 	releaseRuns = "actions/workflows/release.yml/runs"
+
+	// releasePleaseRunner is the one runner the job may run on: GitHub's,
+	// never a self-hosted one, since the job holds the release App's token.
+	releasePleaseRunner = "ubuntu-latest"
 )
+
+// releaseRunStatuses are every status GitHub may hold a run of release.yml in
+// before it finishes: the guard waits for no run in any of them, since a run
+// requested, waiting or pending may still start and publish.
+var releaseRunStatuses = []string{"requested", "waiting", "pending", "queued", "in_progress"}
+
+// guardStatusLoop matches the guard's loop over the statuses it waits for.
+var guardStatusLoop = regexp.MustCompile(`(?m)^\s*for\s+status\s+in\s+([A-Za-z_ ]+?)\s*;\s*do\s*$`)
+
+// automaticTokens are the two spellings of GITHUB_TOKEN the guard may read
+// release.yml's runs with.
+var automaticTokens = []string{"${{ github.token }}", "${{ secrets.GITHUB_TOKEN }}"}
+
+// tagStepEnv are the only variables the tagging step's env: holds.
+var tagStepEnv = []string{"APP_SLUG", "GH_REPO", "GH_TOKEN"}
+
+// appTokenOutput matches a step output named token, the form in which the
+// App's token reaches another step.
+var appTokenOutput = regexp.MustCompile(`outputs\s*\.\s*token\b`)
+
+// fetchingRuns are commands that create or edit a GitHub Release, or reach a
+// host of their own, none of which a run: step of this workflow may hold.
+var fetchingRuns = []string{"gh release", "curl", "wget"}
+
+// repoEndpoint matches the repository's API path in a script, through GH_REPO
+// or github.repository, and captures what follows it.
+var repoEndpoint = regexp.MustCompile(`repos/(?:\$\{GH_REPO\}|\$GH_REPO|\$\{\{\s*github\.repository\s*\}\})/([^"'\s]*)`)
+
+// tagEndpoints are the API endpoints the tagging step may call, its query
+// removed: the release PRs (issues, pulls, a pull request, its files and its
+// labels), the manifest at the merge commit (contents), the merge commit's
+// ancestry (compare), and the tag (git/ref, git/refs, git/matching-refs,
+// git/tags). Nothing creates or edits a GitHub Release.
+var tagEndpoints = []*regexp.Regexp{
+	regexp.MustCompile(`^issues$`),
+	regexp.MustCompile(`^issues/[^/]+/labels(/[^/]+)?$`),
+	regexp.MustCompile(`^pulls$`),
+	regexp.MustCompile(`^pulls/[^/]+$`),
+	regexp.MustCompile(`^pulls/[^/]+/files$`),
+	regexp.MustCompile(`^contents/.+$`),
+	regexp.MustCompile(`^compare/[^/]+$`),
+	regexp.MustCompile(`^git/ref/.+$`),
+	regexp.MustCompile(`^git/refs$`),
+	regexp.MustCompile(`^git/matching-refs/.+$`),
+	regexp.MustCompile(`^git/tags(/[^/]+)?$`),
+}
 
 // commitPin matches the 40-hex commit an action is pinned to.
 var commitPin = regexp.MustCompile(`^[0-9a-f]{40}$`)
@@ -72,11 +122,18 @@ var allowedExpression = regexp.MustCompile(`\$\{\{\s*github\.repository\s*\}\}`)
 //     secrets.RELEASE_APP_PRIVATE_KEY, with exactly permission-contents and
 //     permission-pull-requests: write, before the release-please step, which
 //     reads that token and nothing else;
+//   - runs on ubuntu-latest alone, never a self-hosted runner;
 //   - creates the tag in a run: step with id: tag after the release-please
-//     step, whose GH_TOKEN is the App's token, behind a run: step with id:
-//     guard that reads release.yml's queued and in_progress runs;
+//     step, whose env: is exactly GH_TOKEN, the App's token, GH_REPO, the
+//     repository, and APP_SLUG, the App's own slug, and whose gh api calls
+//     reach only the endpoints in tagEndpoints, behind a run: step with id:
+//     guard that reads release.yml's requested, waiting, pending, queued and
+//     in_progress runs with GITHUB_TOKEN;
+//   - hands the App's token to release-please's with: token and the tagging
+//     step's GH_TOKEN, and nowhere else;
 //   - publishes nothing (no goreleaser, cosign, docker login, push or build,
-//     attest), and pushes no tag with git;
+//     attest), pushes no tag with git, creates no GitHub Release and calls no
+//     host of its own (no gh release, curl or wget);
 //   - pastes no expression but ${{ github.repository }} into a script.
 //
 // It reads the document with the strict line reader and refuses what it does
@@ -278,6 +335,12 @@ func (r *schemaReader) releasePleaseJobs(e yamlread.Entry) {
 			r.fail("line %d: %s: environment is %q, want %s, which holds the release App's ID and key and is limited to main", env.Num, jobPath, env.Value, releasePleaseEnvironment)
 		}
 
+		if runner, ok := keys["runs-on"]; !ok {
+			r.fail("line %d: %s has no runs-on:; want runs-on: %s", job.Num, jobPath, releasePleaseRunner)
+		} else if value, err := yamlread.Single(runner); err != nil || value != releasePleaseRunner {
+			r.fail("line %d: %s: runs-on is %q, want exactly %s: the job holds the release App's token, so it runs on a runner GitHub provides, never a self-hosted one", runner.Num, jobPath, runner.Value, releasePleaseRunner)
+		}
+
 		if perm, ok := keys["permissions"]; ok {
 			r.readOnlyPermissions(perm, jobPath+": permissions")
 		}
@@ -329,6 +392,7 @@ type pleaseStep struct {
 	commit         string
 	with           map[string]yamlread.Entry
 	env            map[string]string
+	envNums        map[string]int
 	script         string
 	hasRun, hasEnv bool
 }
@@ -357,7 +421,7 @@ func (r *schemaReader) releasePleaseSteps(e yamlread.Entry, path string) {
 	guards := index(func(s pleaseStep) bool { return s.id == guardStepID })
 	tags := index(func(s pleaseStep) bool { return s.id == tagStepID })
 
-	token := ""
+	token, slug := "", ""
 
 	if len(apps) != 1 {
 		r.fail("%s holds %d %s steps, want exactly 1, which mints the release App's token", path, len(apps), appTokenAction)
@@ -369,6 +433,7 @@ func (r *schemaReader) releasePleaseSteps(e yamlread.Entry, path string) {
 			r.fail("line %d: %s: the %s step has no id:, so no step can read its token", app.num, path, appTokenAction)
 		} else {
 			token = "${{ steps." + app.id + ".outputs.token }}"
+			slug = "${{ steps." + app.id + ".outputs.app-slug }}"
 		}
 	}
 
@@ -386,14 +451,14 @@ func (r *schemaReader) releasePleaseSteps(e yamlread.Entry, path string) {
 	if len(guards) != 1 {
 		r.fail("%s holds %d steps with id: %s, want exactly 1, which waits for no run of .github/workflows/release.yml to be queued or in progress before the tag is created", path, len(guards), guardStepID)
 	} else {
-		r.guardStep(steps[guards[0]], path)
+		r.guardStep(steps[guards[0]], path, token)
 	}
 
 	if len(tags) != 1 {
 		r.fail("%s holds %d steps with id: %s, want exactly 1, which creates the vX.Y.Z tag with the release App's token", path, len(tags), tagStepID)
 	} else {
 		tag := steps[tags[0]]
-		r.tagStep(tag, path, token)
+		r.tagStep(tag, path, token, slug)
 
 		if len(guards) == 1 && guards[0] > tags[0] {
 			r.fail("line %d: %s: the tagging step runs before the wait for no release.yml run in flight", tag.num, path)
@@ -403,6 +468,54 @@ func (r *schemaReader) releasePleaseSteps(e yamlread.Entry, path string) {
 			r.fail("line %d: %s: the tagging step runs before the %s step", tag.num, path, releasePleaseAction)
 		}
 	}
+
+	allowed := map[int]bool{}
+
+	if len(pleases) == 1 {
+		if t, ok := steps[pleases[0]].with["token"]; ok {
+			allowed[t.Num] = true
+		}
+	}
+
+	if len(tags) == 1 {
+		if num, ok := steps[tags[0]].envNums["GH_TOKEN"]; ok {
+			allowed[num] = true
+		}
+	}
+
+	r.appTokenReach(allowed)
+}
+
+// appTokenReach refuses a step output named token anywhere in the workflow
+// but on the lines in allowed: release-please's with: token and the tagging
+// step's GH_TOKEN. Handing the App's token to any other step widens the
+// reach of a token that can create release tags. Comments are skipped.
+func (r *schemaReader) appTokenReach(allowed map[int]bool) {
+	for i, line := range r.raw {
+		num := i + 1
+		if strings.HasPrefix(strings.TrimSpace(line), "#") || allowed[num] {
+			continue
+		}
+
+		if appTokenOutput.MatchString(line) {
+			r.fail("line %d: %s hands a step's outputs.token to more than the %s step's with: token and the tagging step's GH_TOKEN: the release App's token reaches those two alone", num, releasePleaseWorkflowName, releasePleaseAction)
+		}
+	}
+}
+
+// entryNums returns the line of each variable of e, an env: block read as
+// jobEnv reads it, one NAME: value per line; jobEnv reports what it cannot
+// read.
+func entryNums(e yamlread.Entry) map[string]int {
+	out := map[string]int{}
+
+	for _, l := range e.Block {
+		if name, _, found := strings.Cut(l.Text, ": "); found {
+			out[name] = l.Num
+		}
+	}
+
+	return out
 }
 
 // readPleaseSteps reads e, the job's steps:, refusing a key that could skip a
@@ -446,6 +559,7 @@ func (r *schemaReader) readPleaseSteps(e yamlread.Entry, path string) ([]pleaseS
 		if env, ok := keys["env"]; ok {
 			step.hasEnv = true
 			step.env, _ = r.jobEnv(env, stepPath+": env")
+			step.envNums = entryNums(env)
 		}
 
 		if run, ok := keys["run"]; ok {
@@ -515,6 +629,12 @@ func (r *schemaReader) safeScript(s pleaseStep, path string) {
 		}
 	}
 
+	for _, command := range fetchingRuns {
+		if strings.Contains(s.script, command) {
+			r.fail("line %d: %s runs %s; nothing here creates or edits a GitHub Release, which is GoReleaser's in release.yml, or calls a host of its own", s.num, path, command)
+		}
+	}
+
 	if strings.Contains(allowedExpression.ReplaceAllString(s.script, ""), "${{") {
 		r.fail("line %d: %s pastes an expression into its script; pass it through env: and quote it", s.num, path)
 	}
@@ -574,9 +694,10 @@ func (r *schemaReader) releasePleaseStep(s pleaseStep, path, token string) {
 	}
 }
 
-// guardStep checks that the guard is a run: step reading release.yml's queued
-// and in_progress runs.
-func (r *schemaReader) guardStep(s pleaseStep, path string) {
+// guardStep checks that the guard is a run: step that reads release.yml's
+// runs in every status in releaseRunStatuses, with GITHUB_TOKEN: the App's
+// token is for release-please and the tag alone.
+func (r *schemaReader) guardStep(s pleaseStep, path, token string) {
 	if !s.hasRun {
 		r.fail("line %d: %s: the step with id: %s has no run:, so nothing waits for .github/workflows/release.yml", s.num, path, guardStepID)
 
@@ -587,19 +708,52 @@ func (r *schemaReader) guardStep(s pleaseStep, path string) {
 		r.fail("line %d: %s: the step with id: %s does not read %s, the runs of .github/workflows/release.yml", s.num, path, guardStepID, releaseRuns)
 	}
 
-	for _, status := range []string{"queued", "in_progress"} {
-		if !strings.Contains(s.script, status) {
-			r.fail("line %d: %s: the step with id: %s does not wait for release.yml's %s runs", s.num, path, guardStepID, status)
+	var waited []string
+	for _, m := range guardStatusLoop.FindAllStringSubmatch(s.script, -1) {
+		waited = append(waited, strings.Fields(m[1])...)
+	}
+
+	for _, status := range releaseRunStatuses {
+		if !slices.Contains(waited, status) {
+			r.fail("line %d: %s: the step with id: %s does not wait for release.yml's %s runs in its for status in ...; do loop: a run %s may still publish, so a tag created now could be lost", s.num, path, guardStepID, status, status)
 		}
+	}
+
+	value, ok := s.env["GH_TOKEN"]
+
+	switch {
+	case !ok:
+		r.fail("line %d: %s: the step with id: %s has no env: GH_TOKEN, so gh cannot read release.yml's runs; want GH_TOKEN: %s", s.num, path, guardStepID, automaticTokens[0])
+	case !slices.Contains(automaticTokens, value):
+		r.fail("line %d: %s: the step with id: %s reads release.yml's runs with GH_TOKEN %s; want GITHUB_TOKEN, %s or %s: the release App's token %s is for release-please and the tag alone", s.num, path, guardStepID, value, automaticTokens[0], automaticTokens[1], token)
 	}
 }
 
-// tagStep checks that the tagging step is a run: step whose GH_TOKEN is the
-// App's token.
-func (r *schemaReader) tagStep(s pleaseStep, path, token string) {
+// tagStep checks that the tagging step is a run: step whose env: is exactly
+// the App's token, the repository and the App's slug, and whose script calls
+// only the API endpoints in tagEndpoints.
+func (r *schemaReader) tagStep(s pleaseStep, path, token, slug string) {
 	if !s.hasRun {
 		r.fail("line %d: %s: the step with id: %s has no run:, so no tag is created", s.num, path, tagStepID)
 	}
+
+	for _, key := range sortedKeys(s.env) {
+		if !slices.Contains(tagStepEnv, key) {
+			r.fail("line %d: %s: the tagging step's env: holds %s; want only %s", s.num, path, key, strings.Join(tagStepEnv, ", "))
+		}
+	}
+
+	if value, ok := s.env["GH_REPO"]; !ok || value != "${{ github.repository }}" {
+		r.fail("line %d: %s: the tagging step's GH_REPO is %q, want ${{ github.repository }}", s.num, path, value)
+	}
+
+	if value, ok := s.env["APP_SLUG"]; !ok {
+		r.fail("line %d: %s: the tagging step has no env: APP_SLUG, so it cannot tell a release PR the App opened from one a person labelled; want APP_SLUG: %s", s.num, path, slug)
+	} else if slug != "" && value != slug {
+		r.fail("line %d: %s: the tagging step's APP_SLUG is %s, want the release App's own slug, %s", s.num, path, value, slug)
+	}
+
+	r.tagEndpoints(s, path)
 
 	value, ok := s.env["GH_TOKEN"]
 	if !ok {
@@ -610,5 +764,22 @@ func (r *schemaReader) tagStep(s pleaseStep, path, token string) {
 
 	if token != "" && value != token {
 		r.fail("line %d: %s: the tagging step's GH_TOKEN is %s, want the release App's token, %s: a tag created with GITHUB_TOKEN starts no release run and the ruleset refuses it", s.num, path, value, token)
+	}
+}
+
+// tagEndpoints refuses a gh api call of the tagging step whose path is not the
+// repository's, and a repository endpoint outside tagEndpoints.
+func (r *schemaReader) tagEndpoints(s pleaseStep, path string) {
+	for _, line := range strings.Split(s.script, "\n") {
+		if strings.Contains(line, "gh api") && !repoEndpoint.MatchString(line) {
+			r.fail("line %d: %s: the tagging step calls gh api with no repos/${GH_REPO}/ path on its line: %q; want only the repository's endpoints", s.num, path, strings.TrimSpace(line))
+		}
+	}
+
+	for _, m := range repoEndpoint.FindAllStringSubmatch(s.script, -1) {
+		endpoint, _, _ := strings.Cut(m[1], "?")
+		if !slices.ContainsFunc(tagEndpoints, func(re *regexp.Regexp) bool { return re.MatchString(endpoint) }) {
+			r.fail("line %d: %s: the tagging step calls the API endpoint %s; want only the release PR's (issues, pulls, pulls/<n>, pulls/<n>/files, issues/<n>/labels), the manifest's (contents), the merge commit's ancestry (compare) and the tag's (git/ref, git/refs, git/matching-refs, git/tags)", s.num, path, endpoint)
+		}
 	}
 }
