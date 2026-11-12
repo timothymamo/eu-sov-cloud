@@ -556,7 +556,7 @@ func TestCompositionRootRuleProblems(t *testing.T) {
 				linters: []string{"forbidigo"},
 			}},
 			want: []string{
-				`.golangci.yml:9: group composition-root-env has one exception, for one entry of the group in one file, and this rule drops because "composition-root-env: os\.LookupEnv is passed to run in cmd/shift2eu-server/main\.go only, for SHIFT2EU_SERVER_TOKEN \(ADR 0019\); take any other value as a flag"$ everywhere but the files its path-except names: an exception selects its file with path`,
+				`.golangci.yml:9: group composition-root-env has one exception, for one entry of the group in one file, and this rule drops because "composition-root-env: os\.LookupEnv is called in cmd/shift2eu-server/main\.go only, for SHIFT2EU_SERVER_TOKEN, in the token source it hands to run \(ADR 0019\); take any other value as a flag"$ everywhere but the files its path-except names: an exception selects its file with path`,
 			},
 		},
 		{

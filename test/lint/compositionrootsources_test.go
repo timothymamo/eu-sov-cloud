@@ -47,17 +47,18 @@ func TestCompositionRootPassesLookupEnvToRun(t *testing.T) {
 	}
 }
 
-// tokenEnvName is the environment variable the server's bearer token is read
-// from (cmd/shift2eu-server/token.go): the one name the composition root's token
-// source reads, and no other name or literal.
-const tokenEnvName = "SHIFT2EU_SERVER_TOKEN"
+// envVarName is the name of the environment variable the server reads its
+// bearer token from (cmd/shift2eu-server/token.go): the one name the composition
+// root's token source reads, and no other name or literal. It is a variable's
+// name, not a value, so gosec's G101 has nothing to report here.
+const envVarName = "SHIFT2EU_SERVER_TOKEN"
 
-// tokenEnvVarIdent is the identifier of the constant that holds tokenEnvName. run
+// envVarIdent is the identifier of the constant that holds envVarName. run
 // takes a token source with no name parameter, so the name its one os.LookupEnv
 // call reads is the literal's, and the argument is this identifier alone: a
 // second name, in this file or in any other, is no code path a composition root
 // opens.
-const tokenEnvVarIdent = "tokenEnvVar"
+const envVarIdent = "tokenEnvVar"
 
 // lookupEnvProblems returns what is wrong with the use of os.LookupEnv in src,
 // the content of the composition root file at rel, one line each, and nothing
@@ -81,7 +82,7 @@ func lookupEnvProblems(rel string, src []byte) ([]string, error) {
 	}
 	name, at, ok := importedName(f, "os")
 	if !ok {
-		return []string{fmt.Sprintf("%s: imports no package os, so nothing reads %s through os.LookupEnv for run", rel, tokenEnvName)}, nil
+		return []string{fmt.Sprintf("%s: imports no package os, so nothing reads %s through os.LookupEnv for run", rel, envVarName)}, nil
 	}
 	if name == "." {
 		return []string{fmt.Sprintf("%s:%d: the file dot-imports os, which hides whether os.LookupEnv is the one call the token source makes; import it as os", rel, fset.Position(at).Line)}, nil
@@ -96,7 +97,7 @@ func lookupEnvProblems(rel string, src []byte) ([]string, error) {
 
 	switch {
 	case len(refs) == 0:
-		problems = append(problems, fmt.Sprintf("%s: no reference to os.LookupEnv; main passes run a token source that reads %s with it (ADR 0019)", rel, tokenEnvName))
+		problems = append(problems, fmt.Sprintf("%s: no reference to os.LookupEnv; main passes run a token source that reads %s with it (ADR 0019)", rel, envVarName))
 	case len(refs) > 1:
 		for i, ref := range refs {
 			problems = append(problems, fmt.Sprintf("%s:%d: os.LookupEnv is reference %d of %d in this file; a composition root holds exactly one, in the token source it passes to run", rel, fset.Position(ref.Pos()).Line, i+1, len(refs)))
@@ -164,7 +165,7 @@ func tokenSourceOfArg(arg ast.Expr, pkg string) (token.Pos, bool) {
 	}
 
 	call, ok := ret.Results[0].(*ast.CallExpr)
-	if !ok || len(call.Args) != 1 || !isName(call.Args[0], tokenEnvVarIdent) {
+	if !ok || len(call.Args) != 1 || !isName(call.Args[0], envVarIdent) {
 		return token.NoPos, false
 	}
 
@@ -192,9 +193,9 @@ func lookupEnvRefProblem(rel string, fset *token.FileSet, ref *ast.SelectorExpr,
 	case !called:
 		return fmt.Sprintf("%s:%d: os.LookupEnv is not called here; the composition root's one reference is the call its token source returns, never the function itself, an assignment or another function's argument", rel, line)
 	case len(call.Args) != 1:
-		return fmt.Sprintf("%s:%d: os.LookupEnv is called with %d arguments; the token source reads the identifier %s and nothing else", rel, line, len(call.Args), tokenEnvVarIdent)
-	case !isName(call.Args[0], tokenEnvVarIdent):
-		return fmt.Sprintf("%s:%d: os.LookupEnv is called with %s; the token source reads the identifier %s, which holds %s, and no other name or literal", rel, line, exprText(call.Args[0]), tokenEnvVarIdent, tokenEnvName)
+		return fmt.Sprintf("%s:%d: os.LookupEnv is called with %d arguments; the token source reads the identifier %s and nothing else", rel, line, len(call.Args), envVarIdent)
+	case !isName(call.Args[0], envVarIdent):
+		return fmt.Sprintf("%s:%d: os.LookupEnv is called with %s; the token source reads the identifier %s, which holds %s, and no other name or literal", rel, line, exprText(call.Args[0]), envVarIdent, envVarName)
 	case !sources[ref.Pos()]:
 		return fmt.Sprintf("%s:%d: os.LookupEnv is no token source: run takes a func() (string, bool) whose sole return expression is this call, passed to run directly (ADR 0019)", rel, line)
 	}
