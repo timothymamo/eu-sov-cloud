@@ -283,13 +283,6 @@ hand-written GCP package, add an entry for it, a probe line only it refuses and 
   `go list -deps` lists the imports of a held package's tests but not those imported packages
   themselves, so a package only a test imports is checked against the test's allow list, not for
   its own module, directory or non-Go sources.
-- **Process and environment calls in `cmd/shift2eu`.** The `composition-root` rule allows `os` and
-  `syscall`, so the composition root could call `os.StartProcess`, `syscall.Exec` or
-  `syscall.ForkExec`, shelling out to a cloud CLI, or `os.Environ` and `os.Getenv`, dumping the
-  environment, and only review catches it (the security audit's LOW-2 on issue #101). A forbidigo
-  group scoped to `cmd/shift2eu` would close it; that is follow-up work outside issue #101. The same
-  holds for `cmd/shift2eu-server` under `server-composition-root`, which allows `os` and `syscall` too;
-  `os/exec` is refused there by the allow list and, for its whole dependency tree, by `test/e2e`.
 - **Files lint never loads**: a file behind a build tag other than `integration` and `e2e`, a
   `//go:build ignore` helper, and the `testdata`, `_` and `.` directories `./...` skips. `test/lint`
   fails on such a file, and on an imported package in such a directory. A main package there, run
@@ -319,6 +312,32 @@ hand-written GCP package, add an entry for it, a probe line only it refuses and 
   last forbidigo entry), so an interface elsewhere named with a verb not on it gets through. A source
   adapter can import only the project packages its depguard rule lists, which keeps that interface
   out of its reach unless one of those packages declares it.
+
+## Composition-root process and environment rule
+
+The strict allow lists `composition-root` and `server-composition-root` must allow `os` and
+`syscall`, and both can start a process (shelling out to a cloud CLI) or read the environment, where
+credentials live (CLAUDE.md rule 3). An import rule cannot see a call, so two forbidigo groups hold
+`cmd/shift2eu` and `cmd/shift2eu-server` (issue #111, the security audit's LOW-2 on issue #101):
+
+- **`composition-root-no-exec`** refuses `os.StartProcess`, `syscall.Exec`, `syscall.ForkExec`,
+  `syscall.StartProcess`, every use of `os/exec` (pattern `^\w+\.\w+` with `pkg: '^os/exec$'`), and
+  dumping the whole environment, `os.Environ` and `syscall.Environ`. It has no exception.
+- **`composition-root-env`** refuses reading a named variable: `os.Getenv`, `os.LookupEnv`,
+  `os.ExpandEnv` and `syscall.Getenv`. Its one exception is `os.LookupEnv` in
+  `cmd/shift2eu-server/main.go`, which passes it to `run` for `SHIFT2EU_SERVER_TOKEN` (ADR 0019).
+  `os.LookupEnv` has an entry of its own, and the exception's exclusion rule has
+  `path: ^cmd/shift2eu-server/main\.go$` and a text that is the group's form instantiated with that
+  entry's msg, regex-escaped, so it drops no other entry's issue in that file and nothing elsewhere.
+
+Each group has one exclusion rule, `path-except: ^cmd/shift2eu(?:-server)?/` (two per-root rules would
+each drop the other root's issues). Both hold for `_test.go` files under the roots too: a test there
+runs in the same package and environment, and the server's tests hand `run` a fake lookup. The
+patterns are names, so they hold on release targets such as windows where `syscall.Exec` does not
+exist. `TestCompositionRootForbidigoProbe` runs forbidigo on a probe module
+(`test/lint/testdata/compositionroot`) with every refused call in both roots and in `internal/cli`,
+`TestCompositionRootForbidigoPatterns` pins the patterns against lists of refused and allowed names,
+and `TestCompositionRootExclusions` pins the scope and the one exception.
 
 ## Domain-is-pure rule
 
@@ -362,7 +381,8 @@ pattern fails the probe, and lines for a method value (`_ = t.Local`), a func va
 domain function named `println`, and the refused calls in a domain test and a CLI file must pass.
 `TestDomainIsPurePatterns` checks the patterns, offline, against lists of refused and allowed names.
 `TestForbidigoExclusionsDropOneGroup` pins the exclusion rules of every group: every rule that drops
-forbidigo issues names forbidigo alone with a text of exactly `because "<tag>: [^"]*"$`, the
+forbidigo issues names forbidigo alone with a text of `because "<tag>: [^"]*"$`, or, for a named
+exception, that form with one entry's exact msg in place of `[^"]*` (composition-root rule above), the
 cloud-read-only group has none, and the domain-is-pure rules are exactly `path-except: ^internal/domain/`
 and `path: _test\.go$`. A new group adds its tag and states its rules, even none. A line in the
 cloud-read-only probe passes the string `"domain-is-pure: x"` to a refused call, so a text of just the

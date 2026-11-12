@@ -118,10 +118,16 @@ the main-module assertion must report. The rule holds
 `cmd/shift2eu` only: a glob segment matches no `/`, so a sibling such as `cmd/shift2eu-server` (PRD #103) is
 not covered and gets a sibling rule written the same way, with its own `files:` entry.
 `TestOnlyNamedRulesHoldPrefixEntries` allows prefix entries in this rule and the SDK-only rule alone.
-One gap remains, follow-up work outside issue #101 (the security audit's LOW-2): the rule allows `os`
-and `syscall`, so `cmd/shift2eu` could still call `os.StartProcess`, `syscall.Exec` or
-`syscall.ForkExec`, shelling out to a cloud CLI, or `os.Environ` and `os.Getenv`, dumping the
-environment, and only review catches it. A forbidigo group scoped to `cmd/shift2eu` would close it.
+The rule allows `os` and `syscall`, which can start a process or read the environment, so two
+forbidigo groups hold the composition roots `cmd/shift2eu` and `cmd/shift2eu-server` at the call level
+(issue #111, closing the security audit's LOW-2): `composition-root-no-exec` refuses
+`os.StartProcess`, `syscall.Exec`, `syscall.ForkExec`, `syscall.StartProcess`, any use of `os/exec`,
+`os.Environ` and `syscall.Environ`, with no exception; `composition-root-env` refuses `os.Getenv`,
+`os.LookupEnv`, `os.ExpandEnv` and `syscall.Getenv`, except `os.LookupEnv` in
+`cmd/shift2eu-server/main.go`, which passes it to `run` for `SHIFT2EU_SERVER_TOKEN` (ADR 0019). Each
+group has one `path-except: ^cmd/shift2eu(?:-server)?/` exclusion rule, so it holds for both roots,
+`_test.go` files included, and the exception is a `path` rule for that one file whose text names the
+`os.LookupEnv` entry's msg alone (docs/architecture.md, Composition-root process and environment rule).
 The check anchors a rule's `**/<dir>/**` and `!**/<dir>/**` at the module root, while depguard
 matches them at any depth of the file path, so a nested path such as
 `internal/adapter/target/x/internal/adapter/source/y` is read differently; an exclusion must lie

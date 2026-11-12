@@ -65,7 +65,15 @@
 // exclusion rule that drops forbidigo issues: it names forbidigo alone, its
 // text matches only one group's quoted msg, and the rules of each group are
 // exactly those it states: none for cloud-read-only, and for domain-is-pure
-// one path and one path-except. It reads linters.exclusions.rules with
+// one path and one path-except. Two groups hold the composition roots
+// cmd/shift2eu and cmd/shift2eu-server (issue #111): composition-root-no-exec
+// refuses starting a process and dumping the environment, and
+// composition-root-env reading a named variable. TestCompositionRootExclusions
+// pins their one path-except each and the env group's one exception, whose text
+// is the group's form with the os.LookupEnv entry's exact msg in place of
+// [^"]*, so it drops that entry's issue in cmd/shift2eu-server/main.go alone;
+// TestCompositionRootForbidigoPatterns and TestCompositionRootForbidigoProbe
+// pin their entries. It reads linters.exclusions.rules with
 // test/internal/yamlread, the strict line reader test/architecture reads
 // .golangci.yml with, so a rule written in a way it does not follow fails.
 //
