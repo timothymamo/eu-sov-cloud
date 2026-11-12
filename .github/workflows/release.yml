@@ -217,11 +217,14 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: gh release edit "$TAG" --repo timothymamo/shift2eu --draft=false
 
-  # Builds and pushes the container image to GHCR (ADR 0015), after the GitHub
-  # release: a failed GoReleaser publishes no image. It can push, nothing more:
-  # no OIDC token, so nothing in it can sign. It builds from the Dockerfile with
-  # the build arguments GoReleaser stamps into the release binaries, and
-  # carries no build cache in: BuildKit starts empty on a fresh runner.
+  # Builds and pushes the container image to GHCR (ADR 0015), after GoReleaser
+  # uploads the draft release: a failed GoReleaser publishes no image, but the
+  # image does not wait for attest-archives or publish, so if either fails it
+  # is public while the release is still a draft (ADR 0015). It can push,
+  # nothing more: no OIDC token, so nothing in it can sign. It builds from the
+  # Dockerfile with the build arguments GoReleaser stamps into the release
+  # binaries, and carries no build cache in: BuildKit starts empty on a fresh
+  # runner.
   image:
     name: Container image
     needs: [test, goreleaser]
@@ -773,7 +776,7 @@ jobs:
             exit 1
           fi
           sha256sum -c checksums.txt
-          for subject in shift2eu_* shift2eu-server_* checksums.txt; do
+          for subject in *; do
             gh attestation verify "$subject" --repo timothymamo/shift2eu \
               --signer-workflow timothymamo/shift2eu/.github/workflows/release.yml \
               --source-ref "refs/tags/$TAG" --source-digest "$GITHUB_SHA" --deny-self-hosted-runners

@@ -206,11 +206,6 @@ var attestedArchives = []string{
 	"checksums.txt",
 }
 
-// archiveSubjects are the patterns whose attestations verify-archives
-// verifies: it checks first that the release holds only checksums.txt and the
-// archives it lists, so a bare pattern names exactly them there.
-var archiveSubjects = []string{"shift2eu_*", "shift2eu-server_*", "checksums.txt"}
-
 // attestArchivesSteps are the attest-archives job's steps: GitHub's own
 // download of the archives' workflow artifact, the check of the archives
 // against checksums.txt, and one build provenance attestation of every
@@ -300,6 +295,9 @@ var publishSteps = []releaseStep{
 // checksums.txt and the files it lists, their digests, and the build
 // provenance of each, made by the release workflow for this tag and this
 // commit on GitHub's runners (docs/guide/verify-releases.md, issue #163).
+// Every downloaded file is a subject: the check before the loop holds the
+// directory to exactly the release's assets, so no pattern of the workflow's
+// own decides what is verified.
 var verifyArchivesSteps = []releaseStep{
 	{
 		what: "the download of the published archives", name: "Download the published archives",
@@ -330,7 +328,7 @@ var verifyArchivesSteps = []releaseStep{
 			`  exit 1`,
 			`fi`,
 			`sha256sum -c checksums.txt`,
-			`for subject in ` + strings.Join(archiveSubjects, " ") + `; do`,
+			`for subject in *; do`,
 			`  gh attestation verify "$subject" --repo ` + releaseRepo + ` \`,
 			`    --signer-workflow ` + signerWorkflow + ` \`,
 			`    --source-ref "refs/tags/$TAG" --source-digest "$GITHUB_SHA" --deny-self-hosted-runners`,
@@ -841,7 +839,7 @@ var releaseJobs = func() []releaseJob {
 //     --repo, of every asset of the published release, and, under set -euo
 //     pipefail, the check that the release is not a draft and holds exactly
 //     checksums.txt and the files it lists, sha256sum -c checksums.txt, and
-//     gh attestation verify of every archive and of checksums.txt with the
+//     gh attestation verify of every downloaded file with the
 //     release identity, bound to this tag and commit, on GitHub's runners
 //     only;
 //   - every step holds exactly the keys listed (name, id, uses, with, env,
