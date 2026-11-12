@@ -116,13 +116,62 @@ var pinnedDepguardRules = []check.DepguardRule{
 		},
 	},
 	{
+		// The application layer's _test.go files (issue #144): the rule is a
+		// strict allow list, as the production layers' rules are, so it names
+		// what an application-layer test may import and refuses everything
+		// else. The standard packages are the domain's pure ones (the list of
+		// domain-is-pure above), shared so the domain and its callers' tests
+		// agree on what pure means, and the five the application layer's tests
+		// need beyond them: bytes and slices for what a test builds and
+		// compares, sync for a fake's mutex, testing, and context, which the
+		// use case takes. The module's packages are the application package
+		// under test, the six domain packages and internal/testutil; go-cmp is
+		// the one third-party package a test may import. Every entry is exact,
+		// and no deny entry names a package an allow entry allows.
+		//
+		// The deny list is the one app-uses-ports-not-adapters writes, which the
+		// alias *app-deny shares: under a strict list it only says why a
+		// package the allow list already refuses is refused.
+		//
+		// The files: list holds the _test.go files of internal/app and of the
+		// layer's subdirectories, and no production file, so app-uses-ports-
+		// not-adapters holds those. RuleDirs reads neither glob (it holds
+		// directories written **/<dir>/**), which is why the package check
+		// skips the rule (skippedStrictRules, test/architecture/
+		// repository_test.go) and TestAppTestsUseFakesNotAdaptersProbe holds it
+		// instead.
 		Name:     "app-tests-use-fakes-not-adapters",
-		ListMode: "lax",
+		ListMode: "strict",
 		Files: []string{
 			"**/internal/app/**/*_test.go",
 			"**/internal/app/*_test.go",
 		},
-		Allow: nil,
+		Allow: []string{
+			"bytes$",
+			"context$",
+			"errors$",
+			"fmt$",
+			"github.com/google/go-cmp/cmp$",
+			"github.com/timothymamo/shift2eu/internal/app/analysis$",
+			"github.com/timothymamo/shift2eu/internal/domain/assessment$",
+			"github.com/timothymamo/shift2eu/internal/domain/catalog$",
+			"github.com/timothymamo/shift2eu/internal/domain/inventory$",
+			"github.com/timothymamo/shift2eu/internal/domain/mapping$",
+			"github.com/timothymamo/shift2eu/internal/domain/taxonomy$",
+			"github.com/timothymamo/shift2eu/internal/domain/text$",
+			"github.com/timothymamo/shift2eu/internal/testutil$",
+			"io$",
+			"net/netip$",
+			"net/url$",
+			"slices$",
+			"strconv$",
+			"strings$",
+			"sync$",
+			"testing$",
+			"time$",
+			"unicode$",
+			"unicode/utf8$",
+		},
 		Deny: []string{
 			"github.com/timothymamo/shift2eu/internal/adapter",
 			"github.com/timothymamo/shift2eu/internal/cli",
