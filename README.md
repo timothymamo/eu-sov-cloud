@@ -342,10 +342,35 @@ the request.
 ### Get it
 
 Each release, from the first after `v0.2.0`, publishes `ghcr.io/timothymamo/shift2eu-server` for
-`linux/amd64` and `linux/arm64`, with the same tags, signature, provenance and SBOM as the CLI's image:
-verify it with the commands of [Verify the image](#verify-the-image), with `shift2eu-server` in place of
-`shift2eu` in the image name. It is distroless and runs as `nonroot`, with the entrypoint
-`/shift2eu-server`. The release archives hold the `shift2eu-server` binary beside `shift2eu`. From a
+`linux/amd64` and `linux/arm64`, with the same tags, signature, provenance and SBOM as the CLI's image.
+It is signed and attested by the same release workflow of the same repository, so only the image name
+changes: the certificate identity, `--repo` and `--signer-workflow` stay the CLI's
+([Verify the image](#verify-the-image) explains each check):
+
+```bash
+TAG=<version>
+DIGEST="$(docker buildx imagetools inspect "ghcr.io/timothymamo/shift2eu-server:$TAG" --format '{{.Manifest.Digest}}')"
+IMAGE="ghcr.io/timothymamo/shift2eu-server@$DIGEST"
+
+cosign verify "$IMAGE" \
+  --certificate-identity "https://github.com/timothymamo/shift2eu/.github/workflows/release.yml@refs/tags/$TAG" \
+  --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+  --certificate-github-workflow-trigger push
+
+gh attestation verify "oci://$IMAGE" --repo timothymamo/shift2eu \
+  --signer-workflow timothymamo/shift2eu/.github/workflows/release.yml \
+  --source-ref "refs/tags/$TAG" --deny-self-hosted-runners
+gh attestation verify "oci://$IMAGE" --repo timothymamo/shift2eu \
+  --signer-workflow timothymamo/shift2eu/.github/workflows/release.yml \
+  --source-ref "refs/tags/$TAG" --deny-self-hosted-runners \
+  --predicate-type https://spdx.dev/Document/v2.3
+
+docker run --rm "$IMAGE" --help   # prints the flags and exits 0
+```
+
+It is distroless and runs as `nonroot`, with the entrypoint `/shift2eu-server` and the default
+arguments (`CMD`) `--listen 0.0.0.0:8080`. Arguments given to `docker run` replace those, so pass
+`--listen 0.0.0.0:8080` again with any of your own. The release archives hold the `shift2eu-server` binary beside `shift2eu`. From a
 clone, `make server` builds `./bin/shift2eu-server` and `make server-image` the image
 `shift2eu-server:<version>` (`docker build --target server .` without the version stamp).
 
@@ -385,11 +410,15 @@ The server writes its startup lines and an access log to standard error, one lin
 the method, the path, the status, the duration and the size, and nothing else.
 
 With Docker, publish the port on loopback only, so the proxy on the same host is the one way in, and
-pass the token by name, never as `-e NAME=value`:
+pass the token by name, never as `-e NAME=value`. The image listens on `0.0.0.0:8080` by default and,
+without a token, refuses to start (exit 2). Arguments replace that default, so the example gives
+`--listen` again beside `--allowed-host`. The server needs no Linux capabilities and no privilege
+escalation, so drop them:
 
 ```bash
 export SHIFT2EU_SERVER_TOKEN="$(openssl rand -hex 32)"   # or read it from your secret store
 docker run -d --name shift2eu-server --restart unless-stopped --read-only \
+  --cap-drop ALL --security-opt no-new-privileges \
   --memory 2g -e GOMEMLIMIT=1800MiB -e SHIFT2EU_SERVER_TOKEN \
   -p 127.0.0.1:8080:8080 \
   ghcr.io/timothymamo/shift2eu-server:<version> \
@@ -402,23 +431,34 @@ explains: replace `-e SHIFT2EU_SERVER_TOKEN` with
 `--user "$(id -u):$(id -g)" --mount type=bind,src="$PWD/shift2eu-token",dst=/run/secrets/shift2eu-token,readonly`
 and add `--token-file /run/secrets/shift2eu-token`.
 
-A minimal nginx in front of it: TLS, a password per user, a rate limit per client address, a body
-cap just above the server's, and the token added on the way in, so users never see it. The health
-endpoints are left off the public name; probe them on `127.0.0.1:8080`.
+A minimal nginx in front of it: TLS only (plain HTTP just redirects), a password per user, a rate
+limit per client address, a body cap just above the server's, and the token added on the way in, so
+users never see it. A request over the proxy's rate limit is `429`, which tells it apart from the
+server's own `503 busy` with `Retry-After`. The health endpoints are left off the public name; probe
+them on `127.0.0.1:8080`.
 
 ```nginx
 limit_req_zone $binary_remote_addr zone=shift2eu:10m rate=2r/s;
+
+server {
+    listen 80;
+    server_name api.example.com;
+    return 301 https://$host$request_uri;
+}
 
 server {
     listen 443 ssl;
     server_name api.example.com;
     ssl_certificate     /etc/ssl/api.example.com/fullchain.pem;
     ssl_certificate_key /etc/ssl/api.example.com/privkey.pem;
+    ssl_protocols       TLSv1.2 TLSv1.3;
+    add_header Strict-Transport-Security "max-age=31536000" always;
 
     location /v1/ {
         auth_basic           "shift2eu";
         auth_basic_user_file /etc/nginx/shift2eu.htpasswd;
         limit_req            zone=shift2eu burst=10 nodelay;
+        limit_req_status     429;
         client_max_body_size 11m;
 
         proxy_set_header Host $host;
@@ -433,11 +473,17 @@ server {
 }
 ```
 
+This proxy serves callers on its own origin and servers calling it directly. A browser page on another
+origin should call through its site's own backend, which holds the credentials, rather than through
+`--cors-origin`: a CORS preflight (`OPTIONS`) carries no credentials and the server never allows them,
+so never drop authentication from the proxy, or from the server, to make preflights pass.
+
 ### Example requests
 
 An assessment request is a JSON object with the inventory document ([ADR 0006](docs/adr/0006-json-inventory-file-format-v1.md))
 and the target keys. Started from a clone with a token, the server listens on its default loopback
-address; the requests read the token from the same variable, which keeps it out of your shell history.
+address; the requests read the token from the same variable, which keeps it out of your shell history, and
+hand curl the header on standard input (`-H @-`), which keeps it out of the process list.
 With the repository's sanitised example inventory:
 
 ```bash
@@ -447,20 +493,20 @@ make server && ./bin/shift2eu-server &   # listening on 127.0.0.1:8080
 jq '{inventory: ., targets: ["scaleway"]}' test/e2e/testdata/inventory.json > request.json
 
 # The JSON report.
-curl -sS -X POST http://127.0.0.1:8080/v1/assessments \
-  -H "Authorization: Bearer $SHIFT2EU_SERVER_TOKEN" \
-  -H 'Content-Type: application/json' \
-  --data-binary @request.json
+printf 'Authorization: Bearer %s\n' "$SHIFT2EU_SERVER_TOKEN" |
+  curl -sS -X POST http://127.0.0.1:8080/v1/assessments -H @- \
+    -H 'Content-Type: application/json' \
+    --data-binary @request.json
 
 # The Markdown report, comparing every target.
 jq '{inventory: ., targets: ["all"]}' test/e2e/testdata/inventory.json > request.json
-curl -sS -X POST http://127.0.0.1:8080/v1/assessments \
-  -H "Authorization: Bearer $SHIFT2EU_SERVER_TOKEN" \
-  -H 'Content-Type: application/json' -H 'Accept: text/markdown' \
-  --data-binary @request.json
+printf 'Authorization: Bearer %s\n' "$SHIFT2EU_SERVER_TOKEN" |
+  curl -sS -X POST http://127.0.0.1:8080/v1/assessments -H @- \
+    -H 'Content-Type: application/json' -H 'Accept: text/markdown' \
+    --data-binary @request.json
 
 # The targets, and the health checks.
-curl -sS -H "Authorization: Bearer $SHIFT2EU_SERVER_TOKEN" http://127.0.0.1:8080/v1/targets
+printf 'Authorization: Bearer %s\n' "$SHIFT2EU_SERVER_TOKEN" | curl -sS -H @- http://127.0.0.1:8080/v1/targets
 curl -sS http://127.0.0.1:8080/healthz
 curl -sS http://127.0.0.1:8080/readyz
 ```
