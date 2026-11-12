@@ -5,6 +5,7 @@
   Amended by issue #99: an independent `verify` job checks both published images (Consequences).
   Amended by [ADR 0021](0021-propose-releases-with-release-please-and-tag-with-a-github-app.md) (issue
   #142): the release App creates the tags, and the `v*` tag ruleset is split in two (Consequences).
+  Amended by issue #147: each binary ships in release archives of its own (Consequences).
 - Date: 2026-11-11
 
 ## Context
@@ -206,7 +207,9 @@ attestations, pushed to the registry beside the image.
   `check.ReleaseWorkflow` builds both images' jobs from the same step lists, so the two cannot drift, and
   `check.DryRunMirrorsRelease` holds CI's dry run of each image to its release build. GoReleaser builds
   `shift2eu-server` beside `shift2eu` with the same settings, and each release archive holds both
-  binaries. The GHCR package `shift2eu-server` must be made public by hand after its first push, as
+  binaries (until issue #147, below). That state was never released: no release was tagged between
+  the two changes, so `v0.2.0` and earlier ship the CLI alone and the first release with
+  `shift2eu-server` ships it in archives of its own. The GHCR package `shift2eu-server` must be made public by hand after its first push, as
   `shift2eu`'s was.
 - Amended by issue #99: a ninth job, `verify`, checks what every release published, independently of
   the agents. Until then the published images were checked by hand, or by the `release-tag` skill inside
@@ -281,3 +284,18 @@ attestations, pushed to the registry beside the image.
   (`$IMAGE` for the CLI, `$SERVER_IMAGE` for the server), and refuses a `docker run` line of `verify`
   continued onto the next line, which it could not compare whole; pushing, signing and attesting still
   need a tag, so the rest of `verify` runs only in a release.
+- Amended by issue #147: each binary ships in release archives of its own, from the same tag and
+  version. `.goreleaser.yaml` has two `archives:` entries, each with an `id:` equal to the one build its
+  `ids:` names (GoReleaser names an entry without `id:` `default`, and refuses two of them): the CLI's
+  `shift2eu_<version>_<os>_<arch>`, the name it always had, and the HTTP API's
+  `shift2eu-server_<version>_<os>_<arch>`; both `.tar.gz` (`.zip` on Windows) with `LICENSE`,
+  `README.md` and `docs/`. One `checksums.txt` covers every archive. A user who wants one binary
+  downloads one, and neither archive carries a binary its user did not ask for. The archives are
+  verified as before, against `checksums.txt` (`docs/guide/verify-releases.md`, "Verify an archive");
+  they and `checksums.txt` are neither signed nor attested, only the images are, so signing them is
+  left to a follow-up that changes `release.yml`. `check.GoReleaserArchives` pins the section as a
+  closed schema, and CI's `test` job runs `.github/scripts/verify-archives.sh`
+  (`check.DryRunVerifiesArchives`): a GoReleaser snapshot of the release, failed unless each archive
+  holds exactly its own binary and otherwise only `LICENSE`, `README.md` and Markdown pages under
+  `docs/`, every built platform has one archive of each and `checksums.txt` matches every archive. The
+  script builds into a temporary directory, so a local run leaves `dist/` alone.

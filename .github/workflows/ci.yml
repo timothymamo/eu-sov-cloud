@@ -104,6 +104,17 @@ jobs:
         run: make build
       - name: End-to-end tests
         run: make test-e2e
+      # The same goreleaser version release.yml runs, installed only: the script below runs a snapshot of
+      # the release at this commit, which builds the archives and publishes nothing.
+      - uses: goreleaser/goreleaser-action@a4f02ab5355a589de60d917a659ce617ed19b3de # v7.3.0
+        with:
+          distribution: goreleaser
+          version: "v2.20.1" # exact pin, as release.yml's; Renovate updates it (github-actions manager)
+          install-only: true
+      # The release's archives, built by a snapshot run of its GoReleaser
+      # configuration: each holds exactly its own binary (issue #147).
+      - name: Each archive holds its own binary
+        run: .github/scripts/verify-archives.sh
 
   # The dry run of release-please.yml (issue #142, ADR 0021): its guard and tag steps' own scripts, read
   # from the workflow, run against a fake gh with canned API responses, so a change to how the tag's

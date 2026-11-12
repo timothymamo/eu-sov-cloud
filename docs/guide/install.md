@@ -9,12 +9,23 @@ project's old names: see [Releases before the rename](verify-releases.md#release
 
 ## The release archives
 
-Each [release](https://github.com/timothymamo/shift2eu/releases) publishes one archive per platform,
-for `linux`, `darwin` and `windows` on `amd64` and `arm64` (`.tar.gz`, or `.zip` for Windows), and a
-`checksums.txt`. Every archive holds both binaries, `shift2eu` and `shift2eu-server`, with
-`README.md`, `LICENSE` and the documentation under `docs/`. The binaries are static and need nothing
-else: [Assess an inventory](assess.md) shows how to run `shift2eu`, and
-[Run the HTTP API](http-api.md) `shift2eu-server`.
+Each [release](https://github.com/timothymamo/shift2eu/releases) publishes two archives per
+platform, for `linux`, `darwin` and `windows` on `amd64` and `arm64` (`.tar.gz`, or `.zip` for
+Windows), one per binary, and one `checksums.txt` covering all of them. Both binaries share the
+release's tag and version:
+
+| Archive | Holds |
+|---|---|
+| `shift2eu_<version>_<os>_<arch>` | the CLI, `shift2eu` |
+| `shift2eu-server_<version>_<os>_<arch>` | the HTTP API, `shift2eu-server` |
+
+`<version>` is the tag without its `v` (`shift2eu-server_X.Y.Z_linux_amd64.tar.gz` for `vX.Y.Z`). Each
+archive holds its one binary with `README.md`, `LICENSE` and the documentation under `docs/`; fetch
+only the one you need. The `shift2eu-server_*` archives start with the first release after `v0.2.0`:
+`v0.2.0` and earlier shipped the CLI only. The binaries are static and need nothing else:
+[Assess an inventory](assess.md) shows how to run `shift2eu`, and [Run the HTTP API](http-api.md)
+`shift2eu-server`. [Verify a release](verify-releases.md#verify-an-archive) shows how to check an
+archive against `checksums.txt`, which detects a corrupted download but not a tampered release.
 
 ## The images
 
