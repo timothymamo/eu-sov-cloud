@@ -29,6 +29,13 @@ func main() {
 	_, _ = syscall.Getenv("SHIFT2EU_SERVER_TOKEN") // want "composition-root-env: "
 	_ = os.ExpandEnv("$SHIFT2EU_SERVER_TOKEN")     // want "composition-root-env: "
 
+	// The four lookups locate a directory from an unnamed variable, where a
+	// credential file sits, and the exception covers none of them.
+	_, _ = os.UserHomeDir()   // want "composition-root-env: "
+	_, _ = os.UserConfigDir() // want "composition-root-env: "
+	_, _ = os.UserCacheDir()  // want "composition-root-env: "
+	_ = os.TempDir()          // want "composition-root-env: "
+
 	_ = os.Environ()                              // want "composition-root-no-exec: "
 	_, _ = os.StartProcess("/bin/true", nil, nil) // want "composition-root-no-exec: "
 	_, _, _ = syscall.Syscall(0, 0, 0, 0)         // want "composition-root-no-exec: "

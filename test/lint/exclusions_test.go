@@ -20,7 +20,7 @@ import (
 // linters.settings.forbidigo). The tags of the two composition-root groups,
 // compositionRootTags, are pinned by what their rules select instead of by the
 // text of a path regexp, in TestCompositionRootExclusions.
-var forbidigoTags = []string{"cloud-read-only", "domain-is-pure", testutilNoEnvTag, cliNoEnvOrProcessTag, httpapiTestsNoEnvOrProcessTag, testsNoProcessStateTag}
+var forbidigoTags = []string{"cloud-read-only", "domain-is-pure", testutilNoEnvTag, cliNoEnvOrProcessTag, httpapiTestsNoEnvOrProcessTag, inventoryFileNoEnvTag, testsNoProcessStateTag}
 
 // exclusionRule is one rule of linters.exclusions.rules in .golangci.yml.
 type exclusionRule struct {
@@ -103,6 +103,13 @@ func TestForbidigoExclusionsDropOneGroup(t *testing.T) {
 		// process the composition root runs in.
 		httpapiTestsNoEnvOrProcessTag: {
 			{"path-except": `^internal/httpapi/.*_test\.go$`, "text": groupText(httpapiTestsNoEnvOrProcessTag)},
+		},
+		// The inventory-file reader (issue #152): one rule, for every path
+		// outside internal/adapter/source/inventoryfile/, so the group holds
+		// where the reader is and nowhere else. It holds the reader's
+		// _test.go files too, as cli-no-env-or-process holds the CLI's.
+		inventoryFileNoEnvTag: {
+			{"path-except": `^internal/adapter/source/inventoryfile/`, "text": groupText(inventoryFileNoEnvTag)},
 		},
 		// Every test that belongs to this project (issue #153): one rule, for
 		// the two test binaries that deliberately set the go command's own

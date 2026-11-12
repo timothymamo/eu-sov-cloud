@@ -214,11 +214,18 @@ var noExecAllowed = []rootName{
 	{"example.com/otherexec", "exec.Command"},
 }
 
-// envRefused lists every name the composition-root-env group must refuse.
+// envRefused lists every name the composition-root-env group must refuse: every
+// read of a named variable, and the four lookups that locate a home, config, cache
+// or temp directory from an unnamed one (issue #152, the auditor's finding M-B:
+// without them a root could read ~/.aws/credentials with lint green).
 var envRefused = []rootRefused{
 	{rootName{"os", "os.Getenv"}, "composition-root-env: "},
 	{rootName{"os", "os.LookupEnv"}, "composition-root-env: "},
 	{rootName{"os", "os.ExpandEnv"}, "composition-root-env: "},
+	{rootName{"os", "os.UserHomeDir"}, "composition-root-env: "},
+	{rootName{"os", "os.UserConfigDir"}, "composition-root-env: "},
+	{rootName{"os", "os.UserCacheDir"}, "composition-root-env: "},
+	{rootName{"os", "os.TempDir"}, "composition-root-env: "},
 	{rootName{"syscall", "syscall.Getenv"}, "composition-root-env: "},
 	{rootName{"syscall", "syscall.GetEnvironmentVariable"}, "composition-root-env: "},
 }
@@ -227,6 +234,7 @@ var envRefused = []rootRefused{
 // process names, the whole environment (which the other group refuses, on unix
 // as syscall.Environ and on windows as syscall.GetEnvironmentStrings), the names
 // that only extend a refused one (os.Getenvs, os.LookupEnvs, os.ExpandEnvs,
+// os.UserHomeDirs, os.UserConfigDirs, os.UserCacheDirs, os.TempDirs,
 // syscall.Getenvs, syscall.GetEnvironmentVariables) catch a pattern that lost
 // its $, and a package named os or syscall elsewhere is no composition root's.
 var envAllowed = []rootName{
@@ -245,6 +253,10 @@ var envAllowed = []rootName{
 	{"os", "os.Getenvs"},
 	{"os", "os.LookupEnvs"},
 	{"os", "os.ExpandEnvs"},
+	{"os", "os.UserHomeDirs"},
+	{"os", "os.UserConfigDirs"},
+	{"os", "os.UserCacheDirs"},
+	{"os", "os.TempDirs"},
 	{"syscall", "syscall.Getenvs"},
 	{"syscall", "syscall.GetEnvironmentVariables"},
 	{"example.com/otheros", "os.Getenv"},

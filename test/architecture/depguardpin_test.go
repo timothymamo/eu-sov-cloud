@@ -900,6 +900,75 @@ var pinnedDepguardRules = []check.DepguardRule{
 			"unsafe",
 		},
 	},
+	{
+		// The runtime configuration a composition root reads (issue #152,
+		// the auditor's finding M-A): internal/config loads it from flags,
+		// the environment and an optional file, so it announces the environment
+		// reads that need a forbidigo group of its own and an ADR before it may
+		// import os. It has no code yet, so its allow list is the smallest
+		// AllowList reads: check.AllowList refuses an empty one. The day it
+		// imports a package, the rule names it here in the same commit.
+		Name:     "config-is-pure",
+		ListMode: "strict",
+		Files: []string{
+			"**/internal/config/**",
+			"!$test",
+		},
+		Allow: []string{
+			"errors$",
+		},
+	},
+	{
+		// The target subtree's own documentation package (issue #152, the
+		// auditor's finding M-A): internal/adapter/target holds doc.go and no
+		// code, and its providers have strict rules of their own, which the
+		// negated globs take out here. It imports nothing, so its allow list
+		// is the smallest AllowList reads. A provider added under it is named
+		// here or in embedded-snapshot-targets-stay-offline in the same commit.
+		Name:     "target-docs-are-pure",
+		ListMode: "strict",
+		Files: []string{
+			"**/internal/adapter/target/**",
+			"!**/internal/adapter/target/ovhcloud/**",
+			"!**/internal/adapter/target/scaleway/**",
+			"!**/internal/adapter/target/upcloud/**",
+			"!**/internal/adapter/target/snapshot/**",
+			"!**/internal/adapter/target/targettest/**",
+			"!$test",
+		},
+		Allow: []string{
+			"errors$",
+		},
+	},
+	{
+		// The contract suites every adapter runs (issue #152, the auditor's
+		// finding L-A): they are production packages, and any _test.go file
+		// may import them, so they may import only what they import today.
+		// sourcetest and targettest are taken out of
+		// cloud-adapters-reach-the-cloud-through-the-sdk by name; this is the
+		// rule that holds them. time$ is targettest's, and the one entry the
+		// shared rule lets sourcetest widen by.
+		Name:     "contract-suites-are-pure",
+		ListMode: "strict",
+		Files: []string{
+			"**/internal/adapter/source/sourcetest/**",
+			"**/internal/adapter/target/targettest/**",
+			"!$test",
+		},
+		Allow: []string{
+			"context$",
+			"errors$",
+			"fmt$",
+			"slices$",
+			"testing$",
+			"time$",
+			"github.com/timothymamo/shift2eu/internal/app/analysis$",
+			"github.com/timothymamo/shift2eu/internal/domain/catalog$",
+			"github.com/timothymamo/shift2eu/internal/domain/inventory$",
+			"github.com/timothymamo/shift2eu/internal/domain/taxonomy$",
+			"github.com/timothymamo/shift2eu/internal/domain/text$",
+		},
+	},
 }
 
 // TestDepguardRulesArePinned pins every depguard rule of .golangci.yml against
