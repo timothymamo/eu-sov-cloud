@@ -11,15 +11,25 @@ import (
 	"regexp"
 	"sort"
 	"strings"
-	"unicode"
-	"unicode/utf8"
 )
+
+// Path is where the bundle of api/openapi.json is committed, relative to the
+// repository root: test/openapibundle writes it, and the release publishes
+// that file as shift2eu-server_openapi.json (.goreleaser.yaml's glob is
+// "./" + Path), so the two cannot name different files.
+const Path = "api/openapi.bundled.json"
 
 // schemasPointer is where the bundle adds the schemas it reads.
 const schemasPointer = "#/components/schemas/"
 
 // version is the last kebab part of a schema's base name: v and a number.
 var version = regexp.MustCompile(`^v[0-9]+$`)
+
+// kebabPart is every other kebab part of a schema's base name: a lowercase
+// ASCII letter, then lowercase ASCII letters and digits. Title-cased, the
+// parts make a name that is a valid OpenAPI component key and holds no ~ or
+// /, which a JSON pointer would have to escape.
+var kebabPart = regexp.MustCompile(`^[a-z][a-z0-9]*$`)
 
 // Bundle returns the OpenAPI document at docPath in fsys with every schema it
 // refers to by a path added to components.schemas, and every ref to such a
@@ -75,12 +85,20 @@ func Bundle(fsys fs.FS, docPath string) ([]byte, error) {
 		schemas[name] = schema
 	}
 
-	out, err := json.MarshalIndent(doc, "", "  ")
-	if err != nil {
+	// An Encoder, not MarshalIndent, so that <, > and & stay as they are
+	// written (Bearer <token>) instead of \u003c, \u003e and \u0026. Encode
+	// ends the document with its one newline.
+	var out bytes.Buffer
+
+	enc := json.NewEncoder(&out)
+	enc.SetEscapeHTML(false)
+	enc.SetIndent("", "  ")
+
+	if err := enc.Encode(doc); err != nil {
 		return nil, fmt.Errorf("write the bundle of %s: %w", docPath, err)
 	}
 
-	return append(out, '\n'), nil
+	return out.Bytes(), nil
 }
 
 // bundleRef returns the pointer into the bundle that replaces ref, a $ref of
@@ -136,13 +154,12 @@ func schemaName(file string) (string, error) {
 	var name strings.Builder
 
 	for _, part := range parts[:len(parts)-1] {
-		first, size := utf8.DecodeRuneInString(part)
-		if part == "" || !unicode.IsLetter(first) {
-			return "", fmt.Errorf("%s has a kebab part %q that does not start with a letter", file, part)
+		if !kebabPart.MatchString(part) {
+			return "", fmt.Errorf("%s has a kebab part %q that is not a lowercase letter followed by lowercase letters and digits", file, part)
 		}
 
-		name.WriteRune(unicode.ToUpper(first))
-		name.WriteString(part[size:])
+		name.WriteString(strings.ToUpper(part[:1]))
+		name.WriteString(part[1:])
 	}
 
 	name.WriteString("Report")

@@ -1008,7 +1008,7 @@
     },
     "securitySchemes": {
       "bearerAuth": {
-        "description": "Optional. When the server is configured with a token (an RFC 6750 token68), every /v1/ request must send Authorization: Bearer \u003ctoken\u003e, else 401 unauthorized with WWW-Authenticate: Bearer, checked before the body is read. /healthz and /readyz never require it.",
+        "description": "Optional. When the server is configured with a token (an RFC 6750 token68), every /v1/ request must send Authorization: Bearer <token>, else 401 unauthorized with WWW-Authenticate: Bearer, checked before the body is read. /healthz and /readyz never require it.",
         "scheme": "bearer",
         "type": "http"
       }
