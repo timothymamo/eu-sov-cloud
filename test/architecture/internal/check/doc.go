@@ -29,8 +29,9 @@
 // composition-root (issue #101), which the architecture tests hold the
 // composition root to with Packages, apart from the shared layer listing.
 // The exemption trusts the import path, which is sound because the root
-// go.mod holds no replace directive, read with the go command's own parser
-// (TestRootModuleHasNoReplace), and the repository holds no go.work,
+// go.mod, like every other tracked one outside testdata, holds no replace
+// directive, read with the go command's own parser
+// (TestModulesHaveNoReplace), and the repository holds no go.work,
 // go.work.sum or vendor directory (TestRepositoryHasNoWorkspaceOrVendor), any
 // of which could otherwise substitute code for an allowed import path. A
 // package only a test imports is not listed by go list -deps, so it is not

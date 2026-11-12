@@ -115,9 +115,9 @@
 // fixture cmd/shift2eu-server that imports a third-party library or a stand-in
 // SDK.
 // The exemption trusts the import path, which is sound because nothing can
-// substitute other code for an allowed path: TestRootModuleHasNoReplace reads
-// the root go.mod with the go command's own parser (go mod edit -json) and
-// finds no replace, and TestRepositoryHasNoWorkspaceOrVendor finds no go.work,
+// substitute other code for an allowed path: TestModulesHaveNoReplace reads
+// the root go.mod, and every other tracked one outside testdata, with the go
+// command's own parser (go mod edit -json) and finds no replace, and TestRepositoryHasNoWorkspaceOrVendor finds no go.work,
 // go.work.sum or vendor directory. TestOnlyNamedRulesHoldPrefixEntries keeps
 // prefix entries, which must end in /, to that rule and to composition-root,
 // whose one prefix entry is the module path.

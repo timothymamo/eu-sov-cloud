@@ -48,7 +48,8 @@ make build    # ./bin/shift2eu and ./bin/shift2eu-server
   `# shellcheck disable=SC2086 # FLAGS is a list and must split`. `test/lint` refuses a directive
   without a code of the form `SC` and four digits (`disable=all` included) or without the reason after
   a second `#`, in a shell script or in a workflow's `run:` script, and refuses a tracked
-  `.shellcheckrc`, `shellcheckrc` or `.github/actionlint.yml`.
+  `.shellcheckrc`, `shellcheckrc` or `.github/actionlint.y*ml`. `make lint` also refuses an untracked
+  `.github/actionlint.y*ml` and ignores `SHELLCHECK_OPTS`.
 
 To install the pinned shellcheck outside the VM, take the version and the digest for your platform from
 `dev/lima.yaml` (`shellcheckVersion`, `shellcheckSha256Amd64` or `shellcheckSha256Arm64`). The pins

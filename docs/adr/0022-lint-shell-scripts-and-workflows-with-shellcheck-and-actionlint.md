@@ -49,7 +49,10 @@ codes and give a reason.**
   `go list -m all`, and Renovate's bumps of them never touch `go.mod`. `go.mod` and `go.sum` require
   only what the product and its tests import. A nested module is outside `./...`, so `make test`,
   `make lint`'s golangci-lint runs and GoReleaser's `go mod tidy -diff` never see it; CI's Test job
-  checks it is tidy with `go -C tools mod tidy -diff`.
+  checks it is tidy with `go -C tools mod tidy -diff`. Being a module of its own, it could drift from
+  the product's: `TestToolsModuleFollowsTheRootModulesGo` holds its `go` and `toolchain` directives
+  equal to `go.mod`'s, and `TestModulesHaveNoReplace` refuses a `replace` in it, as in `go.mod`, so
+  actionlint is never pointed at code the pin does not name.
 - **actionlint uses the pinned shellcheck, or fails.** actionlint hands every `run:` script to
   shellcheck, and when it cannot run the one it is given it logs that the check is disabled and passes.
   `dev/actionlint.sh` therefore resolves `command -v shellcheck`, fails with `shellcheck is not
@@ -57,6 +60,11 @@ codes and give a reason.**
   actionlint `-shellcheck=<that path>`; `dev/shellcheck.sh` fails the same way. actionlint v1.7.12
   already runs shellcheck with `--norc` (`rule_shellcheck.go`), so no rc file reaches the workflow
   scripts either.
+- **No actionlint config.** actionlint reads `.github/actionlint.yaml` or `.github/actionlint.yml`
+  whenever one exists, tracked or not, and either can ignore whole rules. `test/lint` refuses a tracked
+  one, and `dev/actionlint.sh` refuses to run while either exists, with a message naming it. Handing
+  actionlint a `-config-file` of our own was rejected: v1.7.12 still parses the repository's file when
+  it finds the project, and an override would hide the file where a refusal says why the run stopped.
 - **govulncheck** scans the product with `govulncheck ./...`, which never reaches the tools module, and
   `make vuln` and the Security workflow scan actionlint separately with
   `govulncheck -C tools github.com/rhysd/actionlint/cmd/actionlint`. A vulnerability there reaches only
@@ -72,7 +80,11 @@ codes and give a reason.**
   every parent, then `~/.shellcheckrc` or `$XDG_CONFIG_HOME/shellcheckrc`. Any of them can disable a
   check, so a developer's run could report less than CI's. `dev/shellcheck.sh` runs
   `shellcheck --norc --severity=style -- <scripts>`, `--` so no file name is read as an option, and
-  `test/lint` refuses a tracked `.shellcheckrc`, `shellcheckrc` or `.github/actionlint.y*ml`.
+  `test/lint` refuses a tracked `.shellcheckrc`, `shellcheckrc` or `.github/actionlint.y*ml`. `--norc`
+  does not stop `SHELLCHECK_OPTS`, whose words shellcheck puts before its own arguments, and the
+  shellcheck actionlint starts inherits it, so `dev/shellcheck.sh` and `dev/actionlint.sh` both
+  `unset SHELLCHECK_OPTS` first; `TestMakeLintRunsEveryReleaseTarget` runs `make lint` with it set
+  and checks neither sees it.
 - **Severity: `--severity=style`**, every finding, which is shellcheck's default, stated so it cannot
   drift. The word splitting the issue names, SC2086, is only `info`, as is SC2016. A
   `--severity=warning` run would let through exactly the class of bug that motivated this. With every

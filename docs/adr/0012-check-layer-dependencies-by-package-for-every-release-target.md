@@ -87,7 +87,7 @@ strict rule holds (one outside every directory, or one a rule excludes) imports 
 reported, as is one no allow list reaches. The exemption trusts the import path, which is sound only
 because nothing can substitute other code for a path a prefix entry allows: the root `go.mod` holds
 no `replace` directive, read with the go command's own parser (`go mod edit -json`,
-`TestRootModuleHasNoReplace`), and the repository holds no `go.work`, `go.work.sum` or `vendor/`
+`TestModulesHaveNoReplace`), and the repository holds no `go.work`, `go.work.sum` or `vendor/`
 directory (`TestRepositoryHasNoWorkspaceOrVendor`), each of which could otherwise let a fork stand in
 for an allowed import path. It reads the strict allow lists only:
 the lax deny rules, such as `go-cmp-only-in-tests` and `cloud-sdks-only-in-provider-adapters`, are
