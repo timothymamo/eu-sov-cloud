@@ -1,9 +1,11 @@
 package openapibundle_test
 
 import (
+	"bytes"
 	"encoding/json"
 	"io/fs"
 	"os"
+	"path"
 	"strings"
 	"testing"
 	"testing/fstest"
@@ -36,9 +38,19 @@ import (
 //     components it already holds are left as they are.
 //
 // A document it cannot bundle is refused, naming what it could not read: a
-// ref to a file fsys does not hold, a ref that escapes the root (../../x), a
-// schema whose <Name> the document already has in components.schemas, and
-// invalid JSON.
+// ref to a file fsys does not hold, a ref that escapes the root (../../x), an
+// external ref whose fragment is not a JSON pointer
+// (widget-v1.schema.json#foo), a ref inside an added schema that is neither #
+// nor a #/ pointer, two files whose base name is the same <Name>, a schema
+// whose <Name> the document already has in components.schemas, and invalid
+// JSON.
+//
+// <Name> is a component key of the document, which OpenAPI restricts to
+// ^[a-zA-Z0-9.\-_]+$: a schema file whose kebab parts are not all
+// ^[a-z][a-z0-9]*$ would give a name outside that, or a ~ the bundle's JSON
+// pointers cannot hold unescaped, so such a file is refused, naming it.
+// a~b-v1.schema.json, foo.bar-v1.schema.json, Widget-v1.schema.json (upper
+// case) and wíget-v1.schema.json (non-ASCII) are all refused.
 //
 // The fixture tree under testdata is bundled whole; the single rules are
 // pinned one at a time on a minimal document held in the case, which is a
@@ -105,6 +117,69 @@ func TestBundle(t *testing.T) {
 			path:    "api/openapi.json",
 			wantErr: true,
 		},
+		{
+			name: "a schema name with a ~ is refused",
+			fsys: schemaWithRef(`../schemas/a~b-v1.schema.json`, `{"type": "object"}`),
+			path: "api/openapi.json",
+
+			wantErr:   true,
+			wantErrIn: "a~b-v1.schema.json",
+		},
+		{
+			name: "a schema name with a . is refused",
+			fsys: schemaWithRef(`../schemas/foo.bar-v1.schema.json`, `{"type": "object"}`),
+			path: "api/openapi.json",
+
+			wantErr:   true,
+			wantErrIn: "foo.bar-v1.schema.json",
+		},
+		{
+			name: "a schema name with an upper case letter is refused",
+			fsys: schemaWithRef(`../schemas/Widget-v1.schema.json`, `{"type": "object"}`),
+			path: "api/openapi.json",
+
+			wantErr:   true,
+			wantErrIn: "Widget-v1.schema.json",
+		},
+		{
+			name: "a schema name that is not ASCII is refused",
+			fsys: schemaWithRef(`../schemas/wíget-v1.schema.json`, `{"type": "object"}`),
+			path: "api/openapi.json",
+
+			wantErr:   true,
+			wantErrIn: "wíget-v1.schema.json",
+		},
+		{
+			name: "two files that are both named WidgetReportV1 are refused",
+			fsys: fstest.MapFS{
+				"api/openapi.json": file(`{
+					"schemas": {
+						"a": {"$ref": "../a/widget-v1.schema.json"},
+						"b": {"$ref": "../b/widget-v1.schema.json"}
+					}
+				}`),
+				"a/widget-v1.schema.json": file(`{"type": "object"}`),
+				"b/widget-v1.schema.json": file(`{"type": "object"}`),
+			},
+			path: "api/openapi.json",
+
+			wantErr:   true,
+			wantErrIn: "WidgetReportV1",
+		},
+		{
+			name:      "a ref inside an embedded schema that is not a pointer into it is refused",
+			fsys:      schemaWithRef("../schemas/widget-v1.schema.json", `{"properties": {"other": {"$ref": "other-v1.schema.json"}}}`),
+			path:      "api/openapi.json",
+			wantErr:   true,
+			wantErrIn: "widget-v1.schema.json",
+		},
+		{
+			name:      "an external ref whose fragment is not a JSON pointer is refused",
+			fsys:      schemaWithRef("../schemas/widget-v1.schema.json#foo", `{"type": "object"}`),
+			path:      "api/openapi.json",
+			wantErr:   true,
+			wantErrIn: "widget-v1.schema.json#foo",
+		},
 	}
 
 	for _, tc := range tests {
@@ -137,39 +212,84 @@ func TestBundle(t *testing.T) {
 }
 
 // TestBundleWritesOneCanonicalDocument pins the form of the bundle, so that the
-// document committed under api/ does not change with the map iteration order or
-// a formatter: Bundle writes 2-space indented JSON with its keys sorted and one
-// trailing newline, and two calls on the same document give the same bytes.
+// document committed under api/ does not change with the map iteration order, a
+// formatter or an encoder's HTML escaping: Bundle writes 2-space indented JSON
+// with its keys sorted and one trailing newline, and two calls on the same
+// document give the same bytes. It escapes no <, > or & either: what it writes
+// for text holding them is the text as it is written, so the published document
+// reads Authorization: Bearer <token> where the source does, and not
+// \u003ctoken\u003e.
 func TestBundleWritesOneCanonicalDocument(t *testing.T) {
 	t.Parallel()
 
-	doc := os.DirFS("testdata")
-
-	got, err := openapibundle.Bundle(doc, "api/openapi.json")
-	if err != nil {
-		t.Fatalf("Bundle(%q): %v", "api/openapi.json", err)
+	tests := []struct {
+		name string
+		fsys fs.FS
+		path string
+		// literal is text the bundle must hold as it is written, <, > and &
+		// included; "" for a fixture that holds none of them.
+		literal string
+	}{
+		{
+			name: "the fixture tree",
+			fsys: os.DirFS("testdata"),
+			path: "api/openapi.json",
+		},
+		{
+			name:    "text with <, > and &",
+			fsys:    document(htmlDocument),
+			path:    "api/openapi.json",
+			literal: "Bearer <token> & a > b",
+		},
 	}
 
-	// The output is the canonical one: what the standard library writes for
-	// the document the output itself holds, every object with its keys
-	// sorted, indented by 2 spaces, plus the one newline a text file ends
-	// with.
-	canonical, err := json.MarshalIndent(decode(t, string(got)), "", "  ")
-	if err != nil {
-		t.Fatalf("write the bundle's document back: %v", err)
-	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
 
-	if diff := cmp.Diff(string(canonical)+"\n", string(got)); diff != "" {
-		t.Errorf("Bundle(%q) is not 2-space indented JSON with sorted keys and one trailing newline (-want +got):\n%s", "api/openapi.json", diff)
-	}
+			got, err := openapibundle.Bundle(tc.fsys, tc.path)
+			if err != nil {
+				t.Fatalf("Bundle(%q): %v", tc.path, err)
+			}
 
-	again, err := openapibundle.Bundle(doc, "api/openapi.json")
-	if err != nil {
-		t.Fatalf("Bundle(%q) a second time: %v", "api/openapi.json", err)
-	}
+			// The output is the canonical one: what the standard library writes
+			// for the document the output itself holds, its keys sorted, indented
+			// by 2 spaces and no character escaped for HTML.
+			var canonical bytes.Buffer
 
-	if diff := cmp.Diff(string(got), string(again)); diff != "" {
-		t.Errorf("Bundle(%q) is not deterministic (-first +second):\n%s", "api/openapi.json", diff)
+			enc := json.NewEncoder(&canonical)
+			enc.SetEscapeHTML(false)
+			enc.SetIndent("", "  ")
+
+			if err := enc.Encode(decode(t, string(got))); err != nil {
+				t.Fatalf("write the bundle's document back: %v", err)
+			}
+
+			// Encode ends what it writes with the one newline a text file ends
+			// with, so the bundle is exactly that.
+			if diff := cmp.Diff(canonical.String(), string(got)); diff != "" {
+				t.Errorf("Bundle(%q) is not 2-space indented JSON with sorted keys, one trailing newline and no HTML escaping (-want +got):\n%s", tc.path, diff)
+			}
+
+			if tc.literal != "" && !strings.Contains(string(got), tc.literal) {
+				t.Errorf("Bundle(%q) does not hold %q as it is written, want <, > and & literal", tc.path, tc.literal)
+			}
+
+			for _, escaped := range []string{`\u003c`, `\u003C`, `\u003e`, `\u003E`, `\u0026`} {
+				if strings.Contains(string(got), escaped) {
+					t.Errorf("Bundle(%q) holds %s, want the character it stands for: an HTML-escaping encoder wrote the bundle", tc.path, escaped)
+				}
+			}
+
+			again, err := openapibundle.Bundle(tc.fsys, tc.path)
+			if err != nil {
+				t.Fatalf("Bundle(%q) a second time: %v", tc.path, err)
+			}
+
+			if diff := cmp.Diff(string(got), string(again)); diff != "" {
+				t.Errorf("Bundle(%q) is not deterministic (-first +second):\n%s", tc.path, diff)
+			}
+		})
 	}
 }
 
@@ -279,10 +399,46 @@ const bundledFixture = `
 }
 `
 
+// htmlDocument is a document whose text holds the three characters a JSON
+// encoder escapes for HTML by default, <, > and &, as the API's own
+// description of the token does ("Authorization: Bearer <token>"):
+// TestBundleWritesOneCanonicalDocument requires the bundle to hold them as they
+// are written.
+const htmlDocument = `
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Widgets <&>",
+    "version": "1"
+  },
+  "paths": {},
+  "components": {
+    "schemas": {
+      "Widget": {
+        "type": "object",
+        "description": "Send Authorization: Bearer <token> & a > b."
+      }
+    }
+  }
+}
+`
+
 // document returns a file system holding the OpenAPI document doc at
 // api/openapi.json and nothing else.
 func document(doc string) fs.FS {
 	return fstest.MapFS{"api/openapi.json": file(doc)}
+}
+
+// schemaWithRef returns a file system holding the OpenAPI document at
+// api/openapi.json, which refers to ref, and the schema file ref names, as ref
+// resolves it against api/, holding schema.
+func schemaWithRef(ref, schema string) fs.FS {
+	name, _, _ := strings.Cut(ref, "#")
+
+	return fstest.MapFS{
+		"api/openapi.json":     file(`{"schemas": {"widget": {"$ref": "` + ref + `"}}}`),
+		path.Join("api", name): file(schema),
+	}
 }
 
 // file returns doc as a MapFS file.

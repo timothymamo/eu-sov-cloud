@@ -1,6 +1,7 @@
 package openapibundle_test
 
 import (
+	"bytes"
 	"encoding/json"
 	"flag"
 	"fmt"
@@ -24,12 +25,15 @@ var update = flag.Bool("update", false, "rewrite api/openapi.bundled.json")
 // test/openapibundle.
 const repoRoot = "../.."
 
-// The document the bundle is generated from, and the bundle every release
-// publishes as shift2eu-server_openapi.json (issue #139), both relative to the
-// root.
+// The document the bundle is generated from, relative to the root, and the
+// bundle every release publishes as shift2eu-server_openapi.json (issue #139).
+// The bundle's path is openapibundle.Path, the one source the bundler, this
+// package and the release's .goreleaser.yaml glob all read: a second copy
+// here would let the release publish a file the bundler never writes.
 const (
-	source  = "api/openapi.json"
-	bundled = "api/openapi.bundled.json"
+	source = "api/openapi.json"
+
+	bundled = openapibundle.Path
 )
 
 // updateCommand is what a stale or missing bundle tells the reader to run.
@@ -115,6 +119,50 @@ func TestBundledDocumentIsSelfContained(t *testing.T) {
 	for name, file := range reportSchemas {
 		if _, ok := schemas[name]; !ok {
 			t.Errorf("%s: components.schemas holds no %s, want the %s schema, the one api/openapi.json refers to by a path", bundled, name, file)
+		}
+	}
+}
+
+// TestBundledDocumentEscapesNoHTML pins the bundle's form where the review of
+// issue #139 found it: api/openapi.bundled.json holds the text of
+// api/openapi.json as it is written. A JSON encoder escapes <, > and & for
+// HTML by default, which turned the API's own "Authorization: Bearer <token>"
+// into Bearer \u003ctoken\u003e, so every one of the three the source holds
+// appears literally in the bundle and none appears as a \u escape.
+func TestBundledDocumentEscapesNoHTML(t *testing.T) {
+	t.Parallel()
+
+	data, err := os.ReadFile(filepath.Join(repoRoot, filepath.FromSlash(bundled)))
+	if err != nil {
+		t.Fatalf("read %s: %v (run %s to write it)", bundled, err, updateCommand)
+	}
+
+	doc, err := os.ReadFile(filepath.Join(repoRoot, filepath.FromSlash(source)))
+	if err != nil {
+		t.Fatalf("read %s: %v", source, err)
+	}
+
+	held := false
+
+	for _, literal := range []string{"<", ">", "&"} {
+		if !bytes.Contains(doc, []byte(literal)) {
+			continue
+		}
+
+		held = true
+
+		if !bytes.Contains(data, []byte(literal)) {
+			t.Errorf("%s does not hold %q, which %s does: want the text as it is written, escaped for no format", bundled, literal, source)
+		}
+	}
+
+	if !held {
+		t.Fatalf("%s holds none of <, > and &, so this test checks nothing", source)
+	}
+
+	for _, escaped := range []string{`\u003c`, `\u003C`, `\u003e`, `\u003E`, `\u0026`} {
+		if bytes.Contains(data, []byte(escaped)) {
+			t.Errorf("%s holds %s, want the character it stands for: an HTML-escaping encoder wrote the bundle, run %s", bundled, escaped, updateCommand)
 		}
 	}
 }
