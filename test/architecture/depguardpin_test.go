@@ -985,10 +985,11 @@ var pinnedDepguardRules = []check.DepguardRule{
 		// tag, so test/e2e is a production package a composition root may import,
 		// and e2e-is-black-box, the only rule that held it, allows $gostd. An
 		// untagged file there that read os.Getenv and started exec.Command stayed
-		// lint green with every test passing. The glob sits before !$test, so the
-		// e2e test files stay on e2e-is-black-box, which is the black-box rule with
-		// a $gostd of its own. The files: list takes the test files out (!$test),
-		// whose imports these packages' tests would not fit this list: a test of
+		// lint green with every test passing. !$test takes the e2e test files out
+		// (depguard applies negated globs whatever their position), so they stay on
+		// e2e-is-black-box alone, which is the black-box rule with a $gostd of its
+		// own. That same negation takes out the other test files, whose imports
+		// these packages' tests would not fit this list: a test of
 		// test/architecture reads the repository, go-cmp included. The nested
 		// internal tree under test/architecture is taken out with a negated glob,
 		// as a rule's files: list cannot say "this directory only": without it the
