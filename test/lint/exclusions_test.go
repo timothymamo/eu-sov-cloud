@@ -20,7 +20,7 @@ import (
 // linters.settings.forbidigo). The tags of the two composition-root groups,
 // compositionRootTags, are pinned by what their rules select instead of by the
 // text of a path regexp, in TestCompositionRootExclusions.
-var forbidigoTags = []string{"cloud-read-only", "domain-is-pure"}
+var forbidigoTags = []string{"cloud-read-only", "domain-is-pure", testutilNoEnvTag}
 
 // exclusionRule is one rule of linters.exclusions.rules in .golangci.yml.
 type exclusionRule struct {
@@ -82,6 +82,12 @@ func TestForbidigoExclusionsDropOneGroup(t *testing.T) {
 		"domain-is-pure": {
 			{"path-except": `^internal/domain/`, "text": domainIsPure},
 			{"path": `_test\.go$`, "text": domainIsPure},
+		},
+		// The helpers every test shares (issue #144): one rule, for every path
+		// outside internal/testutil/, so the group holds where the helpers are
+		// and nowhere else.
+		testutilNoEnvTag: {
+			{"path-except": `^internal/testutil/`, "text": groupText(testutilNoEnvTag)},
 		},
 	}
 	if diff := cmp.Diff(want, got); diff != "" {

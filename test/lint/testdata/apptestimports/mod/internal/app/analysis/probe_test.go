@@ -22,6 +22,16 @@
 // it refuses both, the subtree included, because it names neither. The pure
 // packages the tests may use are the ones allow_test.go imports.
 //
+// fmt and time are the application layer's test rule's own finding (issue #144's
+// review, finding B1, and the auditor's L-2): the rule used to share the whole
+// of domain-is-pure, fmt and time among it, and neither is pure in a test's
+// hands. fmt.Print* writes to stdout, fmt.Scan* reads stdin, time.LoadLocation
+// reads zoneinfo files and $ZONEINFO, and time.Now reads the clock, while the
+// forbidigo group that refuses those calls in the domain (domain-is-pure) drops
+// them in every _test.go file. The allow list is minimal instead, so it refuses
+// both, and these two lines pin it: a rule that shares the domain's list again
+// fails here.
+//
 // path/filepath is not here on purpose: it is pure enough that the rule may
 // name it, and the probe holds only what the rule must refuse.
 package analysis_test
@@ -33,6 +43,7 @@ import (
 	"debug/elf"                  // want "import 'debug/elf' is not allowed from list 'app-tests-use-fakes-not-adapters'"
 	"encoding/xml"               // want "import 'encoding/xml' is not allowed from list 'app-tests-use-fakes-not-adapters'"
 	"expvar"                     // want "import 'expvar' is not allowed from list 'app-tests-use-fakes-not-adapters'"
+	"fmt"                        // want "import 'fmt' is not allowed from list 'app-tests-use-fakes-not-adapters'"
 	"go/build"                   // want "import 'go/build' is not allowed from list 'app-tests-use-fakes-not-adapters'"
 	"go/build/constraint"        // want "import 'go/build/constraint' is not allowed from list 'app-tests-use-fakes-not-adapters'"
 	"go/importer"                // want "import 'go/importer' is not allowed from list 'app-tests-use-fakes-not-adapters'"
@@ -52,6 +63,7 @@ import (
 	"runtime/debug"              // want "import 'runtime/debug' is not allowed from list 'app-tests-use-fakes-not-adapters'"
 	"syscall"                    // want "import 'syscall' is not allowed from list 'app-tests-use-fakes-not-adapters': the application layer makes no system calls (files, sockets, processes); an adapter behind a port does"
 	"text/template"              // want "import 'text/template' is not allowed from list 'app-tests-use-fakes-not-adapters'"
+	"time"                       // want "import 'time' is not allowed from list 'app-tests-use-fakes-not-adapters'"
 	"unsafe"                     // want "import 'unsafe' is not allowed from list 'app-tests-use-fakes-not-adapters'"
 
 	"github.com/timothymamo/shift2eu/internal/adapter/report/markdown" // want "import 'github.com/timothymamo/shift2eu/internal/adapter/report/markdown' is not allowed from list 'app-tests-use-fakes-not-adapters'"
@@ -66,6 +78,7 @@ var (
 	_ = elf.Open
 	_ = xml.Marshal
 	_ = expvar.NewInt
+	_ = fmt.Sprintf
 	_ = build.Default
 	_ = constraint.Parse
 	_ = importer.ForCompiler
@@ -85,6 +98,7 @@ var (
 	_ = debug.ReadBuildInfo
 	_ = syscall.Open
 	_ = template.New
+	_ = time.Duration(0)
 	_ = unsafe.Sizeof
 	_ = markdown.Render
 )
