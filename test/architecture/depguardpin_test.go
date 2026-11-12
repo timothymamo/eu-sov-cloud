@@ -969,6 +969,42 @@ var pinnedDepguardRules = []check.DepguardRule{
 			"github.com/timothymamo/shift2eu/internal/domain/text$",
 		},
 	},
+	{
+		// The test trees' own documentation packages (issue #152, the auditor's
+		// finding H-1): test/apiparity, test/architecture, test/container,
+		// test/devenv, test/docs and test/lint hold doc.go and no code, and each
+		// is a production package a composition root can import, because the
+		// roots' allow lists name the module path as a prefix entry. Go's internal
+		// rule keeps test/internal/... and test/architecture/internal/... out of
+		// cmd/ and internal/ and nothing keeps these out, so they get a rule of
+		// their own. It is one shared strict allow list, the smallest AllowList
+		// reads (check.AllowList refuses an empty one, the place S1 records); the
+		// day one of these packages imports a package, it names it here and in
+		// .golangci.yml in the same commit. test/e2e is left out: e2e-is-black-box
+		// holds it. The files: list takes the test files out (!$test), whose
+		// imports these packages' tests would not fit this list: a test of
+		// test/architecture reads the repository, go-cmp included. The nested
+		// internal tree under test/architecture is taken out with a negated glob,
+		// as a rule's files: list cannot say "this directory only": without it the
+		// rule would hold test/architecture/internal/check, which reads os and
+		// os/exec, and refuse them.
+		Name:     testDocsRule,
+		ListMode: "strict",
+		Files: []string{
+			"**/test/apiparity/**",
+			"**/test/architecture/**",
+			"!**/test/architecture/internal/**",
+			"**/test/container/**",
+			"**/test/devenv/**",
+			"**/test/docs/**",
+			"**/test/lint/**",
+			"!$test",
+		},
+		Allow: []string{
+			"errors$",
+		},
+		Deny: nil,
+	},
 }
 
 // TestDepguardRulesArePinned pins every depguard rule of .golangci.yml against

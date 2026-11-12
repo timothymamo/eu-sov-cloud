@@ -24,6 +24,14 @@ const (
 	modulePath = "github.com/timothymamo/shift2eu"
 )
 
+// testDocsRule is the strict depguard rule that holds the test trees' own
+// documentation packages, test/apiparity, test/architecture, test/container,
+// test/devenv, test/docs and test/lint (issue #152, the auditor's finding H-1):
+// each is a non-test package a composition root can import, and Go's internal
+// rule keeps only the nested internal trees out of reach. It is skipped below,
+// with the reason the package check cannot read it as a layer.
+const testDocsRule = "test-docs-are-pure"
+
 // skippedStrictRules are the strict rules of .golangci.yml the package check
 // cannot hold, each with the reason it cannot. Every other strict rule is one
 // the check reads a layer from: TestEveryStrictRuleIsChecked requires that, and
@@ -33,8 +41,9 @@ const (
 // strict allow lists of exact entries, which the check reads package by package.
 var skippedStrictRules = map[string]string{
 	"e2e-is-black-box":        "test/e2e holds test files only, so go list -deps reaches no package of it: it is no layer of the production packages the check holds, and a package only a test file imports is never listed at all",
-	compositionRootRule:       "go list -deps ./cmd/shift2eu/... lists the composition root's whole dependency tree, which the shared layer listing does not read: the adapters, internal/cli, internal/version and the standard library stand in no rule directory the listing holds, so listing the root beside the layers would flag them. TestCompositionRootRulesAreHeldToTheirRuleForEveryReleaseTarget holds cmd/shift2eu to this rule's allow list instead, on every release target. What it reaches is held too, but not by this listing: TestEveryModulePackageIsHeldByAStrictRule holds every module package under internal/ and cmd/ to a strict rule of its own, so a package the root reaches cannot fall through unheld (issue #152)",
-	serverCompositionRootRule: "go list -deps ./cmd/shift2eu-server/... lists the server's whole dependency tree, which the shared layer listing does not read: the adapters, internal/httpapi, internal/version and the standard library stand in no rule directory the listing holds, and the lax rule adapters-are-built-in-cmd holds the adapters, which the check does not read. TestCompositionRootRulesAreHeldToTheirRuleForEveryReleaseTarget holds cmd/shift2eu-server to this rule's allow list instead, on every release target, and TestEveryModulePackageIsHeldByAStrictRule holds every module package it reaches to a strict rule of its own (issue #152)",
+	testDocsRule:              "the doc.go-only test packages import nothing, so there is no import of theirs to hold, and the pattern that would list them, ./test/architecture/..., also reaches test/architecture/internal/check, which reads os, os/exec and test/internal/releasetarget: a rule's files: list holds a directory, not a package, so holding ./test/architecture/... to this allow list would flag that package and the test/internal/... packages it imports, which Go's internal rule keeps out of reach of the roots and no depguard rule holds. The property that does hold these packages, TestEveryModulePackageIsHeldByAStrictRule, reads .golangci.yml directly rather than through go list",
+	compositionRootRule:       "go list -deps ./cmd/shift2eu/... lists the composition root's whole dependency tree, which the shared layer listing does not read: the adapters, internal/cli, internal/version and the standard library stand in no rule directory the listing holds, so listing the root beside the layers would flag them. TestCompositionRootRulesAreHeldToTheirRuleForEveryReleaseTarget holds cmd/shift2eu to this rule's allow list instead, on every release target. What it reaches is held too, but not by this listing: TestEveryModulePackageIsHeldByAStrictRule holds every non-test module package a composition root can import to a strict rule of its own, so a package the root reaches cannot fall through unheld (issue #152)",
+	serverCompositionRootRule: "go list -deps ./cmd/shift2eu-server/... lists the server's whole dependency tree, which the shared layer listing does not read: the adapters, internal/httpapi, internal/version and the standard library stand in no rule directory the listing holds, and the lax rule adapters-are-built-in-cmd holds the adapters, which the check does not read. TestCompositionRootRulesAreHeldToTheirRuleForEveryReleaseTarget holds cmd/shift2eu-server to this rule's allow list instead, on every release target, and TestEveryModulePackageIsHeldByAStrictRule holds every non-test module package it reaches to a strict rule of its own (issue #152)",
 }
 
 // sdkRule is the strict depguard rule that holds every cloud source adapter, and

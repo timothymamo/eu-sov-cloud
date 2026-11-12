@@ -14,21 +14,27 @@ import (
 )
 
 // modulePackageDirs returns the directory, relative to the module root, of every
-// module package under internal/ and cmd/: the layers and the packages beside
-// them that a composition root could hand the work to. It lists them with go
-// list for every release target .goreleaser.yaml builds, with the e2e and
-// integration files on as make lint loads them, so a package that only builds on
-// one platform is listed too.
+// non-test module package a composition root could hand the work to. It lists
+// them with go list for every release target .goreleaser.yaml builds, with the
+// e2e and integration files on as make lint loads them, so a package that only
+// builds on one platform or one build tag is listed too.
 //
-// The test/ directories are left out on purpose, because a composition root
-// cannot import what they hold: a package there either has _test.go files only,
-// so there is no importable package at all, or sits under a directory named
-// internal (test/internal/..., test/architecture/internal/...), which Go's
-// internal rule keeps every package outside test/ from importing. The roots'
-// allow lists name the module path as a prefix entry, so that rule, not a
-// depguard rule, is what keeps the test trees out. internal/ and cmd/ are where a
-// package a root can reach and delegate to lives, which is the class these
-// properties close (issue #152, the auditor's findings M-A and M-B).
+// The listing takes the whole module and not internal/ and cmd/ alone (issue
+// #152, the auditor's finding H-1): the roots' allow lists name the module path
+// as a prefix entry, so cmd/shift2eu or a test of internal/cli may import
+// test/lint, test/devenv or a new top-level pkg/ as well, and the earlier
+// listing of internal/ and cmd/ alone left those packages to no rule at all.
+// Only Go's own internal rule keeps a package out of reach of both roots, and
+// only that rule is exempted here: a package whose path holds an internal
+// element whose parent is not the module root (test/internal/...,
+// test/architecture/internal/...) can be imported only from the tree that holds
+// its internal directory, so neither cmd/ nor internal/ reaches it, and no
+// depguard rule is what keeps it out. The module's own root package, were one
+// added, is left out too: no rel names it, and a rule's files: list holds a
+// directory, which the module root is not; the repository has none today.
+//
+// This is the class of packages the two properties below close (issue #152, the
+// auditor's findings M-A, M-B and H-1).
 func modulePackageDirs(t *testing.T) []string {
 	t.Helper()
 
@@ -47,7 +53,7 @@ func modulePackageDirs(t *testing.T) []string {
 	dirs := make(map[string]bool)
 
 	for _, target := range targets {
-		pkgs, err := check.ListPackages(t.Context(), root, target, false, []string{"e2e", "integration"}, "./internal/...", "./cmd/...")
+		pkgs, err := check.ListPackages(t.Context(), root, target, false, []string{"e2e", "integration"}, "./...")
 		if err != nil {
 			t.Fatalf("ListPackages(%v): %v", target, err)
 		}
@@ -58,7 +64,7 @@ func modulePackageDirs(t *testing.T) []string {
 			}
 
 			rel, ok := strings.CutPrefix(pkg.ImportPath, modulePath+"/")
-			if !ok || (rel != "internal" && !strings.HasPrefix(rel, "internal/") && rel != "cmd" && !strings.HasPrefix(rel, "cmd/")) {
+			if !ok || hiddenByGoInternalRule(rel) {
 				continue
 			}
 
@@ -67,11 +73,15 @@ func modulePackageDirs(t *testing.T) []string {
 	}
 
 	// A listing that read nothing would pass both checks below without looking
-	// at a package, so the packages the properties exist for are named.
+	// at a package, so the packages the properties exist for are named, one of
+	// them under test/: that tree is what the whole-module listing adds, and a
+	// listing narrowed back to internal/ and cmd/ would still see the other
+	// three.
 	for _, want := range []string{
 		"internal/config",
 		"internal/adapter/source/sourcetest",
 		"internal/adapter/target/targettest",
+		"test/lint",
 	} {
 		if !dirs[want] {
 			t.Errorf("go list did not list %s/%s, so the checks below read nothing there", modulePath, want)
@@ -79,10 +89,28 @@ func modulePackageDirs(t *testing.T) []string {
 	}
 
 	if len(dirs) == 0 {
-		t.Fatal("go list listed no module package under internal/ or cmd/")
+		t.Fatal("go list listed no non-test module package")
 	}
 
 	return slices.Sorted(maps.Keys(dirs))
+}
+
+// hiddenByGoInternalRule reports whether Go's internal rule keeps every package
+// under internal/ and cmd/ from importing rel, a package path relative to the
+// module root: whether rel holds an element named internal whose parent is not
+// the module root. internal/config is importable from anywhere in the module,
+// so it is no exemption; test/internal/yamlread and
+// test/architecture/internal/check are importable only from below their own
+// internal directory's parent, so no composition root and no driving adapter
+// reaches them.
+func hiddenByGoInternalRule(rel string) bool {
+	for i, element := range strings.Split(rel, "/") {
+		if element == "internal" && i > 0 {
+			return true
+		}
+	}
+
+	return false
 }
 
 // strictRuleCoverage is one strict depguard rule as the two properties below read
@@ -175,11 +203,12 @@ func (r strictRuleCoverage) allowsOS() bool {
 // internal/adapter/target/targettest fell under no rule at all.
 //
 // The property is read from .golangci.yml, offline and without golangci-lint:
-// every module package under internal/ and cmd/, listed with go list for every
-// release target, is held by at least one strict rule whose files: list names its
-// directory (or one above it), whose exclusions do not take it out, and which
-// holds production files. The test/ trees are left out for the reason
-// modulePackageDirs gives.
+// every non-test module package a composition root can import, listed with go
+// list for every release target, is held by at least one strict rule whose
+// files: list names its directory (or one above it), whose exclusions do not
+// take it out, and which holds production files. The packages Go's internal rule
+// keeps out of cmd/ and internal/, and the module's own root package, are left
+// out for the reasons modulePackageDirs gives.
 func TestEveryModulePackageIsHeldByAStrictRule(t *testing.T) {
 	t.Parallel()
 
@@ -435,14 +464,21 @@ func inScope(scopes []groupScope, file string) bool {
 	return true
 }
 
+// coverageProbeFile is the file name the environment-group property reads the
+// forbidigo scopes for, in a directory the rule holds: a production file name,
+// not a _test.go one, and one no file of the repository has, so the probe cannot
+// collide with a real file a path rule names (issue #152, the reviewer's N2).
+const coverageProbeFile = "strictcoverage_probe_production.go"
+
 // TestEveryOsAllowingRuleHasAnEnvironmentGroup closes the second half of the
 // delegation gap issue #152 opened (the auditor's finding M-B): a depguard rule
 // that allows os lets the package read files, and os also reads and hands over
 // the environment, where credentials live (CLAUDE.md rule 3). An import rule
-// cannot say which call of os a package makes, so every module package under
-// internal/ and cmd/ whose strict rule allows os must be held by a forbidigo group
-// that refuses every read of osEnvironmentReads: a root could otherwise hand the
-// read to a package it constructs, with lint green. Before this test
+// cannot say which call of os a package makes, so every non-test module package
+// a composition root can import (modulePackageDirs) whose strict rule allows os
+// must be held by a forbidigo group that refuses every read of
+// osEnvironmentReads: a root could otherwise hand the read to a package it
+// constructs, with lint green. Before this test
 // internal/adapter/source/inventoryfile, which cmd/shift2eu imports, had no such
 // group, and the composition roots' groups refused no directory lookup.
 //
@@ -463,7 +499,7 @@ func TestEveryOsAllowingRuleHasAnEnvironmentGroup(t *testing.T) {
 			continue
 		}
 
-		file := dir + "/probe.go"
+		file := dir + "/" + coverageProbeFile
 		refused := make(map[string]bool)
 
 		for tag := range patterns {
@@ -492,6 +528,39 @@ func TestEveryOsAllowingRuleHasAnEnvironmentGroup(t *testing.T) {
 			t.Errorf("%s/%s: its strict rule allows os, but no forbidigo group in scope refuses %s; add a group with an entry refusing os, or widen the group that holds the package, and a linters.exclusions.rules rule that scopes it, pinned by TestForbidigoExclusionsDropOneGroup (issue #152, CLAUDE.md rule 3)",
 				modulePath, dir, strings.Join(missing, ", "))
 		}
+	}
+}
+
+// TestHiddenByGoInternalRule pins the one exemption modulePackageDirs makes: a
+// package path whose internal element has a parent other than the module root is
+// unreachable from cmd/ and internal/, and one whose only internal element is the
+// module's own is not. The negative cases are the ones the exemption must not
+// swallow: internal/config, which cmd/shift2eu imports, a directory that merely
+// starts with the word, and test/lint, which the whole-module listing is for.
+func TestHiddenByGoInternalRule(t *testing.T) {
+	t.Parallel()
+
+	for _, tc := range []struct {
+		name string
+		rel  string
+		want bool
+	}{
+		{name: "the module's own internal tree is importable from cmd", rel: "internal/config", want: false},
+		{name: "a package below the module's own internal tree", rel: "internal/adapter/source/inventoryfile", want: false},
+		{name: "a test tree package", rel: "test/lint", want: false},
+		{name: "a directory whose name only starts with internal", rel: "test/internals/yamlread", want: false},
+		{name: "test/internal", rel: "test/internal/yamlread", want: true},
+		{name: "a nested internal tree under test", rel: "test/architecture/internal/check", want: true},
+		{name: "a package below a nested internal tree", rel: "test/architecture/internal/check/testdata", want: true},
+		{name: "a top-level internal tree beside the module's own", rel: "pkg/internal/helper", want: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			if got := hiddenByGoInternalRule(tc.rel); got != tc.want {
+				t.Errorf("hiddenByGoInternalRule(%q) = %t, want %t", tc.rel, got, tc.want)
+			}
+		})
 	}
 }
 
