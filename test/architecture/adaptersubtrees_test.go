@@ -22,6 +22,9 @@ const adapterModulePrefix = "github.com/timothymamo/shift2eu/internal/adapter/"
 // subtree added later, or a Go file placed in internal/adapter itself, would
 // match no entry and escape the rule without this check. A directory make lint
 // never visits (testdata, or a name starting with _ or .) needs no entry.
+//
+// It also fails when it names nothing, so a layout it skipped whole cannot pass
+// it on nothing.
 func TestAdaptersBuiltInCmdNamesEveryAdapterSubtree(t *testing.T) {
 	t.Parallel()
 
@@ -41,15 +44,15 @@ func TestAdaptersBuiltInCmdNamesEveryAdapterSubtree(t *testing.T) {
 		t.Fatalf("read internal/adapter: %v", err)
 	}
 
-	if len(entries) == 0 {
-		t.Fatal("internal/adapter is empty, so this check would pass on nothing")
-	}
+	checked := 0
 
 	for _, e := range entries {
 		name := e.Name()
 		if name == "testdata" || name[0] == '_' || name[0] == '.' {
 			continue
 		}
+
+		checked++
 
 		if !e.IsDir() {
 			t.Errorf("internal/adapter/%s: a file directly in internal/adapter matches no deny entry of "+
@@ -63,5 +66,10 @@ func TestAdaptersBuiltInCmdNamesEveryAdapterSubtree(t *testing.T) {
 				"internal/adapter/%s from outside the composition roots is not refused; add the entry, and to "+
 				"pinnedDepguardRules (issue #119)", want, name)
 		}
+	}
+
+	if checked == 0 {
+		t.Fatal("internal/adapter holds no subtree or file that adapters-are-built-in-cmd must name, so this check " +
+			"would pass on nothing")
 	}
 }
