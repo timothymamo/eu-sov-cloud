@@ -249,8 +249,9 @@ or a file placed there directly, so a new adapter subtree cannot escape the rule
 module that imports an adapter from each subtree, and each subtree's root, outside the composition roots, and runs with
 `SHIFT2EU_LINT_PROBES=require` in `make lint` and every lint-target matrix entry.
 
-The lax rule `app-tests-use-fakes-not-adapters` shares the `&app-deny` list of the strict
-`app-uses-ports-not-adapters` and allows any package that list does not name, so the application
+The lax rule `app-tests-use-fakes-not-adapters` (superseded by *Amended (issue #144)* below) shares
+the `&app-deny` list of the strict `app-uses-ports-not-adapters` and allows any package that list does
+not name, so the application
 layer's tests could import a standard package that does I/O without importing `os` or `net`. The list
 now also names `io/ioutil`, `log/syslog`, `text/template`, `html/template`, `archive/zip`, every
 `debug/*` package, `go/build`, `go/importer`, `go/parser`, `mime/multipart`, `runtime/coverage`,
@@ -281,6 +282,32 @@ no rule holds its production imports. `check.AllowList` now follows a deny list 
 lists covers the shared list too. `test/lint`'s `TestAppTestsUseFakesNotAdaptersProbe` pins both
 halves: every allowed package must pass, and the I/O packages above, `encoding/xml` and `expvar` (on
 no list) and `runtime` and `go/build/constraint` (pure but unneeded) must be refused.
+
+*Amended (issue #144, review):* the allow list first repeated the domain's whole pure list, so the
+application layer's tests could import `fmt` and `time`, which can print to stdout, read stdin, read
+zoneinfo files (`time.LoadLocation`) and the clock, while the forbidigo group `domain-is-pure` holds
+for the domain's production files only. The list is now minimal: exactly the standard packages the
+layer's tests import, `bytes`, `context`, `errors`, `io`, `slices`, `strings`, `sync` and `testing`,
+besides the module's packages and `go-cmp`. The domain's `fmt`, `time`, `net/netip`, `net/url`,
+`strconv`, `unicode` and `unicode/utf8` are gone. `test/architecture`'s
+`TestAppTestsRuleAllowsOnlyPurePackagesAndItsExtras` replaces the check that the rule repeats the
+domain's list: it is a subset check, under which every standard entry of the rule is exact and is
+either one `domain-is-pure` allows or one of a short list of named extras (`bytes`, `context`, `io`,
+`sync`, `testing`), each with the reason a test gives; the pin holds the other direction.
+
+`internal/testutil`, which the rule allows, had no bound on its own imports, and its helpers already
+read and write golden files. It now has a strict depguard rule of its own, `testutil-imports`, over
+`**/internal/testutil/**` with no `!$test`, so the helpers' own tests are held too: its allow list is
+exactly what its files import today (the standard packages it uses, `os` and `path/filepath` among
+them, the domain's `catalog` and `taxonomy`, and `internal/testutil` itself), every entry exact, with
+no deny list. `check.RuleDirs` reads it as a directory holding test files, so
+`TestReleaseTargetDependencies` holds it package by package on every release target. An import rule
+sees no call, so the forbidigo group `testutil-no-env` refuses `os.Getenv`, `os.LookupEnv`,
+`os.ExpandEnv`, `os.Environ`, `os.Setenv`, `os.Unsetenv`, `os.Clearenv` and `os.StartProcess` under
+`internal/testutil/` (one `path-except` exclusion rule drops it everywhere else; CLAUDE.md rule 3).
+Golden files read and written through `internal/testutil` are therefore the only I/O an application
+test is allowed. `test/lint`'s `TestTestutilImportsProbe` pins both rules on a probe module, and
+`TestAppTestsUseFakesNotAdaptersProbe` now runs a second time for `darwin/amd64` with cgo off.
 
 The checks are ordinary tests, so `make test`, `make check` and CI's `make cover` run them with no
 workflow change.

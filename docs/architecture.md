@@ -25,10 +25,14 @@ Arrows are imports. They point inwards only:
   project lives, so it is the most heavily unit-tested code.
 - **Application** (`internal/app/analysis`) orchestrates a use case and declares the interfaces (ports)
   it needs, next to where they are consumed. It never imports an adapter. Its tests use fakes, not
-  adapters, and do no I/O: `app-tests-use-fakes-not-adapters` holds its `_test.go` files to a strict
-  allow list (issue #144) of the application package, the domain, `internal/testutil`, `go-cmp`,
-  `testing`, the domain's pure standard packages and `bytes`, `context`, `io` and `sync`, so a
-  standard package on no list, one added to Go later included, is refused as well. `test/architecture`
+  adapters, and do no I/O except golden files read and written through `internal/testutil`:
+  `app-tests-use-fakes-not-adapters` holds its `_test.go` files to a minimal strict allow list
+  (issue #144) of the application package, the domain, `internal/testutil`, `go-cmp` and the standard
+  packages the tests import (`bytes`, `context`, `errors`, `io`, `slices`, `strings`, `sync`,
+  `testing`), so a standard package on no list, one added to Go later included, is refused as well.
+  `internal/testutil`'s own imports are a strict allow list too (`testutil-imports`, its tests
+  included), and the forbidigo group `testutil-no-env` keeps its helpers from reading the environment
+  or starting a process. `test/architecture`
   holds it package by package for every release target, as it holds the other strict rules
   ([ADR 0012](adr/0012-check-layer-dependencies-by-package-for-every-release-target.md)).
 - **Adapters** (`internal/adapter/...`) implement ports. Each cloud SDK is confined to one adapter
