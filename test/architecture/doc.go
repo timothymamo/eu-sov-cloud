@@ -73,7 +73,13 @@
 // layer's _test.go files, is no skip either (issue #144): RuleDirs reads its
 // pair of test-file globs as the test files of internal/app, and
 // TestReleaseTargetDependencies holds the test imports of every package there
-// to its allow list on every release platform.
+// to its allow list on every release platform. cli-gets-adapters-from-cmd, the
+// strict allow list of internal/cli's production files, is no skip since issue
+// #152, which replaced its $gostd with exact entries: the check holds the CLI's
+// imports on every release platform. version-is-build-metadata, the strict allow
+// list of the build metadata, is read the same way: TestVersionRuleIsBuildMetadata
+// pins its shape and TestReleaseTargetDependencies holds internal/version's
+// imports to it, while both release binaries must list the package.
 //
 // TestCloudAdapterSDKRuleIsChecked pins that the SDK-only rule,
 // cloud-adapters-reach-the-cloud-through-the-sdk, is no skip (issue #79): the
@@ -88,13 +94,18 @@
 // reported. The exemption reads the strict allow lists only: the lax deny
 // rules (go-cmp-only-in-tests, cloud-sdks-only-in-provider-adapters,
 // composition-root-tests) are held by depguard in make lint alone. A third-party import in internal/cli is
-// refused by depguard alone, whose strict rule there allows only $gostd and
-// named module packages. One in cmd/shift2eu is refused by the strict rule
+// refused by depguard alone, whose strict rule there is an allow list of exact
+// entries and named module packages (issue #152, which took its $gostd away so
+// the rule is no skip). One in internal/version is refused by depguard alone too:
+// version-is-build-metadata, a strict allow list of fmt and nothing else, because
+// both driving adapters import the build metadata and no rule held what it does
+// (the same issue). One in cmd/shift2eu is refused by the strict rule
 // composition-root (issue #101), which allows the module path as its one prefix
 // entry and the standard packages cmd/shift2eu imports today, each exact:
 // TestCompositionRootRuleIsChecked pins its shape and that it is a reasoned
 // skip of the shared layer listing, since go list -deps ./cmd/shift2eu/... also
-// lists internal/cli and internal/version, which no rule the check reads holds.
+// lists internal/cli, internal/version and the adapters, which each stand in a
+// dependency tree the shared layer listing does not read.
 // TestCompositionRootIsHeldToItsRuleForEveryReleaseTarget holds the real
 // cmd/shift2eu to it on every release platform, with cgo off and on and every tag
 // set TestReleaseTargetDependencies reads (cgoModes and tagSets, shared so the

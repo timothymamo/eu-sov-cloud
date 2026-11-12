@@ -301,6 +301,36 @@ var pinnedDepguardRules = []check.DepguardRule{
 		},
 	},
 	{
+		// The build metadata (issue #152, the security audit's M-3). Both
+		// driving adapters print internal/version, and no rule held it: a probe
+		// that imported os and os/exec there passed lint. A composition root that
+		// may not read the environment or start a process could hand either to a
+		// version package nobody had thought to deny, and the call happened one
+		// import deeper. The rule is a strict allow list of exactly what the
+		// package imports today, each entry exact: fmt, which String formats the
+		// build line with. The three variables the build sets through -X are not
+		// imports, so the list never needs one for them.
+		//
+		// The files: entry takes the _test.go file out (!$test), as the finding
+		// states it: the build line's test imports strings and testing, which a
+		// strict allow list of the package's own imports would refuse, and a
+		// second list for one test file buys nothing. RuleDirs reads the
+		// directory with no test files, so TestReleaseTargetDependencies holds
+		// the package's production imports to this list, package by package for
+		// every release target, and the CLI's release listing must hold the
+		// package (internal/cli imports it), so the check cannot pass over it.
+		Name:     "version-is-build-metadata",
+		ListMode: "strict",
+		Files: []string{
+			"**/internal/version/**",
+			"!$test",
+		},
+		Allow: []string{
+			"fmt$",
+		},
+		Deny: nil,
+	},
+	{
 		// The composition root (issue #101): main wires every adapter into the
 		// application, so it may import every package of the module, named by
 		// the one prefix entry, and the standard packages it imports today,
@@ -842,7 +872,10 @@ var pinnedDepguardRules = []check.DepguardRule{
 		// reads, which is why it is no strict rule
 		// (TestEveryStrictRuleIsChecked). syscall/js is pinned here and by no
 		// probe line, as it builds for js/wasm only
-		// (TestCompositionRootTestsReachNoForeignCodeProbe).
+		// (TestCompositionRootTestsReachNoForeignCodeProbe). os/user is denied
+		// since issue #152: a test that looks a user up in the OS database reads
+		// the home directory os.Getenv and os.UserHomeDir are refused for, one
+		// package further out.
 		Name:     "composition-root-tests",
 		ListMode: "lax",
 		Files: []string{
@@ -860,6 +893,7 @@ var pinnedDepguardRules = []check.DepguardRule{
 			"go/build",
 			"net/http/cgi",
 			"os/exec",
+			"os/user",
 			"plugin",
 			"runtime/cgo",
 			"syscall/js",
@@ -978,6 +1012,111 @@ func TestCLIImportRuleAllowsNoProcessOrPointer(t *testing.T) {
 			t.Errorf("the depguard rule %s allows %s, which the CLI may not import: a root that may not start a process, read a directory from the environment or take a pointer apart could hand it the call", cliImportRule, pkg)
 		}
 	}
+}
+
+// versionRule is the name of the rule that holds internal/version's production
+// imports (issue #152, the security audit's M-3).
+const versionRule = "version-is-build-metadata"
+
+// versionRuleDenied are the packages the build metadata's rule must never
+// allow: everything a composition root or a driving adapter may not reach, which
+// a version package nobody held could have handed it one import deeper. The
+// allow list refuses them already, as a strict list refuses everything it does
+// not name; this names the ones a careless widening (an os$ entry that lost its
+// $, or a $gostd) would let back in.
+var versionRuleDenied = []string{
+	"os",
+	"os/exec",
+	"os/user",
+	"os/signal",
+	"syscall",
+	"unsafe",
+	"plugin",
+	"net/http",
+	"runtime/debug",
+	"io/ioutil",
+	"go/build",
+}
+
+// TestVersionRuleIsBuildMetadata pins the shape issue #152 gave
+// version-is-build-metadata. internal/version is the build metadata internal/cli
+// prints, and both driving adapters' import rules allow it, yet no rule held what
+// it imports: a probe that imported os and os/exec there passed lint. A package
+// allowed by a strict rule is a delegation path, because the rule says nothing of
+// what that package does, so the build metadata gets a strict allow list of its
+// own: exactly the packages it imports today, each ending in $, which is fmt
+// alone (String formats the build line), and no $gostd.
+//
+// The exact entries are pinned by TestDepguardRulesArePinned, whose copy the
+// commit that edits .golangci.yml updates; this one holds the property the
+// finding is about, so a rule rewritten entry by entry still has to keep it.
+func TestVersionRuleIsBuildMetadata(t *testing.T) {
+	t.Parallel()
+
+	rules, err := check.DepguardRules(readRepositoryFile(t, ".golangci.yml"))
+	if err != nil {
+		t.Fatalf("DepguardRules(.golangci.yml): %v", err)
+	}
+
+	var rule check.DepguardRule
+	found := false
+	for _, r := range rules {
+		if r.Name == versionRule {
+			rule, found = r, true
+			break
+		}
+	}
+	if !found {
+		t.Fatalf(".golangci.yml holds no depguard rule %s, so nothing holds internal/version's imports: both driving adapters may import it, and a composition root that may not read the environment or start a process could hand either to it", versionRule)
+	}
+
+	if rule.ListMode != "strict" {
+		t.Errorf("the depguard rule %s has list-mode %q; a strict allow list says what the build metadata may import, so a package added to the standard library later is refused until the list names it", versionRule, rule.ListMode)
+	}
+	if slices.Contains(rule.Allow, "$gostd") {
+		t.Errorf("the depguard rule %s allows $gostd, which allows every standard package, os, syscall and unsafe among them; name the packages internal/version imports today, each ending in $", versionRule)
+	}
+
+	// allows reports whether an allow entry admits pkg, as depguard reads the
+	// entries: one ending in $ is exact, and any other is a prefix.
+	allows := func(pkg string) bool {
+		for _, entry := range rule.Allow {
+			if exact, ok := strings.CutSuffix(entry, "$"); ok {
+				if exact == pkg {
+					return true
+				}
+				continue
+			}
+			if pkg == entry || strings.HasPrefix(pkg, entry) {
+				return true
+			}
+		}
+		return false
+	}
+
+	for _, pkg := range versionRuleDenied {
+		if allows(pkg) {
+			t.Errorf("the depguard rule %s allows %s, which the build metadata may not import: a composition root that may not read the environment, start a process or take a pointer apart could hand it the call one import deeper", versionRule, pkg)
+		}
+	}
+
+	if got := entriesWithoutDollar(rule.Allow); !slices.Equal(got, []string{"fmt"}) {
+		t.Errorf("the depguard rule %s allows %v, want [fmt]: the build metadata imports fmt and nothing else, so a new package here is a widening a reviewer reads in the same commit", versionRule, got)
+	}
+}
+
+// entriesWithoutDollar returns the allow entries without their trailing $, which
+// fail here when one is missing: an entry without $ is a prefix, which allows a
+// whole tree of packages.
+func entriesWithoutDollar(entries []string) []string {
+	out := make([]string, 0, len(entries))
+	for _, entry := range entries {
+		if exact, ok := strings.CutSuffix(entry, "$"); ok {
+			out = append(out, exact)
+		}
+	}
+	slices.Sort(out)
+	return out
 }
 
 // TestDepguardPinCatchesMutations proves the pin of TestDepguardRulesArePinned

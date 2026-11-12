@@ -21,15 +21,25 @@ import (
 // (os.StartProcess), and the four lookups that locate a directory from an
 // unnamed variable (os.UserHomeDir, os.UserConfigDir, os.UserCacheDir,
 // os.TempDir): a CLI that builds the path to ~/.config/dot-agent-deck/daemon.env
-// or ~/.aws/credentials names no variable while it reads one. It holds for files
-// under internal/cli/, _test.go files included, which its
-// linters.exclusions.rules say and TestForbidigoExclusionsDropOneGroup checks.
+// or ~/.aws/credentials names no variable while it reads one. It refuses the
+// syscall calls the composition roots' groups refuse as well (syscall.Getenv,
+// GetEnvironmentVariable, Environ, Exec, ForkExec, StartProcess, the windows
+// entry points, the raw system calls and syscall.SYS_*), which reach the same
+// environment and start the same processes one package lower. It holds for files
+// under internal/cli/, _test.go files included, which its linters.exclusions.rules
+// say and TestForbidigoExclusionsDropOneGroup checks. The syscall entries are
+// what holds the CLI's _test.go files (issue #152): cli-gets-adapters-from-cmd
+// refuses package syscall to the production files, yet a test imports it for
+// syscall.Mkfifo (internal/cli/output_unix_test.go), which the group must keep
+// allowed.
 //
-// It names no package: syscall, unsafe and os/exec are refused at the import by
-// the CLI's strict allow list (cli-gets-adapters-from-cmd, issue #152), which
-// TestCLIImportsProbe lints. The calls the CLI is for — os.Open, os.ReadFile,
-// os.Create and os.CreateTemp, the inventory a user names and the report the
-// user asked for — are no calls of this group.
+// unsafe and os/exec are refused at the import by the CLI's strict allow list
+// (cli-gets-adapters-from-cmd, issue #152), which TestCLIImportsProbe lints, so
+// no call of theirs needs an entry here. The syscall entries are no substitute
+// for that rule: package syscall stays refused in the CLI's production files, and
+// the entries are the call-level rule for its tests. The calls the CLI is for —
+// os.Open, os.ReadFile, os.Create and os.CreateTemp, the inventory a user names
+// and the report the user asked for — are no calls of this group.
 const cliNoEnvOrProcessTag = "cli-no-env-or-process"
 
 // cliNoEnvOrProcessRefused lists every name the group must refuse. A name is
@@ -48,16 +58,46 @@ var cliNoEnvOrProcessRefused = []rootName{
 	{"os", "os.UserConfigDir"},
 	{"os", "os.UserCacheDir"},
 	{"os", "os.TempDir"},
+	// The syscall calls: the CLI's tests import package syscall for
+	// syscall.Mkfifo, and the composition roots' groups refuse these names
+	// there.
+	{"syscall", "syscall.Getenv"},
+	{"syscall", "syscall.GetEnvironmentVariable"},
+	{"syscall", "syscall.Environ"},
+	{"syscall", "syscall.Exec"},
+	{"syscall", "syscall.ForkExec"},
+	{"syscall", "syscall.StartProcess"},
+	{"syscall", "syscall.CreateProcess"},
+	{"syscall", "syscall.CreateProcessAsUser"},
+	{"syscall", "syscall.GetEnvironmentStrings"},
+	{"syscall", "syscall.LoadDLL"},
+	{"syscall", "syscall.MustLoadDLL"},
+	{"syscall", "syscall.NewLazyDLL"},
+	{"syscall", "syscall.LoadLibrary"},
+	{"syscall", "syscall.GetProcAddress"},
+	{"syscall", "syscall.Syscall"},
+	{"syscall", "syscall.Syscall6"},
+	{"syscall", "syscall.Syscall9"},
+	{"syscall", "syscall.Syscall12"},
+	{"syscall", "syscall.Syscall15"},
+	{"syscall", "syscall.Syscall18"},
+	{"syscall", "syscall.SyscallN"},
+	{"syscall", "syscall.RawSyscall"},
+	{"syscall", "syscall.RawSyscall6"},
+	{"syscall", "syscall.SYS_EXECVE"},
+	{"syscall", "syscall.SYS_CLONE"},
 }
 
 // cliNoEnvOrProcessAllowed are names no cli-no-env-or-process entry may refuse:
 // what the CLI is for (it opens the inventory a user names, reads it, creates
 // the report and makes room for a temporary one), the process names that are no
-// call on a variable, the names that only extend a refused one (os.Getenvs,
+// call on a variable, syscall.Mkfifo, which is why the CLI's tests import package
+// syscall at all, the names that only extend a refused one (os.Getenvs,
 // os.LookupEnvs, os.ExpandEnvs, os.Environments, os.Setenvs, os.StartProcesses,
-// os.UserHomeDirs, os.UserConfigDirs, os.UserCacheDirs, os.TempDirs) and catch a
-// pattern that lost its $, and a package named os elsewhere, which is no file of
-// this module's.
+// os.UserHomeDirs, os.UserConfigDirs, os.UserCacheDirs, os.TempDirs,
+// syscall.Getenvs, syscall.Environments, syscall.Execve, syscall.Syscalls,
+// syscall.RawSyscalls, syscall.SYSCTL) and catch a pattern that lost its $, and
+// a package named os or syscall elsewhere, which is no file of this module's.
 var cliNoEnvOrProcessAllowed = []rootName{
 	{"os", "os.Open"},
 	{"os", "os.OpenFile"},
@@ -84,7 +124,18 @@ var cliNoEnvOrProcessAllowed = []rootName{
 	{"os", "os.UserConfigDirs"},
 	{"os", "os.UserCacheDirs"},
 	{"os", "os.TempDirs"},
+	{"syscall", "syscall.Mkfifo"},
+	{"syscall", "syscall.SIGTERM"},
+	{"syscall", "syscall.Signal"},
+	{"syscall", "syscall.Getpid"},
+	{"syscall", "syscall.Getenvs"},
+	{"syscall", "syscall.Environments"},
+	{"syscall", "syscall.Execve"},
+	{"syscall", "syscall.Syscalls"},
+	{"syscall", "syscall.RawSyscalls"},
+	{"syscall", "syscall.SYSCTL"},
 	{"example.com/otheros", "os.Getenv"},
+	{"example.com/othersyscall", "syscall.Getenv"},
 }
 
 // TestCLIImportsProbe runs depguard with the repository's .golangci.yml on a

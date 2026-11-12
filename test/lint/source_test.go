@@ -237,10 +237,27 @@ func TestScanSources(t *testing.T) {
 			},
 		},
 		{
-			// A directive that silenced the tests-no-process-state group on a
-			// t.Setenv would let one test change what every test in the binary
-			// sees (issue #153); the guard is linter-wide, so it covers the
-			// group without naming it.
+			// The CLI's _test.go files are held to the same group as its
+			// production code (issue #152), package syscall included, which a test
+			// imports for syscall.Mkfifo: a directive on one of those calls would
+			// hide what the tests may not do either.
+			name:  "nolint directive on the CLI test's syscall call",
+			files: map[string]string{"internal/cli/cli_test.go": "package cli_test\n\nimport \"syscall\"\n\n//nolint:forbidigo // probe\nvar _ = syscall.Exec\n"},
+			want: []string{
+				"internal/cli/cli_test.go:5:1: //nolint:forbidigo // probe would hide forbidigo issues; fix the design or the call instead (CLAUDE.md)",
+			},
+		},
+		{
+			// The HTTP API's tests read no variable either (issue #152),
+			// through httpapi-tests-no-env-or-process, and the guard is
+			// linter-wide, so it covers that group without naming it.
+			name:  "nolint directive on the HTTP API test's environment read",
+			files: map[string]string{"internal/httpapi/httpapi_test.go": "package httpapi_test\n\nimport \"os\"\n\nvar token = os.Getenv(\"TOKEN\") //nolint:forbidigo // probe\n"},
+			want: []string{
+				"internal/httpapi/httpapi_test.go:5:32: //nolint:forbidigo // probe would hide forbidigo issues; fix the design or the call instead (CLAUDE.md)",
+			},
+		},
+		{
 			name:  "nolint directive on a test's environment write",
 			files: map[string]string{"internal/app/analysis/analysis_test.go": "package analysis_test\n\nimport \"testing\"\n\nfunc TestA(t *testing.T) { t.Setenv(\"TOKEN\", \"x\") } //nolint:forbidigo // probe\n"},
 			want: []string{

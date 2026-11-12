@@ -10,6 +10,7 @@ import (
 	"go/build"     // want "import 'go/build' is not allowed from list 'composition-root-tests'"
 	"net/http/cgi" // want "import 'net/http/cgi' is not allowed from list 'composition-root-tests'"
 	"os/exec"      // want "import 'os/exec' is not allowed from list 'composition-root-tests'"
+	"os/user" // want "import 'os/user' is not allowed from list 'composition-root-tests'"
 	"plugin"       // want "import 'plugin' is not allowed from list 'composition-root-tests'"
 	"runtime/cgo"  // want "import 'runtime/cgo' is not allowed from list 'composition-root-tests'"
 	"testing"
@@ -20,6 +21,7 @@ var (
 	_ = build.Default
 	_ = cgi.Handler{}
 	_ = exec.CommandContext
+	_ = user.Current
 	_ = plugin.Open
 	_ = cgo.NewHandle
 	_ = unsafe.Sizeof(0)

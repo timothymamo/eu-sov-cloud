@@ -39,9 +39,11 @@ import (
 var compositionRootTags = []string{"composition-root-no-exec", "composition-root-env"}
 
 // probeTags are the tags of forbidigo's groups TestCompositionRootForbidigoProbe
-// covers: the two composition-root groups, and the CLI's own group (issue #152),
-// which takes over in internal/cli where the roots' groups stop.
-var probeTags = slices.Concat(compositionRootTags, []string{cliNoEnvOrProcessTag})
+// covers: the two composition-root groups, the CLI's own group (issue #152),
+// which takes over in internal/cli where the roots' groups stop, and the HTTP
+// API's tests group, which holds the one place under internal/httpapi/ no group
+// of the two reached before.
+var probeTags = slices.Concat(compositionRootTags, []string{cliNoEnvOrProcessTag, httpapiTestsNoEnvOrProcessTag})
 
 // TestCompositionRootForbidigoProbe runs forbidigo, with the repository's
 // .golangci.yml, on the two composition roots and a CLI package
@@ -56,11 +58,15 @@ var probeTags = slices.Concat(compositionRootTags, []string{cliNoEnvOrProcessTag
 // exempt as a whole. A _test.go file of a composition root must be refused too:
 // its tests are compiled into the same package and run with the same
 // environment. Every call the CLI's own group refuses, in internal/cli, has a
-// line there with a want of that group, and the calls internal/cli is for — os
-// opening the inventory a user names, reading it and creating the report — must
-// pass: a group that lost its path-except scope, or one of the roots' that lost
-// its own scope and reached internal/cli, is refused by the probe's strictness,
-// which reports every issue the probe does not expect.
+// line there with a want of that group, the CLI's _test.go file included, and
+// the calls internal/cli is for — os opening the inventory a user names, reading
+// it, creating the report and taking the FIFO's syscall.Mkfifo — must pass: a
+// group that lost its path-except scope, or one of the roots' that lost its own
+// scope and reached internal/cli, is refused by the probe's strictness, which
+// reports every issue the probe does not expect. The HTTP API's _test.go file is
+// held the same way by httpapi-tests-no-env-or-process, which no other group
+// reaches: internal/httpapi's production files make no call of the two roots'
+// groups, and the calls a test of the handler is for must pass beside them.
 //
 // A file for one platform builds on that platform only, so each run reads the
 // want comments of its own files, and an entry of a group need refuse a line in
@@ -104,11 +110,14 @@ func probeFilesForHost(rel string) bool {
 }
 
 // probeFilesForWindows reports whether the windows run lints the probe file at
-// rel: the files for windows, and the _test.go files, which name no platform's
-// function and build for every platform. The windows run lints ./cmd/... only,
-// as the files of internal/cli name unix functions of syscall.
+// rel: the files for windows, and the _test.go files of the commands the run
+// lints, which name no platform's function and build for every platform. The
+// windows run lints ./cmd/... only, as the files of internal/cli and
+// internal/httpapi name unix functions of syscall (the CLI's test takes
+// syscall.Mkfifo), and the wants of a file the run does not lint are no wants of
+// it.
 func probeFilesForWindows(rel string) bool {
-	return strings.HasSuffix(rel, "_windows.go") || strings.HasSuffix(rel, "_test.go")
+	return strings.HasSuffix(rel, "_windows.go") || strings.HasPrefix(rel, "cmd/") && strings.HasSuffix(rel, "_test.go")
 }
 
 // rootName is a name as forbidigo renders it, with the import path its pkg is

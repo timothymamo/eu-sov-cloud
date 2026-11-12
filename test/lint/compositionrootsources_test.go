@@ -24,16 +24,23 @@ var compositionRootDirs = []string{"cmd/shift2eu", "cmd/shift2eu-server"}
 // cliDir is the driving adapter a composition root hands the work to.
 const cliDir = "internal/cli"
 
+// httpapiDir is the other driving adapter a composition root hands the work to:
+// the HTTP API's handler (PRD #103, ADR 0019), whose tests run in the server's
+// process as internal/cli's run in the CLI's.
+const httpapiDir = "internal/httpapi"
+
 // environmentPathDirs are the directories whose every Go file, _test.go files
 // included, may hold neither a //go:linkname directive nor a literal that names
 // the environment of a process: the two composition roots and, since issue #152,
-// internal/cli. A root that may not read the environment itself may hand the read
-// to the CLI, so the two source checks that keep a linknamed symbol and a /proc
-// path out of a root hold it out of the CLI as well. internal/cli's own
-// depguard rule refuses syscall, unsafe and os/exec, and forbidigo's
-// cli-no-env-or-process group refuses the environment calls; neither sees a
-// directive or a path literal, which is why these checks are here.
-var environmentPathDirs = slices.Concat(compositionRootDirs, []string{cliDir})
+// the two driving adapters they hand the work to, internal/cli and
+// internal/httpapi. A root that may not read the environment itself may hand the
+// read to a driving adapter, so the two source checks that keep a linknamed
+// symbol and a /proc path out of a root hold it out of both adapters as well.
+// internal/cli's own depguard rule refuses syscall, unsafe and os/exec, and
+// forbidigo's cli-no-env-or-process and httpapi-tests-no-env-or-process groups
+// refuse the environment calls; neither sees a directive or a path literal,
+// which is why these checks are here.
+var environmentPathDirs = slices.Concat(compositionRootDirs, []string{cliDir, httpapiDir})
 
 // TestCompositionRootPassesLookupEnvToRun checks cmd/shift2eu-server/main.go, the
 // one composition root file that reads an environment variable. Forbidigo allows
@@ -763,14 +770,14 @@ var environmentPathLiterals = []string{"/proc/", "/dev/fd/"}
 // environmentPathProblems returns what is wrong with the string literals of src,
 // the content of the Go file at rel, one line each: a literal that holds one of
 // environmentPathLiterals names the environment of a process, which a
-// composition root, and the CLI it hands the work to, never read, its tests
-// included. It reads a literal as the compiler does, so a raw and a quoted string
-// are read alike; a path assembled from parts at run time, such as
+// composition root, and the driving adapter it hands the work to, never read, its
+// tests included. It reads a literal as the compiler does, so a raw and a quoted
+// string are read alike; a path assembled from parts at run time, such as
 // filepath.Join("/proc", "self", "environ"), is beyond a check of literals. What
 // keeps os out of the layers below the composition roots is depguard's
 // domain-is-pure and app-uses-ports-not-adapters; internal/cli's own rule
 // (cli-gets-adapters-from-cmd) allows os, which reads the inventory a user names,
-// so this check holds it, as it holds the roots.
+// so this check holds it, as it holds the roots and internal/httpapi.
 func environmentPathProblems(rel string, src []byte) ([]string, error) {
 	fset := token.NewFileSet()
 	f, err := parser.ParseFile(fset, rel, src, parser.SkipObjectResolution)
@@ -789,7 +796,7 @@ func environmentPathProblems(rel string, src []byte) ([]string, error) {
 		}
 		for _, path := range environmentPathLiterals {
 			if strings.Contains(value, path) {
-				problems = append(problems, fmt.Sprintf("%s:%d: the string literal %s holds %q, which names every environment variable of this process, credentials included; a composition root, and the CLI it hands the work to, read the named variable they need and nothing else", rel, fset.Position(lit.Pos()).Line, lit.Value, path))
+				problems = append(problems, fmt.Sprintf("%s:%d: the string literal %s holds %q, which names every environment variable of this process, credentials included; a composition root, and the driving adapter it hands the work to, read the named variable they need and nothing else", rel, fset.Position(lit.Pos()).Line, lit.Value, path))
 				break
 			}
 		}
@@ -799,10 +806,11 @@ func environmentPathProblems(rel string, src []byte) ([]string, error) {
 }
 
 // TestRootsAndCLINameNoEnvironmentPath checks every Go file of the two
-// composition roots and of internal/cli, _test.go files included, for a literal
-// that names the environment of a process (environmentPathProblems). The tree
-// holds none today, and the test pins that: os.ReadFile("/proc/self/environ") in a
-// composition root, or in the CLI it hands the work to, would hand out every
+// composition roots and of the two driving adapters they hand the work to,
+// internal/cli and internal/httpapi, _test.go files included, for a literal that
+// names the environment of a process (environmentPathProblems). The tree holds
+// none today, and the test pins that: os.ReadFile("/proc/self/environ") in a
+// composition root, or in an adapter it hands the work to, would hand out every
 // variable of the server, the token included, and no rule of the forbidigo groups
 // catches a read of a path.
 func TestRootsAndCLINameNoEnvironmentPath(t *testing.T) {
@@ -860,21 +868,21 @@ func TestEnvironmentPathProblems(t *testing.T) {
 			name: "the environment of this process",
 			src:  "package main\n\nimport \"os\"\n\nfunc read() { _, _ = os.ReadFile(\"/proc/self/environ\") }\n",
 			want: []string{
-				rel + ":5: the string literal \"/proc/self/environ\" holds \"/proc/\", which names every environment variable of this process, credentials included; a composition root, and the CLI it hands the work to, read the named variable they need and nothing else",
+				rel + ":5: the string literal \"/proc/self/environ\" holds \"/proc/\", which names every environment variable of this process, credentials included; a composition root, and the driving adapter it hands the work to, read the named variable they need and nothing else",
 			},
 		},
 		{
 			name: "the environment of this process, as a raw string",
 			src:  "package main\n\nimport \"os\"\n\nfunc read() { _, _ = os.ReadFile(`/proc/self/environ`) }\n",
 			want: []string{
-				rel + ":5: the string literal `/proc/self/environ` holds \"/proc/\", which names every environment variable of this process, credentials included; a composition root, and the CLI it hands the work to, read the named variable they need and nothing else",
+				rel + ":5: the string literal `/proc/self/environ` holds \"/proc/\", which names every environment variable of this process, credentials included; a composition root, and the driving adapter it hands the work to, read the named variable they need and nothing else",
 			},
 		},
 		{
 			name: "a descriptor of this process",
 			src:  "package main\n\nimport \"os\"\n\nfunc read() { _, _ = os.ReadFile(\"/dev/fd/3\") }\n",
 			want: []string{
-				rel + ":5: the string literal \"/dev/fd/3\" holds \"/dev/fd/\", which names every environment variable of this process, credentials included; a composition root, and the CLI it hands the work to, read the named variable they need and nothing else",
+				rel + ":5: the string literal \"/dev/fd/3\" holds \"/dev/fd/\", which names every environment variable of this process, credentials included; a composition root, and the driving adapter it hands the work to, read the named variable they need and nothing else",
 			},
 		},
 		{
@@ -882,7 +890,7 @@ func TestEnvironmentPathProblems(t *testing.T) {
 			rel:  "cmd/shift2eu-server/read_test.go",
 			src:  "package main\n\nimport \"os\"\n\nvar _ = os.ReadFile(\"/proc/1/environ\")\n",
 			want: []string{
-				"cmd/shift2eu-server/read_test.go:5: the string literal \"/proc/1/environ\" holds \"/proc/\", which names every environment variable of this process, credentials included; a composition root, and the CLI it hands the work to, read the named variable they need and nothing else",
+				"cmd/shift2eu-server/read_test.go:5: the string literal \"/proc/1/environ\" holds \"/proc/\", which names every environment variable of this process, credentials included; a composition root, and the driving adapter it hands the work to, read the named variable they need and nothing else",
 			},
 		},
 		{

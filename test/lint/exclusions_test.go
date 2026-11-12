@@ -20,7 +20,7 @@ import (
 // linters.settings.forbidigo). The tags of the two composition-root groups,
 // compositionRootTags, are pinned by what their rules select instead of by the
 // text of a path regexp, in TestCompositionRootExclusions.
-var forbidigoTags = []string{"cloud-read-only", "domain-is-pure", testutilNoEnvTag, cliNoEnvOrProcessTag, testsNoProcessStateTag}
+var forbidigoTags = []string{"cloud-read-only", "domain-is-pure", testutilNoEnvTag, cliNoEnvOrProcessTag, httpapiTestsNoEnvOrProcessTag, testsNoProcessStateTag}
 
 // exclusionRule is one rule of linters.exclusions.rules in .golangci.yml.
 type exclusionRule struct {
@@ -94,6 +94,15 @@ func TestForbidigoExclusionsDropOneGroup(t *testing.T) {
 		// nowhere else. The roots' own groups take over under cmd/.
 		cliNoEnvOrProcessTag: {
 			{"path-except": `^internal/cli/`, "text": groupText(cliNoEnvOrProcessTag)},
+		},
+		// The HTTP API's tests (issue #152): one rule, for every path outside
+		// the handler's _test.go files, so the group holds there and nowhere
+		// else. The handler's production files make no call the roots' groups
+		// refuse, and a rule that held them would need an exception of its own
+		// the day it reads the request's own directory; the tests run in the
+		// process the composition root runs in.
+		httpapiTestsNoEnvOrProcessTag: {
+			{"path-except": `^internal/httpapi/.*_test\.go$`, "text": groupText(httpapiTestsNoEnvOrProcessTag)},
 		},
 		// Every test that belongs to this project (issue #153): one rule, for
 		// every path outside the application layer, the helpers, the driving
