@@ -8,14 +8,18 @@ name: Release please
 #
 # Two GitHub Apps split the writing, each held by an environment of its own, limited to main:
 #   - the release-please App (environment release-please: RELEASE_APP_CLIENT_ID, RELEASE_APP_PRIVATE_KEY)
-#     opens the release PR, labels it, and relabels it once it is tagged. It bypasses no ruleset, so it
-#     cannot create a release tag. Its token holds Contents and Pull requests write, and Protect main asks
-#     for no approving review, so it could still open and merge a PR once the required checks pass
-#     (ADR 0021, residual risk, tracked in the bot-account issue).
+#     opens the release PR, labels it, and relabels it once it is tagged. It bypasses no v* tag ruleset
+#     (only the release-please--branches--* branch ruleset allows it), so it cannot create a release tag.
 #   - the release-tag App (environment release-tag: RELEASE_TAG_APP_CLIENT_ID, RELEASE_TAG_APP_PRIVATE_KEY)
-#     creates the tag, in a job of its own. It is the only App that may bypass the Release tag creation
-#     ruleset, and its token holds Contents write and Pull requests read alone, so it can neither write
-#     to a pull request nor merge one.
+#     creates the tag, in a job of its own that runs no third-party action. It is the only App that may
+#     bypass the Release tag creation ruleset; its token holds Contents write and Pull requests read, so
+#     it cannot write to a pull request.
+# Both tokens hold Contents write, which is all merging a PR takes, and Protect main asks for no approving
+# review, so either App could merge a PR once the required checks pass (ADR 0021, residual risk, tracked in
+# the bot-account issue). That covers releases too: the split stops a tag on an arbitrary commit, not the
+# release of a release PR an attacker merged with the release-please App's token.
+# The tag job trusts no output of the release-please job, which runs the third-party release-please-action:
+# it holds the release-please App's slug, shift2eu-release, as a constant.
 # No job holds the other App's credentials. Both token steps pass client-id, never the deprecated app-id.
 on:
   push:
@@ -42,9 +46,7 @@ jobs:
     # GITHUB_TOKEN reads only: the App's token does the writing.
     permissions:
       contents: read
-    # The release-please App's own slug: the tag job tags only a release PR this App opened.
-    outputs:
-      app-slug: ${{ steps.app.outputs.app-slug }}
+    # No outputs: the jobs after it trust nothing the third-party release-please-action could write.
     steps:
       # A token of the release-please App, revoked when the job ends, with exactly what release-please
       # needs: Contents write (the release branch) and Pull requests write (the release PR and its labels;
@@ -99,9 +101,9 @@ jobs:
           permission-pull-requests: read
       # One release at a time: no tag while release.yml has a run requested, waiting, pending, queued or
       # in progress, since a tag pushed at a release run that GitHub then cancels publishes nothing
-      # (ADR 0015). It waits only when there is something to tag, a merged release PR the release-please App opened from
-      # release-please's branch still labelled autorelease: pending, read with the tag step's own pulls
-      # query, so a push to main during a release with nothing to tag passes. The release PR stays
+      # (ADR 0015). It waits only when there is something to tag, a merged release PR the release-please
+      # App opened from release-please's branch still labelled autorelease: pending, read with the tag
+      # step's own pulls query, so a push to main during a release with nothing to tag passes. The release PR stays
       # labelled autorelease: pending, so the next push to main, or a re-run of this workflow once the
       # release has finished, tags it. It reads with GITHUB_TOKEN, never an App's token.
       - name: Wait for no release to be queued or in progress
@@ -109,7 +111,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
-          APP_SLUG: ${{ needs.release-please.outputs.app-slug }}
+          APP_SLUG: shift2eu-release
         run: |
           set -euo pipefail
           branch='release-please--branches--main--components--shift2eu'
@@ -131,8 +133,8 @@ jobs:
       # number and the tag to its outputs, pr and tag, for the relabel job: this token cannot write to a
       # pull request, so it never labels. It lists the closed PRs into main from release-please's branch
       # through pulls, every page, never through issues, which neither App's token can read without Issues
-      # read. Only one the release-please App opened (${APP_SLUG}[bot], the release-please job's output)
-      # and merged, labelled autorelease: pending, is a candidate: a closed unmerged one, or one by anyone
+      # read. Only one the release-please App opened (${APP_SLUG}[bot], shift2eu-release[bot], a constant
+      # of this file) and merged, labelled autorelease: pending, is a candidate: a closed unmerged one, or one by anyone
       # else, keeps its label and is named in a warning, so a label set by hand can neither release nor
       # block a release.
       # It fails closed: several candidates, a PR not merged into main from release-please's branch
@@ -147,7 +149,7 @@ jobs:
         env:
           GH_TOKEN: ${{ steps.app.outputs.token }}
           GH_REPO: ${{ github.repository }}
-          APP_SLUG: ${{ needs.release-please.outputs.app-slug }}
+          APP_SLUG: shift2eu-release
         run: |
           set -euo pipefail
           fail() { echo "::error::$*"; exit 1; }

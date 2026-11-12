@@ -73,7 +73,10 @@ FAKE
 chmod +x "${work}/bin/gh"
 
 repo=example/shift2eu
-slug=release-app
+# The release-please App's slug, the constant APP_SLUG the guard and tag steps hold (never an output of the
+# release-please job): read from the workflow, so the dry run runs the steps with the value they get.
+slug="$(sed -n 's/^ *APP_SLUG: \([a-z0-9][a-z0-9-]*\)$/\1/p' "${workflow}" | sort -u)"
+[ "$(printf '%s\n' "${slug}" | grep -c .)" = 1 ] || { echo "want one APP_SLUG constant in ${workflow}, got $(printf '%q' "${slug}")" >&2; exit 1; }
 bot="${slug}[bot]"
 branch=release-please--branches--main--components--shift2eu
 merge=1111111111111111111111111111111111111111
@@ -87,7 +90,7 @@ scenario() { FAKE_GH="${work}/scenario-$1"; mkdir "${FAKE_GH}"; : >"${FAKE_GH}/c
 respond() { printf '%s\n' "$3" >"${FAKE_GH}/$(printf '%s %s' "$1" "$2" | sha256sum | cut -c1-16)"; }
 
 # run_step runs a step's script as the workflow would and compares its exit with want (pass or fail). The
-# guard and tag steps read APP_SLUG, the release-please job's output; the relabel step reads PR and TAG, the
+# guard and tag steps read APP_SLUG, the release-please App's slug the workflow holds; the relabel step reads PR and TAG, the
 # tag job's outputs, from the scenario's PR and TAG (the tag step's own outputs unless a scenario sets
 # them). What a step writes to $GITHUB_OUTPUT lands in the scenario's output file.
 run_step() {

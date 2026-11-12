@@ -45,13 +45,19 @@ const (
 	// never a self-hosted one, since each job holds an App's token.
 	releasePleaseRunner = "ubuntu-latest"
 
-	// The expressions the tag and relabel jobs read the jobs before them
-	// through: the release-please App's own slug, and the PR and tag the tag
-	// job created.
-	releasePleaseSlug = "${{ needs.release-please.outputs.app-slug }}"
-	taggedPR          = "${{ needs.tag.outputs.pr }}"
-	taggedTag         = "${{ needs.tag.outputs.tag }}"
-	repository        = "${{ github.repository }}"
+	// releasePleaseSlug is the release-please App's public slug, whose bot
+	// shift2eu-release[bot] opens the release PR: the tag job's guard and
+	// tagging steps hold it as a constant, never as an output of the job that
+	// runs the third-party release-please-action, which that action could set.
+	releasePleaseSlug = "shift2eu-release"
+	// releasePleaseOutputsRef is the prefix of every reference to the
+	// release-please job's outputs, which no job may read.
+	releasePleaseOutputsRef = "needs.release-please.outputs"
+	// The expressions the relabel job reads the tag job through: the PR and
+	// the tag it created.
+	taggedPR   = "${{ needs.tag.outputs.pr }}"
+	taggedTag  = "${{ needs.tag.outputs.tag }}"
+	repository = "${{ github.repository }}"
 	// relabelCondition is the relabel job's if:, so that it runs only when the
 	// tag job tagged a PR.
 	relabelCondition = "needs.tag.outputs.pr != ''"
@@ -144,8 +150,8 @@ type releaseApp struct {
 }
 
 // releasePleaseApp opens the release PR, labels it and relabels it once it is
-// tagged. It bypasses no ruleset; its token can still merge a PR into main
-// once the required checks pass (ADR 0021, residual risk).
+// tagged. It bypasses no v* tag ruleset; its token can still merge a PR into
+// main once the required checks pass (ADR 0021, residual risk).
 var releasePleaseApp = releaseApp{
 	name: "the release-please App",
 	with: map[string]string{
@@ -158,7 +164,8 @@ var releasePleaseApp = releaseApp{
 
 // releaseTagApp creates the tag, and is the only App that may bypass the
 // Release tag creation ruleset. It reads pull requests, to check the merged
-// release PR, and writes nothing but contents.
+// release PR, and writes nothing but contents, which is still enough to merge
+// a PR once the required checks pass (ADR 0021, residual risk).
 var releaseTagApp = releaseApp{
 	name: "the release-tag App",
 	with: map[string]string{
@@ -273,10 +280,7 @@ var releaseJobSpecs = []releaseJobSpec{
 		does:        "opens the release PR with the release-please App's token",
 		environment: releasePleaseEnvironment,
 		app:         releasePleaseApp,
-		outputs: func(appID string) map[string]string {
-			return map[string]string{"app-slug": "${{ steps." + appID + ".outputs.app-slug }}"}
-		},
-		steps: []stepKind{appTokenStepKind, pleaseStepKind},
+		steps:       []stepKind{appTokenStepKind, pleaseStepKind},
 	},
 	{
 		key:         tagJob,
@@ -317,13 +321,14 @@ var releaseJobSpecs = []releaseJobSpec{
 //     fail:
 //   - release-please, in the release-please environment, mints the
 //     release-please App's token and runs release-please with it, and
-//     outputs that App's slug;
+//     declares no outputs:, so nothing after it trusts what the third-party
+//     action could write;
 //   - tag, which needs release-please, in the release-tag environment, mints
 //     the release-tag App's token, waits in a run: step with id: guard that
 //     reads release.yml's requested, waiting, pending, queued and in_progress
-//     runs with GITHUB_TOKEN, then creates the tag in a run: step with id: tag
+//     runs with GITHUB_TOKEN and env: APP_SLUG: shift2eu-release, then creates the tag in a run: step with id: tag
 //     whose env: is exactly GH_TOKEN, the release-tag App's token, GH_REPO and
-//     APP_SLUG, the release-please job's output, whose gh api calls reach only
+//     APP_SLUG, the release-please App's slug shift2eu-release, whose gh api calls reach only
 //     tagEndpoints, and which outputs the PR and the tag it created;
 //   - relabel, which needs both and runs only when the tag job tagged a PR,
 //     in the release-please environment, mints the release-please App's
@@ -339,6 +344,7 @@ var releaseJobSpecs = []releaseJobSpec{
 //   - publishes nothing (no goreleaser, cosign, docker login, push or build,
 //     attest), pushes no tag with git, creates no GitHub Release and calls no
 //     host of its own (no gh release, curl or wget);
+//   - reads the release-please job's outputs nowhere (needs.release-please.outputs);
 //   - pastes no expression but ${{ github.repository }} into a script.
 //
 // It reads the document with the strict line reader and refuses what it does
@@ -548,6 +554,23 @@ func (r *schemaReader) releasePleaseJobs(e yamlread.Entry) {
 
 	r.appTokenReach(reach)
 	r.credentialReach(credentials)
+	r.releasePleaseOutputsReach()
+}
+
+// releasePleaseOutputsReach refuses any reference to the release-please job's
+// outputs: that job runs the third-party release-please-action, so whatever it
+// outputs is not to be trusted by the tag job, which creates the release tag.
+// Comments are skipped.
+func (r *schemaReader) releasePleaseOutputsReach() {
+	for i, line := range r.raw {
+		if strings.HasPrefix(strings.TrimSpace(line), "#") {
+			continue
+		}
+
+		if strings.Contains(line, releasePleaseOutputsRef) {
+			r.fail("line %d: %s reads %s: the release-please job runs %s, so no job trusts its outputs; the tag job holds the release-please App's slug as the constant %s", i+1, releasePleaseWorkflowName, releasePleaseOutputsRef, releasePleaseAction, releasePleaseSlug)
+		}
+	}
 }
 
 // releasePleaseJob checks one job against its spec: its keys, environment,
@@ -1078,6 +1101,13 @@ func (r *schemaReader) guardStep(s pleaseStep, path, token string) {
 		r.fail("line %d: %s: the step with id: %s has no env: GH_TOKEN, so gh cannot read release.yml's runs; want GH_TOKEN: %s", s.num, path, guardStepID, automaticTokens[0])
 	case !slices.Contains(automaticTokens, value):
 		r.fail("line %d: %s: the step with id: %s reads release.yml's runs with GH_TOKEN %s; want GITHUB_TOKEN, %s or %s: the release-tag App's token %s is for the tag alone", s.num, path, guardStepID, value, automaticTokens[0], automaticTokens[1], token)
+	}
+
+	switch slug, ok := s.env["APP_SLUG"]; {
+	case !ok:
+		r.fail("line %d: %s: the step with id: %s has no env: APP_SLUG, so it cannot tell a release PR the release-please App opened; want APP_SLUG: %s", s.num, path, guardStepID, releasePleaseSlug)
+	case slug != releasePleaseSlug:
+		r.fail("line %d: %s: the step with id: %s's APP_SLUG is %s, want %s, the release-please App's slug", s.num, path, guardStepID, slug, releasePleaseSlug)
 	}
 }
 

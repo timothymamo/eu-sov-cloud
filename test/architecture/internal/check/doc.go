@@ -76,7 +76,8 @@
 // GITHUB_TOKEN for no release.yml run to be requested, waiting, pending,
 // queued or in progress, and creates the tag through the API in a step whose
 // env: is exactly that token, the repository and the release-please App's
-// slug, and which calls only the release PR's, the manifest's, the merge
+// slug as a constant, never an output of the release-please job, which
+// declares none, and which calls only the release PR's, the manifest's, the merge
 // commit's and the tag's API endpoints: no Release, no label, no gh release,
 // no curl. The relabel job, in the release-please environment, relabels the
 // PR the tag job tagged with the release-please App's token. Each token step
