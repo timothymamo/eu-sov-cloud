@@ -17,12 +17,14 @@
 #   5. pi          pi has the DeepSeek key.
 #   6. gh          gh is logged in to github.com.
 #   7. deck        .dot-agent-deck.toml is valid.
-#   8. daemon      The deck's daemon is installed as a systemd user service, if it is not yet.
+#   8. deck command The deck's default_command, which new agents and dispatchers start with, where the VM
+#                  has none (issue #134).
+#   9. daemon      The deck's daemon is installed as a systemd user service, if it is not yet.
 #
 # Running it again changes nothing: a file is written only when a flag in it is not set yet, the theme only
-# when it differs from the one asked for, and the git identity only where the VM has none. Run it while no
-# Claude Code session runs in the VM (before `make deck`): a running session can write its own copy of
-# ~/.claude.json back over the trust flags. It never prints a credential: the tools whose output can
+# when it differs from the one asked for, and the git identity and the deck's default command only where
+# the VM has none. Run it while no Claude Code session runs in the VM (before `make deck`): a running
+# session can write its own copy of ~/.claude.json back over the trust flags. It never prints a credential: the tools whose output can
 # include one are run quietly or filtered to the field checked.
 set -euo pipefail
 
@@ -126,7 +128,22 @@ say "gh: logged in to github.com"
 dot-agent-deck validate --path "${repo}" >/dev/null || fail "deck: ${repo}/.dot-agent-deck.toml is not valid; see dot-agent-deck validate"
 say "deck: .dot-agent-deck.toml is valid"
 
-# 8. daemon: last, as installing it starts it, and only when it is not installed yet.
+# 8. deck command: what the New Agent form pre-fills, and what a dispatcher started with a blank command,
+# and the single units it dispatches, run. The orchestrator role's command (.dot-agent-deck.toml). Set
+# only where the VM has none, so a re-run never replaces a command chosen in the VM.
+deck_command="claude --model opus --permission-mode auto"
+current="$(dot-agent-deck config get default_command)" || fail "deck command: dot-agent-deck config get default_command failed"
+if [ -z "${current}" ]; then
+  dot-agent-deck config set default_command "${deck_command}" >/dev/null ||
+    fail "deck command: dot-agent-deck config set default_command failed"
+  say "deck command: set default_command to ${deck_command}"
+elif [ "${current}" = "${deck_command}" ]; then
+  say "deck command: default_command already ${deck_command}"
+else
+  say "deck command: kept default_command ${current}, not ${deck_command}; change it with dot-agent-deck config set default_command in the VM"
+fi
+
+# 9. daemon: last, as installing it starts it, and only when it is not installed yet.
 if [ "$(systemctl --user is-enabled dot-agent-deck.service 2>/dev/null || true)" = "enabled" ]; then
   say "daemon: dot-agent-deck.service already installed"
 else
