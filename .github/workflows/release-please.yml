@@ -60,9 +60,9 @@ jobs:
       # in progress, since a tag pushed at a release run that GitHub then cancels publishes nothing
       # (ADR 0015). It waits only when there is something to tag, a merged release PR the App opened from
       # release-please's branch still labelled autorelease: pending, read with the tag step's own pulls
-      # query, so a push to main during a release with nothing to tag passes. The
-      # release PR stays labelled autorelease: pending, so the next push to main, or a re-run of this
-      # workflow once the release has finished, tags it. It reads with GITHUB_TOKEN, never the App's token.
+      # query, so a push to main during a release with nothing to tag passes. The release PR stays
+      # labelled autorelease: pending, so the next push to main, or a re-run of this workflow once the
+      # release has finished, tags it. It reads with GITHUB_TOKEN, never the App's token.
       - name: Wait for no release to be queued or in progress
         id: guard
         env:

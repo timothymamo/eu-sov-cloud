@@ -93,11 +93,11 @@ GitHub App's token, and the tag starts `release.yml` as before.**
   deployment branch policy: the `RELEASE_APP_ID` variable and the `RELEASE_APP_PRIVATE_KEY` secret. A
   workflow on another branch cannot read the key. `GITHUB_TOKEN` holds `permissions: {}` at the top
   level and `contents: read`, `actions: read`, `pull-requests: read` in the job (the guard lists the
-  release PRs with the tag step's own pulls query). The
-  job runs on `ubuntu-latest` alone, never a self-hosted runner. The App's token reaches two places
-  only: release-please's `token` input and the tag step's `GH_TOKEN`, whose `env:` is exactly that
-  token, the repository and the App's slug, and whose `gh api` calls reach only the release PR's, the
-  manifest's, the merge commit's and the tag's endpoints: no Release, no `gh release`, no `curl`.
+  release PRs with the tag step's own pulls query). The job runs on `ubuntu-latest` alone, never a
+  self-hosted runner. The App's token reaches two places only: release-please's `token` input and the
+  tag step's `GH_TOKEN`, whose `env:` is exactly that token, the repository and the App's slug, and
+  whose `gh api` calls reach only the release PR's, the manifest's, the merge commit's and the tag's
+  endpoints: no Release, no `gh release`, no `curl`.
 - **Concurrency.** The workflow has a group of its own, `release-please`, with
   `cancel-in-progress: false`. Sharing `release.yml`'s `release` group would let a later push to `main`
   queue a `release-please` run that cancels a pending release run. One release at a time is kept by a
@@ -152,8 +152,8 @@ GitHub App's token, and the tag starts `release.yml` as before.**
 - A new credential: the release App's private key. It is held by the `release-please` environment,
   limited to `main`, and can create release tags (not move or delete them), push branches, manage pull
   requests and, while `Protect main` asks for no approving review, merge a pull request into `main`
-  once its checks pass (see the residual risk below). It is the second identity that can start a release, so the App is
-  installed on this repository only, with the two permissions above.
+  once its checks pass (see the residual risk below). It is the second identity that can start a
+  release, so the App is installed on this repository only, with the two permissions above.
 - **Residual risk: one App token, two holders, a tag anywhere.** The one installation token is handed
   to the third-party `googleapis/release-please-action` as well as to the tag step. With Contents
   write and the creation bypass of `Release tag creation`, whoever holds it can create a `v*` tag on
@@ -184,7 +184,10 @@ GitHub App's token, and the tag starts `release.yml` as before.**
   third-party release-please action. A compromised step can write `$GITHUB_ENV` or `$GITHUB_PATH` and
   plant a fake `gh` or `jq` that the later tag step runs with the App's token. Another reason for the
   recommended split into two Apps and a separate, tag-only job. In the design's favour: the App has
-  no Workflows permission, so a stolen token cannot change `.github/workflows/*`.
+  no Workflows permission, so a stolen token cannot change `.github/workflows/*`. That limit is
+  narrow: the token can still change the files those workflows run (`.goreleaser.yaml`, the
+  `Makefile`, `.github/scripts/*`, the Dockerfiles, the Go code) on a branch it then tags or merges,
+  which is what the residual risks above describe.
 - Before this change merges, a maintainer must:
   - create the App with Contents and Pull requests read and write, private (installable on this
     account only), with its webhook off, and install it on this repository only;
