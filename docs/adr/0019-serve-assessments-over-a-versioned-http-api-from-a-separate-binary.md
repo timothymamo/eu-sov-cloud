@@ -1,6 +1,6 @@
 # 0019. Serve assessments over a versioned HTTP API from a separate binary
 
-- Status: Accepted
+- Status: Accepted; amended 2026-11-12: the bundled OpenAPI document moves from milestone 4 to [issue #139](https://github.com/timothymamo/shift2eu/issues/139)
 - Date: 2026-11-11 (accepted 2026-11-12, issue #112; milestone 3 decisions added 2026-11-12)
 
 ## Context
@@ -304,9 +304,10 @@ packages it needs, no third-party package, no cloud SDK, no `os/exec` and never 
   (`make server` builds it alone). An e2e test builds both binaries and checks that they give the same
   bytes for the same inventory and targets, in JSON and Markdown.
 
-**What milestone 4 adds (packaging).** The `shift2eu-server` image, the README's deployment notes, and a
-published OpenAPI document that bundles the report's JSON Schemas: `api/openapi.json` refers to them by
-repo-relative path, which a reader outside the repository cannot follow.
+**What milestone 4 adds (packaging).** The `shift2eu-server` image and the README's deployment notes.
+*Amended (2026-11-12):* a published OpenAPI document that bundles the report's JSON Schemas is deferred to
+[issue #139](https://github.com/timothymamo/shift2eu/issues/139): `api/openapi.json` refers to them by repo-relative path, which a reader outside the repository
+cannot follow, until then.
 
 ## Alternatives considered
 
@@ -333,8 +334,8 @@ repo-relative path, which a reader outside the repository cannot follow.
 - **`api/openapi.yaml`.** The usual format, but a test would need a YAML parser in the module. JSON is
   read with `encoding/json` and is valid OpenAPI.
 - **Copy the report schemas into the OpenAPI document.** Self-contained, but two copies of the report's
-  contract that can drift; the relative `$ref` keeps one, and milestone 4 bundles them when it publishes
-  the document.
+  contract that can drift; the relative `$ref` keeps one, and [issue #139](https://github.com/timothymamo/shift2eu/issues/139) bundles them when it
+  publishes the document.
 - **Echo the offending value, escaped, in `invalid_inventory`** (the CLI's wording). Most helpful to a
   developer, but the message reaches a website, its users and its logs, and an inventory value can be a
   secret someone pasted into a tag. Naming the position and field is enough to find it in the document

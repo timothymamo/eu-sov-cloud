@@ -27,6 +27,15 @@ const (
 	goreleaserName     = ".goreleaser.yaml"
 	versionPackagePath = "github.com/timothymamo/shift2eu/internal/version"
 	mainPackage        = "./cmd/shift2eu"
+
+	// The second binary the release ships, the HTTP API (PRD #103, ADR 0019):
+	// its builds entry, the package it is built from, the path the image keeps
+	// it at and the stage of the Dockerfile that ships it.
+	serverBuildID     = "shift2eu-server"
+	serverMainPackage = "./cmd/shift2eu-server"
+	serverBinaryPath  = "/shift2eu-server"
+	serverStageName   = "server"
+	cliBinaryPath     = "/shift2eu"
 )
 
 // TestBuilderGoVersionMatchesGoMod pins that the builder stage is the golang
@@ -114,13 +123,62 @@ func TestEveryBaseImageIsDigestPinned(t *testing.T) {
 // a command between the prefix and the build, or a variable assigned twice would
 // build with settings the release does not use, so each of them is refused
 // rather than left to a mention somewhere in the text.
+//
+// It runs once per image the release ships: the CLI, which the last stage of
+// the Dockerfile builds, and the HTTP API's binary, which the stage named
+// server builds (PRD #103 milestone 4, ADR 0019).
 func TestBuildMatchesGoReleaser(t *testing.T) {
 	t.Parallel()
 
-	dockerfile := readRepoFile(t, dockerfileName)
-	settings := parseBuildSettings(t, readRepoFile(t, goreleaserName))
-	build := goBuildRun(t, dockerfile)
-	command := parseBuildCommand(t, build)
+	instructions := dockerfileInstructions(t, readRepoFile(t, dockerfileName))
+	builds := parseGoreleaserBuilds(t, readRepoFile(t, goreleaserName))
+
+	tests := []struct {
+		name      string
+		id        string
+		pkg       string
+		stage     string
+		stageDesc string
+		imageBin  string
+	}{
+		{
+			name:      "cli",
+			id:        "shift2eu",
+			pkg:       mainPackage,
+			stage:     "",
+			stageDesc: "the final stage, the CLI image",
+			imageBin:  cliBinaryPath,
+		},
+		{
+			name:      "server",
+			id:        serverBuildID,
+			pkg:       serverMainPackage,
+			stage:     serverStageName,
+			stageDesc: "the server stage",
+			imageBin:  serverBinaryPath,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			assertBuildMatchesGoReleaser(t, instructions, goreleaserBuildSettings(t, builds, tc.id), tc.pkg, tc.stage, tc.stageDesc, tc.imageBin)
+		})
+	}
+}
+
+// assertBuildMatchesGoReleaser holds one image's build to the .goreleaser.yaml
+// build entry that ships the same binary: settings is that entry, pkg the main
+// package the image builds, stage the name of the stage that ships it, described
+// by stageDesc, and imageBin the path its ENTRYPOINT runs. The stage is looked
+// up only once the build itself is matched, so a missing stage is reported by the
+// test that pins the stage, not as a gap in this one.
+func assertBuildMatchesGoReleaser(t *testing.T, instructions []instruction, settings goreleaserBuild, pkg, stageName, stageDesc, imageBin string) {
+	t.Helper()
+
+	build := goBuildRunFor(t, instructions, pkg)
+	command := parseBuildCommand(t, build, pkg)
 
 	// The env entries are releasetarget.Env(), the list releasetarget.Read
 	// holds every build's env to (issue #102): cgo off, so nothing links a C
@@ -184,21 +242,26 @@ func TestBuildMatchesGoReleaser(t *testing.T) {
 		}
 	}
 
-	if command.pkg != mainPackage {
+	if command.pkg != pkg {
 		t.Errorf("%s:%d: the RUN instruction that runs `go build` builds %q, want %s, the main package %s builds the release binary from",
-			dockerfileName, build.line, command.pkg, mainPackage, goreleaserName)
+			dockerfileName, build.line, command.pkg, pkg, goreleaserName)
 	}
 
 	// The -o value is where this build writes the binary, and the one path the
-	// final stage copies it from is the binary the image ships. It is pinned to
-	// that path rather than read as an opaque value: a shell reads
+	// stage that ships it copies it from is the binary the image runs. It is
+	// pinned to that path rather than read as an opaque value: a shell reads
 	// `/out/shift2eu;GOFLAGS=-mod=mod${IFS}go${IFS}build ...` as the end of this go
 	// build and a second command, so an -o value that is not the copied path
 	// leaves the image shipping a binary built outside the release env.
-	copied := copiedBinaryPath(t, dockerfile)
+	copied, destination := copiedBinary(t, instructions, stageFor(t, instructions, stageName), stageDesc)
 	if command.output != copied {
-		t.Errorf("%s:%d: the RUN instruction that runs `go build` writes the binary to %q, want %q, the path the final stage copies it from: any other value, such as a path followed by a `;` and a second go build, overwrites the binary outside this env",
-			dockerfileName, build.line, command.output, copied)
+		t.Errorf("%s:%d: the RUN instruction that runs `go build` writes the binary to %q, want %q, the path %s copies it from: any other value, such as a path followed by a `;` and a second go build, overwrites the binary outside this env",
+			dockerfileName, build.line, command.output, copied, stageDesc)
+	}
+
+	if destination != imageBin {
+		t.Errorf("%s: %s copies the binary to %q, want %q, the path its ENTRYPOINT runs: a COPY to any other path leaves the image with no binary to start",
+			dockerfileName, stageDesc, destination, imageBin)
 	}
 
 	// The prefix may name no other variable, and must assign each name exactly
@@ -236,6 +299,46 @@ func TestBuildMatchesGoReleaser(t *testing.T) {
 		if !usesBuildArg(command.env, tc.env, tc.buildArg) {
 			t.Errorf("%s:%d: the RUN instruction that runs `go build` does not set %s from %s (as $%s or ${%s}), so docker buildx --platform builds every platform for the builder's own",
 				dockerfileName, build.line, tc.env, tc.buildArg, tc.buildArg, tc.buildArg)
+		}
+	}
+}
+
+// TestGoReleaserBuildsTheServer pins that the release builds the HTTP API's
+// binary the way it builds the CLI (PRD #103 milestone 4, ADR 0019): a second
+// entry of the builds list, id shift2eu-server, main ./cmd/shift2eu-server and
+// binary shift2eu-server, with the same env, flags, ldflags, goos and goarch as
+// the shift2eu entry. One release then ships both binaries, built with the same
+// settings, so neither can drift from the other.
+func TestGoReleaserBuildsTheServer(t *testing.T) {
+	t.Parallel()
+
+	builds := parseGoreleaserBuilds(t, readRepoFile(t, goreleaserName))
+	cli := goreleaserBuildSettings(t, builds, "shift2eu")
+	server := goreleaserBuildSettings(t, builds, serverBuildID)
+
+	for _, tc := range []struct{ field, want, got string }{
+		{field: "main", want: serverMainPackage, got: server.main},
+		{field: "binary", want: serverBuildID, got: server.binary},
+	} {
+		if tc.got != tc.want {
+			t.Errorf("%s: the builds entry %q at line %d sets %s to %q, want %q, so the release ships the HTTP API's binary",
+				goreleaserName, serverBuildID, server.line, tc.field, tc.got, tc.want)
+		}
+	}
+
+	for _, tc := range []struct {
+		list        string
+		cli, server []string
+	}{
+		{list: "env", cli: cli.env, server: server.env},
+		{list: "flags", cli: cli.flags, server: server.flags},
+		{list: "ldflags", cli: cli.ldflags, server: server.ldflags},
+		{list: "goos", cli: cli.goos, server: server.goos},
+		{list: "goarch", cli: cli.goarch, server: server.goarch},
+	} {
+		if diff := cmp.Diff(tc.cli, tc.server); diff != "" {
+			t.Errorf("%s: the builds entries %q and %q set %s differently (-%s +%s):\n%s\nwant the server built exactly as the CLI, so one release ships both binaries with the same settings",
+				goreleaserName, "shift2eu", serverBuildID, tc.list, "shift2eu", serverBuildID, diff)
 		}
 	}
 }
@@ -344,69 +447,179 @@ func TestBuilderStageCrossCompilesOnBuildPlatform(t *testing.T) {
 	assertBuilderCrossCompiles(t, readRepoFile(t, dockerfileName))
 }
 
-// TestFinalStageIsMinimalAndNonRoot pins the last stage of the Dockerfile: a
-// base image with nothing to install, patch or run but the binary and the CA
-// certificates; a non-root user; the binary as the exec-form entrypoint; and the
-// OCI labels that say where the image comes from and under which license.
+// TestFinalStageIsMinimalAndNonRoot pins the last stage of the Dockerfile, the
+// CLI image: a base image with nothing to install, patch or run but the binary
+// and the CA certificates; a non-root user; the binary as the exec-form
+// entrypoint; and the OCI labels that say where the image comes from and under
+// which license. It stays the last stage, so `docker build .` and make image
+// keep building the CLI with the entrypoint it always had (ADR 0013).
 func TestFinalStageIsMinimalAndNonRoot(t *testing.T) {
 	t.Parallel()
 
-	instructions := dockerfileInstructions(t, readRepoFile(t, dockerfileName))
-	final := finalStage(t, instructions)
+	final := finalStage(t, dockerfileInstructions(t, readRepoFile(t, dockerfileName)))
 
-	base := fromImages(final)[0]
+	// The CLI image takes its command from the command line alone, so a CMD
+	// here would run a default command, or prepend arguments to its own, in
+	// place of what `docker run shift2eu assess ...` asks for.
+	for _, cmd := range stageCommands(final) {
+		t.Errorf("%s:%d: the final stage, the CLI image, has CMD %s: want none, so the arguments given to `docker run` reach the binary as they always have and no default command is run in their place",
+			dockerfileName, cmd.line, cmd.arguments())
+	}
+
+	assertMinimalNonRootStage(t, final, "the final stage", cliBinaryPath)
+}
+
+// TestServerStageIsMinimalAndNonRoot pins the stage that ships the HTTP API's
+// binary (PRD #103 milestone 4, ADR 0019): a stage named server, built with
+// `docker buildx build --target server`, held to exactly what the CLI image
+// promises, with the server binary as its exec-form entrypoint, copied from the
+// stage that compiles it.
+func TestServerStageIsMinimalAndNonRoot(t *testing.T) {
+	t.Parallel()
+
+	instructions := dockerfileInstructions(t, readRepoFile(t, dockerfileName))
+	stage := stageFor(t, instructions, serverStageName)
+
+	assertMinimalNonRootStage(t, stage, "the server stage", serverBinaryPath)
+
+	// The entrypoint path must be the file the COPY writes, or the container
+	// starts with no server to run.
+	_, destination := copiedBinary(t, instructions, stage, "the server stage")
+	if destination != serverBinaryPath {
+		t.Errorf("%s: the server stage copies the binary to %q, want %q, the path its ENTRYPOINT runs, so the container starts the server rather than nothing",
+			dockerfileName, destination, serverBinaryPath)
+	}
+
+	// The entrypoint alone leaves the server on its default listen address,
+	// 127.0.0.1:8080, which a container never publishes: the CMD is what puts
+	// the server behind the port the stage EXPOSEs.
+	assertServerListenCommand(t, stage, "the server stage")
+}
+
+// assertServerListenCommand holds the CMD of one image stage to the listen
+// address the image publishes (PRD #103 milestone 4, ADR 0019). Without a CMD
+// the binary keeps its default 127.0.0.1:8080, an address a container never
+// publishes, so `docker run -p 127.0.0.1:8080:8080` finds nothing listening on
+// the port and the API is unreachable. The CMD must pass --listen 0.0.0.0:8080
+// in exec form, so no shell is needed, and the port it names must be the one the
+// stage EXPOSEs, so the published port always has the server behind it. The
+// server refuses to start off loopback without a bearer token (exit 2), which is
+// the intended fail-safe: a container started without one stops rather than
+// serving unauthenticated. name names the stage in failure messages.
+func assertServerListenCommand(t *testing.T, stage []instruction, name string) {
+	t.Helper()
+
+	cmds := stageCommands(stage)
+
+	switch len(cmds) {
+	case 0:
+		t.Errorf("%s: %s has no CMD: want exactly one, CMD [\"--listen\", \"0.0.0.0:8080\"] in exec form, because without it the server keeps its default listen address, 127.0.0.1:8080, which a container does not publish, so the API is unreachable through a published port",
+			dockerfileName, name)
+
+		return
+	case 1:
+	default:
+		lines := make([]string, 0, len(cmds))
+		for _, cmd := range cmds {
+			lines = append(lines, strconv.Itoa(cmd.line))
+		}
+
+		t.Errorf("%s: %s has %d CMD instructions (lines %s): want exactly one, so no later CMD quietly replaces the one that gives the server its listen address",
+			dockerfileName, name, len(cmds), strings.Join(lines, ", "))
+
+		return
+	}
+
+	cmd := cmds[0]
+
+	var argv []string
+	if err := json.Unmarshal([]byte(cmd.arguments()), &argv); err != nil {
+		t.Fatalf("%s:%d: CMD %s is not in exec (JSON array) form, so Docker wraps it in /bin/sh, which the image does not hold: %v",
+			dockerfileName, cmd.line, cmd.arguments(), err)
+	}
+
+	want := []string{"--listen", "0.0.0.0:8080"}
+	if diff := cmp.Diff(want, argv); diff != "" {
+		t.Errorf("%s:%d: CMD mismatch (-want +got):\n%s\nwant the server started on every interface of its published port, which is what makes a published container port reach it; a bare ENTRYPOINT keeps the default 127.0.0.1:8080 and nothing outside the container can connect",
+			dockerfileName, cmd.line, diff)
+
+		return
+	}
+
+	// The port the CMD starts the server on and the one the stage publishes are
+	// the same port: a container publishes the exposed port, so a server on
+	// another one answers nothing there.
+	_, port, _ := strings.Cut(want[1], ":")
+
+	exposed := exposedPorts(t, stage, name)
+	if diff := cmp.Diff([]string{port}, exposed); diff != "" {
+		t.Errorf("%s:%d: the CMD starts the server on port %q and the stage EXPOSEs the ports %q (-CMD +EXPOSE):\n%s\nwant the same port, so the port the image publishes is the one the server listens on",
+			dockerfileName, cmd.line, port, exposed, diff)
+	}
+}
+
+// assertMinimalNonRootStage holds one stage that ships an image to what both
+// images promise: a base image with nothing to install, patch or run but the
+// binary and the CA certificates; a non-root user; the binary as the exec-form
+// entrypoint; and the OCI labels that say where the image comes from and under
+// which license. name names the stage in failure messages, and entrypointPath is
+// the binary its ENTRYPOINT must run.
+func assertMinimalNonRootStage(t *testing.T, stage []instruction, name, entrypointPath string) {
+	t.Helper()
+
+	base := fromImages(stage)[0]
 	if !strings.EqualFold(base.image, "scratch") && !strings.HasPrefix(base.image, "gcr.io/distroless/static") {
-		t.Errorf("%s:%d: the final stage starts FROM %q: want scratch or gcr.io/distroless/static, which hold no shell, package manager or Go toolchain",
-			dockerfileName, base.line, base.image)
+		t.Errorf("%s:%d: %s starts FROM %q: want scratch or gcr.io/distroless/static, which hold no shell, package manager or Go toolchain",
+			dockerfileName, base.line, name, base.image)
 	}
 
 	if isDebugBaseImage(base.image) {
-		t.Errorf("%s:%d: the final stage starts FROM %q, the debug variant of a distroless image: :debug and :debug-nonroot ship a busybox shell and a package manager's leftovers, contradicting the image's promise of no shell; want the same image under its non-debug tag, such as :nonroot",
-			dockerfileName, base.line, base.image)
+		t.Errorf("%s:%d: %s starts FROM %q, the debug variant of a distroless image: :debug and :debug-nonroot ship a busybox shell and a package manager's leftovers, contradicting the image's promise of no shell; want the same image under its non-debug tag, such as :nonroot",
+			dockerfileName, base.line, name, base.image)
 	}
 
 	// The builder cross-compiles for $BUILDPLATFORM, so CI needs no QEMU
-	// emulation. A RUN in the final stage would need it, and a shell distroless
-	// does not have.
-	for _, in := range final {
+	// emulation. A RUN in either stage that ships an image would need it, and a
+	// shell distroless does not have.
+	for _, in := range stage {
 		if in.keyword() == "RUN" {
-			t.Errorf("%s:%d: the final stage has a RUN instruction, %q: want none, because the builder cross-compiles on $BUILDPLATFORM, so CI needs no QEMU emulation, and a RUN in the final stage would need it as well as a shell, which distroless does not have; do the work in the builder and COPY its result",
-				dockerfileName, in.line, in.text)
+			t.Errorf("%s:%d: %s has a RUN instruction, %q: want none, because the builder cross-compiles on $BUILDPLATFORM, so CI needs no QEMU emulation, and a RUN in this stage would need it as well as a shell, which distroless does not have; do the work in the builder and COPY its result",
+				dockerfileName, in.line, name, in.text)
 		}
 	}
 
-	user, ok := lastInstruction(final, "USER")
+	user, ok := lastInstruction(stage, "USER")
 	switch {
 	case !ok:
-		t.Errorf("%s: the final stage has no USER instruction: want a non-root user such as USER 65532:65532, so the process does not run as root",
-			dockerfileName)
+		t.Errorf("%s: %s has no USER instruction: want a non-root user such as USER 65532:65532, so the process does not run as root",
+			dockerfileName, name)
 	default:
 		// Docker reads the user as <name>[:<group>]; a name that is root, or
 		// the root uid, runs the process as root whatever the group is.
-		name, _, _ := strings.Cut(user.arguments(), ":")
-		if name == "" || name == "root" || name == "0" {
-			t.Errorf("%s:%d: the final stage runs as USER %q: want a non-root user such as nonroot or 65532:65532",
-				dockerfileName, user.line, user.arguments())
+		userName, _, _ := strings.Cut(user.arguments(), ":")
+		if userName == "" || userName == "root" || userName == "0" {
+			t.Errorf("%s:%d: %s runs as USER %q: want a non-root user such as nonroot or 65532:65532",
+				dockerfileName, user.line, name, user.arguments())
 		}
 	}
 
-	entrypoint, ok := lastInstruction(final, "ENTRYPOINT")
+	entrypoint, ok := lastInstruction(stage, "ENTRYPOINT")
 	switch {
 	case !ok:
-		t.Errorf("%s: the final stage has no ENTRYPOINT: want ENTRYPOINT [\"/shift2eu\"] in exec form, so the binary runs without a shell",
-			dockerfileName)
+		t.Errorf("%s: %s has no ENTRYPOINT: want ENTRYPOINT [\"%s\"] in exec form, so the binary runs without a shell",
+			dockerfileName, name, entrypointPath)
 	default:
 		var argv []string
 		if err := json.Unmarshal([]byte(entrypoint.arguments()), &argv); err != nil {
 			t.Errorf("%s:%d: ENTRYPOINT %s is not in exec (JSON array) form, so Docker wraps it in /bin/sh, which the image does not hold: %v",
 				dockerfileName, entrypoint.line, entrypoint.arguments(), err)
-		} else if diff := cmp.Diff([]string{"/shift2eu"}, argv); diff != "" {
+		} else if diff := cmp.Diff([]string{entrypointPath}, argv); diff != "" {
 			t.Errorf("%s:%d: ENTRYPOINT mismatch (-want +got):\n%s",
 				dockerfileName, entrypoint.line, diff)
 		}
 	}
 
-	labels := finalStageLabels(final)
+	labels := finalStageLabels(stage)
 	for _, key := range []string{
 		"org.opencontainers.image.source",
 		"org.opencontainers.image.version",
@@ -416,8 +629,8 @@ func TestFinalStageIsMinimalAndNonRoot(t *testing.T) {
 		value, ok := labels[key]
 		switch {
 		case !ok:
-			t.Errorf("%s: the final stage has no LABEL %s: want the four OCI labels, source, version, revision and licenses",
-				dockerfileName, key)
+			t.Errorf("%s: %s has no LABEL %s: want the four OCI labels, source, version, revision and licenses",
+				dockerfileName, name, key)
 		case value == "":
 			t.Errorf("%s: LABEL %s is empty: want a value, set from a build arg where it changes per release",
 				dockerfileName, key)
@@ -708,12 +921,55 @@ func (in instruction) arguments() string {
 	return args
 }
 
-// buildSettings is the part of .goreleaser.yaml's builds entry the image's
-// build must match.
-type buildSettings struct {
+// goreleaserBuild is one entry of .goreleaser.yaml's builds list: the id it is
+// named by, the main package and binary it builds, and the lists the image's
+// build must match. line is the line the entry starts on, for failure messages.
+type goreleaserBuild struct {
+	line    int
+	id      string
+	main    string
+	binary  string
 	env     []string
 	flags   []string
 	ldflags []string
+	goos    []string
+	goarch  []string
+}
+
+// list returns the list a key of a builds entry names, and nil for a key that
+// names no list the test reads.
+func (b *goreleaserBuild) list(key string) *[]string {
+	switch key {
+	case "env":
+		return &b.env
+	case "flags":
+		return &b.flags
+	case "ldflags":
+		return &b.ldflags
+	case "goos":
+		return &b.goos
+	case "goarch":
+		return &b.goarch
+	default:
+		return nil
+	}
+}
+
+// setScalar sets the string field a key of a builds entry names, and reports
+// whether it names one.
+func (b *goreleaserBuild) setScalar(key, value string) bool {
+	switch key {
+	case "id":
+		b.id = value
+	case "main":
+		b.main = value
+	case "binary":
+		b.binary = value
+	default:
+		return false
+	}
+
+	return true
 }
 
 // buildSetting is one setting the image's build must carry: the value, the
@@ -885,6 +1141,48 @@ func finalStage(t *testing.T, instructions []instruction) []instruction {
 	return instructions[last:]
 }
 
+// stageCommands returns the CMD instructions of a stage, in file order. Docker
+// applies the last one, so more than one is reported rather than picked from.
+func stageCommands(stage []instruction) []instruction {
+	var cmds []instruction
+
+	for _, in := range stage {
+		if in.keyword() == "CMD" {
+			cmds = append(cmds, in)
+		}
+	}
+
+	return cmds
+}
+
+// exposedPorts returns the ports a stage's EXPOSE instructions publish, with any
+// /<protocol> suffix removed: EXPOSE 8080 and EXPOSE 8080/tcp both give "8080".
+// A stage that publishes none is reported, since the port its CMD starts the
+// server on is compared with them.
+func exposedPorts(t *testing.T, stage []instruction, name string) []string {
+	t.Helper()
+
+	var ports []string
+
+	for _, in := range stage {
+		if in.keyword() != "EXPOSE" {
+			continue
+		}
+
+		for _, field := range strings.Fields(in.arguments()) {
+			port, _, _ := strings.Cut(field, "/")
+			ports = append(ports, port)
+		}
+	}
+
+	if len(ports) == 0 {
+		t.Errorf("%s: %s has no EXPOSE instruction: want EXPOSE 8080, the port its CMD starts the server on",
+			dockerfileName, name)
+	}
+
+	return ports
+}
+
 // lastInstruction returns the last instruction of the given keyword, which is
 // the one Docker applies when the same instruction appears twice.
 func lastInstruction(instructions []instruction, keyword string) (instruction, bool) {
@@ -915,25 +1213,25 @@ func runsGoBuild(command string) bool {
 	return false
 }
 
-// goBuildRun returns the one RUN instruction that runs `go build`: the
-// instruction that builds the image's binary, and the only place a build
-// setting can take effect. It fails the test when there is no such instruction,
-// so the build settings cannot be checked, or more than one, so it is not
-// clear which build the image ships.
-func goBuildRun(t *testing.T, dockerfile string) instruction {
+// goBuildRunFor returns the one RUN instruction that runs `go build` for pkg:
+// the instruction that builds the binary one image ships, and the only place a
+// build setting can take effect. It fails the test when there is no such
+// instruction, so the build settings cannot be checked, or more than one, so it
+// is not clear which build the image ships.
+func goBuildRunFor(t *testing.T, instructions []instruction, pkg string) instruction {
 	t.Helper()
 
 	var builds []instruction
-	for _, in := range dockerfileInstructions(t, dockerfile) {
-		if in.keyword() == "RUN" && runsGoBuild(in.arguments()) {
+	for _, in := range instructions {
+		if in.keyword() == "RUN" && runsGoBuild(in.arguments()) && goBuildPackage(t, in) == pkg {
 			builds = append(builds, in)
 		}
 	}
 
 	switch len(builds) {
 	case 0:
-		t.Fatalf("%s: no RUN instruction runs `go build`, so there is no build whose settings can be matched with %s; want one RUN such as `CGO_ENABLED=0 GOWORK=off go build ./cmd/shift2eu`",
-			dockerfileName, goreleaserName)
+		t.Fatalf("%s: no RUN instruction runs `go build ... %s`, so nothing builds the binary the image ships from that package and its settings cannot be matched with %s; want one RUN such as `CGO_ENABLED=0 GOWORK=off GOFLAGS=-mod=readonly GOOS=$TARGETOS GOARCH=$TARGETARCH go build -trimpath -ldflags ... -o /out/%s %s`",
+			dockerfileName, pkg, goreleaserName, path.Base(pkg), pkg)
 	case 1:
 		return builds[0]
 	}
@@ -943,10 +1241,33 @@ func goBuildRun(t *testing.T, dockerfile string) instruction {
 		lines = append(lines, strconv.Itoa(build.line))
 	}
 
-	t.Fatalf("%s: %d RUN instructions run `go build` (lines %s): want exactly one, the instruction that builds the binary the image ships, so this test checks one build and not whichever came first",
-		dockerfileName, len(builds), strings.Join(lines, ", "))
+	t.Fatalf("%s: %d RUN instructions run `go build` of %s (lines %s): want exactly one, the instruction that builds the binary the image ships, so this test checks one build and not whichever came first",
+		dockerfileName, len(builds), pkg, strings.Join(lines, ", "))
 
 	return instruction{}
+}
+
+// goBuildPackage returns the package the `go build` of a RUN instruction
+// builds: the last field after it, once the environment prefix and any --mount
+// flag are read past.
+func goBuildPackage(t *testing.T, in instruction) string {
+	t.Helper()
+
+	_, args := commandEnv(t, in.arguments())
+
+	for i := 0; i+1 < len(args); i++ {
+		if args[i] != "go" || args[i+1] != "build" {
+			continue
+		}
+
+		if rest := args[i+2:]; len(rest) > 0 {
+			return rest[len(rest)-1]
+		}
+
+		return ""
+	}
+
+	return ""
 }
 
 // buildCommand is the command of the one RUN instruction that builds the
@@ -963,16 +1284,16 @@ type buildCommand struct {
 }
 
 // parseBuildCommand reads the command of the RUN instruction that runs
-// `go build` and holds it to the release build: the environment prefix must be
-// followed directly by `go build`, and the go build may carry only -trimpath,
-// -ldflags with the internal/version stamps and -o with the binary's path, then
-// the package ./cmd/shift2eu.
+// `go build` and holds it to the release build of pkg: the environment prefix
+// must be followed directly by `go build`, and the go build may carry only
+// -trimpath, -ldflags with the internal/version stamps and -o with the binary's
+// path, then pkg.
 //
 // It fails the test rather than reporting a mismatch: a command line that is
 // not shaped like the release build is not the thing the caller set out to
 // compare with .goreleaser.yaml, so the caller cannot say anything useful about
 // the settings it would read from it.
-func parseBuildCommand(t *testing.T, build instruction) buildCommand {
+func parseBuildCommand(t *testing.T, build instruction, pkg string) buildCommand {
 	t.Helper()
 
 	env, args := commandEnv(t, build.arguments())
@@ -990,7 +1311,7 @@ func parseBuildCommand(t *testing.T, build instruction) buildCommand {
 	rest := args[2:]
 	if len(rest) == 0 {
 		t.Fatalf("%s:%d: the command runs `go build` with no flag and no package: want -trimpath, -ldflags <value> and -o <path>, then %s",
-			dockerfileName, build.line, mainPackage)
+			dockerfileName, build.line, pkg)
 	}
 
 	command := buildCommand{env: env, pkg: rest[len(rest)-1]}
@@ -1015,7 +1336,7 @@ func parseBuildCommand(t *testing.T, build instruction) buildCommand {
 			name, value = "-ldflags", strings.TrimPrefix(field, "-ldflags=")
 		default:
 			t.Fatalf("%s:%d: the command passes %q to `go build`: want only -trimpath, -ldflags <value> and -o <path>, then %s. Any other flag, such as -mod=mod or -tags, overrides the release env or changes what is compiled",
-				dockerfileName, build.line, field, mainPackage)
+				dockerfileName, build.line, field, pkg)
 		}
 
 		if _, twice := seen[name]; twice {
@@ -1028,7 +1349,7 @@ func parseBuildCommand(t *testing.T, build instruction) buildCommand {
 		if takesValue {
 			if i+1 >= len(rest)-1 {
 				t.Fatalf("%s:%d: the %s flag has no value: want `%s <value>`, and %s as the last field, the package the build compiles",
-					dockerfileName, build.line, name, name, mainPackage)
+					dockerfileName, build.line, name, name, pkg)
 			}
 
 			i++
@@ -1245,50 +1566,169 @@ func usesBuildArg(env []string, name, buildArg string) bool {
 		slices.Contains(env, name+"=${"+buildArg+"}")
 }
 
-// parseBuildSettings reads the env, flags and ldflags lists of .goreleaser.yaml
-// line by line: a key ending in a colon, then the "- value" items indented under
-// it. A YAML library would be a dependency for one file (CLAUDE.md rule 6).
-func parseBuildSettings(t *testing.T, goreleaser string) buildSettings {
+// parseGoreleaserBuilds reads the builds list of .goreleaser.yaml: each "- "
+// item at the list's own indentation starts an entry, the keys indented under it
+// set the entry's strings and lists, and a list is either a "key:" line
+// followed by "- value" items or a flow list [a, b] on the key's own line. The
+// indentation of an entry is read from the first item, so the "- value" items of
+// a list are told apart from the entries of the builds list, and a key at the
+// top level ends it. A YAML library would be a dependency for one file
+// (CLAUDE.md rule 6).
+func parseGoreleaserBuilds(t *testing.T, goreleaser string) []goreleaserBuild {
 	t.Helper()
 
-	var settings buildSettings
-	var list *[]string
+	var (
+		builds      []goreleaserBuild
+		current     *goreleaserBuild
+		list        *[]string
+		entryIndent = -1
+		inBuilds    bool
+		flush       = func() {
+			if current != nil {
+				builds = append(builds, *current)
+				current = nil
+			}
+		}
+	)
 
-	for _, raw := range strings.Split(goreleaser, "\n") {
-		line := strings.TrimSpace(strings.TrimSuffix(raw, "\r"))
+	for i, raw := range strings.Split(goreleaser, "\n") {
+		line := strings.TrimRight(strings.TrimSuffix(raw, "\r"), " ")
+		text := strings.TrimSpace(line)
+
+		if text == "" || strings.HasPrefix(text, "#") || text == "---" {
+			continue
+		}
+
+		indent := len(line) - len(strings.TrimLeft(line, " "))
+
+		if !inBuilds {
+			if indent == 0 && text == "builds:" {
+				inBuilds = true
+			}
+
+			continue
+		}
+
+		item, isItem := strings.CutPrefix(text, "- ")
+
+		// A key at the top level, such as archives: or release:, ends the
+		// builds list.
+		if indent == 0 && !isItem {
+			break
+		}
 
 		switch {
-		case line == "", strings.HasPrefix(line, "#"), line == "---":
-			continue
+		case isItem && (entryIndent < 0 || indent == entryIndent):
+			entryIndent = indent
+			flush()
+			current = &goreleaserBuild{line: i + 1}
 
-		case strings.HasPrefix(line, "- "):
-			if list != nil {
-				*list = append(*list, unquote(strings.TrimSpace(line[2:])))
+			key, value, found := strings.Cut(item, ":")
+			if !found {
+				t.Fatalf("%s:%d: the builds entry %q names no key: want an entry such as `- id: shift2eu`",
+					goreleaserName, i+1, text)
 			}
 
-		case strings.HasSuffix(line, ":"):
-			list = nil
-
-			switch key := strings.TrimSuffix(line, ":"); key {
-			case "env":
-				list = &settings.env
-			case "flags":
-				list = &settings.flags
-			case "ldflags":
-				list = &settings.ldflags
+			list = setBuildKey(t, current, i+1, strings.TrimSpace(key), strings.TrimSpace(value))
+		case isItem:
+			if list == nil {
+				t.Fatalf("%s:%d: the list item %q under the builds entry at line %d belongs to no list: want it under env, flags, ldflags, goos or goarch",
+					goreleaserName, i+1, text, current.line)
 			}
 
+			*list = append(*list, unquote(item))
 		default:
-			list = nil
+			if current == nil {
+				t.Fatalf("%s:%d: the key %q comes before the first builds entry: want every key indented under an entry such as `- id: shift2eu`",
+					goreleaserName, i+1, text)
+			}
+
+			key, value, found := strings.Cut(text, ":")
+			if !found {
+				t.Fatalf("%s:%d: the line %q in the builds entry at line %d names no value: want key: value, or key: and then the list items",
+					goreleaserName, i+1, text, current.line)
+			}
+
+			list = setBuildKey(t, current, i+1, strings.TrimSpace(key), strings.TrimSpace(value))
 		}
 	}
 
-	if len(settings.env) == 0 || len(settings.flags) == 0 || len(settings.ldflags) == 0 {
-		t.Fatalf("%s: the builds entry has env=%v, flags=%v and ldflags=%v: the test reads the image's build settings from all three lists, so each must hold an item",
-			goreleaserName, settings.env, settings.flags, settings.ldflags)
+	flush()
+
+	if !inBuilds {
+		t.Fatalf("%s: no builds: section, so the release builds no binary", goreleaserName)
 	}
 
-	return settings
+	if len(builds) == 0 {
+		t.Fatalf("%s: the builds: section holds no entry: want one per binary the release ships", goreleaserName)
+	}
+
+	return builds
+}
+
+// setBuildKey sets the field key of one builds entry from the value written on
+// the same line, and returns the list a following "- value" line belongs to: a
+// key with no value opens its list, and a flow list [a, b] is filled at once. A
+// key the test does not read is ignored, so the document may carry settings
+// this test has nothing to say about.
+func setBuildKey(t *testing.T, build *goreleaserBuild, line int, key, value string) *[]string {
+	t.Helper()
+
+	list := build.list(key)
+	if list == nil {
+		build.setScalar(key, unquote(value))
+
+		return nil
+	}
+
+	switch {
+	case value == "":
+		return list
+	case strings.HasPrefix(value, "["):
+		if !strings.HasSuffix(value, "]") {
+			t.Fatalf("%s:%d: the %s list %q has no closing bracket", goreleaserName, line, key, value)
+		}
+
+		for _, item := range strings.Split(strings.TrimSuffix(strings.TrimPrefix(value, "["), "]"), ",") {
+			if item = strings.TrimSpace(item); item != "" {
+				*list = append(*list, unquote(item))
+			}
+		}
+	default:
+		*list = append(*list, unquote(value))
+	}
+
+	return nil
+}
+
+// goreleaserBuildSettings returns the builds entry named id, and fails the test
+// when the file holds none, naming the ids it does hold: an entry that was
+// renamed or never added is then reported as that, rather than leaving this test
+// with nothing to compare.
+func goreleaserBuildSettings(t *testing.T, builds []goreleaserBuild, id string) goreleaserBuild {
+	t.Helper()
+
+	ids := make([]string, 0, len(builds))
+
+	for _, build := range builds {
+		if build.id != id {
+			ids = append(ids, build.id)
+
+			continue
+		}
+
+		if len(build.env) == 0 || len(build.flags) == 0 || len(build.ldflags) == 0 {
+			t.Fatalf("%s: the builds entry %q at line %d has env=%v, flags=%v and ldflags=%v: the test reads the image's build settings from all three lists, so each must hold an item",
+				goreleaserName, id, build.line, build.env, build.flags, build.ldflags)
+		}
+
+		return build
+	}
+
+	t.Fatalf("%s: no builds entry with id %q: the builds: section holds %q; want an entry that builds this image's binary, with the release's env, flags and ldflags",
+		goreleaserName, id, ids)
+
+	return goreleaserBuild{}
 }
 
 // unquote removes the matching quotes YAML allows around a scalar.
@@ -1302,25 +1742,66 @@ func unquote(value string) string {
 	return value
 }
 
-// stageInstructions returns the instructions after the FROM at index i, up to
-// the next FROM: the body of the stage that FROM starts.
-func stageInstructions(instructions []instruction, i int) []instruction {
+// stageLines returns the FROM instruction at index i and the body after it, up
+// to the next FROM: the whole of the stage that FROM starts.
+func stageLines(instructions []instruction, i int) []instruction {
 	for j := i + 1; j < len(instructions); j++ {
 		if instructions[j].keyword() == "FROM" {
-			return instructions[i+1 : j]
+			return instructions[i:j]
 		}
 	}
 
-	return instructions[i+1:]
+	return instructions[i:]
+}
+
+// stageInstructions returns the instructions after the FROM at index i, up to
+// the next FROM: the body of the stage that FROM starts.
+func stageInstructions(instructions []instruction, i int) []instruction {
+	return stageLines(instructions, i)[1:]
+}
+
+// stageFor returns the whole of the stage named name, its FROM instruction
+// included, and the last stage when name is empty. It fails the test when no
+// stage carries the name, naming the stages the Dockerfile does declare, so a
+// missing or renamed stage is reported as that rather than as a check on
+// another stage's instructions.
+func stageFor(t *testing.T, instructions []instruction, name string) []instruction {
+	t.Helper()
+
+	if name == "" {
+		return finalStage(t, instructions)
+	}
+
+	var declared []string
+
+	for i, in := range instructions {
+		if in.keyword() != "FROM" {
+			continue
+		}
+
+		fields := fromFields(in)
+		if len(fields) < 3 || !strings.EqualFold(fields[1], "AS") {
+			continue
+		}
+
+		if strings.EqualFold(fields[2], name) {
+			return stageLines(instructions, i)
+		}
+
+		declared = append(declared, fields[2])
+	}
+
+	t.Fatalf("%s: no stage is named %q: the Dockerfile declares the stages %q; want a stage `FROM <base> AS %s` that ships the HTTP API's binary, built with `docker buildx build --target %s`",
+		dockerfileName, name, declared, name, name)
+
+	return nil
 }
 
 // builderStage returns the FROM instruction of the stage that runs `go build`,
 // and fails the test when no stage builds anything: the builder is found by what
 // it does, so it is checked whatever the stage is called.
-func builderStage(t *testing.T, dockerfile string) instruction {
+func builderStage(t *testing.T, instructions []instruction) instruction {
 	t.Helper()
-
-	instructions := dockerfileInstructions(t, dockerfile)
 
 	for i, in := range instructions {
 		if in.keyword() != "FROM" {
@@ -1340,43 +1821,46 @@ func builderStage(t *testing.T, dockerfile string) instruction {
 	return instruction{}
 }
 
-// copiedBinaryPath returns the path in the build stage that the final stage
-// copies to become the image's binary: the source of its COPY --from=<builder>
-// instruction, /out/shift2eu for the committed Dockerfile. It fails the test when
-// the final stage copies nothing from the stage that runs `go build`, or copies
-// more than one thing from it, so the path the build writes and the path the
-// image ships cannot drift apart.
-func copiedBinaryPath(t *testing.T, dockerfile string) string {
+// copiedBinary returns the path in the build stage that one image stage copies
+// to become its binary, and the path it copies it to: the source and destination
+// of its one COPY --from=<builder> instruction, /out/shift2eu and /shift2eu for
+// the CLI image. It fails the test when the stage copies nothing from the stage
+// that runs `go build`, or copies more than one thing from it, so the path the
+// build writes and the path the image ships cannot drift apart. stageDesc names
+// the stage in failure messages.
+func copiedBinary(t *testing.T, instructions, stage []instruction, stageDesc string) (source, destination string) {
 	t.Helper()
 
-	builderFields := fromFields(builderStage(t, dockerfile))
+	builder := builderStage(t, instructions)
+
+	builderFields := fromFields(builder)
 	if len(builderFields) < 3 || !strings.EqualFold(builderFields[1], "AS") {
-		t.Fatalf("%s: the stage that runs `go build` starts FROM %q and names no stage: want a named stage such as `FROM ... AS build`, so the final stage can copy the binary from it and this test can check the path the build writes it to",
-			dockerfileName, fromImage(builderStage(t, dockerfile)))
+		t.Fatalf("%s: the stage that runs `go build` starts FROM %q and names no stage: want a named stage such as `FROM ... AS build`, so %s can copy the binary from it and this test can check the path the build writes it to",
+			dockerfileName, fromImage(builder), stageDesc)
 	}
 
 	builderName := builderFields[2]
-	var sources []string
+	var copies [][2]string
 
-	for _, in := range finalStage(t, dockerfileInstructions(t, dockerfile)) {
+	for _, in := range stage {
 		if in.keyword() != "COPY" {
 			continue
 		}
 
-		stage := ""
+		from := ""
 		var paths []string
 
 		for _, field := range strings.Fields(in.arguments()) {
 			switch {
 			case strings.HasPrefix(field, "--from="):
-				stage = strings.TrimPrefix(field, "--from=")
+				from = strings.TrimPrefix(field, "--from=")
 			case strings.HasPrefix(field, "--"):
 			default:
 				paths = append(paths, field)
 			}
 		}
 
-		if !strings.EqualFold(stage, builderName) {
+		if !strings.EqualFold(from, builderName) {
 			continue
 		}
 
@@ -1385,21 +1869,21 @@ func copiedBinaryPath(t *testing.T, dockerfile string) string {
 				dockerfileName, in.line, in.arguments(), builderName, builderName)
 		}
 
-		sources = append(sources, paths[len(paths)-2])
+		copies = append(copies, [2]string{paths[len(paths)-2], paths[len(paths)-1]})
 	}
 
-	switch len(sources) {
+	switch len(copies) {
 	case 1:
-		return sources[0]
+		return copies[0][0], copies[0][1]
 	case 0:
-		t.Fatalf("%s: the final stage has no COPY instruction with --from=%s, the stage that runs `go build`: want one, such as `COPY --from=%s /out/shift2eu /shift2eu`, so the binary the image ships is the one that build writes",
-			dockerfileName, builderName, builderName)
+		t.Fatalf("%s: %s has no COPY instruction with --from=%s, the stage that runs `go build`: want one, such as `COPY --from=%s /out/shift2eu /shift2eu`, so the binary the image ships is the one that build writes",
+			dockerfileName, stageDesc, builderName, builderName)
 	}
 
-	t.Fatalf("%s: the final stage has %d COPY instructions with --from=%s, the stage that runs `go build`: want exactly one, so it is clear which of the paths the build writes the image ships",
-		dockerfileName, len(sources), builderName)
+	t.Fatalf("%s: %s has %d COPY instructions with --from=%s, the stage that runs `go build`: want exactly one, so it is clear which of the paths the build writes the image ships",
+		dockerfileName, stageDesc, len(copies), builderName)
 
-	return ""
+	return "", ""
 }
 
 // assertBuilderCrossCompiles fails unless the stage that runs `go build` starts
@@ -1408,7 +1892,7 @@ func copiedBinaryPath(t *testing.T, dockerfile string) string {
 func assertBuilderCrossCompiles(t *testing.T, dockerfile string) {
 	t.Helper()
 
-	builder := builderStage(t, dockerfile)
+	builder := builderStage(t, dockerfileInstructions(t, dockerfile))
 
 	switch platform := fromPlatform(builder); platform {
 	case "$BUILDPLATFORM", "${BUILDPLATFORM}":

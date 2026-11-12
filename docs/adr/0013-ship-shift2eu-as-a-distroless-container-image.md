@@ -1,6 +1,7 @@
 # 0013. Ship shift2eu as a distroless container image, built but not yet published
 
-- Status: Accepted
+- Status: Accepted. Amended by PRD #103: the `Dockerfile` builds a second image, the HTTP API
+  (Consequences).
 - Date: 2026-11-11
 
 ## Context
@@ -98,3 +99,8 @@ and smoke-tests it on every pull request; publishing it to a registry is a follo
   mount at `docker run` time; the image never contains them.
 - Follow-up: publish to GHCR from the release, signed, with an SBOM. Done in issue #72:
   [ADR 0015](0015-publish-the-signed-image-to-ghcr-with-docker-buildx.md).
+- Amended by PRD #103 (milestone 4): the builder also compiles `./cmd/shift2eu-server`, with the same
+  settings as its own `.goreleaser.yaml` builds entry, and a stage named `server` ships it on the same
+  distroless `nonroot` base, with `ENTRYPOINT ["/shift2eu-server"]` and `EXPOSE 8080`. The CLI stays the
+  last stage, so `docker build .` and `make image` are unchanged; `--target server` and
+  `make server-image` build the server's image. `test/container` holds both stages to the same rules.

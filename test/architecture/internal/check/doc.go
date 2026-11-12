@@ -39,18 +39,19 @@
 // StrayReleaseFiles and ReleaseWorkflow pin that the release builds what the
 // check lists: no other goreleaser document, go.work or vendor at the root that
 // git could commit, and a release workflow read as a closed schema of one
-// release at a time and five jobs: the tests, behind the guard that the tagged commit is on main; a
-// goreleaser job that runs no repository code and sets no environment for the
-// go command; an image job that builds and pushes the image and can do nothing
-// more; an sbom job that can only read the registry; and a sign job, the only
-// one with an OIDC token, that signs and attests the image by digest with
-// sigstore's and GitHub's actions alone. WorkflowPrivileges keeps every other
+// release at a time and eight jobs: the tests, behind the guard that the
+// tagged commit is on main; a goreleaser job that runs no repository code and
+// sets no environment for the go command; and, for each of the two images, the
+// CLI's and the HTTP API's (PRD #103), an image job that builds and pushes the
+// image and can do nothing more, an sbom job that can only read the registry,
+// and a sign job, the only one with an OIDC token, that signs and attests the
+// image by digest with sigstore's and GitHub's actions alone. WorkflowPrivileges keeps every other
 // workflow from publishing: no packages, id-token or attestations write, no
 // write-all, no trigger a tag runs (push of tags, create, release,
 // workflow_run), and a top-level permissions: always. DryRunMirrorsRelease
 // holds ci.yml's image job, the release's dry run, to the release's build
-// settings, tag rules, latest decision, SBOM settings, action pins and
-// BuildKit image.
+// settings for each image, tag rules, latest decision, SBOM settings, action
+// pins and BuildKit image.
 //
 // GitHubRelease holds the release section of .goreleaser.yaml to exactly
 // prerelease: auto, so a pre-release tag is a GitHub pre-release and never the

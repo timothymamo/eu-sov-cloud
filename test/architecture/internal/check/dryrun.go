@@ -70,23 +70,32 @@ type workflowJob struct {
 
 // DryRunMirrorsRelease returns a message for every way the image job of
 // ci.yml, the dry run, has drifted from the image and sbom jobs of
-// release.yml, documents ci and release. What the two publish differs by
-// design (an OCI archive against a push, a sample tag against the pushed one),
-// so it compares the fields the release's build and SBOM rest on:
+// release.yml, documents ci and release, for each image the release publishes:
+// the CLI's (jobs image and sbom) and the HTTP API's (server-image and
+// server-sbom, PRD #103). What the two publish differs by design (an OCI
+// archive against a push, a sample tag against the pushed one), so it compares
+// the fields the release's builds and SBOMs rest on:
 //
 //   - docker/setup-buildx-action, docker/metadata-action,
 //     docker/build-push-action and anchore/sbom-action run at the same
 //     commit in both;
-//   - the BuildKit image of driver-opts is the same tag and digest, with each
-//     ${{ env.NAME }} of the dry run read from its job's env:;
-//   - the dry run's multi-platform build (its build-push-action step without
-//     load: true, of which there must be exactly one) has the release build's
-//     platforms, annotations, provenance and sbom;
-//   - every metadata-action step of the dry run has the release's images, and
-//     its tags, once the sample tag of their ,value=<sample> is dropped and
+//   - the BuildKit image of driver-opts is the same tag and digest as each
+//     image job's, with each ${{ env.NAME }} of the dry run read from its
+//     job's env:;
+//   - for each image, the dry run's multi-platform build of it (its
+//     build-push-action step without load: true and with the image's target:,
+//     server for the HTTP API's and none for the CLI's, of which there must be
+//     exactly one) has the release build's target, platforms, annotations,
+//     provenance and sbom, and writes an OCI archive (outputs:
+//     type=oci,dest=<path>);
+//   - for each image, the one anchore/sbom-action step of the dry run that
+//     reads that archive (image: oci-archive:<path>) has the release's format
+//     and syft-version;
+//   - every metadata-action step of the dry run has the release's CLI images,
+//     and its tags, once the sample tag of their ,value=<sample> is dropped and
 //     the sample, quoted or not, is replaced by github.ref_name, are exactly
-//     the release's tags;
-//   - anchore/sbom-action has the release's format and syft-version;
+//     the release's tags: ReleaseWorkflow holds the HTTP API's tag rules to
+//     exactly the CLI's;
 //   - the release's metadata-action reads latest from its stamp step alone
 //     (flavor: latest=${{ steps.stamp.outputs.latest }}), and every one of the
 //     dry run's from an output of its own step id: latest;
@@ -103,27 +112,42 @@ func DryRunMirrorsRelease(ci, release []byte) []string {
 		return r.messages
 	}
 
-	imageJob, ok := r.readJob(release, "release.yml", "image")
-	if !ok {
-		return r.messages
-	}
+	// The release's image and sbom jobs, per image, in releaseImages' order:
+	// the CLI's first.
+	perImage := make([][]workflowStep, 0, len(releaseImages))
 
-	sbomJob, ok := r.readJob(release, "release.yml", "sbom")
-	if !ok {
-		return r.messages
-	}
+	for _, img := range releaseImages {
+		imageJob, ok := r.readJob(release, "release.yml", img.imageJob)
+		if !ok {
+			return r.messages
+		}
 
-	releaseSteps := slices.Concat(imageJob.steps, sbomJob.steps)
+		sbomJob, ok := r.readJob(release, "release.yml", img.sbomJob)
+		if !ok {
+			return r.messages
+		}
+
+		perImage = append(perImage, slices.Concat(imageJob.steps, sbomJob.steps))
+	}
 
 	d := dryRun{r: r, ciRaw: rawLines(ci), releaseRaw: rawLines(release)}
 
-	d.pins(ciJob.steps, releaseSteps)
-	d.buildkit(ciJob, releaseSteps)
-	d.build(ciJob.steps, releaseSteps)
-	d.tags(ciJob.steps, releaseSteps)
-	d.flavor(ciJob.steps, releaseSteps)
-	d.highest(ciJob.steps, releaseSteps)
-	d.sbom(ciJob.steps, releaseSteps)
+	d.pins(ciJob.steps, slices.Concat(perImage...))
+
+	for i, img := range releaseImages {
+		d.buildkit(ciJob, perImage[i], img)
+
+		if oci, ok := d.build(ciJob.steps, perImage[i], img); ok {
+			d.sbom(ciJob.steps, perImage[i], img, oci)
+		}
+	}
+
+	// The tag rules and the latest decision are the CLI image's: ReleaseWorkflow
+	// holds every other image's to exactly the same, its name aside.
+	cli := perImage[0]
+	d.tags(ciJob.steps, cli)
+	d.flavor(ciJob.steps, cli)
+	d.highest(ciJob.steps, cli)
 
 	return r.messages
 }
@@ -366,14 +390,14 @@ func (d dryRun) pins(ci, release []workflowStep) {
 }
 
 // buildkit checks that the dry run's BuildKit image, its env: read, is the
-// release's.
-func (d dryRun) buildkit(ci workflowJob, release []workflowStep) {
+// one the image job of img runs.
+func (d dryRun) buildkit(ci workflowJob, release []workflowStep, img releaseImage) {
 	ciStep, ok := d.one(ci.steps, "ci.yml's image job", setupBuildxName)
 	if !ok {
 		return
 	}
 
-	releaseStep, ok := d.one(release, "release.yml's image job", setupBuildxName)
+	releaseStep, ok := d.one(release, "release.yml's "+img.imageJob+" job", setupBuildxName)
 	if !ok {
 		return
 	}
@@ -436,34 +460,88 @@ func resolveEnv(value string, env map[string]string) (string, error) {
 	}
 }
 
-// build checks the dry run's multi-platform build against the release's.
-func (d dryRun) build(ci, release []workflowStep) {
+// build checks the dry run's multi-platform build of img, its build-push-action
+// step without load: true whose target: is img's (none for the Dockerfile's
+// last stage), of which there must be exactly one, against the release's
+// build of it. It returns the OCI archive the dry run writes the build to, read
+// from its outputs: type=oci,dest=<path>, for its SBOM step to be found by.
+func (d dryRun) build(ci, release []workflowStep, img releaseImage) (string, bool) {
 	var oci []workflowStep
 
 	for _, s := range stepsOf(ci, buildPushName) {
-		load, found := s.with["load"]
-		if found {
-			if value, err := yamlread.Single(load); err == nil && value == "true" {
-				continue
-			}
+		if d.withSingle(s, "load") == "true" {
+			continue
+		}
+
+		if d.withSingle(s, "target") != img.target {
+			continue
 		}
 
 		oci = append(oci, s)
 	}
 
-	ciStep, ok := d.one(oci, "ci.yml's image job, load: true left out,", buildPushName)
+	ciFile := "ci.yml's image job, load: true left out, for target: " + targetName(img.target) + ","
+
+	ciStep, ok := d.one(oci, ciFile, buildPushName)
 	if !ok {
-		return
+		return "", false
 	}
 
-	releaseStep, ok := d.one(release, "release.yml's image job", buildPushName)
+	releaseStep, ok := d.one(release, "release.yml's "+img.imageJob+" job", buildPushName)
 	if !ok {
-		return
+		return "", false
+	}
+
+	if got := d.withSingle(releaseStep, "target"); got != img.target {
+		d.r.fail("release.yml: %s (line %d): with: target is %q, want %q: the dry run must build the stage the release builds", buildPushName, releaseStep.num, got, img.target)
 	}
 
 	for _, key := range buildSettings {
 		d.same(ciStep, releaseStep, buildPushName, key)
 	}
+
+	outputs, ok := d.withValue(d.ciRaw, ciStep, "ci.yml: "+buildPushName, "outputs")
+	if !ok {
+		return "", false
+	}
+
+	dest, found := strings.CutPrefix(outputs, ociOutputPrefix)
+	if !found || dest == "" || strings.Contains(dest, ",") {
+		d.r.fail("ci.yml: %s (line %d): with: outputs is %q, want %s<path>: the dry run writes the image to an OCI archive, which its SBOM step reads", buildPushName, ciStep.num, outputs, ociOutputPrefix)
+
+		return "", false
+	}
+
+	return dest, true
+}
+
+// ociOutputPrefix starts the outputs: of the dry run's multi-platform build,
+// which writes the image to an OCI archive at the path that follows.
+const ociOutputPrefix = "type=oci,dest="
+
+// targetName names a target: in a message, "none" for the last stage.
+func targetName(target string) string {
+	if target == "" {
+		return "none"
+	}
+
+	return target
+}
+
+// withSingle returns the one-line value of key of the with: of s, "" when s has
+// no such key or its value is not one scalar on its line.
+func (d dryRun) withSingle(s workflowStep, key string) string {
+	e, found := s.with[key]
+	if !found {
+		return ""
+	}
+
+	value, err := yamlread.Single(e)
+	if err != nil {
+		return ""
+	}
+
+	return value
 }
 
 // same checks that key of the with: of the two steps is the same.
@@ -544,14 +622,24 @@ func generalTags(tags string) (string, error) {
 	return strings.ReplaceAll(tags, sample, "github.ref_name"), nil
 }
 
-// sbom checks the dry run's SBOM settings against the release's.
-func (d dryRun) sbom(ci, release []workflowStep) {
-	ciStep, ok := d.one(ci, "ci.yml's image job", sbomActionName)
+// sbom checks the dry run's SBOM of img against the release's: the one
+// anchore/sbom-action step of the dry run that reads oci, the archive its build
+// of img writes, has the release's SBOM settings.
+func (d dryRun) sbom(ci, release []workflowStep, img releaseImage, oci string) {
+	var found []workflowStep
+
+	for _, s := range stepsOf(ci, sbomActionName) {
+		if d.withSingle(s, "image") == "oci-archive:"+oci {
+			found = append(found, s)
+		}
+	}
+
+	ciStep, ok := d.one(found, "ci.yml's image job, reading oci-archive:"+oci+",", sbomActionName)
 	if !ok {
 		return
 	}
 
-	releaseStep, ok := d.one(release, "release.yml's sbom job", sbomActionName)
+	releaseStep, ok := d.one(release, "release.yml's "+img.sbomJob+" job", sbomActionName)
 	if !ok {
 		return
 	}

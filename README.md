@@ -4,7 +4,8 @@ Analyse what you run on a hyperscaler today, and find out what can move to a Eur
 
 > **Status: walking skeleton.** `shift2eu assess` assesses an inventory file against an embedded snapshot
 > of the OVHcloud, the Scaleway or the UpCloud catalog, offline, or compares several of them in one
-> report. Live discovery from AWS, Azure and GCP
+> report. `shift2eu-server` serves the same assessments over an HTTP API
+> ([Run the HTTP API](#run-the-http-api)). Live discovery from AWS, Azure and GCP
 > is not implemented yet.
 
 ## What it will do
@@ -316,10 +317,214 @@ providers' SDKs read them, through their default credential chain, at `docker ru
 **Never** bake credentials into an image (no `COPY` or `ENV` of them, no build args), and never print
 or log them.
 
+## Run the HTTP API
+
+`shift2eu-server` serves the same assessments over a small, versioned HTTP API, for a website or any
+other client that cannot run the CLI ([ADR 0019](docs/adr/0019-serve-assessments-over-a-versioned-http-api-from-a-separate-binary.md)).
+It is a second binary, so `shift2eu` itself still opens no network connection. It takes an inventory
+document and target keys, never cloud credentials, and keeps them only in memory while it answers: it
+stores nothing and logs no request content. Its answers are byte for byte what `shift2eu assess` prints
+for the same inventory and targets.
+
+| Route | Answer |
+|---|---|
+| `POST /v1/assessments` | The assessment of one target, or the comparison of several (`["all"]` for every target), as the JSON report ([ADR 0018](docs/adr/0018-version-the-json-report-format-for-the-cli-and-the-api.md)) or, with `Accept: text/markdown`, the Markdown report |
+| `GET /v1/targets` | Every target's key, name, snapshot source and retrieval date |
+| `GET /healthz` | `200 {"status":"ok"}` while the process runs |
+| `GET /readyz` | `200 {"status":"ready"}` once every catalog has loaded, `503` until then |
+
+[`api/openapi.json`](api/openapi.json) (OpenAPI 3.1) describes every route, request, response, header and
+error; it refers to the report's JSON Schemas in
+[`internal/adapter/report/jsonreport/schema/`](internal/adapter/report/jsonreport/schema/) by relative
+path. Every error is `{"error": {"code": "...", "message": "..."}}`, and no message echoes a value from
+the request.
+
+### Get it
+
+Each release, from the first after `v0.2.0`, publishes `ghcr.io/timothymamo/shift2eu-server` for
+`linux/amd64` and `linux/arm64`, with the same tags, signature, provenance and SBOM as the CLI's image.
+It is signed and attested by the same release workflow of the same repository, so only the image name
+changes: the certificate identity, `--repo` and `--signer-workflow` stay the CLI's
+([Verify the image](#verify-the-image) explains each check):
+
+```bash
+TAG=<version>
+DIGEST="$(docker buildx imagetools inspect "ghcr.io/timothymamo/shift2eu-server:$TAG" --format '{{.Manifest.Digest}}')"
+IMAGE="ghcr.io/timothymamo/shift2eu-server@$DIGEST"
+
+cosign verify "$IMAGE" \
+  --certificate-identity "https://github.com/timothymamo/shift2eu/.github/workflows/release.yml@refs/tags/$TAG" \
+  --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+  --certificate-github-workflow-trigger push
+
+gh attestation verify "oci://$IMAGE" --repo timothymamo/shift2eu \
+  --signer-workflow timothymamo/shift2eu/.github/workflows/release.yml \
+  --source-ref "refs/tags/$TAG" --deny-self-hosted-runners
+gh attestation verify "oci://$IMAGE" --repo timothymamo/shift2eu \
+  --signer-workflow timothymamo/shift2eu/.github/workflows/release.yml \
+  --source-ref "refs/tags/$TAG" --deny-self-hosted-runners \
+  --predicate-type https://spdx.dev/Document/v2.3
+
+docker run --rm "$IMAGE" --help   # prints the flags and exits 0
+```
+
+It is distroless and runs as `nonroot`, with the entrypoint `/shift2eu-server` and the default
+arguments (`CMD`) `--listen 0.0.0.0:8080`. Arguments given to `docker run` replace those, so pass
+`--listen 0.0.0.0:8080` again with any of your own. The release archives hold the `shift2eu-server`
+binary beside `shift2eu`. From a clone, `make server` builds `./bin/shift2eu-server` and
+`make server-image` the image `shift2eu-server:<version>` (`docker build --target server .` without
+the version stamp).
+
+### Behind a reverse proxy
+
+The server speaks plain HTTP and knows no users. Run it behind a reverse proxy, or the website's own
+backend, that terminates TLS, authenticates each user and limits the rate of requests per client, and
+let only that proxy reach it. The server's own defences are a second line, not a replacement:
+
+- **A bearer token.** Set one, of at least 32 characters (`openssl rand -hex 32`), in the environment
+  variable `SHIFT2EU_SERVER_TOKEN` or in a file named by `--token-file`, never both; there is no token
+  flag, as an argument shows in the process list. Every `/v1/` request then needs
+  `Authorization: Bearer <token>`, or it is `401`. `/healthz` and `/readyz` stay open, for probes.
+- **Loopback unless told otherwise.** It listens on `127.0.0.1:8080` by default. It refuses to start on
+  any other address (`0.0.0.0` in a container) without a token, unless `--insecure-no-auth` says you
+  mean it, and then warns at startup. On loopback without a token it answers only to the `Host`
+  `localhost` or its own address, against DNS rebinding.
+- **Bounded work.** At most `--concurrency` assessments run at once and a request over it is refused at
+  once with `503 busy` and `Retry-After: 1`, never queued. A request body is capped at 10 MiB plus
+  64 KiB, a slow client is cut off by the read and write timeouts, and at most `--max-connections`
+  connections stay open. On `SIGTERM` it stops accepting connections and finishes the requests in
+  flight, within 25 seconds.
+
+| Flag or variable | Default | What it sets |
+|---|---|---|
+| `--listen <host:port>` | `127.0.0.1:8080` | The address to listen on. A non-loopback one needs a token or `--insecure-no-auth`. |
+| `SHIFT2EU_SERVER_TOKEN` | unset | The bearer token. Set but empty, or shorter than 32 characters, is a startup error. |
+| `--token-file <path>` | unset | Read the token from this file instead, white space trimmed. A file other users can read earns a warning: `chmod 600` it. |
+| `--concurrency <n>` | `0` | Assessments served at once. `0` sizes it from the CPUs and the memory budget: `max(1, min(CPUs, budget / 1 GiB))`, the budget being `GOMEMLIMIT` or, without it, 2 GiB. The largest request takes about 1 GB. |
+| `GOMEMLIMIT` | unset | The Go runtime's soft memory limit, read by the runtime and by the `--concurrency` default. Set it to the container's memory limit or a little under (`GOMEMLIMIT=1800MiB` for 2 GiB). |
+| `--max-connections <n>` | `256` | Connections held open at once; one over the cap is closed at once. |
+| `--cors-origin <origin>` | none | Allow CORS from this origin, such as `https://www.example.com` (repeatable). CORS is off without one; never `*`, never credentials. |
+| `--allowed-host <host>` | none | Serve only this `Host` header value, with or without a port (repeatable); any other is `421`. Set it to the name the proxy forwards. |
+| `--insecure-no-auth` | off | Listen on a non-loopback address without a token. Only behind a proxy that authenticates. |
+
+The server writes its startup lines and an access log to standard error, one line per request with
+the method, the path, the status, the duration and the size, and nothing else.
+
+With Docker, publish the port on loopback only, so the proxy on the same host is the one way in, and
+pass the token by name, never as `-e NAME=value`. The image listens on `0.0.0.0:8080` by default and,
+without a token, refuses to start (exit 2). Arguments replace that default, so the example gives
+`--listen` again beside `--allowed-host`. The server needs no Linux capabilities and no privilege
+escalation, so drop them:
+
+```bash
+export SHIFT2EU_SERVER_TOKEN="$(openssl rand -hex 32)"   # or read it from your secret store
+docker run -d --name shift2eu-server --restart unless-stopped --read-only \
+  --cap-drop ALL --security-opt no-new-privileges \
+  --memory 2g -e GOMEMLIMIT=1800MiB -e SHIFT2EU_SERVER_TOKEN \
+  -p 127.0.0.1:8080:8080 \
+  ghcr.io/timothymamo/shift2eu-server:<version> \
+  --listen 0.0.0.0:8080 --allowed-host api.example.com
+```
+
+To keep the token out of the container's environment (`docker inspect` shows it), mount a token file
+read-only instead and run as its owner, as [Mounts, users and reports](#mounts-users-and-reports)
+explains: replace `-e SHIFT2EU_SERVER_TOKEN` with
+`--user "$(id -u):$(id -g)" --mount type=bind,src="$PWD/shift2eu-token",dst=/run/secrets/shift2eu-token,readonly`
+and add `--token-file /run/secrets/shift2eu-token`.
+
+A minimal nginx in front of it: TLS only (plain HTTP just redirects), a password per user, a rate
+limit per client address, a body cap just above the server's, and the token added on the way in, so
+users never see it. A request over the proxy's rate limit is `429`, which tells it apart from the
+server's own `503 busy` with `Retry-After`. The health endpoints are left off the public name; probe
+them on `127.0.0.1:8080`.
+
+```nginx
+limit_req_zone $binary_remote_addr zone=shift2eu:10m rate=2r/s;
+
+server {
+    listen 80;
+    server_name api.example.com;
+    return 301 https://api.example.com$request_uri;
+}
+
+server {
+    listen 443 ssl;
+    server_name api.example.com;
+    ssl_certificate     /etc/ssl/api.example.com/fullchain.pem;
+    ssl_certificate_key /etc/ssl/api.example.com/privkey.pem;
+    ssl_protocols       TLSv1.2 TLSv1.3;
+    add_header Strict-Transport-Security "max-age=31536000" always;
+
+    location /v1/ {
+        auth_basic           "shift2eu";
+        auth_basic_user_file /etc/nginx/shift2eu.htpasswd;
+        limit_req            zone=shift2eu burst=10 nodelay;
+        limit_req_status     429;
+        client_max_body_size 11m;
+
+        proxy_set_header Host $host;
+        # One line, mode 0600: proxy_set_header Authorization "Bearer <the token>";
+        include /etc/nginx/shift2eu-token.conf;
+        proxy_pass http://127.0.0.1:8080;
+    }
+
+    location / {
+        return 404;
+    }
+}
+```
+
+This proxy serves callers on its own origin and servers calling it directly. A browser page on another
+origin should call through its site's own backend, which holds the credentials, rather than through
+`--cors-origin`: a CORS preflight (`OPTIONS`) carries no credentials and the server never allows them,
+so never drop authentication from the proxy, or from the server, to make preflights pass.
+
+Configure every client with the `https://` URL. The port-80 redirect is a convenience, not a
+protection: a client that sends its Basic credentials over plain HTTP has sent them in clear before
+any redirect, and HSTS protects a client only after its first HTTPS visit.
+
+### Example requests
+
+An assessment request is a JSON object with the inventory document ([ADR 0006](docs/adr/0006-json-inventory-file-format-v1.md))
+and the target keys. Started from a clone with a token, the server listens on its default loopback
+address; the requests read the token from the same variable, which keeps it out of your shell history, and
+hand curl the header on standard input (`-H @-`), which keeps it out of the process list.
+With the repository's sanitised example inventory:
+
+```bash
+export SHIFT2EU_SERVER_TOKEN="$(openssl rand -hex 32)"
+make server && ./bin/shift2eu-server &   # listening on 127.0.0.1:8080
+
+jq '{inventory: ., targets: ["scaleway"]}' test/e2e/testdata/inventory.json > request.json
+
+# The JSON report.
+printf 'Authorization: Bearer %s\n' "$SHIFT2EU_SERVER_TOKEN" |
+  curl -sS -X POST http://127.0.0.1:8080/v1/assessments -H @- \
+    -H 'Content-Type: application/json' \
+    --data-binary @request.json
+
+# The Markdown report, comparing every target.
+jq '{inventory: ., targets: ["all"]}' test/e2e/testdata/inventory.json > request.json
+printf 'Authorization: Bearer %s\n' "$SHIFT2EU_SERVER_TOKEN" |
+  curl -sS -X POST http://127.0.0.1:8080/v1/assessments -H @- \
+    -H 'Content-Type: application/json' -H 'Accept: text/markdown' \
+    --data-binary @request.json
+
+# The targets, and the health checks.
+printf 'Authorization: Bearer %s\n' "$SHIFT2EU_SERVER_TOKEN" | curl -sS -H @- http://127.0.0.1:8080/v1/targets
+curl -sS http://127.0.0.1:8080/healthz
+curl -sS http://127.0.0.1:8080/readyz
+```
+
+Through the proxy above, the same requests go to `https://api.example.com/v1/...` with the user's own
+credentials (`curl -u <user>`) in place of the token.
+
 ## Repository layout
 
 ```
 cmd/shift2eu/                 CLI entry point and composition root
+cmd/shift2eu-server/          HTTP API entry point and composition root
+api/openapi.json              The HTTP API's OpenAPI 3.1 document
 internal/
   domain/                     Pure business rules, standard library only
     taxonomy/                   provider-neutral service categories
@@ -334,18 +539,20 @@ internal/
     source/{aws,azure,gcp}      read-only discovery   (+ sourcetest contract suite)
     target/{ovhcloud,scaleway,upcloud}  EU catalogs   (+ targettest contract suite)
     report/{markdown,jsonreport}        renderers
+    request/assessmentrequest   the HTTP API's request decoder
   cli/                        Command-line parsing (driving adapter)
+  httpapi/                    The HTTP API (driving adapter)
   config/                     Configuration loading
   version/                    Build metadata
   testutil/                   Test-only helpers (golden files, fixtures)
 test/e2e/                     Black-box tests of the built binary
 test/lint/                    Source rules golangci-lint cannot express
 test/architecture/            Layer dependencies checked package by package, per release target
-test/container/               The Dockerfile pinned to go.mod and .goreleaser.yaml
+test/container/               The Dockerfile's two images pinned to go.mod and .goreleaser.yaml
 testdata/                     Shared, sanitised fixtures
 docs/                         Architecture, ADRs, dev environment
 prds/                         Product requirements, one per feature
-Dockerfile, .dockerignore     The container image (make image)
+Dockerfile, .dockerignore     The container images (make image, make server-image)
 dev/lima.yaml                 Isolated VM for running the agents
 dev/worktree.sh               Creates the worktree for a branch (make worktree)
 .githooks/                    Refuse commits and pushes to main (make git-hooks)
@@ -364,7 +571,7 @@ preinstalled in the Lima VM below.
 ```bash
 make help     # list targets
 make check    # lint (incl. architecture rules) + tests + vulnerability scan
-make build    # ./bin/shift2eu
+make build    # ./bin/shift2eu and ./bin/shift2eu-server
 ```
 
 ## Working with agents
