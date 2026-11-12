@@ -1,9 +1,10 @@
 #!/usr/bin/env bash
-# The dry run of .github/workflows/release-please.yml (issue #142, ADR 0021), run by ci.yml: it reads the
-# scripts of the workflow's guard and tag steps out of the workflow itself and runs them against a fake gh
-# that answers from canned API responses and records every call, so no network is reached and nothing is
-# written. Each scenario states what the step must do: exit 0 or fail, and which writes it makes (the tag
-# object, the tag ref, the relabelling) or that it makes none.
+# The dry run of .github/workflows/release-please.yml (issues #142 and #157, ADR 0021), run by ci.yml: it
+# reads the scripts of the workflow's guard, tag and relabel steps out of the workflow itself and runs them
+# against a fake gh that answers from canned API responses and records every call, so no network is reached
+# and nothing is written. Each scenario states what the step must do: exit 0 or fail, which writes it makes
+# (the tag object and the tag ref for the tag step, the relabelling for the relabel step) or that it makes
+# none, and which outputs the tag step hands the relabel job (pr and tag, through $GITHUB_OUTPUT).
 #
 # Usage: .github/scripts/release-please-dry-run.sh [workflow]
 set -euo pipefail
@@ -28,7 +29,8 @@ step_script() {
 
 step_script guard >"${work}/guard.sh"
 step_script tag >"${work}/tag.sh"
-for step in guard tag; do
+step_script relabel >"${work}/relabel.sh"
+for step in guard tag relabel; do
   grep -q 'set -euo pipefail' "${work}/${step}.sh" || { echo "could not read the ${step} step's script from ${workflow}" >&2; exit 1; }
 done
 
@@ -71,7 +73,10 @@ FAKE
 chmod +x "${work}/bin/gh"
 
 repo=example/shift2eu
-slug=release-app
+# The release-please App's slug, the constant APP_SLUG the guard and tag steps hold (never an output of the
+# release-please job): read from the workflow, so the dry run runs the steps with the value they get.
+slug="$(sed -n 's/^ *APP_SLUG: \([a-z0-9][a-z0-9-]*\)$/\1/p' "${workflow}" | sort -u)"
+[ "$(printf '%s\n' "${slug}" | grep -c .)" = 1 ] || { echo "want one APP_SLUG constant in ${workflow}, got $(printf '%q' "${slug}")" >&2; exit 1; }
 bot="${slug}[bot]"
 branch=release-please--branches--main--components--shift2eu
 merge=1111111111111111111111111111111111111111
@@ -79,14 +84,20 @@ object=2222222222222222222222222222222222222222
 other=3333333333333333333333333333333333333333
 failures=0
 
-# A scenario's responses live in a directory of their own.
-scenario() { FAKE_GH="${work}/scenario-$1"; mkdir "${FAKE_GH}"; : >"${FAKE_GH}/calls"; }
+# A scenario's responses live in a directory of their own; it starts with no PR and TAG for the relabel
+# step.
+scenario() { FAKE_GH="${work}/scenario-$1"; mkdir "${FAKE_GH}"; : >"${FAKE_GH}/calls"; PR="" TAG=""; }
 respond() { printf '%s\n' "$3" >"${FAKE_GH}/$(printf '%s %s' "$1" "$2" | sha256sum | cut -c1-16)"; }
 
-# run_step runs a step's script as the workflow would and compares its exit with want (pass or fail).
+# run_step runs a step's script as the workflow would and compares its exit with want (pass or fail). The
+# guard and tag steps read APP_SLUG, the release-please App's slug the workflow holds; the relabel step
+# reads PR and TAG, the tag job's outputs, from the scenario's PR and TAG (the tag step's own outputs
+# unless a scenario sets them). What a step writes to $GITHUB_OUTPUT lands in the scenario's output file.
 run_step() {
   local name="$1" step="$2" want="$3" got=pass
+  : >"${FAKE_GH}/output"
   PATH="${work}/bin:${PATH}" FAKE_GH="${FAKE_GH}" GH_TOKEN=fake GH_REPO="${repo}" APP_SLUG="${slug}" \
+    PR="${PR:-}" TAG="${TAG:-}" GITHUB_OUTPUT="${FAKE_GH}/output" \
     bash "${work}/${step}.sh" >"${FAKE_GH}/out" 2>&1 || got=fail
   if [ "${got}" != "${want}" ]; then
     echo "FAIL ${name}: the ${step} step's result is ${got}, want ${want}"; sed 's/^/    /' "${FAKE_GH}/out"
@@ -102,6 +113,12 @@ wrote() {
 wrote_nothing() {
   if grep -qvE '^GET ' "${FAKE_GH}/calls"; then
     echo "FAIL $1: the step wrote"; sed 's/^/    /' "${FAKE_GH}/calls"; failures=$((failures + 1))
+  fi
+}
+# output checks that the step wrote exactly the given lines (none for "") to $GITHUB_OUTPUT.
+output() {
+  if [ "$(cat "${FAKE_GH}/output")" != "$2" ]; then
+    echo "FAIL $1: the step's outputs are not $(printf '%q' "$2")"; sed 's/^/    /' "${FAKE_GH}/output"; failures=$((failures + 1))
   fi
 }
 # said checks that the step's output holds a line matching the pattern; never_said that none does.
@@ -157,11 +174,18 @@ merged_release() {
   respond GET "repos/${repo}/git/matching-refs/tags/v${version}" '[]'
   respond POST "repos/${repo}/git/tags" "{\"sha\": \"${object}\"}"
 }
-# tagged_42 checks the writes of a release of #42 as v0.3.0: the tag object, the ref, then the label
-# autorelease: tagged before autorelease: pending is removed.
+# tagged_42 checks the writes of a release of #42 as v0.3.0: the tag object and the ref, no label (the
+# release-tag App's token cannot write to a pull request; the relabel job relabels), and the outputs
+# pr=42 and tag=v0.3.0 the relabel job reads.
 tagged_42() {
   wrote "$1" "^POST repos/${repo}/git/tags tag=v0\.3\.0 message=v0\.3\.0 object=${merge} type=commit$"
   wrote "$1" "^POST repos/${repo}/git/refs ref=refs/tags/v0\.3\.0 sha=${object}$"
+  if grep -qE '/issues/' "${FAKE_GH}/calls"; then echo "FAIL $1: the tag step called an issues endpoint"; failures=$((failures + 1)); fi
+  output "$1" $'pr=42\ntag=v0.3.0'
+}
+# relabelled_42 checks the writes of the relabel step for #42: the label autorelease: tagged added before
+# autorelease: pending is removed, no other PR touched, and no tag written.
+relabelled_42() {
   local added removed
   added="$(grep -nE "^POST repos/${repo}/issues/42/labels " "${FAKE_GH}/calls" | cut -d: -f1 | head -n 1)"
   removed="$(grep -nE "^DELETE repos/${repo}/issues/42/labels/" "${FAKE_GH}/calls" | cut -d: -f1 | head -n 1)"
@@ -171,13 +195,14 @@ tagged_42() {
   wrote "$1" "^POST repos/${repo}/issues/42/labels labels\[\]=autorelease: tagged$"
   wrote "$1" "^DELETE repos/${repo}/issues/42/labels/autorelease:%20pending"
   if grep -qE '/issues/(7|41|43|44)/' "${FAKE_GH}/calls"; then echo "FAIL $1: another PR was relabelled"; failures=$((failures + 1)); fi
+  if grep -vE '^GET ' "${FAKE_GH}/calls" | grep -q 'git/'; then echo "FAIL $1: the relabel step wrote a tag"; failures=$((failures + 1)); fi
 }
 
 scenario none; respond GET "${pending}" "[${tagged_pr}]"
-run_step "tag: no merged release PR" tag pass; wrote_nothing "tag: no merged release PR"
+run_step "tag: no merged release PR" tag pass; wrote_nothing "tag: no merged release PR"; output "tag: no merged release PR" ""
 
 scenario empty; respond GET "${pending}" '[]'
-run_step "tag: no closed release PR at all" tag pass; wrote_nothing "tag: no closed release PR at all"
+run_step "tag: no closed release PR at all" tag pass; wrote_nothing "tag: no closed release PR at all"; output "tag: no closed release PR at all" ""
 
 scenario release; merged_release 0.3.0 "chore(main): release 0.3.0"
 run_step "tag: a merged release PR" tag pass; tagged_42 "tag: a merged release PR"
@@ -204,7 +229,7 @@ run_step "tag: a pull request whose author is not the App" tag fail; wrote_nothi
 
 scenario two; merged_release 0.3.0 "chore(main): release 0.3.0"
 respond GET "${pending}" "[$(merged_pr 42), $(merged_pr 44)]"
-run_step "tag: two merged release PRs" tag fail; wrote_nothing "tag: two merged release PRs"
+run_step "tag: two merged release PRs" tag fail; wrote_nothing "tag: two merged release PRs"; output "tag: two merged release PRs" ""
 
 # A triage user re-applies autorelease: pending to #7, an earlier release PR of the App already tagged:
 # two candidates, so the step fails closed rather than pick one.
@@ -265,18 +290,67 @@ run_step "tag: a merge commit not on main" tag fail; wrote_nothing "tag: a merge
 scenario exists-elsewhere; merged_release 0.3.0 "chore(main): release 0.3.0"
 respond GET "repos/${repo}/git/matching-refs/tags/v0.3.0" '[{"ref": "refs/tags/v0.3.0"}]'
 respond GET "repos/${repo}/git/ref/tags/v0.3.0" "{\"object\": {\"type\": \"commit\", \"sha\": \"${other}\"}}"
-run_step "tag: the tag exists on another commit" tag fail; wrote_nothing "tag: the tag exists on another commit"
+run_step "tag: the tag exists on another commit" tag fail; wrote_nothing "tag: the tag exists on another commit"; output "tag: the tag exists on another commit" ""
 
 scenario exists-here; merged_release 0.3.0 "chore(main): release 0.3.0"
 respond GET "repos/${repo}/git/matching-refs/tags/v0.3.0" '[{"ref": "refs/tags/v0.3.0"}]'
 respond GET "repos/${repo}/git/ref/tags/v0.3.0" "{\"object\": {\"type\": \"tag\", \"sha\": \"${object}\"}}"
 respond GET "repos/${repo}/git/tags/${object}" "{\"object\": {\"type\": \"commit\", \"sha\": \"${merge}\"}}"
-run_step "tag: the tag exists on the merge commit" tag pass
-wrote "tag: the tag exists on the merge commit" "^POST repos/${repo}/issues/42/labels labels\[\]=autorelease: tagged$"
-wrote "tag: the tag exists on the merge commit" "^DELETE repos/${repo}/issues/42/labels/autorelease:%20pending"
-if grep -q "git/" <(grep -vE '^GET ' "${FAKE_GH}/calls"); then
-  echo "FAIL tag: the tag exists on the merge commit: the step created a tag"; failures=$((failures + 1))
-fi
+run_step "tag: the tag exists on the merge commit" tag pass; wrote_nothing "tag: the tag exists on the merge commit"
+output "tag: the tag exists on the merge commit" $'pr=42\ntag=v0.3.0'
+
+# The relabel step, in the relabel job with the release-please App's token. pull_42 answers its read of
+# #42 (merged, on merge commit ${merge}, unless a jq edit changes it); tag_on answers its read of v0.3.0:
+# an annotated tag object pointing at the commit given, or, with "lightweight", the ref on that commit.
+pull_42() { respond GET "repos/${repo}/pulls/42" "$(jq -c "${1:-.}" <<<"{\"merged\": true, \"merge_commit_sha\": \"${merge}\"}")"; }
+tag_on() {
+  if [ "${2:-}" = lightweight ]; then
+    respond GET "repos/${repo}/git/ref/tags/v0.3.0" "{\"object\": {\"type\": \"commit\", \"sha\": \"$1\"}}"
+  else
+    respond GET "repos/${repo}/git/ref/tags/v0.3.0" "{\"object\": {\"type\": \"tag\", \"sha\": \"${object}\"}}"
+    respond GET "repos/${repo}/git/tags/${object}" "{\"object\": {\"type\": \"commit\", \"sha\": \"$1\"}}"
+  fi
+}
+
+# The whole hand-over: the tag step tags #42 and the relabel step relabels it from the tag step's outputs.
+scenario chain; merged_release 0.3.0 "chore(main): release 0.3.0"
+run_step "tag then relabel: the tag step" tag pass; tagged_42 "tag then relabel: the tag step"
+PR="$(sed -n 's/^pr=//p' "${FAKE_GH}/output")" TAG="$(sed -n 's/^tag=//p' "${FAKE_GH}/output")"
+pull_42; tag_on "${merge}"; : >"${FAKE_GH}/calls"
+run_step "tag then relabel: the relabel step" relabel pass; relabelled_42 "tag then relabel: the relabel step"
+
+scenario relabel-annotated; PR=42 TAG=v0.3.0; pull_42; tag_on "${merge}"
+run_step "relabel: an annotated tag on the merge commit" relabel pass; relabelled_42 "relabel: an annotated tag on the merge commit"
+
+scenario relabel-lightweight; PR=42 TAG=v0.3.0; pull_42; tag_on "${merge}" lightweight
+run_step "relabel: a tag ref on the merge commit" relabel pass; relabelled_42 "relabel: a tag ref on the merge commit"
+
+scenario relabel-elsewhere; PR=42 TAG=v0.3.0; pull_42; tag_on "${other}"
+run_step "relabel: a tag object on another commit" relabel fail; wrote_nothing "relabel: a tag object on another commit"
+
+scenario relabel-lightweight-elsewhere; PR=42 TAG=v0.3.0; pull_42; tag_on "${other}" lightweight
+run_step "relabel: a tag ref on another commit" relabel fail; wrote_nothing "relabel: a tag ref on another commit"
+
+scenario relabel-no-tag; PR=42 TAG=v0.3.0; pull_42
+run_step "relabel: no such tag" relabel fail; wrote_nothing "relabel: no such tag"
+
+scenario relabel-unmerged; PR=42 TAG=v0.3.0; pull_42 '.merged = false'; tag_on "${merge}"
+run_step "relabel: a PR that is not merged" relabel fail; wrote_nothing "relabel: a PR that is not merged"
+
+scenario relabel-merge-commit; PR=42 TAG=v0.3.0; pull_42 '.merge_commit_sha = null'; tag_on null lightweight
+run_step "relabel: a PR with no merge commit" relabel fail; wrote_nothing "relabel: a PR with no merge commit"
+
+for bad in "" "42; touch pwned" '42$(touch pwned)' "4 2"; do
+  scenario "relabel-pr-$(printf '%s' "${bad}" | sha256sum | cut -c1-8)"; PR="${bad}" TAG=v0.3.0; pull_42; tag_on "${merge}"
+  name="relabel: PR $(printf '%q' "${bad}")"
+  run_step "${name}" relabel fail; wrote_nothing "${name}"
+done
+for bad in "" "v0.3" "0.3.0" "v0.3.0-rc.1" 'v0.3.0$(touch pwned)' $'v0.3.0\n::error::injected'; do
+  scenario "relabel-tag-$(printf '%s' "${bad}" | sha256sum | cut -c1-8)"; PR=42 TAG="${bad}"; pull_42; tag_on "${merge}"
+  name="relabel: tag $(printf '%q' "${bad}")"
+  run_step "${name}" relabel fail; wrote_nothing "${name}"
+  never_said "${name}" '^::error::injected'
+done
 
 if [ -e pwned ] || [ -e "${work}/pwned" ]; then echo "FAIL a manifest version ran as a command"; failures=$((failures + 1)); fi
 if [ "${failures}" != 0 ]; then

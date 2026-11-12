@@ -63,23 +63,40 @@
 //
 // ReleasePleaseWorkflow and ReleasePleaseConfig hold the workflow that
 // proposes the next release, .github/workflows/release-please.yml, and the
-// document it reads, release-please-config.json, to issue #142 (ADR 0021).
-// The workflow runs on a push to main alone, in the release-please
-// environment, with permissions: {} at the top level, job permissions that
-// only read, and a concurrency group of its own that never cancels a run in
-// progress; it runs only the App token action and release-please, pinned by
-// commit, runs on ubuntu-latest alone, mints the App's token with exactly
-// Contents and Pull requests write, and hands it to release-please and to the
-// step that creates the tag through the API, and to nothing else. That step's
-// env: is exactly the App's token, the repository and the App's slug, and it
-// calls only the release PR's, the manifest's, the merge commit's and the
-// tag's API endpoints: no Release, no gh release, no curl. It runs behind a
-// step that, with GITHUB_TOKEN, waits for no release.yml run to be requested,
-// waiting, pending, queued or in progress. The workflow publishes nothing and
-// pastes no expression but github.repository into a script.
-// ReleasePleaseDryRun holds ci.yml to running the dry run of the guard and
-// tag steps, .github/scripts/release-please-dry-run.sh, on every pull request
-// and every push to main, in a job with no write permission and no secret.
+// document it reads, release-please-config.json, to issues #142, #157 and
+// #159 (ADR 0021). The workflow runs on a push to main alone, with
+// permissions: {} at the top level, job permissions that only read, and a
+// concurrency group of its own that never cancels a run in progress; it runs
+// only the App token action and release-please, pinned by commit, on
+// ubuntu-latest alone, in three jobs. The release-please job, in the
+// release-please environment, mints the release-please App's token with
+// exactly Contents and Pull requests write and runs release-please with it.
+// The tag job, in the release-tag environment, mints the release-tag App's
+// token with exactly Contents write and Pull requests read, waits with
+// GITHUB_TOKEN for no release.yml run to be requested, waiting, pending,
+// queued or in progress, and creates the tag through the API in a step whose
+// env: is exactly that token, the repository and the release-please App's
+// slug as a constant, never an output of the release-please job, which
+// declares none, and which calls only the release PR's, the manifest's, the
+// merge commit's and the tag's API endpoints: no Release, no label, no gh
+// release, no curl. The guard's env: is as exact: GITHUB_TOKEN, the
+// repository and the same slug. The relabel job, in the release-please
+// environment, relabels the PR the tag job tagged with the release-please
+// App's token. Each token step passes client-id, never app-id, from its own
+// App's variable and secret; no other variable or secret is read, and each
+// token reaches its job's working step alone. The only needs expressions are
+// the tag job's two outputs, which the relabel job reads. The workflow
+// publishes nothing and pastes no expression but github.repository into a
+// script.
+// ReleaseAppIdentifiers holds the two documents that record the release Apps'
+// identifiers, the release-tag skill and ADR 0021, to each other: the same
+// release-please App ID and slug, and for the release-tag App either the
+// maintainer's placeholders or a numeric ID and a slug, neither of them the
+// release-please App's.
+// ReleasePleaseDryRun holds ci.yml to running the dry run of the guard, tag
+// and relabel steps, .github/scripts/release-please-dry-run.sh, on every pull
+// request and every push to main, in a job with no write permission and no
+// secret.
 // The configuration holds the release-tag
 // skill's version rules, vX.Y.Z tags with no component,
 // skip-github-release, no key that could move the version or the tag

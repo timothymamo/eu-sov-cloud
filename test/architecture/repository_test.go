@@ -1200,18 +1200,18 @@ func TestRCTagsArePreReleases(t *testing.T) {
 	}
 }
 
-// TestReleasePleaseProposesTheNextVersion pins issue #142: release-please keeps
-// one release PR open on main, computes the next version from the Conventional
-// Commits since the last tag with the release-tag skill's rules, and maintains
-// CHANGELOG.md; merging the PR pushes the vX.Y.Z tag with the release App's
-// short-lived token, and that tag starts .github/workflows/release.yml exactly
-// as it runs today. The workflow is held to check.ReleasePleaseWorkflow and the
-// document it reads to check.ReleasePleaseConfig, so the version rules, the tag
-// form, the App's permissions and the one-release-at-a-time group stay read
-// from the files the workflow reads. ci.yml is held to
-// check.ReleasePleaseDryRun, so the dry run of the workflow's guard and tag
-// steps runs on every pull request and every push to main, with no write and no
-// secret.
+// TestReleasePleaseProposesTheNextVersion pins issues #142, #157 and #159:
+// release-please keeps one release PR open on main, computes the next version
+// from the Conventional Commits since the last tag with the release-tag skill's
+// rules, and maintains CHANGELOG.md; merging the PR pushes the vX.Y.Z tag with
+// the release-tag App's short-lived token, and that tag starts
+// .github/workflows/release.yml exactly as it runs today. The workflow is held
+// to check.ReleasePleaseWorkflow and the document it reads to
+// check.ReleasePleaseConfig, so the version rules, the tag form, the two Apps'
+// permissions and the one-release-at-a-time group stay read from the files the
+// workflow reads. ci.yml is held to check.ReleasePleaseDryRun, so the dry run of
+// the workflow's guard, tag and relabel steps runs on every pull request and
+// every push to main, with no write and no secret.
 func TestReleasePleaseProposesTheNextVersion(t *testing.T) {
 	t.Parallel()
 
@@ -1224,6 +1224,25 @@ func TestReleasePleaseProposesTheNextVersion(t *testing.T) {
 	}
 
 	for _, message := range check.ReleasePleaseDryRun(readRepositoryFile(t, ".github/workflows/ci.yml")) {
+		t.Error(message)
+	}
+}
+
+// TestRecordedReleaseAppIdentifiersAreTheSame pins the two documents that
+// record the two Apps' identifiers, .claude/skills/release-tag/SKILL.md and ADR
+// 0021: the release-tag skill fails closed on the release-tag App's ID, and
+// both documents compare the tag rulesets and the release PR's author against
+// the recorded slugs, so the two records must agree. The release-tag App's ID
+// is a number or the maintainer's placeholder and nothing else, neither of its
+// values is the release-please App's, and the release-please App's own ID and
+// slug are recorded in both (#157).
+func TestRecordedReleaseAppIdentifiersAreTheSame(t *testing.T) {
+	t.Parallel()
+
+	skill := readRepositoryFile(t, ".claude/skills/release-tag/SKILL.md")
+	adr := readRepositoryFile(t, "docs/adr/0021-propose-releases-with-release-please-and-tag-with-a-github-app.md")
+
+	for _, message := range check.ReleaseAppIdentifiers(skill, adr) {
 		t.Error(message)
 	}
 }

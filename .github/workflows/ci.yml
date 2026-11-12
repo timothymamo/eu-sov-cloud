@@ -116,10 +116,11 @@ jobs:
       - name: Each archive holds its own binary
         run: .github/scripts/verify-archives.sh
 
-  # The dry run of release-please.yml (issue #142, ADR 0021): its guard and tag steps' own scripts, read
-  # from the workflow, run against a fake gh with canned API responses, so a change to how the tag's
-  # version is read and validated, or to when the step refuses to tag, fails the pull request. Nothing
-  # reaches the network; the workflow's shape and permissions are held by check.ReleasePleaseWorkflow.
+  # The dry run of release-please.yml (issues #142 and #157, ADR 0021): its guard, tag and relabel steps'
+  # own scripts, read from the workflow, run against a fake gh with canned API responses, so a change to
+  # how the tag's version is read and validated, to when the step refuses to tag, to the outputs it hands
+  # the relabel job, or to when that job refuses to relabel, fails the pull request. Nothing reaches the
+  # network; the workflow's shape and permissions are held by check.ReleasePleaseWorkflow.
   release-please:
     name: Release please dry run
     runs-on: ubuntu-latest
