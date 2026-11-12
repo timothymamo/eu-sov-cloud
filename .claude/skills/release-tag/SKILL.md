@@ -144,8 +144,10 @@ moves or deletes a tag.
    `isPrerelease` `true` exactly when the tag has a pre-release suffix. Report `isImmutable` too: it is
    `true` once the maintainer has turned release immutability on, and `false` means it is off. A
    release left a draft is a failed release: report it with the `publish` job's log and stop; never
-   publish a draft by hand. `publish` refuses a draft whose assets are not exactly `checksums.txt` and
-   the files it lists, with the digests it records; its log says which check failed. Give the
+   publish a draft by hand. `publish` refuses a tag that already has a published release, and a draft
+   whose assets are not exactly `checksums.txt` and the files it lists, with the digests it records;
+   its log says which check failed. It publishes the draft it checked by that draft's id, never by the
+   tag. Give the
    maintainer the recovery ADR 0015 states, which only they start: within seven days of the run (the
    archives artifact's retention), "Re-run failed jobs" (`gh run rerun <id> --failed`) re-runs
    `attest-archives` or `publish` on the same draft and archives; after that, or when the draft itself

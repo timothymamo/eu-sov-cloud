@@ -70,10 +70,11 @@ workflow for its tag, before the release is published (issue #163). The digest c
 download corrupted in transit or on a mirror; the attestation adds who built the file: `release.yml`,
 run on a push of exactly that tag, from that commit, on GitHub's runners. Whoever could replace an
 archive and its `checksums.txt` cannot make that attestation. The release is published only if it
-holds exactly `checksums.txt` and the archives it lists, each with the digest it records. The release
-workflow's `verify-archives` job then runs these checks on every asset of every release, on a fresh
-runner with read-only permissions, and fails the release when one fails. Check either archive the same way, with `TAG` set to the release
-you want:
+holds exactly `checksums.txt` and the archives it lists, each with the digest it records, and the
+release published is the draft that was checked. The release workflow's `verify-archives` job then
+runs these checks on every asset of every release, on a fresh runner with read-only permissions, and
+fails the release when one fails. Check either archive the same way, with `TAG` set to the release you
+want:
 
 ```bash
 TAG=vX.Y.Z

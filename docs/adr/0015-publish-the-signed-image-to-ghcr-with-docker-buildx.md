@@ -313,9 +313,9 @@ attestations, pushed to the registry beside the image.
     uploads to it and undrafts it as its last step (`PublishRelease`), and fails fast on an existing
     immutable release for the tag; with `release.draft: true` it skips that last step and leaves the
     draft. `.goreleaser.yaml` sets `draft: true`, so a job of `release.yml`, `publish`, publishes it
-    (`gh release edit "$TAG" --repo timothymamo/shift2eu --draft=false`; the job checks nothing out,
-    so `gh` is given the repository) after `attest-archives`, holding `contents: write` and nothing
-    else. Publishing sends no `make_latest`, as GoReleaser's own step did not either, so
+    after `attest-archives`, holding `contents: write` and nothing else: the draft it checked, by the
+    id the API listed it with (`gh api -X PATCH repos/timothymamo/shift2eu/releases/$id -F
+    draft=false`; the job checks nothing out, so `gh` is given the repository in the path). Publishing sends no `make_latest`, as GoReleaser's own step did not either, so
     GitHub's default for a published, non-pre-release release applies, as before; `prerelease: auto`
     still marks a pre-release tag at creation. GitHub finds no draft by its tag, so a re-run of a failed
     `goreleaser` job would create a second draft for the tag beside the one the failed run left:
@@ -353,18 +353,27 @@ attestations, pushed to the registry beside the image.
   - **Check the draft before publishing.** `publish` downloads the same workflow artifact for the
     `checksums.txt` that was attested and, before it edits anything, reads the draft from the API's
     list of the releases (a draft is not readable by its tag; a `contents: write` token sees drafts, and
-    every asset carries a `digest`, `sha256:<hex>`). It publishes nothing unless there is exactly one
+    every asset carries a `digest`, `sha256:<hex>`). It publishes nothing if the tag already has a
+    published release (publishing it again needs a human), and nothing unless there is exactly one
     draft for the tag, its asset names are exactly `checksums.txt` and the files it lists, every
     asset's digest is the one `checksums.txt` records, and its `checksums.txt` is the attested file
     itself. Once published, an immutable release can never shed an unattested asset, so it is refused
-    while still a draft.
+    while still a draft. The check and the publication are one step, and the draft is published by
+    the id the list gave it, never by its tag: `gh release edit <tag>` resolves a tag to a published
+    release before a draft, and a step of its own would look the tag up again, so a release published,
+    or a draft swapped in, after the check would be published in the place of the one checked.
   - **Every release asset is in `checksums.txt`.** A new release asset (an OpenAPI document, an SBOM,
     a signature) must be added to `checksums.txt` (`checksum.extra_files`, or GoReleaser's own
     checksum of its artifacts) and to the upload and `subject-path` lists of `release.yml`, which
     `check.ReleaseWorkflow` pins exactly. Otherwise `attest-archives`' `sha256sum -c` fails on a file
     the artifact does not hold, or `publish` refuses the draft for an asset `checksums.txt` does not
-    list (issue #139). CI's dry run (`verify-archives.sh`) catches it first: what GoReleaser would
-    upload, read from its `artifacts.json`, must be exactly the attested subjects.
+    list (issue #139). CI's dry run (`verify-archives.sh`) catches most of them first: what
+    GoReleaser would upload, read from its `artifacts.json`, must be exactly the attested subjects, so
+    a new asset registered by a pipe a snapshot runs (an SBOM, a signature, a source archive,
+    `checksum.extra_files`) fails there. `release.extra_files` does not: GoReleaser adds those only in
+    the release pipe's publish step, which `--snapshot` skips. That key is refused by
+    `check.GitHubRelease` instead, which holds `release:` to a closed list, and by `publish`'s draft
+    check.
   - **Recovery.** A failed `attest-archives` or `publish` leaves the release a draft. Within the seven
     days the workflow artifact is kept, "Re-run failed jobs" on the release run runs the failed job and
     the jobs after it from the same artifact, the same draft and the same commit. A full re-run (or a
@@ -374,8 +383,8 @@ attestations, pushed to the registry beside the image.
     the new digests. The `release-tag` skill holds the maintainer's steps.
   - **No fake-`gh` dry run.** The scripts of `publish`'s check and `verify-archives` run only in a
     release: CI does not run them against a fake `gh`. They are pinned verbatim by `check.ReleaseWorkflow`,
-    were run by hand against a stub `gh` and sample releases when written, and fail closed (each check
-    exits non-zero before `gh release edit`). A CI harness would have to extract them from the YAML and
+    were run against a stub `gh` and sample releases when written and again in review, and fail closed
+    (each check exits non-zero before the draft is published). A CI harness would have to extract them from the YAML and
     fake the API's paging and asset digests, and would test the stub as much as the script.
   - **GitHub's "Latest" and the image's `latest`.** Publishing sends no `make_latest`, so GitHub marks
     the most recently published non-pre-release release its "Latest", while the image's `latest`

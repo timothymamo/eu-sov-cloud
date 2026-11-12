@@ -154,9 +154,12 @@ fi
 # What GoReleaser would upload to the draft release, read from its own record of the run: every
 # artifact but its run metadata and the bare binaries its builds wrote (named by the binary and its
 # extension), which it never uploads. That must be exactly the attested subjects too: the publish job
-# refuses a draft holding anything checksums.txt does not list (issue #163), so a new asset (an SBOM, a
-# signature, a source archive, an extra file) fails here, before a release is left a draft. It fails
-# closed: an artifact type this does not know counts as uploaded.
+# refuses a draft holding anything checksums.txt does not list (issue #163), so a new asset registered
+# by a pipe a snapshot runs (an SBOM, a signature, a source archive, checksum.extra_files) fails here,
+# before a release is left a draft. release.extra_files does not: GoReleaser adds those only in the
+# release pipe's publish step, which --snapshot skips, so artifacts.json never lists them. That key is
+# refused by check.GitHubRelease (release: is a closed section), and the publish job's draft check
+# refuses what it uploads. It fails closed: an artifact type this does not know counts as uploaded.
 uploads="$(jq -r '.[]
   | select(.type != "Metadata")
   | select((.type == "Binary" and .name == (.extra.Binary + .extra.Ext)) | not)
