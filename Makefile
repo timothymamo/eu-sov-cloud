@@ -1,4 +1,6 @@
 BINARY  := eusov
+# The HTTP API's binary (PRD #103, docs/adr/0019-serve-assessments-over-a-versioned-http-api-from-a-separate-binary.md).
+SERVER  := eusov-server
 PKG     := github.com/timothymamo/eu-sov-cloud
 VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
 COMMIT  ?= $(shell git rev-parse --short HEAD 2>/dev/null || echo none)
@@ -40,8 +42,12 @@ help: ## Show this help
 	@awk 'BEGIN {FS = ":.*## "} /^##@/ {printf "\n%s\n", substr($$0, 5)} /^[a-zA-Z0-9_-]+:.*## / {printf "  \033[36m%-18s\033[0m %s\n", $$1, $$2}' $(MAKEFILE_LIST)
 
 .PHONY: build
-build: ## Build the eusov binary into ./bin
+build: server ## Build the eusov and eusov-server binaries into ./bin
 	go build -trimpath -ldflags "$(LDFLAGS)" -o bin/$(BINARY) ./cmd/$(BINARY)
+
+.PHONY: server
+server: ## Build the eusov-server binary (the HTTP API) into ./bin
+	go build -trimpath -ldflags "$(LDFLAGS)" -o bin/$(SERVER) ./cmd/$(SERVER)
 
 .PHONY: image
 image: ## Build the local container image eusov:<version>, eusov:dev and eusov:latest from git, as make build (docker or nerdctl; PLATFORMS=linux/amd64,linux/arm64 for both; tags are local, nothing is pushed)
