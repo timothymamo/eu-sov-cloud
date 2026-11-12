@@ -138,6 +138,18 @@ moves or deletes a tag.
    then `gh run watch <id>`), then report the release URL (`gh release view vX.Y.Z --json url`).
    If a pending run was cancelled, re-run it with `gh run rerun <id>`. On failure, report the failed
    step's log and stop; never delete or move a pushed tag.
+   GoReleaser uploads to a draft and the run's `publish` job publishes it last, after the archives are
+   attested (issues #156 and #163, ADR 0015). Check that it did:
+   `gh release view vX.Y.Z --json isDraft,isImmutable,isPrerelease` must give `isDraft` `false`, and
+   `isPrerelease` `true` exactly when the tag has a pre-release suffix. Report `isImmutable` too: it is
+   `true` once the maintainer has turned release immutability on, and `false` means it is off. A
+   release left a draft is a failed release: report it with the `publish` job's log and stop; never
+   publish a draft by hand.
+   Report the result of the run's `verify-archives` job, "Verify the published archives", the
+   independent check of every published archive and `checksums.txt` against their digests and their
+   build provenance:
+   `gh run view <id> --json jobs --jq '.jobs[] | select(.name == "Verify the published archives") | .conclusion'`.
+   It must be `success`; a failure is a failed release, handled as a failed `verify` below.
    Report the result of the run's `verify` job too, the independent check of both published images
    on a fresh GitHub-hosted runner (issue #99, ADR 0015). Find it by its name, "Verify the published
    images", which `check.ReleaseWorkflow` pins:
@@ -187,6 +199,19 @@ moves or deletes a tag.
      --source-ref "refs/tags/$TAG" --deny-self-hosted-runners \
      --predicate-type https://spdx.dev/Document/v2.3
    /usr/local/nerdctl/bin/nerdctl run --rm --read-only --network none "$IMAGE" version   # prints X.Y.Z, without the v
+   ```
+
+   Then check one archive and its build provenance, "Verify an archive" in
+   `docs/guide/verify-releases.md`, in a new empty directory outside the repository (the scratchpad):
+
+   ```bash
+   ARCHIVE="shift2eu_${TAG#v}_linux_amd64.tar.gz"
+   /usr/local/bin/gh release download "$TAG" --repo timothymamo/shift2eu --pattern "$ARCHIVE" --pattern checksums.txt
+   awk -v a="$ARCHIVE" '$2 == a' checksums.txt > "$ARCHIVE.sha256"
+   sha256sum --check "$ARCHIVE.sha256"
+   /usr/local/bin/gh attestation verify "$ARCHIVE" --repo timothymamo/shift2eu \
+     --signer-workflow timothymamo/shift2eu/.github/workflows/release.yml \
+     --source-ref "refs/tags/$TAG" --deny-self-hosted-runners
    ```
 
    Report the digest and each command's outcome. Every command must exit 0 and `version` must print the
