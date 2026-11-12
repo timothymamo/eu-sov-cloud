@@ -79,6 +79,9 @@ type releaseImage struct {
 	// sbomFile is the SPDX document of the image, and sbomArtifact the name
 	// of the workflow artifact the SBOM job hands it to the sign job under.
 	sbomFile, sbomArtifact string
+	// ciVar is the variable ci.yml's image job names the image it built for
+	// this one by, so the dry run's container runs mirror each image's own.
+	ciVar string
 }
 
 // digest is the expression through which the image's SBOM and sign jobs read
@@ -93,12 +96,12 @@ func (img releaseImage) digest() string {
 var (
 	cliImage = releaseImage{
 		name: "ghcr.io/timothymamo/shift2eu", imageJob: "image", sbomJob: "sbom", signJob: "sign",
-		sbomFile: "shift2eu.spdx.json", sbomArtifact: "sbom",
+		sbomFile: "shift2eu.spdx.json", sbomArtifact: "sbom", ciVar: "IMAGE",
 	}
 	serverImage = releaseImage{
 		name: "ghcr.io/timothymamo/shift2eu-server", target: "server",
 		imageJob: "server-image", sbomJob: "server-sbom", signJob: "server-sign", suffix: " (shift2eu-server)",
-		sbomFile: "shift2eu-server.spdx.json", sbomArtifact: "server-sbom",
+		sbomFile: "shift2eu-server.spdx.json", sbomArtifact: "server-sbom", ciVar: "SERVER_IMAGE",
 	}
 	releaseImages = []releaseImage{cliImage, serverImage}
 )
@@ -351,15 +354,16 @@ const (
 )
 
 // verifyImageStep is the verify job's step for img, the README's "Verify the
-// image" on the digest its tag resolves to now: the signature this workflow
-// made for exactly this tag, the build provenance and the SBOM, attested from
-// this workflow for this tag on GitHub's runners, and the image itself, run
-// with --rm --read-only --network none and then smoke.
+// image" on the digest its image job built: the tag must resolve to that
+// digest, and that image must carry the signature this workflow made for
+// exactly this tag and this commit, the build provenance and the SBOM,
+// attested from this workflow for this tag and commit on GitHub's runners,
+// and run with --rm --read-only --network none and then smoke.
 func verifyImageStep(img releaseImage, what, name string, smoke ...string) releaseStep {
 	attest := []string{
 		`gh attestation verify "oci://$IMAGE" --repo ` + releaseRepo + ` \`,
 		`  --signer-workflow ` + signerWorkflow + ` \`,
-		`  --source-ref "refs/tags/$TAG" --deny-self-hosted-runners`,
+		`  --source-ref "refs/tags/$TAG" --source-digest "$GITHUB_SHA" --deny-self-hosted-runners`,
 	}
 
 	sbom := slices.Clone(attest)
@@ -368,15 +372,21 @@ func verifyImageStep(img releaseImage, what, name string, smoke ...string) relea
 
 	return releaseStep{
 		what: what, name: name,
-		env: []string{tagEnv, "GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}"},
+		env: []string{tagEnv, "GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}", "BUILT: " + img.digest()},
 		run: strings.Join(slices.Concat(
 			[]string{
+				strictShell,
 				`DIGEST="$(docker buildx imagetools inspect "` + img.name + `:$TAG" --format '{{.Manifest.Digest}}')"`,
+				`if [ "$DIGEST" != "$BUILT" ]; then`,
+				`  echo "` + img.name + `:$TAG resolves to $DIGEST, not the digest this run built, $BUILT" >&2`,
+				`  exit 1`,
+				`fi`,
 				`IMAGE="` + img.name + `@$DIGEST"`,
 				`cosign verify "$IMAGE" \`,
 				`  --certificate-identity "https://github.com/` + signerWorkflow + `@refs/tags/$TAG" \`,
 				`  --certificate-oidc-issuer https://token.actions.githubusercontent.com \`,
-				`  --certificate-github-workflow-trigger push`,
+				`  --certificate-github-workflow-trigger push \`,
+				`  --certificate-github-workflow-sha "$GITHUB_SHA"`,
 			},
 			attest,
 			sbom,
@@ -385,9 +395,15 @@ func verifyImageStep(img releaseImage, what, name string, smoke ...string) relea
 	}
 }
 
+// strictShell is the first line of every verify script: the run shell is
+// bash -e without pipefail or nounset, so an error inside a pipeline or an
+// unset variable would otherwise pass unseen.
+const strictShell = "set -euo pipefail"
+
 // verifySteps are the verify job's steps: cosign by exact release, a cosign
-// login, the checks of each published image by digest, and the tag rule. No
-// checkout: the job runs no repository code.
+// login, the checks of each image this run built, by digest, and the tag
+// rule, whose highest release tag is read by ancestry from main in a bare
+// repository of the job's own. No checkout: the job runs no repository code.
 var verifySteps = []releaseStep{
 	cosignInstallerStep,
 	cosignLoginStep,
@@ -401,18 +417,30 @@ var verifySteps = []releaseStep{
 	),
 	{
 		what: "the tag rule", name: tagRuleStepName,
-		env: []string{tagEnv},
+		env: []string{tagEnv, "CLI_BUILT: " + cliImage.digest(), "SERVER_BUILT: " + serverImage.digest()},
 		run: strings.Join([]string{
+			strictShell,
 			`version="${TAG#v}"`,
 			`minor="${version%%-*}"`,
 			`minor="${minor%.*}"`,
-			`highest="$(git ls-remote --tags --refs https://github.com/` + releaseRepo + `.git | awk '{sub("refs/tags/", ""); print $2}' | sed -nE '/^v[0-9]+\.[0-9]+\.[0-9]+$/p' | sort -V | tail -n 1)"`,
-			`for repo in ` + cliImage.name + ` ` + serverImage.name + `; do`,
-			`  digest="$(docker buildx imagetools inspect "$repo:$TAG" --format '{{.Manifest.Digest}}')"`,
+			`git init -q repo`,
+			`git -C repo fetch -q --filter=tree:0 --no-tags https://github.com/` + releaseRepo + `.git '+refs/heads/main:refs/remotes/origin/main' '+refs/tags/v*:refs/tags/v*'`,
+			`highest="$(git -C repo tag -l 'v*.*.*' --merged refs/remotes/origin/main | sed -nE '/^v[0-9]+\.[0-9]+\.[0-9]+$/p' | sort -V | tail -n 1)"`,
+			`if [ -z "$highest" ]; then`,
+			`  echo "no release tag is merged into main, so X.Y and latest cannot be checked" >&2`,
+			`  exit 1`,
+			`fi`,
+			`check() {`,
+			`  repo="$1"`,
+			`  digest="$2"`,
 			`  case "$TAG" in`,
 			`    *-*)`,
-			`      if docker buildx imagetools inspect "$repo:$minor" > /dev/null 2>&1; then`,
-			`        echo "$repo:$minor exists though $TAG is a pre-release" >&2`,
+			`      if [ "$(docker buildx imagetools inspect "$repo:$minor" --format '{{.Manifest.Digest}}' 2> /dev/null)" = "$digest" ]; then`,
+			`        echo "$repo:$minor is $TAG, a pre-release, and a pre-release moves neither X.Y nor latest" >&2`,
+			`        exit 1`,
+			`      fi`,
+			`      if [ "$(docker buildx imagetools inspect "$repo:latest" --format '{{.Manifest.Digest}}' 2> /dev/null)" = "$digest" ]; then`,
+			`        echo "$repo:latest is $TAG, a pre-release, and a pre-release moves neither X.Y nor latest" >&2`,
 			`        exit 1`,
 			`      fi`,
 			`      ;;`,
@@ -421,18 +449,24 @@ var verifySteps = []releaseStep{
 			`        echo "$repo:$minor is not $TAG" >&2`,
 			`        exit 1`,
 			`      fi`,
+			`      if [ "$highest" = "$TAG" ]; then`,
+			`        if [ "$(docker buildx imagetools inspect "$repo:latest" --format '{{.Manifest.Digest}}')" != "$digest" ]; then`,
+			`          echo "$repo:latest is not $TAG, the highest release tag" >&2`,
+			`          exit 1`,
+			`        fi`,
+			`      elif published="$(docker buildx imagetools inspect "$repo:$highest" --format '{{.Manifest.Digest}}' 2> /dev/null)"; then`,
+			`        if [ "$(docker buildx imagetools inspect "$repo:latest" --format '{{.Manifest.Digest}}')" = "$digest" ]; then`,
+			`          echo "$repo:latest is $TAG, which is not the highest release tag, $highest" >&2`,
+			`          exit 1`,
+			`        fi`,
+			`      else`,
+			`        echo "::notice::$repo:$highest is not published yet, so this run does not check $repo:latest"`,
+			`      fi`,
 			`      ;;`,
 			`  esac`,
-			`  if [ "$highest" = "$TAG" ]; then`,
-			`    if [ "$(docker buildx imagetools inspect "$repo:latest" --format '{{.Manifest.Digest}}')" != "$digest" ]; then`,
-			`      echo "$repo:latest is not $TAG, the highest release tag" >&2`,
-			`      exit 1`,
-			`    fi`,
-			`  elif [ "$(docker buildx imagetools inspect "$repo:latest" --format '{{.Manifest.Digest}}')" = "$digest" ]; then`,
-			`    echo "$repo:latest is $TAG, which is not the highest release tag" >&2`,
-			`    exit 1`,
-			`  fi`,
-			`done`,
+			`}`,
+			`check ` + cliImage.name + ` "$CLI_BUILT"`,
+			`check ` + serverImage.name + ` "$SERVER_BUILT"`,
 		}, "\n"),
 	},
 }
@@ -487,7 +521,8 @@ var releaseJobs = func() []releaseJob {
 	}
 
 	return append(jobs, releaseJob{
-		key: verifyJob, name: verifyJobName, needs: []string{cliImage.signJob, serverImage.signJob},
+		key: verifyJob, name: verifyJobName,
+		needs:       []string{cliImage.imageJob, cliImage.signJob, serverImage.imageJob, serverImage.signJob},
 		permissions: map[string]string{"packages": "read", "attestations": "read"},
 		steps:       verifySteps,
 	})
@@ -513,7 +548,8 @@ var releaseJobs = func() []releaseJob {
 //     exactly name, runs-on (ubuntu-latest), permissions and steps, and needs
 //     for all but test (goreleaser needs test; an image job [test,
 //     goreleaser]; an sbom job its image job; a sign job [its image job, its
-//     sbom job], in that order; verify [sign, server-sign]), and an image job
+//     sbom job], in that order; verify [image, sign, server-image,
+//     server-sign]), and an image job
 //     an outputs: of exactly its build's digest, so no job-level env:,
 //     container:, if: or other key;
 //   - the permissions are exactly contents: read for test; contents: write
@@ -550,12 +586,16 @@ var releaseJobs = func() []releaseJob {
 //     its SPDX document and actions/attest of the SBOM, both by that digest,
 //     pushed to the registry;
 //   - the verify job's steps are exactly sigstore/cosign-installer, the cosign
-//     login, one step per image that resolves its tag to a digest and, by that
-//     digest, runs cosign verify with the release identity, gh attestation
-//     verify of the provenance and of the SBOM, and the image with --rm
-//     --read-only --network none (version, compared to the tag, for the CLI;
-//     --help for the server), and the tag rule, read from git ls-remote with no
-//     checkout;
+//     login, one step per image that, under set -euo pipefail, resolves its
+//     tag to a digest, fails unless it is the digest its image job built
+//     (BUILT through env:), and, by that digest, runs cosign verify with the
+//     release identity and this commit (--certificate-github-workflow-sha),
+//     gh attestation verify of the provenance and of the SBOM, both bound to
+//     this commit (--source-digest), and the image with --rm --read-only
+//     --network none (version, compared to the tag, for the CLI; --help for
+//     the server), and the tag rule, whose highest release tag is the release
+//     tags merged into main, read by ancestry from a treeless fetch into a
+//     repository of the job's own, with no checkout;
 //   - every step holds exactly the keys listed (name, id, uses, with, env,
 //     run), in that order of steps, each action pinned by commit, each with:
 //     key and value, env: line and run: command as listed. A run: command is

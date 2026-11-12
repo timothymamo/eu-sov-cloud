@@ -2,7 +2,6 @@ package check
 
 import (
 	"fmt"
-	"regexp"
 	"slices"
 	"strings"
 
@@ -107,9 +106,11 @@ type workflowJob struct {
 //     "$@": the same filter, sort and pick, on sample tags;
 //   - for each image, the verify job's step whose run: names <image>:$TAG
 //     (exactly one) runs the image with at least one line starting docker
-//     run, and each such line, its image argument (a quoted "$NAME") set
-//     aside, is a line of a run: step of the dry run's image job: the same
-//     flags and the same command, on the image the dry run built (issue #99).
+//     run, none continued onto the next line, and each such line, its image
+//     argument "$IMAGE" set aside, is a line of a run: step of the dry run's
+//     image job that runs that image's own dry-run build ("$IMAGE" for the
+//     CLI, "$SERVER_IMAGE" for the server): the same flags and the same
+//     command, on the image the dry run built (issue #99).
 func DryRunMirrorsRelease(ci, release []byte) []string {
 	r := &schemaReader{}
 
@@ -773,13 +774,16 @@ func (d dryRun) highestLine(raw []string, steps []workflowStep, file, id string)
 	return lines[0], s.num, true
 }
 
-// imageArg matches the image argument of a docker run line, a quoted "$NAME".
-var imageArg = regexp.MustCompile(`"\$[A-Z_][A-Z0-9_]*"`)
+// releaseImageVar is the image argument of a docker run line in the
+// release's verify step: the image it verifies, by digest.
+const releaseImageVar = "IMAGE"
 
 // containerRun checks that every docker run line of the release's verify step
-// for img is a line of a run: step of the dry run, its image argument set
-// aside: the dry run runs the image it built as the release runs the published
-// one.
+// for img is a line of a run: step of the dry run, the release's "$IMAGE" and
+// the dry run's image of img ("$<img.ciVar>") alike set aside: the dry run
+// runs the image it built as the release runs the published one, each image's
+// run on that image alone. A release line that continues onto the next (ends
+// in \) is refused: one line is compared, so the rest would go unchecked.
 func (d dryRun) containerRun(ci, verify []workflowStep, img releaseImage) {
 	ref := img.name + ":$TAG"
 
@@ -799,7 +803,7 @@ func (d dryRun) containerRun(ci, verify []workflowStep, img releaseImage) {
 
 	step := found[0]
 
-	runs := dockerRuns(d.script(d.releaseRaw, step))
+	runs := dockerRuns(d.script(d.releaseRaw, step), releaseImageVar)
 	if len(runs) == 0 {
 		d.r.fail("release.yml: the verify job's step for %s (line %d) runs no container run (a line starting docker run): the release must run the image it verifies", ref, step.num)
 
@@ -810,13 +814,19 @@ func (d dryRun) containerRun(ci, verify []workflowStep, img releaseImage) {
 
 	for _, s := range ci {
 		if s.hasRun {
-			ciRuns = append(ciRuns, dockerRuns(d.script(d.ciRaw, s))...)
+			ciRuns = append(ciRuns, dockerRuns(d.script(d.ciRaw, s), img.ciVar)...)
 		}
 	}
 
 	for _, want := range runs {
+		if strings.HasSuffix(want, `\`) {
+			d.r.fail("release.yml: the verify job's step for %s (line %d) continues its docker run line onto another line (%q): write each docker run on one line, so the dry run's is compared whole", ref, step.num, want)
+
+			continue
+		}
+
 		if !slices.Contains(ciRuns, want) {
-			d.r.fail("release.yml: the verify job's step for %s (line %d) runs %q, which no run: step of ci.yml's image job runs on its own image: the dry run must run the image as release.yml's verify job runs it", ref, step.num, want)
+			d.r.fail("release.yml: the verify job's step for %s (line %d) runs %q, which no run: step of ci.yml's image job runs on its own image (\"$%s\"): the dry run must run the image as release.yml's verify job runs it", ref, step.num, want, img.ciVar)
 		}
 	}
 }
@@ -843,13 +853,16 @@ func (d dryRun) script(raw []string, s workflowStep) string {
 }
 
 // dockerRuns returns the lines of script, trimmed, that start docker run, each
-// with its image argument replaced by <image>.
-func dockerRuns(script string) []string {
+// with its image argument "$<name>" replaced by <image>; any other image
+// argument stays as written, so it matches no line of the other side.
+func dockerRuns(script, name string) []string {
 	var out []string
+
+	arg := `"$` + name + `"`
 
 	for l := range strings.SplitSeq(script, "\n") {
 		if l = strings.TrimSpace(l); strings.HasPrefix(l, "docker run ") {
-			out = append(out, imageArg.ReplaceAllLiteralString(l, "<image>"))
+			out = append(out, strings.ReplaceAll(l, arg, "<image>"))
 		}
 	}
 

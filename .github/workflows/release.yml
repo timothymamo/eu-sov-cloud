@@ -394,12 +394,14 @@ jobs:
 
   # The independent check of what the release published (issue #99): a fresh
   # runner, after both images are signed and attested, with read-only access to
-  # the registry and no OIDC token, so nothing in it can sign or push. A tag can
-  # be moved and a digest cannot, so every check reads the digest the tag
-  # resolves to now.
+  # the registry and no OIDC token, so nothing in it can sign or push. It needs
+  # the image jobs too: each verify step compares the digest the tag resolves to
+  # with the digest this run built, so a tag moved between the build and the
+  # check fails here. A tag can be moved and a digest cannot, so every check
+  # below reads a digest, never a tag.
   verify:
     name: Verify the published images
-    needs: [sign, server-sign]
+    needs: [image, sign, server-image, server-sign]
     runs-on: ubuntu-latest
     permissions:
       packages: read # both images and their signatures
@@ -416,67 +418,104 @@ jobs:
           ACTOR: ${{ github.actor }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: printf '%s' "$GITHUB_TOKEN" | cosign login ghcr.io --username "$ACTOR" --password-stdin
-      # The README's "Verify the image", on the digest the tag resolves to now:
-      # the signature this workflow made for exactly this tag, the build
-      # provenance, the SBOM, and the image itself, which must report the
-      # version of the tag.
+      # The README's "Verify the image", on the digest this run built: the tag
+      # must resolve to that digest, and that image must carry the signature
+      # this workflow made for exactly this tag and this commit, the build
+      # provenance and the SBOM, and it must run and report the version of the
+      # tag.
       - name: Verify the CLI image
         env:
           TAG: ${{ github.ref_name }}
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          BUILT: ${{ needs.image.outputs.digest }}
         run: |
+          set -euo pipefail
           DIGEST="$(docker buildx imagetools inspect "ghcr.io/timothymamo/shift2eu:$TAG" --format '{{.Manifest.Digest}}')"
+          if [ "$DIGEST" != "$BUILT" ]; then
+            echo "ghcr.io/timothymamo/shift2eu:$TAG resolves to $DIGEST, not the digest this run built, $BUILT" >&2
+            exit 1
+          fi
           IMAGE="ghcr.io/timothymamo/shift2eu@$DIGEST"
           cosign verify "$IMAGE" \
             --certificate-identity "https://github.com/timothymamo/shift2eu/.github/workflows/release.yml@refs/tags/$TAG" \
             --certificate-oidc-issuer https://token.actions.githubusercontent.com \
-            --certificate-github-workflow-trigger push
+            --certificate-github-workflow-trigger push \
+            --certificate-github-workflow-sha "$GITHUB_SHA"
           gh attestation verify "oci://$IMAGE" --repo timothymamo/shift2eu \
             --signer-workflow timothymamo/shift2eu/.github/workflows/release.yml \
-            --source-ref "refs/tags/$TAG" --deny-self-hosted-runners
+            --source-ref "refs/tags/$TAG" --source-digest "$GITHUB_SHA" --deny-self-hosted-runners
           gh attestation verify "oci://$IMAGE" --repo timothymamo/shift2eu \
             --signer-workflow timothymamo/shift2eu/.github/workflows/release.yml \
-            --source-ref "refs/tags/$TAG" --deny-self-hosted-runners \
+            --source-ref "refs/tags/$TAG" --source-digest "$GITHUB_SHA" --deny-self-hosted-runners \
             --predicate-type https://spdx.dev/Document/v2.3
           docker run --rm --read-only --network none "$IMAGE" version | tee version.txt
           grep -qF "shift2eu ${TAG#v} (" version.txt
+      # The HTTP API's image, checked as the CLI's is, from the digest its own
+      # image job built. It has no version subcommand, so --help exiting 0 is
+      # its smoke test.
       - name: Verify the HTTP API's image
         env:
           TAG: ${{ github.ref_name }}
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          BUILT: ${{ needs.server-image.outputs.digest }}
         run: |
+          set -euo pipefail
           DIGEST="$(docker buildx imagetools inspect "ghcr.io/timothymamo/shift2eu-server:$TAG" --format '{{.Manifest.Digest}}')"
+          if [ "$DIGEST" != "$BUILT" ]; then
+            echo "ghcr.io/timothymamo/shift2eu-server:$TAG resolves to $DIGEST, not the digest this run built, $BUILT" >&2
+            exit 1
+          fi
           IMAGE="ghcr.io/timothymamo/shift2eu-server@$DIGEST"
           cosign verify "$IMAGE" \
             --certificate-identity "https://github.com/timothymamo/shift2eu/.github/workflows/release.yml@refs/tags/$TAG" \
             --certificate-oidc-issuer https://token.actions.githubusercontent.com \
-            --certificate-github-workflow-trigger push
+            --certificate-github-workflow-trigger push \
+            --certificate-github-workflow-sha "$GITHUB_SHA"
           gh attestation verify "oci://$IMAGE" --repo timothymamo/shift2eu \
             --signer-workflow timothymamo/shift2eu/.github/workflows/release.yml \
-            --source-ref "refs/tags/$TAG" --deny-self-hosted-runners
+            --source-ref "refs/tags/$TAG" --source-digest "$GITHUB_SHA" --deny-self-hosted-runners
           gh attestation verify "oci://$IMAGE" --repo timothymamo/shift2eu \
             --signer-workflow timothymamo/shift2eu/.github/workflows/release.yml \
-            --source-ref "refs/tags/$TAG" --deny-self-hosted-runners \
+            --source-ref "refs/tags/$TAG" --source-digest "$GITHUB_SHA" --deny-self-hosted-runners \
             --predicate-type https://spdx.dev/Document/v2.3
           docker run --rm --read-only --network none "$IMAGE" --help > /dev/null
-      # The tag rule ADR 0015 states: vX.Y.Z always, X.Y for a release,
-      # latest for the highest release tag only, and a pre-release's own tag
-      # alone. The highest is read from the remote, with the stamp's filter,
-      # sort and pick, so the job needs no checkout.
+      # The tag rule ADR 0015 states: vX.Y.Z always, X.Y for every release,
+      # latest for the highest release tag alone, and a pre-release, which
+      # moves neither X.Y nor latest. The highest is the tag the image jobs'
+      # stamp read: the release tags merged into main. They are read by
+      # ancestry here too, from the public repository into a bare repository of
+      # this job's own, so no checkout runs and no repository code runs. A
+      # registry error on a tag the rule requires fails the job; the one tag it
+      # allows to be absent, the highest while its own run has not published
+      # it, is read with its error silenced, and a notice says so.
       - name: The tags follow the release rule
         env:
           TAG: ${{ github.ref_name }}
+          CLI_BUILT: ${{ needs.image.outputs.digest }}
+          SERVER_BUILT: ${{ needs.server-image.outputs.digest }}
         run: |
+          set -euo pipefail
           version="${TAG#v}"
           minor="${version%%-*}"
           minor="${minor%.*}"
-          highest="$(git ls-remote --tags --refs https://github.com/timothymamo/shift2eu.git | awk '{sub("refs/tags/", ""); print $2}' | sed -nE '/^v[0-9]+\.[0-9]+\.[0-9]+$/p' | sort -V | tail -n 1)"
-          for repo in ghcr.io/timothymamo/shift2eu ghcr.io/timothymamo/shift2eu-server; do
-            digest="$(docker buildx imagetools inspect "$repo:$TAG" --format '{{.Manifest.Digest}}')"
+          git init -q repo
+          git -C repo fetch -q --filter=tree:0 --no-tags https://github.com/timothymamo/shift2eu.git '+refs/heads/main:refs/remotes/origin/main' '+refs/tags/v*:refs/tags/v*'
+          highest="$(git -C repo tag -l 'v*.*.*' --merged refs/remotes/origin/main | sed -nE '/^v[0-9]+\.[0-9]+\.[0-9]+$/p' | sort -V | tail -n 1)"
+          if [ -z "$highest" ]; then
+            echo "no release tag is merged into main, so X.Y and latest cannot be checked" >&2
+            exit 1
+          fi
+          check() {
+            repo="$1"
+            digest="$2"
             case "$TAG" in
               *-*)
-                if docker buildx imagetools inspect "$repo:$minor" > /dev/null 2>&1; then
-                  echo "$repo:$minor exists though $TAG is a pre-release" >&2
+                if [ "$(docker buildx imagetools inspect "$repo:$minor" --format '{{.Manifest.Digest}}' 2> /dev/null)" = "$digest" ]; then
+                  echo "$repo:$minor is $TAG, a pre-release, and a pre-release moves neither X.Y nor latest" >&2
+                  exit 1
+                fi
+                if [ "$(docker buildx imagetools inspect "$repo:latest" --format '{{.Manifest.Digest}}' 2> /dev/null)" = "$digest" ]; then
+                  echo "$repo:latest is $TAG, a pre-release, and a pre-release moves neither X.Y nor latest" >&2
                   exit 1
                 fi
                 ;;
@@ -485,15 +524,21 @@ jobs:
                   echo "$repo:$minor is not $TAG" >&2
                   exit 1
                 fi
+                if [ "$highest" = "$TAG" ]; then
+                  if [ "$(docker buildx imagetools inspect "$repo:latest" --format '{{.Manifest.Digest}}')" != "$digest" ]; then
+                    echo "$repo:latest is not $TAG, the highest release tag" >&2
+                    exit 1
+                  fi
+                elif published="$(docker buildx imagetools inspect "$repo:$highest" --format '{{.Manifest.Digest}}' 2> /dev/null)"; then
+                  if [ "$(docker buildx imagetools inspect "$repo:latest" --format '{{.Manifest.Digest}}')" = "$digest" ]; then
+                    echo "$repo:latest is $TAG, which is not the highest release tag, $highest" >&2
+                    exit 1
+                  fi
+                else
+                  echo "::notice::$repo:$highest is not published yet, so this run does not check $repo:latest"
+                fi
                 ;;
             esac
-            if [ "$highest" = "$TAG" ]; then
-              if [ "$(docker buildx imagetools inspect "$repo:latest" --format '{{.Manifest.Digest}}')" != "$digest" ]; then
-                echo "$repo:latest is not $TAG, the highest release tag" >&2
-                exit 1
-              fi
-            elif [ "$(docker buildx imagetools inspect "$repo:latest" --format '{{.Manifest.Digest}}')" = "$digest" ]; then
-              echo "$repo:latest is $TAG, which is not the highest release tag" >&2
-              exit 1
-            fi
-          done
+          }
+          check ghcr.io/timothymamo/shift2eu "$CLI_BUILT"
+          check ghcr.io/timothymamo/shift2eu-server "$SERVER_BUILT"
