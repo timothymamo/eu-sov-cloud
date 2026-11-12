@@ -734,6 +734,70 @@ func TestReleasePleaseWorkflow(t *testing.T) {
 			wantIn:   "needs.tag.outputs.other",
 		},
 
+		// GitHub Actions matches context names case-insensitively, so a
+		// reach for a job's outputs has to be refused in every spelling: the
+		// check may not answer Needs, NEEDS or NeEdS where it answers needs.
+		{
+			name:     "a needs expression in the bracket form and upper case on the tagging step",
+			workflow: mutate(t, acceptedWorkflow, taggingStepEnv, taggingStepEnv+"          RELEASE_SLUG: ${{ Needs['release-please'].outputs.x }}\n"),
+			wantIn:   "Needs[",
+		},
+		{
+			name:     "toJSON of the upper-case needs context on the relabelling step",
+			workflow: mutate(t, acceptedWorkflow, "          TAG: ${{ needs.tag.outputs.tag }}\n", "          TAG: ${{ needs.tag.outputs.tag }}\n          ALL_OUTPUTS: ${{ toJSON(NEEDS) }}\n"),
+			wantIn:   "NEEDS",
+		},
+		{
+			name:     "an upper-case needs expression on the relabelling step",
+			workflow: mutate(t, acceptedWorkflow, "          TAG: ${{ needs.tag.outputs.tag }}\n", "          TAG: ${{ needs.tag.outputs.tag }}\n          OTHER: ${{ NEEDS.tag.outputs.other }}\n"),
+			wantIn:   "NEEDS.tag.outputs.other",
+		},
+
+		// An allowed output is the whole of the expression it appears in, and
+		// nothing more: ${{ needs.tag.outputs.pr }} is the tagged PR's number
+		// alone, while the same reference inside a larger expression is a
+		// value the expression computes and no longer that number. The relabel
+		// job's if: stays the one allowed condition on the tagged PR.
+		{
+			name:     "an allowed tag output beside a fallback on the relabelling step",
+			workflow: mutate(t, acceptedWorkflow, "          PR: ${{ needs.tag.outputs.pr }}\n", "          PR: ${{ needs.tag.outputs.pr || 'x' }}\n"),
+			wantIn:   "||",
+		},
+		{
+			name:     "an allowed tag output inside fromJSON on the relabelling step",
+			workflow: mutate(t, acceptedWorkflow, "          PR: ${{ needs.tag.outputs.pr }}\n", "          PR: ${{ fromJSON(needs.tag.outputs.pr)[0] }}\n"),
+			wantIn:   "fromJSON",
+		},
+		{
+			// The same larger expression under an env: key of its own, which
+			// the step's env: check only names: the value it holds is the
+			// needs reach's to refuse, whatever key it reaches the shell
+			// through.
+			name:     "an allowed tag output in a fallback under another env key of the relabelling step",
+			workflow: mutate(t, acceptedWorkflow, "          TAG: ${{ needs.tag.outputs.tag }}\n", "          TAG: ${{ needs.tag.outputs.tag }}\n          FALLBACK: ${{ needs.tag.outputs.pr || 'x' }}\n"),
+			wantIn:   "||",
+		},
+		{
+			name:     "an allowed tag output inside fromJSON under another env key of the relabelling step",
+			workflow: mutate(t, acceptedWorkflow, "          TAG: ${{ needs.tag.outputs.tag }}\n", "          TAG: ${{ needs.tag.outputs.tag }}\n          FROM: ${{ fromJSON(needs.tag.outputs.pr)[0] }}\n"),
+			wantIn:   "fromJSON",
+		},
+
+		// The guard reads release.yml's runs through the repository it names
+		// in GH_REPO, so that name is github.repository and never the
+		// caller's default: another repository's runs would let a release.yml
+		// run in flight publish while this workflow tags.
+		{
+			name:     "the guard has no GH_REPO",
+			workflow: mutate(t, acceptedWorkflow, guardStepEnv, "          GH_TOKEN: ${{ github.token }}\n          APP_SLUG: shift2eu-release\n"),
+			wantIn:   "GH_REPO",
+		},
+		{
+			name:     "the guard's GH_REPO is not github.repository",
+			workflow: mutate(t, acceptedWorkflow, guardStepEnv, "          GH_TOKEN: ${{ github.token }}\n          GH_REPO: someone/else\n          APP_SLUG: shift2eu-release\n"),
+			wantIn:   "GH_REPO",
+		},
+
 		// The tagging step creates a tag and nothing else: a GitHub Release is
 		// GoReleaser's, from release.yml, and no script calls a host of its own.
 		{
