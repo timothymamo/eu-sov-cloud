@@ -265,9 +265,13 @@ linters:
         # no forbidigo group refuses in a test. Every entry ends in $, for the
         # reason given at domain-is-pure. Anything else fails lint, a standard
         # package added to Go later included. Add a package only when a test
-        # needs it, never one that does I/O. The one I/O an application test
-        # reaches is the golden files, through internal/testutil, whose own
-        # imports testutil-imports holds. The deny list is the one
+        # needs it, never one that does I/O. These rules are a guardrail on
+        # imports and named calls, not a sandbox: the one I/O they leave an
+        # application test is file access through os in internal/testutil
+        # (the golden files), whose own imports testutil-imports holds. No
+        # import or call rule can refuse a hard-coded path there, so a new
+        # file path or os call in internal/testutil is a widening a reviewer
+        # must read. The deny list is the one
         # app-uses-ports-not-adapters writes, shared through *app-deny: under
         # a strict list it only says why.
         #
@@ -311,7 +315,7 @@ linters:
         # that I/O with lint green. The files: entry has no !$test, so the
         # helpers' own _test.go files are held too. An import rule sees no
         # call, so the forbidigo group testutil-no-env refuses the environment
-        # reads and process start that os alone allows. A new import needs an
+        # reads, directory lookups and process start that os alone allows. A new import needs an
         # entry here and in test/architecture's pin in the same commit.
         testutil-imports:
           list-mode: strict
@@ -1648,16 +1652,20 @@ linters:
           pkg: '^syscall$'
           msg: 'composition-root-env: a composition root reads no environment variable; take the value as a flag'
         # Group testutil-no-env (issue #144): the test helpers of
-        # internal/testutil read no environment variable and start no
-        # process. depguard's testutil-imports must allow os, which the golden
-        # files are read and written with, and os also reads, writes and hands
-        # over the environment, where credentials live (CLAUDE.md rule 3). The
-        # group refuses those calls. Scope: every file under
+        # internal/testutil read no environment variable, locate no home,
+        # config, cache or temp directory and start no process. depguard's
+        # testutil-imports must allow os, which the golden files are read and
+        # written with, and os also reads, writes and hands over the
+        # environment, where credentials live (CLAUDE.md rule 3), and
+        # UserHomeDir, UserConfigDir, UserCacheDir and TempDir read $HOME,
+        # $XDG_CONFIG_HOME, $XDG_CACHE_HOME and $TMPDIR without naming them,
+        # so a helper could build the path to a credentials file. The group
+        # refuses those calls. Scope: every file under
         # internal/testutil/, _test.go files included; its exclusion rule
         # drops it everywhere else.
-        - pattern: '^os\.(?:Getenv|LookupEnv|ExpandEnv|Environ|Setenv|Unsetenv|Clearenv|StartProcess)$'
+        - pattern: '^os\.(?:Getenv|LookupEnv|ExpandEnv|Environ|Setenv|Unsetenv|Clearenv|StartProcess|UserHomeDir|UserConfigDir|UserCacheDir|TempDir)$'
           pkg: '^os$'
-          msg: 'testutil-no-env: a test helper reads no environment variable and starts no process, where credentials live; take what it needs as a parameter (CLAUDE.md rule 3)'
+          msg: 'testutil-no-env: a test helper reads no environment variable, locates no home, config, cache or temp directory and starts no process, where credentials live; take what it needs as a parameter (CLAUDE.md rule 3)'
     gosec:
       excludes:
         - G104 # unchecked errors are already reported by errcheck
