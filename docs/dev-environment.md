@@ -146,7 +146,19 @@ newer (`minimumLimaVersion`). CI runs `limactl validate dev/lima.yaml` with the 
 `LIMA_SHA256`, on every pull request and weekly: a template Lima refuses to create a VM from fails the
 PR, not the next `make vm-up` (only creating a VM runs Lima's checks; starting an existing one does
 not). Use that Lima version on the Mac, so you and CI agree on what a valid template is; when Renovate
-bumps it, `brew upgrade lima`.
+bumps it, `brew upgrade lima`. A warning counts as a refusal there: Lima only warns about an unknown
+(for example misspelt) field, and still exits 0.
+
+The same job proves the check can fail. Every template in `dev/testdata/lima-invalid/` is
+`dev/lima.yaml` with one known breakage: a `param` read only through bash indirection, which Lima cannot
+see (#120), an unknown field and a value of the wrong type. CI validates each one and fails, naming the
+template, if Lima accepts it, which would mean a later Lima stopped catching that breakage.
+`go test ./test/devenv` (part of `make check`) pins that each template differs from `dev/lima.yaml` by
+its one-line breakage alone, so it cannot be refused for another reason or drift from the real template.
+Renovate bumps their pins together with `dev/lima.yaml`'s. After any other change to `dev/lima.yaml`,
+rewrite them with `go test ./test/devenv -update` and commit the result. To add a case, add an entry to
+`limaBreakages` in `test/devenv/limainvalid_test.go` (the template's name and the one line it replaces),
+run `go test ./test/devenv -update`, and check with `limactl validate` that Lima refuses the new template.
 
 The same goes for the VM's size: `make vm-up` starts an existing VM with the CPUs, memory and disk it
 was created with. To resize it without recreating it, keeping its tools, login and configuration:

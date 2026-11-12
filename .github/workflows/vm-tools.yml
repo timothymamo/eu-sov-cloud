@@ -4,7 +4,12 @@ name: VM tools
 #
 # validate-template: limactl validate, so a template Lima refuses to create an instance from fails the
 # PR rather than the next `make vm-up` (#120, #122). Only creating an instance runs Lima's checks;
-# restarting an existing VM does not, so nothing else notices.
+# restarting an existing VM does not, so nothing else notices. A warning counts as a refusal: Lima only
+# warns on an unknown field. The job also proves the check can fail (#137): every template in
+# dev/testdata/lima-invalid is dev/lima.yaml with one known breakage (#120's param read only through
+# bash indirection, an unknown field, a mistyped value), and the job fails, naming the template, if
+# Lima accepts one. test/devenv pins that each differs from dev/lima.yaml by its breakage alone. To add
+# a case, add it to limaBreakages in test/devenv and run `go test ./test/devenv -update`.
 #
 # verify-pins: dev/lima.yaml pins cosign and gh by a SHA-256 per architecture, and provisioning trusts
 # those pins: no trusted cosign or GitHub token exists there yet. This job is what makes a pin authentic. It
@@ -19,6 +24,7 @@ on:
     branches: [main]
     paths:
       - dev/lima.yaml
+      - dev/testdata/lima-invalid/**
       - .github/workflows/vm-tools.yml
   pull_request:
   schedule:
@@ -64,10 +70,46 @@ jobs:
           mkdir -p "${RUNNER_TEMP}/lima"
           tar -xzf "${RUNNER_TEMP}/${name}" -C "${RUNNER_TEMP}/lima"
           echo "${RUNNER_TEMP}/lima/bin" >> "${GITHUB_PATH}"
-      - name: limactl validate dev/lima.yaml
+      - name: limactl validate dev/lima.yaml and the broken templates
         run: |
+          set -euo pipefail
           limactl --version
-          limactl validate dev/lima.yaml
+          # Whether Lima accepts <template>: limactl validate exits 0 and logs nothing above info. Lima
+          # 2.3 only warns on an unknown field ("Non-strict YAML detected"), so a misspelt key would pass
+          # on the exit status alone. A log line that is not JSON counts as a warning. Prints the log.
+          accepts() { # <template>
+            local log status=0
+            log="$(limactl --log-format json validate "$1" 2>&1)" || status=$?
+            jq -Rr '(fromjson? // {level: "unparsed", msg: .}) | "  \(.level): \(.msg)"
+              + (if .error then "\n\(.error | split("\n") | map("    " + .) | join("\n"))" else "" end)' <<<"${log}"
+            [ "${status}" -eq 0 ] && jq -Rse '[split("\n")[] | select(. != "")
+              | (fromjson? // {level: "unparsed"}) | .level] | all(. == "info" or . == "debug" or . == "trace")' \
+              <<<"${log}" >/dev/null
+          }
+          failed=0
+          echo "dev/lima.yaml, which Lima must accept:"
+          if ! accepts dev/lima.yaml; then
+            echo "::error file=dev/lima.yaml::limactl validate refuses dev/lima.yaml or warns about it"
+            failed=1
+          fi
+          # Each broken template is dev/lima.yaml with one breakage (test/devenv pins that), so with
+          # dev/lima.yaml accepted, a refusal can only come from that breakage.
+          shopt -s nullglob
+          broken=(dev/testdata/lima-invalid/*.yaml)
+          if [ "${#broken[@]}" -eq 0 ]; then
+            echo "::error file=.github/workflows/vm-tools.yml::no broken templates in dev/testdata/lima-invalid"
+            exit 1
+          fi
+          for template in "${broken[@]}"; do
+            echo "${template}, which Lima must refuse:"
+            if accepts "${template}"; then
+              echo "::error file=${template}::limactl validate accepts ${template}, a template it must refuse: the check would not catch this breakage in dev/lima.yaml"
+              failed=1
+            else
+              echo "  refused, as it must be"
+            fi
+          done
+          exit "${failed}"
 
   verify-pins:
     name: Verify the gh and cosign pins

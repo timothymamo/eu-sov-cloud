@@ -97,6 +97,9 @@
       ],
     },
   ],
+  // The broken Lima templates in dev/testdata/lima-invalid are dev/lima.yaml with one breakage each,
+  // which test/devenv pins: Renovate bumps their pins in the same PR as dev/lima.yaml's, so a bump does
+  // not leave them behind and fail that test.
   customManagers: [
     {
       // "# renovate: datasource=github-release-attachments depName=<owner/repo> digestVersion=<tag>" above
@@ -105,7 +108,11 @@
       // new release, and updates digestVersion and the digest together.
       description: 'SHA-256 digests of GitHub release assets in dev/lima.yaml and the vm-tools workflow',
       customType: 'regex',
-      managerFilePatterns: ['/^dev/lima\\.yaml$/', '/^\\.github/workflows/vm-tools\\.yml$/'],
+      managerFilePatterns: [
+        '/^dev/lima\\.yaml$/',
+        '/^dev/testdata/lima-invalid/[^/]+\\.yaml$/',
+        '/^\\.github/workflows/vm-tools\\.yml$/',
+      ],
       matchStrings: [
         '# renovate: datasource=(?<datasource>github-release-attachments) depName=(?<depName>\\S+) digestVersion=(?<currentValue>\\S+)\\s+\\S+:\\s*"(?<currentDigest>[a-f0-9]{64})"',
       ],
@@ -118,6 +125,7 @@
       customType: 'regex',
       managerFilePatterns: [
         '/^dev/lima\\.yaml$/',
+        '/^dev/testdata/lima-invalid/[^/]+\\.yaml$/',
         '/^\\.github/workflows/[^/]+\\.ya?ml$/',
       ],
       matchStrings: [
