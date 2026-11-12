@@ -35,9 +35,13 @@ Arrows are imports. They point inwards only:
   do no I/O, and a helper that needs I/O needs a lint rule of its own. Lint names each helper an
   adapter may import (`adapters-are-built-in-cmd`), never by prefix, so lint flags any adapter that
   imports a helper it does not name, such as one under a `testdata` or `_` directory, which lint
-  never visits. The same rule is meant to stop any package but the two composition roots from
-  importing an adapter, but depguard does not report its deny entries today (Gaps that remain,
-  below). The adapters that must stay offline (the inventory-file reader, the snapshot reader, the
+  never visits. The same rule stops any package but the two composition roots from importing an
+  adapter: its deny list names each adapter subtree (`report/`, `request/`, `source/`, `target/`)
+  beside `internal/`, because depguard compares an import only with the entry that sorts nearest
+  before it and a broad `internal/adapter/` entry was shadowed by `internal/adapter/internal/`
+  (issue #119). `test/architecture` fails on a list entry that is a strict prefix of another and on
+  a directory under `internal/adapter` the rule does not name; `test/lint` probes the rule with
+  depguard. The adapters that must stay offline (the inventory-file reader, the snapshot reader, the
   embedded-snapshot targets and the reporters) each name what they import in a strict allow list. A reporter writes only to the
   `io.Writer` it is given: it reads no file, no environment and no clock, and makes no network
   call. The live sources share one strict allow list, `cloud-adapters-reach-the-cloud-through-the-sdk`
@@ -281,16 +285,6 @@ hand-written GCP package, add an entry for it, a probe line only it refuses and 
   group scoped to `cmd/shift2eu` would close it; that is follow-up work outside issue #101. The same
   holds for `cmd/shift2eu-server` under `server-composition-root`, which allows `os` and `syscall` too;
   `os/exec` is refused there by the allow list and, for its whole dependency tree, by `test/e2e`.
-- **`adapters-are-built-in-cmd` reports nothing.** depguard (v2.2.1) compares an import only with
-  the one list entry that sorts nearest before it, as a prefix unless the entry ends in `$`. Sorted,
-  the deny list is `internal/adapter/` then `internal/adapter/internal/`, and every real adapter
-  subpackage (`report/`, `request/`, `source/`, `target/`) sorts after `internal/`, so it is compared
-  with `internal/adapter/internal/` alone and nothing fires; with only the `internal/adapter/` entry, a
-  probe that imports `internal/adapter/target/ovhcloud` is reported. No probe in `test/lint` or
-  `test/architecture` covers the rule (lax with `$all`, which `check.RuleDirs` skips). Until the
-  follow-up fixes it, an adapter imported outside `cmd/shift2eu` and `cmd/shift2eu-server` is caught only
-  where a strict rule holds the importer (the offline adapters, `internal/cli`, `internal/httpapi`)
-  and by review (ADR 0019).
 - **Files lint never loads**: a file behind a build tag other than `integration` and `e2e`, a
   `//go:build ignore` helper, and the `testdata`, `_` and `.` directories `./...` skips. `test/lint`
   fails on such a file, and on an imported package in such a directory. A main package there, run

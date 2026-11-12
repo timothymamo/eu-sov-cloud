@@ -206,6 +206,22 @@ fails when it or `.goreleaser.yaml` drops one (ADR 0013). The `before` hook was 
 module version from `GOPROXY`) and the `-mod=readonly` build would then pass against the rewritten
 files; `-diff` fails the release instead and writes nothing.
 
+*Amended (issue #119):* the check reads the strict allow lists only, so the lax rule
+`adapters-are-built-in-cmd` (files `$all`) was held by depguard alone, and depguard reported nothing
+for it: its deny list held `internal/adapter/` and `internal/adapter/internal/`, and since depguard
+v2.2.1 compares an import only with the entry nearest before it, every adapter under `report/`,
+`request/`, `source/` or `target/` was compared with `internal/adapter/internal/` alone. Two checks
+now close that. `TestDepguardEntriesShadowNothing` reads every rule with `check.DepguardRules`, the
+reader of the depguard pin, aliased deny lists included, and fails on any allow or deny entry
+without `$` that is a strict prefix of another entry in the same list, the shape that makes depguard
+ignore the shorter one; a bare `net` or `os` beside `net/http` or `os/exec` is written `net$` or
+`os$` instead, with each subpackage named. `TestAdaptersBuiltInCmdNamesEveryAdapterSubtree` fails on
+a directory under `internal/adapter` that has no deny entry of its own in `adapters-are-built-in-cmd`,
+or a file placed there directly, so a new adapter subtree cannot escape the rule. `test/lint`'s
+`TestAdaptersBuiltInCmdProbe` runs depguard alone, through the forbidigo probe harness, on a probe
+module that imports an adapter from each subtree outside the composition roots, and runs with
+`SHIFT2EU_LINT_PROBES=require` in `make lint` and every lint-target matrix entry.
+
 The checks are ordinary tests, so `make test`, `make check` and CI's `make cover` run them with no
 workflow change.
 

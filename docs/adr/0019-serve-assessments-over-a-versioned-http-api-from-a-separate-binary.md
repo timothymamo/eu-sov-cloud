@@ -360,12 +360,16 @@ repo-relative path, which a reader outside the repository cannot follow.
   `test/apiparity`, or widens `httpapi-imported-only-by-the-server` on purpose. `cmd/shift2eu-server` is
   held by `server-composition-root`, which is pinned too. It constructs adapters, so
   `adapters-are-built-in-cmd` excludes it as it does `cmd/shift2eu`, and the depguard pin holds both
-  exclusions. That rule has a known gap, left for a follow-up of its own: depguard (v2.2.1) compares an
-  import only with the one list entry that sorts nearest before it, as a prefix unless the entry ends
-  in `$`, and the deny entry `internal/adapter/internal/` sorts after `internal/adapter/` and before
-  every real adapter subpackage (`report/`, `request/`, `source/`, `target/`), so an import of an
-  adapter is compared with that entry alone and nothing is reported. No probe in `test/lint` or
-  `test/architecture` covers the rule, which is lax with `$all`, a form `check.RuleDirs` skips.
+  exclusions. The rule first reported nothing: depguard (v2.2.1) compares an import only with the one
+  list entry that sorts nearest before it, as a prefix unless the entry ends in `$`, and the deny entry
+  `internal/adapter/internal/` sorted after `internal/adapter/` and before every real adapter
+  subpackage, so an import of an adapter was compared with that entry alone. Issue #119 replaced
+  `internal/adapter/` with one deny entry per subtree (`report/`, `request/`, `source/`, `target/`)
+  beside `internal/adapter/internal/`. `test/lint` runs depguard on a probe that imports an adapter
+  from each subtree in `internal/httpapi` (`TestAdaptersBuiltInCmdProbe`), and `test/architecture`
+  fails on a deny or allow entry that is a strict prefix of another in the same list
+  (`TestDepguardEntriesShadowNothing`) and on a directory under `internal/adapter` the rule does not
+  name (`TestAdaptersBuiltInCmdNamesEveryAdapterSubtree`).
 - A change to a route, a status code or an error code updates `api/openapi.json` in the same change,
   and a breaking one is a `/v2/` route and an ADR.
 - Operators must put the server behind a proxy for TLS and users; a token alone protects it from direct
