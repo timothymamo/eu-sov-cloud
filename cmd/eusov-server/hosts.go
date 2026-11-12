@@ -26,6 +26,16 @@ func isLoopbackListen(addr string) (bool, error) {
 	return ip != nil && ip.IsLoopback(), nil
 }
 
+// loopbackBound reports whether a listener that --listen named as loopback
+// (named) bound a loopback address: a name such as localhost is resolved by
+// the system, which may map it elsewhere, so the bound address decides (ADR
+// 0019). A listener not named as loopback stays non-loopback.
+func loopbackBound(named bool, bound net.Addr) bool {
+	tcp, ok := bound.(*net.TCPAddr)
+
+	return named && ok && tcp.IP != nil && tcp.IP.IsLoopback()
+}
+
 // errNoLoopbackHosts is returned when the allow-list resolved for a loopback
 // listener is empty: it must never become "any host" (ADR 0019).
 var errNoLoopbackHosts = errors.New("the allowed host list resolved for the loopback listener is empty")

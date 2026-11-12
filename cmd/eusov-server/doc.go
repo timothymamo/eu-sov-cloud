@@ -7,9 +7,9 @@
 // inventory reader, the embedded OVHcloud, Scaleway and UpCloud catalogs and the
 // JSON and Markdown reporters) into internal/httpapi. Around the handler it
 // owns what a running server needs and the handler does not: the flags and the
-// environment, the listener and its loopback rule, the http.Server timeouts,
-// the bearer token, the Host allow-list, the concurrency default, the readiness
-// check, the access log and the graceful shutdown.
+// environment, the listener, its loopback rule and its connection cap, the
+// http.Server timeouts, the bearer token, the Host allow-list, the concurrency
+// default, the readiness check, the access log and the graceful shutdown.
 //
 // Its imports are a strict allow list (depguard rule server-composition-root):
 // the module's own packages and the standard packages it needs, never a cloud

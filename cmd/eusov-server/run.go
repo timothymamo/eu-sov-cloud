@@ -45,8 +45,8 @@ const (
 
 	// maxHeaderBytes caps the request line and the headers; a larger one is
 	// 431. The API reads Host, Authorization, Content-Type, Accept and Origin
-	// only, which need far less.
-	maxHeaderBytes = 64 << 10
+	// only, which need far less (ADR 0019).
+	maxHeaderBytes = 16 << 10
 
 	// shutdownTimeout bounds the graceful shutdown: how long the requests in
 	// flight may take to finish once the context is cancelled, below the 30 s a
@@ -66,6 +66,7 @@ type config struct {
 	listen         string
 	tokenFile      string
 	concurrency    int
+	maxConnections int
 	corsOrigins    stringList
 	allowedHosts   stringList
 	insecureNoAuth bool
@@ -87,7 +88,7 @@ func run(ctx context.Context, args []string, lookupEnv func(string) (string, boo
 		return code
 	}
 
-	handler, ln, err := setUp(cfg, lookupEnv)
+	set, err := setUp(cfg, lookupEnv)
 	if err != nil {
 		printError(stderr, err)
 
@@ -98,8 +99,10 @@ func run(ctx context.Context, args []string, lookupEnv func(string) (string, boo
 		return exitUsage
 	}
 
+	ln := newLimitListener(set.ln, cfg.maxConnections)
+
 	srv := &http.Server{
-		Handler:           accessLog(handler, stderr, time.Now),
+		Handler:           accessLog(set.handler, stderr, time.Now),
 		ReadHeaderTimeout: readHeaderTimeout,
 		ReadTimeout:       readTimeout,
 		WriteTimeout:      writeTimeout,
@@ -108,7 +111,12 @@ func run(ctx context.Context, args []string, lookupEnv func(string) (string, boo
 		ErrorLog:          log.New(stderr, "eusov-server: ", 0),
 	}
 
+	for _, warning := range set.warnings {
+		_, _ = fmt.Fprintf(stderr, "eusov-server: warning: %s\n", warning)
+	}
+
 	_, _ = fmt.Fprintf(stderr, "eusov-server: listening on %s\n", ln.Addr())
+	_, _ = fmt.Fprintf(stderr, "eusov-server: concurrency %d\n", set.concurrency)
 
 	if listening != nil {
 		listening(ln.Addr())
@@ -131,6 +139,8 @@ func parseFlags(args []string, stderr io.Writer) (config, int, bool) {
 		"read the bearer token from the file at `path` (or set "+tokenEnvVar+"; never both)")
 	fs.IntVar(&cfg.concurrency, "concurrency", 0,
 		"serve at most `n` assessments at once; 0 sizes it from the CPUs and GOMEMLIMIT")
+	fs.IntVar(&cfg.maxConnections, "max-connections", defaultMaxConnections,
+		"hold at most `n` connections open; one over the cap is closed at once")
 	fs.Var(&cfg.corsOrigins, "cors-origin", "allow CORS from this `origin` (repeatable); CORS is off without one")
 	fs.Var(&cfg.allowedHosts, "allowed-host", "serve only this `host` in the Host header (repeatable)")
 	fs.BoolVar(&cfg.insecureNoAuth, "insecure-no-auth", false,
@@ -156,6 +166,12 @@ func parseFlags(args []string, stderr io.Writer) (config, int, bool) {
 		return cfg, exitUsage, false
 	}
 
+	if cfg.maxConnections < 1 {
+		printError(stderr, errMaxConnections)
+
+		return cfg, exitUsage, false
+	}
+
 	return cfg, exitOK, true
 }
 
@@ -163,23 +179,32 @@ func parseFlags(args []string, stderr io.Writer) (config, int, bool) {
 // a runtime failure, not a configuration error.
 var errListen = errors.New("listen")
 
+// setup is what setUp builds for run.
+type setup struct {
+	handler     http.Handler
+	ln          net.Listener
+	concurrency int
+	// warnings are the startup warnings, each a line without its prefix.
+	warnings []string
+}
+
 // setUp checks the configuration, opens the listener and builds the handler.
 // Every check that can fail without the listener runs before it is opened, so a
-// refused configuration never opens a port.
-func setUp(cfg config, lookupEnv func(string) (string, bool)) (http.Handler, net.Listener, error) {
-	token, hasToken, err := readToken(lookupEnv, cfg.tokenFile)
+// refused configuration never opens a port; the one that needs it, that a
+// loopback listener bound a loopback address, closes it.
+func setUp(cfg config, lookupEnv func(string) (string, bool)) (setup, error) {
+	tok, err := readToken(lookupEnv, cfg.tokenFile)
 	if err != nil {
-		return nil, nil, err
+		return setup{}, err
 	}
 
 	loopback, err := isLoopbackListen(cfg.listen)
 	if err != nil {
-		return nil, nil, fmt.Errorf("--listen: %w", err)
+		return setup{}, fmt.Errorf("--listen: %w", err)
 	}
 
-	if !loopback && !hasToken && !cfg.insecureNoAuth {
-		return nil, nil, fmt.Errorf("refusing to listen on the non-loopback address %s without a bearer token; "+
-			"set %s or --token-file, or pass --insecure-no-auth", cfg.listen, tokenEnvVar)
+	if err := checkAuth(loopback, tok.set, cfg.insecureNoAuth, cfg.listen); err != nil {
+		return setup{}, err
 	}
 
 	d := deps()
@@ -196,8 +221,8 @@ func setUp(cfg config, lookupEnv func(string) (string, bool)) (http.Handler, net
 		httpapi.WithReadiness(ready.check),
 	}
 
-	if hasToken {
-		opts = append(opts, httpapi.WithBearerToken(token))
+	if tok.set {
+		opts = append(opts, httpapi.WithBearerToken(tok.token))
 	}
 
 	if len(cfg.corsOrigins) > 0 {
@@ -212,17 +237,27 @@ func setUp(cfg config, lookupEnv func(string) (string, bool)) (http.Handler, net
 	// port is opened.
 	handler, err := httpapi.New(d, opts...)
 	if err != nil {
-		return nil, nil, fmt.Errorf("configure the API: %w", err)
+		return setup{}, fmt.Errorf("configure the API: %w", err)
 	}
 
 	ln, err := net.Listen("tcp", cfg.listen)
 	if err != nil {
-		return nil, nil, fmt.Errorf("%w: %w", errListen, err)
+		return setup{}, fmt.Errorf("%w: %w", errListen, err)
+	}
+
+	// The name localhost is trusted only as far as the address it bound: a
+	// resolver that maps it beyond loopback makes the listener non-loopback.
+	loopback = loopbackBound(loopback, ln.Addr())
+
+	if err := checkAuth(loopback, tok.set, cfg.insecureNoAuth, ln.Addr().String()); err != nil {
+		_ = ln.Close()
+
+		return setup{}, err
 	}
 
 	// On loopback without a token, and without an allow-list of the operator's,
 	// the server answers only to its own loopback names (ADR 0019).
-	if loopback && !hasToken && len(cfg.allowedHosts) == 0 {
+	if loopback && !tok.set && len(cfg.allowedHosts) == 0 {
 		hosts, err := loopbackHosts(ln.Addr())
 		if err == nil {
 			handler, err = httpapi.New(d, append(opts, httpapi.WithAllowedHosts(hosts...))...)
@@ -231,11 +266,32 @@ func setUp(cfg config, lookupEnv func(string) (string, bool)) (http.Handler, net
 		if err != nil {
 			_ = ln.Close()
 
-			return nil, nil, fmt.Errorf("configure the API: %w", err)
+			return setup{}, fmt.Errorf("configure the API: %w", err)
 		}
 	}
 
-	return handler, ln, nil
+	var warnings []string
+
+	if tok.warning != "" {
+		warnings = append(warnings, tok.warning)
+	}
+
+	if !loopback && !tok.set {
+		warnings = append(warnings, "serving without authentication on "+ln.Addr().String())
+	}
+
+	return setup{handler: handler, ln: ln, concurrency: concurrency, warnings: warnings}, nil
+}
+
+// checkAuth applies the non-loopback rule: a listener on addr that is not
+// loopback needs a bearer token or --insecure-no-auth.
+func checkAuth(loopback, hasToken, insecureNoAuth bool, addr string) error {
+	if loopback || hasToken || insecureNoAuth {
+		return nil
+	}
+
+	return fmt.Errorf("refusing to listen on the non-loopback address %s without a bearer token; "+
+		"set %s or --token-file, or pass --insecure-no-auth", addr, tokenEnvVar)
 }
 
 // serve serves srv on ln until ctx is cancelled, then shuts it down: it stops

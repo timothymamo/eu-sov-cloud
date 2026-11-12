@@ -32,7 +32,9 @@ func (l *lockedWriter) Write(p []byte) (int, error) {
 // The line holds the method, the path, the status, the duration and the size
 // of the answer's body, and nothing else: never the query string, a header, the
 // body, an inventory value or the report (ADR 0019). The path is quoted, so a
-// path that holds a line feed or a control character cannot forge a line.
+// path that holds a line feed or a control character cannot forge a line, and
+// cut to maxLoggedPathBytes, marked with "...", so a client cannot write an
+// unbounded run of its own choosing into the log.
 func accessLog(next http.Handler, log io.Writer, now func() time.Time) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		start := now()
@@ -45,7 +47,7 @@ func accessLog(next http.Handler, log io.Writer, now func() time.Time) http.Hand
 			}
 
 			_, _ = fmt.Fprintf(log, "eusov-server: access method=%s path=%s status=%d duration=%s size=%d\n",
-				r.Method, strconv.Quote(r.URL.Path), status, now().Sub(start), rec.size)
+				r.Method, loggedPath(r.URL.Path), status, now().Sub(start), rec.size)
 		}()
 
 		next.ServeHTTP(rec, r)
@@ -83,7 +85,21 @@ func (w *statusRecorder) Write(p []byte) (int, error) {
 }
 
 // Unwrap gives http.ResponseController, through which the API sets the body's
-// read deadline, and http.MaxBytesReader the writer of the server.
+// read deadline, the writer of the server.
 func (w *statusRecorder) Unwrap() http.ResponseWriter {
 	return w.ResponseWriter
+}
+
+// maxLoggedPathBytes is the most of a request path the access log quotes.
+const maxLoggedPathBytes = 256
+
+// loggedPath returns path quoted for the access log: whole when it is at most
+// maxLoggedPathBytes long, else its first maxLoggedPathBytes bytes quoted,
+// followed by "..." outside the quotes.
+func loggedPath(path string) string {
+	if len(path) <= maxLoggedPathBytes {
+		return strconv.Quote(path)
+	}
+
+	return strconv.Quote(path[:maxLoggedPathBytes]) + "..."
 }
