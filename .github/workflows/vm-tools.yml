@@ -1,7 +1,13 @@
 name: VM tools
 
-# dev/lima.yaml pins cosign and gh by a SHA-256 per architecture, and provisioning trusts those pins:
-# no trusted cosign or GitHub token exists there yet. This job is what makes a pin authentic. It
+# Two checks of dev/lima.yaml, the template of the agents' VM.
+#
+# validate-template: limactl validate, so a template Lima refuses to create an instance from fails the
+# PR rather than the next `make vm-up` (#120, #122). Only creating an instance runs Lima's checks;
+# restarting an existing VM does not, so nothing else notices.
+#
+# verify-pins: dev/lima.yaml pins cosign and gh by a SHA-256 per architecture, and provisioning trusts
+# those pins: no trusted cosign or GitHub token exists there yet. This job is what makes a pin authentic. It
 # downloads each pinned asset and checks it against its publisher's signature with tools that do not
 # come from the release under test, then checks the pin equals the asset's digest (ADR 0017, "Verifying
 # gh and cosign"). It runs on every pull request, so it can be a required status check without leaving
@@ -26,6 +32,43 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  validate-template:
+    name: Validate the Lima template
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      # The Lima the dev environment documents (docs/dev-environment.md), so CI and developers agree on
+      # what a valid template is. limactl validate needs no VM and no virtualisation.
+      # renovate: datasource=github-releases depName=lima-vm/lima
+      LIMA_VERSION: "v2.3.0"
+      # SHA-256 of lima-<version>-Linux-x86_64.tar.gz, the runner's architecture. Renovate moves the
+      # digestVersion and the digest together with LIMA_VERSION, in one PR.
+      # renovate: datasource=github-release-attachments depName=lima-vm/lima digestVersion=v2.3.0
+      LIMA_SHA256: "cc8ba97f1c801b899f7c9eda9919dfc4ce4fa2c140c53e5add15aa2d0a1936f9"
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install the pinned Lima
+        run: |
+          set -euo pipefail
+          name="lima-${LIMA_VERSION#v}-Linux-x86_64.tar.gz"
+          curl -fsSL --retry 3 -o "${RUNNER_TEMP}/${name}" \
+            "https://github.com/lima-vm/lima/releases/download/${LIMA_VERSION}/${name}"
+          if ! echo "${LIMA_SHA256}  ${RUNNER_TEMP}/${name}" | sha256sum -c --strict -; then
+            echo "::error file=.github/workflows/vm-tools.yml::${name} does not match LIMA_SHA256"
+            exit 1
+          fi
+          # The whole tarball: limactl resolves the template's base (template:_images/...) from the
+          # share/lima next to its bin.
+          mkdir -p "${RUNNER_TEMP}/lima"
+          tar -xzf "${RUNNER_TEMP}/${name}" -C "${RUNNER_TEMP}/lima"
+          echo "${RUNNER_TEMP}/lima/bin" >> "${GITHUB_PATH}"
+      - name: limactl validate dev/lima.yaml
+        run: |
+          limactl --version
+          limactl validate dev/lima.yaml
+
   verify-pins:
     name: Verify the gh and cosign pins
     runs-on: ubuntu-latest
