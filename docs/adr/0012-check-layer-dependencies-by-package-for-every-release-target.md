@@ -66,8 +66,8 @@ release builds, with cgo off and on, and with no build tag, `e2e`, `integration`
 
 Every strict rule in `.golangci.yml` must be a layer of that check or a skip with a written reason
 (`TestEveryStrictRuleIsChecked`): `cli-gets-adapters-from-cmd` allows `$gostd`, which no package list
-can spell out, and `e2e-is-black-box` holds a directory of test files only, which `go list -deps`
-does not list as a layer.
+can spell out, `e2e-is-black-box` holds a directory of test files only, which `go list -deps`
+does not list as a layer, and `composition-root` is held on its own (*Amended (issue #101)*, below).
 
 *Amended (issue #79):* the check first required every allow entry to end in `$` and every rule to
 name `!$test`, so it skipped `cloud-adapters-reach-the-cloud-through-the-sdk`, whose allow list
@@ -93,12 +93,35 @@ the lax deny rules, such as `go-cmp-only-in-tests` and `cloud-sdks-only-in-provi
 held by depguard in `make lint` alone, so a non-test go-cmp import or an SDK import in a new helper
 beside the provider adapters passes this check and fails lint. The layers do not include
 `cmd/eusov`, `internal/cli`'s rule allows `$gostd` and is skipped, and `check.Sources` skips every
-package outside the module, so this check holds no third-party import in either. A third-party import
-in `internal/cli` is refused by depguard alone: its strict rule `cli-gets-adapters-from-cmd` allows
-only `$gostd` and named module packages. One in `cmd/eusov` is refused by no rule but the lax SDK and
-go-cmp denies, so a new third-party dependency of the composition root is held only by review of the
-import and of `go.mod`. This is a known gap: a strict depguard rule for `**/cmd/eusov/**` would close
-it, and is left to a follow-up issue, out of scope for #79.
+package outside the module, so the layer listing holds no third-party import in either. A
+third-party import in `internal/cli` is refused by depguard alone: its strict rule
+`cli-gets-adapters-from-cmd` allows only `$gostd` and named module packages. One in `cmd/eusov` was
+then refused by no rule but the lax SDK and go-cmp denies, a gap left to a follow-up issue and closed
+by the amendment below.
+
+*Amended (issue #101):* the composition root has a strict depguard rule of its own,
+`composition-root`. Its `files:` list is `**/cmd/eusov/**` and `!$test`; its allow list is the module
+path, `github.com/timothymamo/eu-sov-cloud/`, as its one prefix entry, so `cmd/eusov` may import every
+package of the module, and the standard packages it imports today (`context`, `os`, `os/signal`,
+`syscall`), each exact; it denies the four cloud SDK roots as well. Any other import, a logging
+library or an HTTP client, fails `make lint`. The rule is a reasoned skip of the shared layer listing,
+since `go list -deps ./cmd/eusov/...` also lists `internal/cli` and `internal/version`, which no rule
+the check reads holds. Instead `TestCompositionRootIsHeldToItsRuleForEveryReleaseTarget` lists
+`./cmd/eusov/...` on every release target, with cgo off and on and each of the four tag sets the layer
+listing reads (the `cgoModes` and `tagSets` tables both tests share), and passes `check.Packages` the
+rule and the packages under `cmd/eusov` alone. It also fails any package of that listing under the
+module path that does not belong to the main module: the rule's prefix entry would allow a module
+nested under that path (the security audit's LOW-1).
+`TestCompositionRootRuleHoldsItsProbeForEveryReleaseTarget` fails a fixture `cmd/eusov` that imports
+a third-party library, a stand-in SDK and a nested module under the fixture's own module path, which
+the main-module assertion must report. The rule holds
+`cmd/eusov` only: a glob segment matches no `/`, so a sibling such as `cmd/eusov-server` (PRD #103) is
+not covered and gets a sibling rule written the same way, with its own `files:` entry.
+`TestOnlyNamedRulesHoldPrefixEntries` allows prefix entries in this rule and the SDK-only rule alone.
+One gap remains, follow-up work outside issue #101 (the security audit's LOW-2): the rule allows `os`
+and `syscall`, so `cmd/eusov` could still call `os.StartProcess`, `syscall.Exec` or
+`syscall.ForkExec`, shelling out to a cloud CLI, or `os.Environ` and `os.Getenv`, dumping the
+environment, and only review catches it. A forbidigo group scoped to `cmd/eusov` would close it.
 The check anchors a rule's `**/<dir>/**` and `!**/<dir>/**` at the module root, while depguard
 matches them at any depth of the file path, so a nested path such as
 `internal/adapter/target/x/internal/adapter/source/y` is read differently; an exclusion must lie
@@ -206,13 +229,20 @@ workflow change.
     organisation variable reaches a step only through an expression in the workflow file, which the
     schema refuses everywhere but the values it pins. Review of the action updates holds the rest.
   - **Third-party modules.** Their own sources are not checked; only the imports of the module's
-    packages that import them, where a strict rule exists. The release binary has none today.
+    packages that import them, where a strict rule exists. The release binary has none today, and
+    `composition-root` (issue #101) refuses one in `cmd/eusov`.
   - **I/O through functions of allowed packages** (`fmt.Print*`, `time.Now`, ...), which no import
     rule sees. Review holds that line, as the comment on `domain-is-pure` says.
-  - **The imports of layers without a strict rule** (the CLI, the target and report adapters,
-    `cmd/eusov`): the release-binary pass checks their sources and directories, not their imports.
-- `make test` runs `go list` 96 times (6 platforms, cgo off and on, 4 tag sets, layers and binary).
-  They run in parallel and take a few seconds.
+  - **The imports of layers without a checked strict rule** (the CLI, whose rule allows `$gostd`,
+    and the target and report adapters): the release-binary pass checks their sources and
+    directories, not their imports. `cmd/eusov` is no longer among them: its `composition-root` rule
+    is checked on its own (issue #101).
+- The repository tests in `test/architecture` run `go list` 162 times: 96 for the layers and the
+  binary (6 platforms, cgo off and on, 4 tag sets, one listing each), 48 for the composition root
+  (the same 6 platforms, cgo modes and tag sets, issue #101), and 18 for the three probes (the
+  SDK-only rule's two and the composition root's, once per platform, cgo off, no tags).
+  `internal/check`'s own tests list a few fixture modules on top. They run in parallel and take a
+  few seconds.
 - The rules themselves are pinned too (issue #80): `TestDepguardRulesArePinned` reads every depguard
   rule of `.golangci.yml` whole (list-mode, files, allow, the `pkg` of each deny entry, a shared deny
   list read through its YAML anchor) and compares it with `pinnedDepguardRules`. A rule dropped or

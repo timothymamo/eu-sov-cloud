@@ -41,7 +41,7 @@ Hexagonal (ports and adapters). Dependencies point inwards only. See `docs/archi
 | Application | `internal/app/analysis` | Domain. Declares the ports (interfaces) it consumes |
 | Adapters | `internal/adapter/source/{inventoryfile,aws,azure,gcp}`, `internal/adapter/target/{ovhcloud,scaleway,upcloud}`, `internal/adapter/report/{markdown,jsonreport}`, `internal/adapter/request/assessmentrequest` (the HTTP API's request decoder), and `internal/adapter/internal/jsondoc`, the JSON decoder they share | Domain, the ports they implement, SDKs. Never `internal/cli`, `internal/httpapi` or `cmd/` |
 | Driving adapters | `internal/cli` (the CLI) and `internal/httpapi` (the HTTP API, ADR 0019) | Application, domain, `internal/version`; never each other, an adapter or `cmd/` |
-| Composition roots | `cmd/eusov` (the CLI, offline: never imports `internal/httpapi`) and `cmd/eusov-server` (the HTTP API, PRD #103 milestone 3) | Everything but a cloud SDK; the only places adapters are constructed |
+| Composition roots | `cmd/eusov` (the CLI, offline: never imports `internal/httpapi`) and `cmd/eusov-server` (the HTTP API, PRD #103 milestone 3) | Everything but a cloud SDK; the only places adapters are constructed. `cmd/eusov`'s imports are a strict allow list (`composition-root`): the module's own packages and the standard packages it needs, no third-party package |
 
 - The dependency rule is **enforced by `golangci-lint` (depguard)** and, package by package for every
   release target, by `test/architecture` (ADR 0012). Do not add `//nolint:depguard`; fix the design.
