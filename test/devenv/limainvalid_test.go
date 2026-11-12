@@ -3,6 +3,7 @@ package devenv_test
 import (
 	"flag"
 	"os"
+	"regexp"
 	"slices"
 	"strings"
 	"testing"
@@ -11,6 +12,11 @@ import (
 )
 
 var update = flag.Bool("update", false, "write dev/testdata/lima-invalid from dev/lima.yaml and the cases instead of comparing")
+
+// limaCaseName is the file name a case may have in dev/testdata/lima-invalid, without .yaml: the
+// validate-template job refuses any other name before it validates the template, so a colon, a space or
+// an upper-case letter is a case that passes here and fails in CI.
+var limaCaseName = regexp.MustCompile(`^[a-z0-9-]+$`)
 
 const (
 	limaTemplate   = "../../dev/lima.yaml"
@@ -75,8 +81,12 @@ func TestInvalidLimaTemplatesDifferOnlyByTheirBreakage(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 
-			if strings.Contains(tc.refusal, "\n") || tc.refusal == "" {
-				t.Fatalf("case %s must name one line of Lima's refusal, not %q", tc.name, tc.refusal)
+			if !limaCaseName.MatchString(tc.name) {
+				t.Fatalf("case name %q must match %s: vm-tools.yml's validate-template job refuses a template not named [a-z0-9-]+.yaml, so this case would pass here and fail in CI", tc.name, limaCaseName)
+			}
+
+			if tc.refusal == "" || strings.ContainsAny(tc.refusal, "\r\n") {
+				t.Fatalf("case %s must name one line of Lima's refusal, not %q: vm-tools.yml's validate-template job refuses a .expect that is empty or holds a \\r or a \\n", tc.name, tc.refusal)
 			}
 
 			if strings.Contains(tc.old, "\n") || strings.Contains(tc.new, "\n") || tc.old == tc.new {
