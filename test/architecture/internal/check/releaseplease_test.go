@@ -65,19 +65,24 @@ jobs:
 `
 
 // releasePleaseGuardStep refuses to create the tag while release.yml has a run
-// queued or in progress. With a group of its own this workflow is never
-// cancelled by a release, so it waits instead of losing one: a tag pushed at a
-// release.yml that GitHub then cancels publishes nothing. It reads the runs
-// with GITHUB_TOKEN, whose actions: read the job grants.
+// in any status GitHub may hold one in: requested, waiting, pending, queued or
+// in_progress. With a group of its own this workflow is never cancelled by a
+// release, so it waits instead of losing one: a tag pushed at a release.yml
+// that GitHub then cancels publishes nothing, and a run that is only requested
+// or waiting may still publish. It reads the runs with github.token, the
+// automatic token of the job's actions: read, never the App's token: the App's
+// token is for release-please and the tag alone.
 const releasePleaseGuardStep = `      - name: Wait for no release to be queued or in progress
         id: guard
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
         run: |
-          for status in queued in_progress; do
-            runs=$(gh api "repos/${{ github.repository }}/actions/workflows/release.yml/runs?status=${status}" --jq .total_count)
+          set -euo pipefail
+          for status in requested waiting pending queued in_progress; do
+            runs="$(gh api "repos/${GH_REPO}/actions/workflows/release.yml/runs?status=${status}&per_page=1" --jq '.total_count')"
             if [ "${runs}" != "0" ]; then
-              echo "a release run is ${status}: nothing is tagged" >&2
+              echo "::error::release.yml has ${runs} run(s) ${status}: nothing is tagged" >&2
               exit 1
             fi
           done
@@ -91,10 +96,20 @@ const releasePleaseGuardStep = `      - name: Wait for no release to be queued o
 // never tagged twice. A tag created with GITHUB_TOKEN starts no workflow, and
 // the Release tags ruleset refuses it; a tag created with git push is not the
 // App's either (ADR 0015).
+//
+// Its env: holds exactly the App's token, the repository, and the App's slug:
+// the step tags only a PR whose author is the App itself, ${APP_SLUG}[bot], so a
+// hand-written PR labelled autorelease: pending is never tagged. Its gh api
+// endpoints are the release PR's own (issues, pulls, issues/<n>/labels), the
+// merge commit's ancestry (compare), the manifest at that commit (contents) and
+// the tag (git/refs, git/ref, git/matching-refs, git/tags): nothing creates or
+// edits a Release, and no script calls a host of its own.
 const releasePleaseTagStep = `      - name: Tag the merged release PR
         id: tag
         env:
           GH_TOKEN: ${{ steps.app.outputs.token }}
+          GH_REPO: ${{ github.repository }}
+          APP_SLUG: ${{ steps.app.outputs.app-slug }}
         run: |
           label="autorelease: pending"
           pr=$(gh api "repos/${{ github.repository }}/pulls?state=closed&per_page=20" --jq ".[] | select(.merged_at != null and any(.labels[]; .name == \"${label}\")) | .number")
@@ -145,6 +160,20 @@ func TestReleasePleaseWorkflow(t *testing.T) {
 			// this check refuses.
 			name:     "no job-level permissions",
 			workflow: mutate(t, releasePleaseWorkflow, "    permissions:\n      contents: read\n      actions: read\n", ""),
+		},
+
+		// The job runs on the runner GitHub provides, never on a host this
+		// repository does not control: the step that tags holds the release
+		// App's token.
+		{
+			name:     "a self-hosted runner",
+			workflow: mutate(t, releasePleaseWorkflow, "runs-on: ubuntu-latest", "runs-on: self-hosted"),
+			wantIn:   "runs-on",
+		},
+		{
+			name:     "a self-hosted runner in a list",
+			workflow: mutate(t, releasePleaseWorkflow, "runs-on: ubuntu-latest", "runs-on: [self-hosted, linux]"),
+			wantIn:   "runs-on",
 		},
 
 		// The trigger: a push to main alone. Any other trigger, any other
@@ -308,8 +337,49 @@ func TestReleasePleaseWorkflow(t *testing.T) {
 		},
 		{
 			name:     "no GH_TOKEN on the tagging step",
-			workflow: mutate(t, releasePleaseWorkflow, "        env:\n          GH_TOKEN: ${{ steps.app.outputs.token }}\n", ""),
+			workflow: mutate(t, releasePleaseWorkflow, "          GH_TOKEN: ${{ steps.app.outputs.token }}\n", ""),
 			wantIn:   "GH_TOKEN",
+		},
+
+		// The App's slug is the author the tag step checks the merged release
+		// PR against: only a PR the App opened may be tagged, so a PR a person
+		// labelled autorelease: pending is never tagged by this workflow. The
+		// slug is the App's own output, not a variable or a secret of the
+		// repository, and the tagging step's env: holds nothing else.
+		{
+			name:     "no APP_SLUG on the tagging step",
+			workflow: mutate(t, releasePleaseWorkflow, "          APP_SLUG: ${{ steps.app.outputs.app-slug }}\n", ""),
+			wantIn:   "APP_SLUG",
+		},
+		{
+			name:     "an APP_SLUG from a variable",
+			workflow: mutate(t, releasePleaseWorkflow, "APP_SLUG: ${{ steps.app.outputs.app-slug }}", "APP_SLUG: ${{ vars.RELEASE_APP_SLUG }}"),
+			wantIn:   "APP_SLUG",
+		},
+		{
+			name:     "another env key on the tagging step",
+			workflow: mutate(t, releasePleaseWorkflow, "          APP_SLUG: ${{ steps.app.outputs.app-slug }}\n", "          APP_SLUG: ${{ steps.app.outputs.app-slug }}\n          GH_DEBUG: \"1\"\n"),
+			wantIn:   "GH_DEBUG",
+		},
+
+		// The tagging step creates a tag and nothing else: a GitHub Release is
+		// GoReleaser's, from release.yml, and no script of this workflow calls a
+		// host of its own. Its gh api endpoints are the release PR's own, the
+		// merge commit's ancestry, the manifest at that commit and the tag.
+		{
+			name:     "a tagging step creating a GitHub Release",
+			workflow: mutate(t, releasePleaseWorkflow, "          label=\"autorelease: pending\"\n", "          gh release create v1.2.3 --generate-notes\n          label=\"autorelease: pending\"\n"),
+			wantIn:   "gh release",
+		},
+		{
+			name:     "a tagging step calling the releases endpoint",
+			workflow: mutate(t, releasePleaseWorkflow, "          label=\"autorelease: pending\"\n", "          gh api \"repos/${{ github.repository }}/releases\" --jq '.[].id'\n          label=\"autorelease: pending\"\n"),
+			wantIn:   "releases",
+		},
+		{
+			name:     "a tagging step calling a host of its own with curl",
+			workflow: mutate(t, releasePleaseWorkflow, "          label=\"autorelease: pending\"\n", "          curl -fsS https://example.com/release > /dev/null\n          label=\"autorelease: pending\"\n"),
+			wantIn:   "curl",
 		},
 		{
 			name:     "a step pushing a tag with git push",
@@ -329,6 +399,64 @@ func TestReleasePleaseWorkflow(t *testing.T) {
 			name:     "a wait that reads another workflow's runs",
 			workflow: mutate(t, releasePleaseWorkflow, "actions/workflows/release.yml/runs", "actions/workflows/ci.yml/runs"),
 			wantIn:   "release.yml",
+		},
+
+		// Every status GitHub may hold a run of release.yml in is waited for:
+		// a run that is requested, waiting or pending may still start and
+		// publish, so a tag created while one exists can be cancelled by it and
+		// publish nothing. Each case leaves one status out of the guard's loop.
+		{
+			name:     "a wait that leaves out requested runs",
+			workflow: mutate(t, releasePleaseWorkflow, "for status in requested waiting pending queued in_progress; do", "for status in waiting pending queued in_progress; do"),
+			wantIn:   "requested",
+		},
+		{
+			name:     "a wait that leaves out waiting runs",
+			workflow: mutate(t, releasePleaseWorkflow, "for status in requested waiting pending queued in_progress; do", "for status in requested pending queued in_progress; do"),
+			wantIn:   "waiting",
+		},
+		{
+			name:     "a wait that leaves out pending runs",
+			workflow: mutate(t, releasePleaseWorkflow, "for status in requested waiting pending queued in_progress; do", "for status in requested waiting queued in_progress; do"),
+			wantIn:   "pending",
+		},
+		{
+			name:     "a wait that leaves out queued runs",
+			workflow: mutate(t, releasePleaseWorkflow, "for status in requested waiting pending queued in_progress; do", "for status in requested waiting pending in_progress; do"),
+			wantIn:   "queued",
+		},
+		{
+			name:     "a wait that leaves out in_progress runs",
+			workflow: mutate(t, releasePleaseWorkflow, "for status in requested waiting pending queued in_progress; do", "for status in requested waiting pending queued; do"),
+			wantIn:   "in_progress",
+		},
+
+		// The wait reads release.yml's runs with GITHUB_TOKEN alone: the App's
+		// token is for release-please and the tag, and handing it to a third
+		// step widens its reach. Either automatic token is accepted.
+		{
+			name:     "a wait reading the App's token",
+			workflow: mutate(t, releasePleaseWorkflow, "          GH_TOKEN: ${{ github.token }}\n", "          GH_TOKEN: ${{ steps.app.outputs.token }}\n"),
+			wantIn:   "guard",
+		},
+		{
+			name:     "a wait reading secrets.GITHUB_TOKEN",
+			workflow: mutate(t, releasePleaseWorkflow, "          GH_TOKEN: ${{ github.token }}\n", "          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}\n"),
+		},
+		{
+			name:     "no GH_TOKEN on the wait",
+			workflow: mutate(t, releasePleaseWorkflow, "          GH_TOKEN: ${{ github.token }}\n", ""),
+			wantIn:   "GH_TOKEN",
+		},
+
+		// The App's token reaches two steps and no more: release-please's token,
+		// which opens the release PR, and the tagging step's GH_TOKEN, which
+		// creates the tag. Anywhere else it is a wider reach than the workflow
+		// needs.
+		{
+			name:     "the App token on a step of its own",
+			workflow: beforeReleasePlease("name: Read the App token\n        env:\n          GH_TOKEN: ${{ steps.app.outputs.token }}\n        run: gh api \"repos/${{ github.repository }}/pulls\" --jq '.[].number'"),
+			wantIn:   "outputs.token",
 		},
 
 		// Every action is pinned by a 40-hex commit digest, which a Renovate

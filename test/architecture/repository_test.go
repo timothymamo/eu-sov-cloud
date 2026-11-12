@@ -1183,7 +1183,10 @@ func TestRCTagsArePreReleases(t *testing.T) {
 // as it runs today. The workflow is held to check.ReleasePleaseWorkflow and the
 // document it reads to check.ReleasePleaseConfig, so the version rules, the tag
 // form, the App's permissions and the one-release-at-a-time group stay read
-// from the files the workflow reads.
+// from the files the workflow reads. ci.yml is held to
+// check.ReleasePleaseDryRun, so the dry run of the workflow's guard and tag
+// steps runs on every pull request and every push to main, with no write and no
+// secret.
 func TestReleasePleaseProposesTheNextVersion(t *testing.T) {
 	t.Parallel()
 
@@ -1192,6 +1195,10 @@ func TestReleasePleaseProposesTheNextVersion(t *testing.T) {
 	}
 
 	for _, message := range check.ReleasePleaseConfig(readRepositoryFile(t, "release-please-config.json")) {
+		t.Error(message)
+	}
+
+	for _, message := range check.ReleasePleaseDryRun(readRepositoryFile(t, ".github/workflows/ci.yml")) {
 		t.Error(message)
 	}
 }
