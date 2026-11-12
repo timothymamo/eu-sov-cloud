@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/timothymamo/eu-sov-cloud/internal/testutil"
+	"github.com/timothymamo/shift2eu/internal/testutil"
 )
 
 // validatorSchema uses every keyword the validator implements.

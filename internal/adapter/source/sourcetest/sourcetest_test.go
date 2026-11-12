@@ -7,10 +7,10 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/timothymamo/eu-sov-cloud/internal/adapter/source/sourcetest"
-	"github.com/timothymamo/eu-sov-cloud/internal/domain/inventory"
-	"github.com/timothymamo/eu-sov-cloud/internal/domain/taxonomy"
-	"github.com/timothymamo/eu-sov-cloud/internal/domain/text"
+	"github.com/timothymamo/shift2eu/internal/adapter/source/sourcetest"
+	"github.com/timothymamo/shift2eu/internal/domain/inventory"
+	"github.com/timothymamo/shift2eu/internal/domain/taxonomy"
+	"github.com/timothymamo/shift2eu/internal/domain/text"
 )
 
 // newInventory builds the only kind of inventory a source adapter can return:

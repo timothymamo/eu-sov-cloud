@@ -15,11 +15,11 @@ import (
 	"sync"
 	"time"
 
-	"github.com/timothymamo/eu-sov-cloud/internal/app/analysis"
+	"github.com/timothymamo/shift2eu/internal/app/analysis"
 )
 
 // Deps are the adapters the API runs with. The composition root
-// (cmd/eusov-server) builds them; the API never constructs an adapter itself.
+// (cmd/shift2eu-server) builds them; the API never constructs an adapter itself.
 // New refuses a Deps that lacks any of them.
 type Deps struct {
 	// DecodeRequest strictly decodes the body of POST /v1/assessments into the

@@ -5,7 +5,7 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/timothymamo/eu-sov-cloud/test/internal/yamlread"
+	"github.com/timothymamo/shift2eu/test/internal/yamlread"
 )
 
 // DepguardRule is one depguard rule of a .golangci.yml document, read whole:

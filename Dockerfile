@@ -1,4 +1,4 @@
-# eusov as a minimal container image (docs/adr/0013-ship-eusov-as-a-distroless-container-image.md).
+# shift2eu as a minimal container image (docs/adr/0013-ship-shift2eu-as-a-distroless-container-image.md).
 #
 #   make image                                   # version, commit and date from git
 #   docker buildx build --platform linux/amd64,linux/arm64 .
@@ -35,8 +35,8 @@ RUN --mount=type=cache,target=/go/pkg/mod \
     --mount=type=cache,target=/root/.cache/go-build \
     CGO_ENABLED=0 GOWORK=off GOFLAGS=-mod=readonly GOOS=${TARGETOS} GOARCH=${TARGETARCH} \
     go build -trimpath \
-    -ldflags "-s -w -X github.com/timothymamo/eu-sov-cloud/internal/version.version=${VERSION} -X github.com/timothymamo/eu-sov-cloud/internal/version.commit=${COMMIT} -X github.com/timothymamo/eu-sov-cloud/internal/version.date=${DATE}" \
-    -o /out/eusov ./cmd/eusov
+    -ldflags "-s -w -X github.com/timothymamo/shift2eu/internal/version.version=${VERSION} -X github.com/timothymamo/shift2eu/internal/version.commit=${COMMIT} -X github.com/timothymamo/shift2eu/internal/version.date=${DATE}" \
+    -o /out/shift2eu ./cmd/shift2eu
 
 # distroless static: CA certificates (for the live sources' TLS calls), tzdata, /etc/passwd with the
 # nonroot user (65532), and no shell, package manager or Go toolchain.
@@ -45,17 +45,17 @@ FROM gcr.io/distroless/static-debian13:nonroot@sha256:25ac8f0c3b2334a9eb05452266
 ARG VERSION=dev
 ARG COMMIT=none
 
-LABEL org.opencontainers.image.title="eusov" \
+LABEL org.opencontainers.image.title="shift2eu" \
       org.opencontainers.image.description="Assess what of a hyperscaler's infrastructure can move to an EU cloud provider" \
-      org.opencontainers.image.source="https://github.com/timothymamo/eu-sov-cloud" \
+      org.opencontainers.image.source="https://github.com/timothymamo/shift2eu" \
       org.opencontainers.image.version="${VERSION}" \
       org.opencontainers.image.revision="${COMMIT}" \
       org.opencontainers.image.licenses="MIT"
 
-COPY --from=build /out/eusov /eusov
+COPY --from=build /out/shift2eu /shift2eu
 
 # Mount the inventory here, as the README's "Run with Docker" section does (one command):
-#   docker run --rm --read-only --network none --user "$(id -u):$(id -g)" --mount type=bind,src="$PWD/inventory.json",dst=/work/inventory.json,readonly eusov assess --inventory inventory.json --target scaleway
+#   docker run --rm --read-only --network none --user "$(id -u):$(id -g)" --mount type=bind,src="$PWD/inventory.json",dst=/work/inventory.json,readonly shift2eu assess --inventory inventory.json --target scaleway
 WORKDIR /work
 USER nonroot:nonroot
-ENTRYPOINT ["/eusov"]
+ENTRYPOINT ["/shift2eu"]

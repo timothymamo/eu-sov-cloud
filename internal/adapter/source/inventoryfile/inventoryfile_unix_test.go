@@ -11,8 +11,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/timothymamo/eu-sov-cloud/internal/adapter/source/inventoryfile"
-	"github.com/timothymamo/eu-sov-cloud/internal/domain/text"
+	"github.com/timothymamo/shift2eu/internal/adapter/source/inventoryfile"
+	"github.com/timothymamo/shift2eu/internal/domain/text"
 )
 
 // newFIFO creates a FIFO in a fresh directory and returns its path.

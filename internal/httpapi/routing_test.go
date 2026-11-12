@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/timothymamo/eu-sov-cloud/internal/httpapi"
+	"github.com/timothymamo/shift2eu/internal/httpapi"
 )
 
 // TestUnknownPath pins that a path the API does not serve is 404 not_found, and

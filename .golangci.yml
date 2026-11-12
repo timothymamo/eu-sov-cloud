@@ -96,12 +96,12 @@ linters:
             - time$
             - unicode$
             - unicode/utf8$
-            - github.com/timothymamo/eu-sov-cloud/internal/domain/assessment$
-            - github.com/timothymamo/eu-sov-cloud/internal/domain/catalog$
-            - github.com/timothymamo/eu-sov-cloud/internal/domain/inventory$
-            - github.com/timothymamo/eu-sov-cloud/internal/domain/mapping$
-            - github.com/timothymamo/eu-sov-cloud/internal/domain/taxonomy$
-            - github.com/timothymamo/eu-sov-cloud/internal/domain/text$
+            - github.com/timothymamo/shift2eu/internal/domain/assessment$
+            - github.com/timothymamo/shift2eu/internal/domain/catalog$
+            - github.com/timothymamo/shift2eu/internal/domain/inventory$
+            - github.com/timothymamo/shift2eu/internal/domain/mapping$
+            - github.com/timothymamo/shift2eu/internal/domain/taxonomy$
+            - github.com/timothymamo/shift2eu/internal/domain/text$
           # The allow list already refuses every package below; these entries
           # only say why. They have no $, so each also covers its subpackages:
           # os covers os/exec, os/signal and os/user, and net covers net/http.
@@ -136,16 +136,16 @@ linters:
             - fmt$
             - io$
             - strings$
-            - github.com/timothymamo/eu-sov-cloud/internal/domain/assessment$
-            - github.com/timothymamo/eu-sov-cloud/internal/domain/catalog$
-            - github.com/timothymamo/eu-sov-cloud/internal/domain/inventory$
-            - github.com/timothymamo/eu-sov-cloud/internal/domain/mapping$
-            - github.com/timothymamo/eu-sov-cloud/internal/domain/taxonomy$
-            - github.com/timothymamo/eu-sov-cloud/internal/domain/text$
+            - github.com/timothymamo/shift2eu/internal/domain/assessment$
+            - github.com/timothymamo/shift2eu/internal/domain/catalog$
+            - github.com/timothymamo/shift2eu/internal/domain/inventory$
+            - github.com/timothymamo/shift2eu/internal/domain/mapping$
+            - github.com/timothymamo/shift2eu/internal/domain/taxonomy$
+            - github.com/timothymamo/shift2eu/internal/domain/text$
           deny: &app-deny
-            - pkg: github.com/timothymamo/eu-sov-cloud/internal/adapter
-              desc: the application layer depends on ports it declares; wire adapters in cmd/eusov
-            - pkg: github.com/timothymamo/eu-sov-cloud/internal/cli
+            - pkg: github.com/timothymamo/shift2eu/internal/adapter
+              desc: the application layer depends on ports it declares; wire adapters in cmd/shift2eu
+            - pkg: github.com/timothymamo/shift2eu/internal/cli
               desc: the application layer must not know about its driving adapter
             - pkg: github.com/aws/aws-sdk-go-v2
               desc: cloud SDKs belong in internal/adapter/source/aws
@@ -204,17 +204,17 @@ linters:
             - "!$test"
           allow:
             - $gostd
-            - github.com/timothymamo/eu-sov-cloud/internal/app/analysis$
-            - github.com/timothymamo/eu-sov-cloud/internal/domain/assessment$
-            - github.com/timothymamo/eu-sov-cloud/internal/domain/catalog$
-            - github.com/timothymamo/eu-sov-cloud/internal/domain/inventory$
-            - github.com/timothymamo/eu-sov-cloud/internal/domain/mapping$
-            - github.com/timothymamo/eu-sov-cloud/internal/domain/taxonomy$
-            - github.com/timothymamo/eu-sov-cloud/internal/domain/text$
-            - github.com/timothymamo/eu-sov-cloud/internal/version$
+            - github.com/timothymamo/shift2eu/internal/app/analysis$
+            - github.com/timothymamo/shift2eu/internal/domain/assessment$
+            - github.com/timothymamo/shift2eu/internal/domain/catalog$
+            - github.com/timothymamo/shift2eu/internal/domain/inventory$
+            - github.com/timothymamo/shift2eu/internal/domain/mapping$
+            - github.com/timothymamo/shift2eu/internal/domain/taxonomy$
+            - github.com/timothymamo/shift2eu/internal/domain/text$
+            - github.com/timothymamo/shift2eu/internal/version$
           deny:
-            - pkg: github.com/timothymamo/eu-sov-cloud/internal/adapter
-              desc: the CLI gets its adapters through cli.Deps; construct them in cmd/eusov
+            - pkg: github.com/timothymamo/shift2eu/internal/adapter
+              desc: the CLI gets its adapters through cli.Deps; construct them in cmd/shift2eu
             # The CLI reads one file and writes one report: it resolves no
             # name, opens no connection and starts no process. depguard
             # expands $gostd to one prefix entry per top-level directory of
@@ -263,38 +263,38 @@ linters:
             - pkg: syscall$
               desc: the CLI makes no raw system calls; os, io/fs and os/signal cover what it needs
             - pkg: plugin$
-              desc: the CLI loads no code at run time; adapters are wired in cmd/eusov
+              desc: the CLI loads no code at run time; adapters are wired in cmd/shift2eu
         # The composition root constructs the adapters, hands them to the CLI
         # and does nothing else (issue #101). So its imports are a strict
         # allow list: the module's own packages and the standard packages it
         # needs today, each ending in $ so it covers that package only. Any
         # other import, a logging library or an HTTP client included, fails
-        # lint; add a standard package only when cmd/eusov needs it, and a
+        # lint; add a standard package only when cmd/shift2eu needs it, and a
         # third-party one never: it belongs in an adapter behind a port.
         #
-        # The module path is the one prefix entry, so cmd/eusov may import
+        # The module path is the one prefix entry, so cmd/shift2eu may import
         # every package of the module, a new adapter included, without an
         # entry here; what each of those may import is held by its own rule.
         # A module package under testdata or a _ directory is never linted,
-        # but cmd/eusov constructing one would show in review. The cloud SDKs
+        # but cmd/shift2eu constructing one would show in review. The cloud SDKs
         # are denied as well, though the allow list already refuses them:
-        # a cloud SDK lives only in its provider's adapter, which cmd/eusov
+        # a cloud SDK lives only in its provider's adapter, which cmd/shift2eu
         # constructs without importing the SDK itself.
         #
-        # The rule holds cmd/eusov only. A glob segment matches no "/", so
-        # **/cmd/eusov/** does not match a sibling such as cmd/eusov-server,
+        # The rule holds cmd/shift2eu only. A glob segment matches no "/", so
+        # **/cmd/shift2eu/** does not match a sibling such as cmd/shift2eu-server,
         # which has a sibling rule of its own, server-composition-root.
         composition-root:
           list-mode: strict
           files:
-            - "**/cmd/eusov/**"
+            - "**/cmd/shift2eu/**"
             - "!$test"
           allow:
             - context$
             - os$
             - os/signal$
             - syscall$
-            - github.com/timothymamo/eu-sov-cloud/
+            - github.com/timothymamo/shift2eu/
           deny:
             - pkg: github.com/aws/aws-sdk-go-v2
               desc: a cloud SDK lives only in its provider's adapter
@@ -313,11 +313,11 @@ linters:
         # third-party package, no cloud SDK and no os/exec, which
         # TestServerPathHasNoCloudSDKOrProcess (test/e2e) also pins for the
         # whole dependency tree. Add a standard package only when
-        # cmd/eusov-server needs it, beside the pin in test/architecture.
+        # cmd/shift2eu-server needs it, beside the pin in test/architecture.
         server-composition-root:
           list-mode: strict
           files:
-            - "**/cmd/eusov-server/**"
+            - "**/cmd/shift2eu-server/**"
             - "!$test"
           allow:
             - context$
@@ -339,7 +339,7 @@ linters:
             - sync$
             - syscall$
             - time$
-            - github.com/timothymamo/eu-sov-cloud/
+            - github.com/timothymamo/shift2eu/
           deny:
             - pkg: github.com/aws/aws-sdk-go-v2
               desc: a cloud SDK lives only in its provider's adapter; the server takes inventory documents, never credentials (ADR 0019)
@@ -349,8 +349,8 @@ linters:
               desc: a cloud SDK lives only in its provider's adapter; the server takes inventory documents, never credentials (ADR 0019)
             - pkg: google.golang.org/api
               desc: a cloud SDK lives only in its provider's adapter; the server takes inventory documents, never credentials (ADR 0019)
-        # Adapters are constructed only in the composition roots, cmd/eusov
-        # and cmd/eusov-server (ADR 0019), which the rule excludes. No other
+        # Adapters are constructed only in the composition roots, cmd/shift2eu
+        # and cmd/shift2eu-server (ADR 0019), which the rule excludes. No other
         # production package, adapters included, imports an adapter: one
         # adapter never builds or calls another, and internal/config, the CLI
         # or the HTTP API get adapters only through what their composition
@@ -403,19 +403,19 @@ linters:
           files:
             - "$all"
             - "!$test"
-            - "!**/cmd/eusov/**"
-            - "!**/cmd/eusov-server/**"
+            - "!**/cmd/shift2eu/**"
+            - "!**/cmd/shift2eu-server/**"
           allow:
-            - github.com/timothymamo/eu-sov-cloud/internal/adapter/internal/jsondoc$
-            - github.com/timothymamo/eu-sov-cloud/internal/adapter/target/snapshot$
+            - github.com/timothymamo/shift2eu/internal/adapter/internal/jsondoc$
+            - github.com/timothymamo/shift2eu/internal/adapter/target/snapshot$
           deny:
-            - pkg: github.com/timothymamo/eu-sov-cloud/internal/adapter/internal/
+            - pkg: github.com/timothymamo/shift2eu/internal/adapter/internal/
               desc: an adapter imports only the shared helpers named in adapters-are-built-in-cmd; name a new helper there first (a helper under a testdata or _ directory is never linted) (ADR 0009)
-            - pkg: github.com/timothymamo/eu-sov-cloud/internal/adapter/
-              desc: adapters are constructed only in cmd/eusov and cmd/eusov-server
+            - pkg: github.com/timothymamo/shift2eu/internal/adapter/
+              desc: adapters are constructed only in cmd/shift2eu and cmd/shift2eu-server
         # Dependencies point inwards only: the composition root imports the
         # driving adapter, and nothing imports the composition root. So no
-        # production package other than cmd/eusov and the CLI's own packages
+        # production package other than cmd/shift2eu and the CLI's own packages
         # imports internal/cli or cmd. The rule covers every such package,
         # not only the adapters: an import rule sees direct imports only, so
         # a rule on the adapters alone would let an adapter reach the CLI
@@ -425,25 +425,25 @@ linters:
         # as internal/client, is not covered. cmd$ is a library package
         # placed directly in cmd, and cmd/ every package under cmd, a library
         # package added there later included; Go already refuses an import of
-        # a main package such as cmd/eusov.
+        # a main package such as cmd/shift2eu.
         cli-and-cmd-imported-only-by-cmd:
           list-mode: lax
           files:
             - "$all"
             - "!$test"
-            - "!**/cmd/eusov/**"
+            - "!**/cmd/shift2eu/**"
             - "!**/internal/cli/**"
           deny:
-            - pkg: github.com/timothymamo/eu-sov-cloud/internal/cli$
-              desc: only cmd/eusov imports the driving adapter; share what both need through the application or the domain
-            - pkg: github.com/timothymamo/eu-sov-cloud/internal/cli/
-              desc: only cmd/eusov imports the driving adapter; share what both need through the application or the domain
-            - pkg: github.com/timothymamo/eu-sov-cloud/cmd$
-              desc: nothing imports the composition root; cmd/eusov imports the rest
-            - pkg: github.com/timothymamo/eu-sov-cloud/cmd/
-              desc: nothing imports the composition root; cmd/eusov imports the rest
+            - pkg: github.com/timothymamo/shift2eu/internal/cli$
+              desc: only cmd/shift2eu imports the driving adapter; share what both need through the application or the domain
+            - pkg: github.com/timothymamo/shift2eu/internal/cli/
+              desc: only cmd/shift2eu imports the driving adapter; share what both need through the application or the domain
+            - pkg: github.com/timothymamo/shift2eu/cmd$
+              desc: nothing imports the composition root; cmd/shift2eu imports the rest
+            - pkg: github.com/timothymamo/shift2eu/cmd/
+              desc: nothing imports the composition root; cmd/shift2eu imports the rest
         # The HTTP API (ADR 0019) is a driving adapter like internal/cli: it gets
-        # its adapters from its composition root, cmd/eusov-server, through
+        # its adapters from its composition root, cmd/shift2eu-server, through
         # httpapi.Deps and never constructs one, so it imports only the
         # application, the domain, the build metadata and the standard
         # packages named here. Unlike cli-gets-adapters-from-cmd it names
@@ -452,7 +452,7 @@ linters:
         # for every release target (ADR 0012), and a package that reads files
         # or the environment, starts a process or listens (os, os/exec,
         # syscall, net$) stays out. Listening, flags, the environment and the
-        # access log belong to cmd/eusov-server. The project packages are
+        # access log belong to cmd/shift2eu-server. The project packages are
         # named one by one, each ending in $, for the reason given at
         # domain-is-pure. Add a standard package only when serving needs it.
         #
@@ -489,31 +489,31 @@ linters:
             - sync$
             - time$
             - unicode/utf8$
-            - github.com/timothymamo/eu-sov-cloud/internal/app/analysis$
-            - github.com/timothymamo/eu-sov-cloud/internal/domain/assessment$
-            - github.com/timothymamo/eu-sov-cloud/internal/domain/catalog$
-            - github.com/timothymamo/eu-sov-cloud/internal/domain/inventory$
-            - github.com/timothymamo/eu-sov-cloud/internal/domain/mapping$
-            - github.com/timothymamo/eu-sov-cloud/internal/domain/taxonomy$
-            - github.com/timothymamo/eu-sov-cloud/internal/domain/text$
-            - github.com/timothymamo/eu-sov-cloud/internal/version$
+            - github.com/timothymamo/shift2eu/internal/app/analysis$
+            - github.com/timothymamo/shift2eu/internal/domain/assessment$
+            - github.com/timothymamo/shift2eu/internal/domain/catalog$
+            - github.com/timothymamo/shift2eu/internal/domain/inventory$
+            - github.com/timothymamo/shift2eu/internal/domain/mapping$
+            - github.com/timothymamo/shift2eu/internal/domain/taxonomy$
+            - github.com/timothymamo/shift2eu/internal/domain/text$
+            - github.com/timothymamo/shift2eu/internal/version$
           deny:
-            - pkg: github.com/timothymamo/eu-sov-cloud/internal/adapter
-              desc: the HTTP API gets its adapters through httpapi.Deps; construct them in cmd/eusov-server
-            - pkg: github.com/timothymamo/eu-sov-cloud/internal/cli
+            - pkg: github.com/timothymamo/shift2eu/internal/adapter
+              desc: the HTTP API gets its adapters through httpapi.Deps; construct them in cmd/shift2eu-server
+            - pkg: github.com/timothymamo/shift2eu/internal/cli
               desc: the HTTP API and the CLI are separate driving adapters; share what both need through the application or the domain
-            - pkg: github.com/timothymamo/eu-sov-cloud/cmd
+            - pkg: github.com/timothymamo/shift2eu/cmd
               desc: nothing imports the composition root
             - pkg: os
-              desc: the HTTP API reads no file and no environment; cmd/eusov-server passes what it needs through options
+              desc: the HTTP API reads no file and no environment; cmd/shift2eu-server passes what it needs through options
             - pkg: syscall
               desc: the HTTP API makes no system call
             - pkg: plugin
               desc: the HTTP API loads no code at run time
             - pkg: unsafe
               desc: the HTTP API needs no unsafe code
-        # Only the HTTP API's composition root, cmd/eusov-server, imports
-        # internal/httpapi (ADR 0019). cmd/eusov is covered too, on purpose:
+        # Only the HTTP API's composition root, cmd/shift2eu-server, imports
+        # internal/httpapi (ADR 0019). cmd/shift2eu is covered too, on purpose:
         # the CLI binary stays offline (PRD #103, the separate-binary
         # decision), and TestAssessPathHasNoNetworkOrCloudSDK in test/e2e fails
         # if it depends on net/http at all; this rule names the reason at the
@@ -526,17 +526,17 @@ linters:
           files:
             - "$all"
             - "!**/test/apiparity/**"
-            - "!**/cmd/eusov-server/**"
+            - "!**/cmd/shift2eu-server/**"
             - "!**/internal/httpapi/**"
           deny:
-            - pkg: github.com/timothymamo/eu-sov-cloud/internal/httpapi$
-              desc: only cmd/eusov-server imports the HTTP API; cmd/eusov stays offline (ADR 0019)
-            - pkg: github.com/timothymamo/eu-sov-cloud/internal/httpapi/
-              desc: only cmd/eusov-server imports the HTTP API; cmd/eusov stays offline (ADR 0019)
+            - pkg: github.com/timothymamo/shift2eu/internal/httpapi$
+              desc: only cmd/shift2eu-server imports the HTTP API; cmd/shift2eu stays offline (ADR 0019)
+            - pkg: github.com/timothymamo/shift2eu/internal/httpapi/
+              desc: only cmd/shift2eu-server imports the HTTP API; cmd/shift2eu stays offline (ADR 0019)
         # Only the packages under internal/adapter/target import the shared
         # snapshot reader (ADR 0007): the target adapters, their contract suite
         # and the reader itself. A source adapter, a reporter, internal/config
-        # or the CLI has no snapshot to read. cmd/eusov is covered too: it
+        # or the CLI has no snapshot to read. cmd/shift2eu is covered too: it
         # constructs target adapters and gets each catalog through them, so it
         # never parses a snapshot itself. The glob ends in /** so it also
         # excludes the files directly in internal/adapter/target.
@@ -547,7 +547,7 @@ linters:
             - "!$test"
             - "!**/internal/adapter/target/**"
           deny:
-            - pkg: github.com/timothymamo/eu-sov-cloud/internal/adapter/target/snapshot
+            - pkg: github.com/timothymamo/shift2eu/internal/adapter/target/snapshot
               desc: only target adapters read a catalog snapshot (ADR 0007)
         # The shared target snapshot reader parses the bytes a target adapter
         # embeds (ADR 0007): it opens no file, makes no network call and
@@ -578,10 +578,10 @@ linters:
             - strconv$
             - strings$
             - time$
-            - github.com/timothymamo/eu-sov-cloud/internal/adapter/internal/jsondoc$
-            - github.com/timothymamo/eu-sov-cloud/internal/domain/catalog$
-            - github.com/timothymamo/eu-sov-cloud/internal/domain/taxonomy$
-            - github.com/timothymamo/eu-sov-cloud/internal/domain/text$
+            - github.com/timothymamo/shift2eu/internal/adapter/internal/jsondoc$
+            - github.com/timothymamo/shift2eu/internal/domain/catalog$
+            - github.com/timothymamo/shift2eu/internal/domain/taxonomy$
+            - github.com/timothymamo/shift2eu/internal/domain/text$
         # Every target adapter reads its embedded snapshot through the shared
         # reader (ADR 0007), never with encoding/json of its own, which matches
         # keys ignoring case, keeps the last of a repeated key, reads null or a
@@ -650,7 +650,7 @@ linters:
             - unicode$
             - unicode/utf16$
             - unicode/utf8$
-            - github.com/timothymamo/eu-sov-cloud/internal/domain/text$
+            - github.com/timothymamo/shift2eu/internal/domain/text$
           deny:
             - pkg: io/fs
               desc: a shared adapter helper does no I/O; one that reads files needs a rule of its own
@@ -697,7 +697,7 @@ linters:
             - unicode$
             - unicode/utf16$
             - unicode/utf8$
-            - github.com/timothymamo/eu-sov-cloud/internal/domain/text$
+            - github.com/timothymamo/shift2eu/internal/domain/text$
         # The inventory-file reader reads one local file and decodes it (ADR
         # 0006): it makes no network call, starts no process and imports no
         # adapter, so the source it reads from stays offline by rule. It may
@@ -734,10 +734,10 @@ linters:
             - io$
             - io/fs$
             - os$
-            - github.com/timothymamo/eu-sov-cloud/internal/adapter/internal/jsondoc$
-            - github.com/timothymamo/eu-sov-cloud/internal/domain/inventory$
-            - github.com/timothymamo/eu-sov-cloud/internal/domain/taxonomy$
-            - github.com/timothymamo/eu-sov-cloud/internal/domain/text$
+            - github.com/timothymamo/shift2eu/internal/adapter/internal/jsondoc$
+            - github.com/timothymamo/shift2eu/internal/domain/inventory$
+            - github.com/timothymamo/shift2eu/internal/domain/taxonomy$
+            - github.com/timothymamo/shift2eu/internal/domain/text$
           deny:
             - pkg: encoding/json
               desc: decode the inventory file through internal/adapter/internal/jsondoc (ADR 0009)
@@ -767,7 +767,7 @@ linters:
           allow:
             - errors$
             - fmt$
-            - github.com/timothymamo/eu-sov-cloud/internal/adapter/internal/jsondoc$
+            - github.com/timothymamo/shift2eu/internal/adapter/internal/jsondoc$
           deny:
             - pkg: encoding/json
               desc: decode a request body through internal/adapter/internal/jsondoc (ADR 0009)
@@ -775,7 +775,7 @@ linters:
               desc: a request decoder parses the bytes it is given; internal/httpapi reads the body
             - pkg: os
               desc: a request decoder reads no file and no environment
-            - pkg: github.com/timothymamo/eu-sov-cloud/internal/httpapi
+            - pkg: github.com/timothymamo/shift2eu/internal/httpapi
               desc: an adapter never imports a driving adapter; the composition root passes Decode to it
         # A cloud source adapter reaches its cloud only through the SDK calls
         # forbidigo's cloud-read-only group checks (CLAUDE.md rule 1, ADR
@@ -840,15 +840,15 @@ linters:
             - google.golang.org/grpc/status$
             - github.com/google/go-cmp/cmp$
             - github.com/google/go-cmp/cmp/
-            - github.com/timothymamo/eu-sov-cloud/internal/adapter/source/aws$
-            - github.com/timothymamo/eu-sov-cloud/internal/adapter/source/azure$
-            - github.com/timothymamo/eu-sov-cloud/internal/adapter/source/gcp$
-            - github.com/timothymamo/eu-sov-cloud/internal/adapter/source/sourcetest$
-            - github.com/timothymamo/eu-sov-cloud/internal/app/analysis$
-            - github.com/timothymamo/eu-sov-cloud/internal/domain/inventory$
-            - github.com/timothymamo/eu-sov-cloud/internal/domain/taxonomy$
-            - github.com/timothymamo/eu-sov-cloud/internal/domain/text$
-            - github.com/timothymamo/eu-sov-cloud/internal/testutil$
+            - github.com/timothymamo/shift2eu/internal/adapter/source/aws$
+            - github.com/timothymamo/shift2eu/internal/adapter/source/azure$
+            - github.com/timothymamo/shift2eu/internal/adapter/source/gcp$
+            - github.com/timothymamo/shift2eu/internal/adapter/source/sourcetest$
+            - github.com/timothymamo/shift2eu/internal/app/analysis$
+            - github.com/timothymamo/shift2eu/internal/domain/inventory$
+            - github.com/timothymamo/shift2eu/internal/domain/taxonomy$
+            - github.com/timothymamo/shift2eu/internal/domain/text$
+            - github.com/timothymamo/shift2eu/internal/testutil$
           deny:
             - pkg: reflect
               desc: reflection calls a method by a name forbidigo cannot see, such as a write; call the SDK client directly
@@ -877,7 +877,7 @@ linters:
         # package, and the auth and transport packages they are built on, may
         # be imported only under source/aws, source/azure, source/gcp,
         # target/ovhcloud, target/scaleway and target/upcloud, tests
-        # included. Elsewhere, a sibling helper or cmd/eusov included, no
+        # included. Elsewhere, a sibling helper or cmd/shift2eu included, no
         # lint rule would hold its calls to reads.
         cloud-sdks-only-in-provider-adapters:
           list-mode: lax
@@ -956,9 +956,9 @@ linters:
             - context$
             - embed$
             - fmt$
-            - github.com/timothymamo/eu-sov-cloud/internal/adapter/target/snapshot$
-            - github.com/timothymamo/eu-sov-cloud/internal/domain/catalog$
-            - github.com/timothymamo/eu-sov-cloud/internal/domain/text$
+            - github.com/timothymamo/shift2eu/internal/adapter/target/snapshot$
+            - github.com/timothymamo/shift2eu/internal/domain/catalog$
+            - github.com/timothymamo/shift2eu/internal/domain/text$
           deny:
             - pkg: io/fs
               desc: an embedded-snapshot target reads only its embedded bytes
@@ -1016,9 +1016,9 @@ linters:
             - strconv$
             - strings$
             - encoding/json$
-            - github.com/timothymamo/eu-sov-cloud/internal/app/analysis$
-            - github.com/timothymamo/eu-sov-cloud/internal/domain/assessment$
-            - github.com/timothymamo/eu-sov-cloud/internal/domain/mapping$
+            - github.com/timothymamo/shift2eu/internal/app/analysis$
+            - github.com/timothymamo/shift2eu/internal/domain/assessment$
+            - github.com/timothymamo/shift2eu/internal/domain/mapping$
           deny:
             - pkg: io/fs
               desc: a reporter writes only to the io.Writer it is given
@@ -1045,7 +1045,7 @@ linters:
             - "!$test"
             - "!**/internal/testutil/**"
           deny:
-            - pkg: github.com/timothymamo/eu-sov-cloud/internal/testutil
+            - pkg: github.com/timothymamo/shift2eu/internal/testutil
               desc: testutil may only be imported from _test.go files
         contract-suites-only-in-tests:
           list-mode: lax
@@ -1055,9 +1055,9 @@ linters:
             - "!**/internal/adapter/source/sourcetest/**"
             - "!**/internal/adapter/target/targettest/**"
           deny:
-            - pkg: github.com/timothymamo/eu-sov-cloud/internal/adapter/source/sourcetest
+            - pkg: github.com/timothymamo/shift2eu/internal/adapter/source/sourcetest
               desc: the source contract suite may only be imported from _test.go files
-            - pkg: github.com/timothymamo/eu-sov-cloud/internal/adapter/target/targettest
+            - pkg: github.com/timothymamo/shift2eu/internal/adapter/target/targettest
               desc: the target contract suite may only be imported from _test.go files
         go-cmp-only-in-tests:
           list-mode: lax
@@ -1081,9 +1081,9 @@ linters:
           allow:
             - $gostd
             - github.com/google/go-cmp
-            - github.com/timothymamo/eu-sov-cloud/internal/testutil$
+            - github.com/timothymamo/shift2eu/internal/testutil$
           deny:
-            - pkg: github.com/timothymamo/eu-sov-cloud/
+            - pkg: github.com/timothymamo/shift2eu/
               desc: the e2e tier runs the built binary as a black box; it imports no adapter, application, domain or CLI package
             - pkg: github.com/aws/aws-sdk-go-v2
               desc: the e2e tier runs offline and calls no cloud SDK
@@ -1313,7 +1313,7 @@ linters:
         # verbs. test/lint (sourcewrites_test.go) holds the same verbs, and
         # fails when the two lists differ.
         - pattern: '^\w+\.\w+\.(?:Abandon|Abort|Accept|Acquire|Activate|Add|Advertise|Allocate|Apply|Archive|Assign|Associate|Assume|Attach|Authorize|Backtrack|Batch|Begin|Break|Bulk|Bundle|Cancel|Change|Clear|Commit|Complete|Confirm|Continue|Copy|Create|Deactivate|Deallocate|Decrypt|Delete|Deploy|Deprecate|Deprovision|Deregister|Detach|Disable|Disassociate|Enable|Execute|Expand|Export|Failover|Flush|Generalize|Generate|Grant|Import|Initiate|Insert|Invoke|Leave|Lock|Merge|Modify|Monitor|Move|Patch|Perform|Power|Promote|Provision|Publish|Purchase|Purge|Put|Reapply|Reboot|Receive|Recreate|Redeploy|Regenerate|Register|Reimage|Reject|Release|Remove|Renew|Replace|Request|Reset|Resize|Restart|Restore|Resume|Revoke|Rollback|Rotate|Run|Scale|Send|Set|Sign|Signal|Simulate|Split|Start|Stop|Subscribe|Suspend|Swap|Switch|Tag|Terminate|Truncate|Unarchive|Unassign|Undelete|Unlock|Unmonitor|Unsubscribe|Untag|Update|Upgrade|Upload|Upsert|Withdraw|Write)(?:[A-Z0-9]\w*)?$'
-          pkg: '^github\.com/timothymamo/eu-sov-cloud/internal/adapter/source/'
+          pkg: '^github\.com/timothymamo/shift2eu/internal/adapter/source/'
           msg: 'cloud-read-only: a source adapter calls no method named for a write on a type of its own; call the SDK client directly, or rename the helper (CLAUDE.md rule 1)'
         # Group domain-is-pure: the domain does no I/O and reads no clock. The
         # depguard rule of the same name allows fmt and time for fmt.Errorf and
@@ -1437,4 +1437,4 @@ formatters:
   settings:
     goimports:
       local-prefixes:
-        - github.com/timothymamo/eu-sov-cloud
+        - github.com/timothymamo/shift2eu

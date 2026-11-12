@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://github.com/timothymamo/eu-sov-cloud/blob/main/internal/adapter/report/jsonreport/schema/comparison-v1.schema.json",
-  "title": "eusov comparison report, version 1",
+  "$id": "https://github.com/timothymamo/shift2eu/blob/main/internal/adapter/report/jsonreport/schema/comparison-v1.schema.json",
+  "title": "shift2eu comparison report, version 1",
   "description": "The JSON report of one inventory compared across several targets.",
   "type": "object",
   "properties": {

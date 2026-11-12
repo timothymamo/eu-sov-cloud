@@ -14,7 +14,7 @@ template="$(cd "$(dirname "$0")" && pwd)/claude-user-settings.json"
 settings="${HOME}/.claude/settings.json"
 
 # Provisioned by dev/lima.yaml, so this never rewrites the Mac's own settings by mistake.
-if [ ! -f /etc/profile.d/eu-sov-cloud.sh ]; then
+if [ ! -f /etc/profile.d/shift2eu.sh ]; then
   echo "claude-settings: run this inside the Lima VM (make vm-claude-settings)" >&2
   exit 1
 fi

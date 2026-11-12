@@ -5,9 +5,9 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/timothymamo/eu-sov-cloud/internal/adapter/internal/jsondoc"
-	"github.com/timothymamo/eu-sov-cloud/internal/domain/inventory"
-	"github.com/timothymamo/eu-sov-cloud/internal/domain/text"
+	"github.com/timothymamo/shift2eu/internal/adapter/internal/jsondoc"
+	"github.com/timothymamo/shift2eu/internal/domain/inventory"
+	"github.com/timothymamo/shift2eu/internal/domain/text"
 )
 
 // MaxFileSize is the largest inventory file Inventory reads, in bytes. A larger

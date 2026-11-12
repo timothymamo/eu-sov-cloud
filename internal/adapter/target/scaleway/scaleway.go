@@ -5,9 +5,9 @@ import (
 	_ "embed" // the catalog snapshot is embedded with //go:embed
 	"fmt"
 
-	"github.com/timothymamo/eu-sov-cloud/internal/adapter/target/snapshot"
-	"github.com/timothymamo/eu-sov-cloud/internal/domain/catalog"
-	"github.com/timothymamo/eu-sov-cloud/internal/domain/text"
+	"github.com/timothymamo/shift2eu/internal/adapter/target/snapshot"
+	"github.com/timothymamo/shift2eu/internal/domain/catalog"
+	"github.com/timothymamo/shift2eu/internal/domain/text"
 )
 
 // embeddedName is the name of the embedded catalog file, as errors show it.

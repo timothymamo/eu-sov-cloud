@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/timothymamo/eu-sov-cloud/internal/version"
+	"github.com/timothymamo/shift2eu/internal/version"
 )
 
 func TestString(t *testing.T) {
@@ -12,7 +12,7 @@ func TestString(t *testing.T) {
 
 	got := version.String()
 
-	if !strings.HasPrefix(got, "eusov ") {
-		t.Errorf("String() = %q, want prefix %q", got, "eusov ")
+	if !strings.HasPrefix(got, "shift2eu ") {
+		t.Errorf("String() = %q, want prefix %q", got, "shift2eu ")
 	}
 }

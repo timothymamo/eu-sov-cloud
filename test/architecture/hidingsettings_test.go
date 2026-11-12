@@ -3,7 +3,7 @@ package architecture_test
 import (
 	"testing"
 
-	"github.com/timothymamo/eu-sov-cloud/test/architecture/internal/check"
+	"github.com/timothymamo/shift2eu/test/architecture/internal/check"
 )
 
 // TestGolangciSettingsHideNoIssue runs check.HidingSettings against the real

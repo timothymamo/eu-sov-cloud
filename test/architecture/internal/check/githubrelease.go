@@ -4,7 +4,7 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/timothymamo/eu-sov-cloud/test/internal/yamlread"
+	"github.com/timothymamo/shift2eu/test/internal/yamlread"
 )
 
 // GitHubRelease checks how a .goreleaser.yaml document publishes the GitHub

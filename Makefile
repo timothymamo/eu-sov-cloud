@@ -1,7 +1,7 @@
-BINARY  := eusov
+BINARY  := shift2eu
 # The HTTP API's binary (PRD #103, docs/adr/0019-serve-assessments-over-a-versioned-http-api-from-a-separate-binary.md).
-SERVER  := eusov-server
-PKG     := github.com/timothymamo/eu-sov-cloud
+SERVER  := shift2eu-server
+PKG     := github.com/timothymamo/shift2eu
 VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
 COMMIT  ?= $(shell git rev-parse --short HEAD 2>/dev/null || echo none)
 DATE    ?= $(shell date -u +%Y-%m-%dT%H:%M:%SZ)
@@ -9,8 +9,8 @@ LDFLAGS := -s -w \
 	-X $(PKG)/internal/version.version=$(VERSION) \
 	-X $(PKG)/internal/version.commit=$(COMMIT) \
 	-X $(PKG)/internal/version.date=$(DATE)
-# The container image make image builds (docs/adr/0013-ship-eusov-as-a-distroless-container-image.md).
-IMAGE   ?= eusov
+# The container image make image builds (docs/adr/0013-ship-shift2eu-as-a-distroless-container-image.md).
+IMAGE   ?= shift2eu
 # The container CLI make image runs: docker where it is installed, otherwise nerdctl, the rootless runtime
 # of the Lima VM (docs/adr/0017-run-a-rootless-container-runtime-in-the-lima-vm.md).
 DOCKER  ?= $(if $(shell command -v docker 2>/dev/null),docker,nerdctl)
@@ -21,7 +21,7 @@ PLATFORMS ?=
 # .goreleaser.yaml: test/architecture checks this by running make lint with a fake golangci-lint.
 RELEASE_TARGETS := linux/amd64 linux/arm64 darwin/amd64 darwin/arm64 windows/amd64 windows/arm64
 
-LIMA_INSTANCE ?= eu-sov-cloud
+LIMA_INSTANCE ?= shift2eu
 # The directory the VM mounts: this repository's parent, which must hold nothing but this repository and
 # the worktrees dot-agent-deck's dispatcher creates beside it
 # (docs/adr/0008-mount-a-workspace-directory-for-dispatcher-mode.md). Found from the main checkout, so it
@@ -42,15 +42,15 @@ help: ## Show this help
 	@awk 'BEGIN {FS = ":.*## "} /^##@/ {printf "\n%s\n", substr($$0, 5)} /^[a-zA-Z0-9_-]+:.*## / {printf "  \033[36m%-18s\033[0m %s\n", $$1, $$2}' $(MAKEFILE_LIST)
 
 .PHONY: build
-build: server ## Build the eusov and eusov-server binaries into ./bin
+build: server ## Build the shift2eu and shift2eu-server binaries into ./bin
 	go build -trimpath -ldflags "$(LDFLAGS)" -o bin/$(BINARY) ./cmd/$(BINARY)
 
 .PHONY: server
-server: ## Build the eusov-server binary (the HTTP API) into ./bin
+server: ## Build the shift2eu-server binary (the HTTP API) into ./bin
 	go build -trimpath -ldflags "$(LDFLAGS)" -o bin/$(SERVER) ./cmd/$(SERVER)
 
 .PHONY: image
-image: ## Build the local container image eusov:<version>, eusov:dev and eusov:latest from git, as make build (docker or nerdctl; PLATFORMS=linux/amd64,linux/arm64 for both; tags are local, nothing is pushed)
+image: ## Build the local container image shift2eu:<version>, shift2eu:dev and shift2eu:latest from git, as make build (docker or nerdctl; PLATFORMS=linux/amd64,linux/arm64 for both; tags are local, nothing is pushed)
 	$(DOCKER) build \
 		$(if $(PLATFORMS),--platform "$(PLATFORMS)") \
 		--build-arg VERSION="$(VERSION)" \
@@ -68,7 +68,7 @@ fmt: ## Format code (gofumpt + goimports via golangci-lint)
 # make lint runs golangci-lint natively first, for the host's GOOS/GOARCH with cgo at the host's default (the
 # build make test's -race compiles; it warns when the host's cgo is off, and make test, so make check,
 # refuses such a host), then once per release target with cgo off, and last runs the source rules in
-# test/lint natively, with EUSOV_LINT_PROBES=require so the forbidigo probes must run. It attempts every
+# test/lint natively, with SHIFT2EU_LINT_PROBES=require so the forbidigo probes must run. It attempts every
 # run and fails at the end if any of them failed. Each golangci-lint run waits for
 # golangci-lint's lock (--allow-serial-runners) instead of failing while another worktree lints, and sees
 # the same build settings: GOFLAGS=-mod=readonly (a non-empty GOFLAGS also overrides the go env file's, so
@@ -79,11 +79,11 @@ fmt: ## Format code (gofumpt + goimports via golangci-lint)
 # Each run gets a cache directory of its own, as a cache entry of one target can hide another target's
 # issues: native-<goos>-<goarch>-cgo<0|1> for the native run, named after what it lints so one cache root
 # can serve two hosts (e.g. a macOS host and the Lima VM), and <goos>-<goarch> for a release target. The
-# root is $XDG_CACHE_HOME/eusov/golangci-lint, else ~/.cache/eusov/golangci-lint, outside the repository
+# root is $XDG_CACHE_HOME/shift2eu/golangci-lint, else ~/.cache/shift2eu/golangci-lint, outside the repository
 # so worktrees share it; GOLANGCI_LINT_CACHE overrides it. To clear the caches, rm -rf the root.
 .PHONY: lint
 lint: ## Lint natively and for every release target, incl. the architecture (depguard) rules and test/lint
-	@cache="$${GOLANGCI_LINT_CACHE:-$${XDG_CACHE_HOME:-$${HOME:?set HOME or GOLANGCI_LINT_CACHE}/.cache}/eusov/golangci-lint}"; \
+	@cache="$${GOLANGCI_LINT_CACHE:-$${XDG_CACHE_HOME:-$${HOME:?set HOME or GOLANGCI_LINT_CACHE}/.cache}/shift2eu/golangci-lint}"; \
 	export GOFLAGS=-mod=readonly GOAMD64=v1 GOARM64=v8.0 GOWORK=off; \
 	unset GOEXPERIMENT; \
 	failed=""; \
@@ -100,7 +100,7 @@ lint: ## Lint natively and for every release target, incl. the architecture (dep
 		GOOS="$$goos" GOARCH="$$goarch" CGO_ENABLED=0 GOLANGCI_LINT_CACHE="$$cache/$$goos-$$goarch" \
 			golangci-lint run --allow-serial-runners || failed="$$failed $$target"; \
 	done; \
-	( unset GOOS GOARCH CGO_ENABLED; EUSOV_LINT_PROBES=require go test -count=1 ./test/lint/ ) || failed="$$failed test/lint"; \
+	( unset GOOS GOARCH CGO_ENABLED; SHIFT2EU_LINT_PROBES=require go test -count=1 ./test/lint/ ) || failed="$$failed test/lint"; \
 	if [ -n "$$failed" ]; then echo "lint: failed for:$$failed" >&2; exit 1; fi
 
 .PHONY: tidy

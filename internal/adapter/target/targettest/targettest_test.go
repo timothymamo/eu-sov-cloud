@@ -7,11 +7,11 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/timothymamo/eu-sov-cloud/internal/adapter/target/targettest"
-	"github.com/timothymamo/eu-sov-cloud/internal/domain/catalog"
-	"github.com/timothymamo/eu-sov-cloud/internal/domain/taxonomy"
-	"github.com/timothymamo/eu-sov-cloud/internal/domain/text"
-	"github.com/timothymamo/eu-sov-cloud/internal/testutil"
+	"github.com/timothymamo/shift2eu/internal/adapter/target/targettest"
+	"github.com/timothymamo/shift2eu/internal/domain/catalog"
+	"github.com/timothymamo/shift2eu/internal/domain/taxonomy"
+	"github.com/timothymamo/shift2eu/internal/domain/text"
+	"github.com/timothymamo/shift2eu/internal/testutil"
 )
 
 // scalewayTarget is the target display name the fixture catalog carries.

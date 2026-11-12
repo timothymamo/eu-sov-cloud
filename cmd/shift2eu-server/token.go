@@ -11,7 +11,7 @@ import (
 
 // tokenEnvVar names the environment variable the bearer token is read from.
 // There is no token flag: an argument shows in the process list.
-const tokenEnvVar = "EUSOV_SERVER_TOKEN" //nolint:gosec // the variable's name, not a credential
+const tokenEnvVar = "SHIFT2EU_SERVER_TOKEN" //nolint:gosec // the variable's name, not a credential
 
 // maxTokenFileSize caps what --token-file reads: a token is a line, so a file
 // larger than this is not a token file.

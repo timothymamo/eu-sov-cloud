@@ -1,13 +1,13 @@
 // Package cli is the driving adapter: it parses the command line, calls the
 // analysis use case and prints the result. It contains no business rules and
-// constructs no adapter: the composition root (cmd/eusov) passes the adapters
+// constructs no adapter: the composition root (cmd/shift2eu) passes the adapters
 // in through Deps, and Run builds them only once the command line is valid.
 //
 // # Commands
 //
-//	eusov assess --inventory <file> --target <targets> [--format <format>] [--output <file>]
-//	eusov version
-//	eusov help
+//	shift2eu assess --inventory <file> --target <targets> [--format <format>] [--output <file>]
+//	shift2eu version
+//	shift2eu help
 //
 // assess reads the inventory file, loads the catalog of the target, assesses
 // every resource and writes the report. --target takes one key of Deps.Targets,
@@ -31,7 +31,7 @@
 //     --output file; nothing goes to standard error.
 //   - 1: a run-time error: the inventory, the catalog, the report or the output
 //     failed, or the run was cancelled (SIGINT, SIGTERM or SIGHUP cancel the
-//     context in cmd/eusov). Exactly one error line goes to standard error and
+//     context in cmd/shift2eu). Exactly one error line goes to standard error and
 //     nothing to standard output.
 //   - 2: a usage error: no command or an unknown one, a missing --inventory or
 //     --target, an unknown, repeated or empty target in the --target list, or
@@ -50,7 +50,7 @@
 // # Errors
 //
 // Every error, run-time or usage, is printed by printError as one line,
-// "eusov: " and the message passed through sanitise. sanitise escapes control,
+// "shift2eu: " and the message passed through sanitise. sanitise escapes control,
 // format (Cf), line separator (Zl) and paragraph separator (Zp) characters and
 // invalid UTF-8 bytes as strconv does (\n, \x1b, \u202e), so a message never
 // breaks the line, moves the cursor or reorders the text, whatever the input

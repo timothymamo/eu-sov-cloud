@@ -1,6 +1,6 @@
 // Package inventoryfile reads the inventory of a source from a JSON inventory
-// file, the interchange format between a future `eusov discover` and
-// `eusov assess` (ADR 0006). It implements the analysis.InventorySource port and
+// file, the interchange format between a future `shift2eu discover` and
+// `shift2eu assess` (ADR 0006). It implements the analysis.InventorySource port and
 // passes the contract suite in sourcetest.
 //
 // New reads a file at a path. FromBytes reads the same format from bytes held

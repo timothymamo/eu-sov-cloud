@@ -1,6 +1,6 @@
 ---
 name: security-audit
-description: Security audit of eu-sov-cloud changes - cloud credential handling, read-only access to customer clouds, data leakage in reports, input handling, dependency and CI supply chain. Use when asked to audit a diff, branch, PR or the repository for security issues.
+description: Security audit of shift2eu changes - cloud credential handling, read-only access to customer clouds, data leakage in reports, input handling, dependency and CI supply chain. Use when asked to audit a diff, branch, PR or the repository for security issues.
 ---
 
 # Security audit

@@ -23,21 +23,21 @@ import (
 	"github.com/google/go-cmp/cmp"
 )
 
-// This file pins the built eusov-server binary end to end (PRD #103, milestone
+// This file pins the built shift2eu-server binary end to end (PRD #103, milestone
 // 3): it starts the server on 127.0.0.1:0, learns the port from the line it
 // prints on stderr, and calls it as a client would. The dependency check at the
 // end reads the binary's import graph instead.
 
 const (
 	// serverErrPrefix is how the server prefixes a startup error on stderr.
-	serverErrPrefix = "eusov-server: "
+	serverErrPrefix = "shift2eu-server: "
 	// listeningPrefix is the line the server prints once it listens, with the
 	// bound address after it. It is the only way a test learns a port the kernel
 	// chose.
-	listeningPrefix = "eusov-server: listening on "
+	listeningPrefix = "shift2eu-server: listening on "
 	// serverTokenEnv is the name of the environment variable the bearer token
 	// comes from, never a token.
-	serverTokenEnv = "EUSOV_SERVER_TOKEN" //nolint:gosec // this is the variable's name, not a credential
+	serverTokenEnv = "SHIFT2EU_SERVER_TOKEN" //nolint:gosec // this is the variable's name, not a credential
 	// testServerToken is the token the token cases configure. It is a test
 	// value, never a credential, and at least the 32 characters the server
 	// accepts as the shortest token.
@@ -127,7 +127,7 @@ func startServerBinary(t *testing.T, env []string, args ...string) *serverRun {
 	cmd.Stderr = stderr
 
 	if err := cmd.Start(); err != nil {
-		t.Fatalf("starting eusov-server %q: %v", argv, err)
+		t.Fatalf("starting shift2eu-server %q: %v", argv, err)
 	}
 
 	s := &serverRun{cmd: cmd, stderr: stderr, exited: make(chan struct{})}
@@ -168,12 +168,12 @@ func waitForListening(t *testing.T, s *serverRun, argv []string) string {
 
 		select {
 		case <-s.exited:
-			t.Fatalf("eusov-server %q exited before listening: %v; stderr = %q", argv, s.wait(t), s.stderr.String())
+			t.Fatalf("shift2eu-server %q exited before listening: %v; stderr = %q", argv, s.wait(t), s.stderr.String())
 		case <-time.After(probeInterval):
 		}
 
 		if time.Now().After(deadline) {
-			t.Fatalf("eusov-server %q did not announce its address within %s; stderr = %q",
+			t.Fatalf("shift2eu-server %q did not announce its address within %s; stderr = %q",
 				argv, serverStartBound, s.stderr.String())
 		}
 	}
@@ -239,7 +239,7 @@ func (s *serverRun) exitCode(t *testing.T) int {
 		return exitErr.ExitCode()
 	}
 
-	t.Fatalf("waiting for eusov-server: %v", err)
+	t.Fatalf("waiting for shift2eu-server: %v", err)
 
 	return 0
 }
@@ -249,7 +249,7 @@ func (s *serverRun) terminate(t *testing.T) int {
 	t.Helper()
 
 	if err := s.cmd.Process.Signal(syscall.SIGTERM); err != nil {
-		t.Fatalf("signalling eusov-server with SIGTERM: %v", err)
+		t.Fatalf("signalling shift2eu-server with SIGTERM: %v", err)
 	}
 
 	exited := make(chan int, 1)
@@ -260,7 +260,7 @@ func (s *serverRun) terminate(t *testing.T) int {
 	case code := <-exited:
 		return code
 	case <-time.After(serverStopBound):
-		t.Fatalf("eusov-server did not exit within %s of SIGTERM; stderr = %q", serverStopBound, s.stderr.String())
+		t.Fatalf("shift2eu-server did not exit within %s of SIGTERM; stderr = %q", serverStopBound, s.stderr.String())
 
 		return 0
 	}
@@ -635,12 +635,12 @@ func TestServerLoopbackRule(t *testing.T) {
 
 		err := cmd.Run()
 		if err == nil {
-			t.Fatalf("eusov-server listened on 0.0.0.0:0 without a token; stderr = %q", stderr.String())
+			t.Fatalf("shift2eu-server listened on 0.0.0.0:0 without a token; stderr = %q", stderr.String())
 		}
 
 		var exitErr *exec.ExitError
 		if !errors.As(err, &exitErr) {
-			t.Fatalf("running eusov-server: %v", err)
+			t.Fatalf("running shift2eu-server: %v", err)
 		}
 
 		if code := exitErr.ExitCode(); code == 0 {
@@ -701,7 +701,7 @@ func TestServerShutsDownOnSIGTERM(t *testing.T) {
 
 // TestServerMatchesTheCLIBytes pins the byte parity PRD #103 promises end to end:
 // for the shared fixture and for each target and every target, the body of POST
-// /v1/assessments equals the stdout of `eusov assess` for the same inventory and
+// /v1/assessments equals the stdout of `shift2eu assess` for the same inventory and
 // targets, in JSON and in Markdown. Each binary is wired by its own composition
 // root, so a difference in decoding, ordering or rendering shows as a difference
 // in the bytes.
@@ -756,7 +756,7 @@ func TestServerMatchesTheCLIBytes(t *testing.T) {
 				cli := assess(t, strings.Join(targetList, ","), inventory, "--format", f.format)
 
 				if cli.code != 0 {
-					t.Fatalf("eusov assess --format %s = %d; stderr = %q", f.format, cli.code, cli.stderr)
+					t.Fatalf("shift2eu assess --format %s = %d; stderr = %q", f.format, cli.code, cli.stderr)
 				}
 
 				if diff := cmp.Diff(cli.stdout, string(got.body)); diff != "" {
@@ -769,7 +769,7 @@ func TestServerMatchesTheCLIBytes(t *testing.T) {
 }
 
 // TestServerPathHasNoCloudSDKOrProcess pins the dependency criterion of PRD #103
-// for the server: no package of `go list -deps ./cmd/eusov-server` is a cloud
+// for the server: no package of `go list -deps ./cmd/shift2eu-server` is a cloud
 // SDK, and none starts a process. The server serves HTTP, so it does import net
 // and net/http: the check is the one its role needs, beside
 // TestAssessPathHasNoNetworkOrCloudSDK for the CLI, which stays unchanged.
@@ -781,17 +781,17 @@ func TestServerPathHasNoCloudSDKOrProcess(t *testing.T) {
 		t.Fatalf("resolving the module root: %v", err)
 	}
 
-	cmd := exec.Command("go", "list", "-deps", "./cmd/eusov-server")
+	cmd := exec.Command("go", "list", "-deps", "./cmd/shift2eu-server")
 	cmd.Dir = root
 
 	out, err := cmd.Output()
 	if err != nil {
 		var exitErr *exec.ExitError
 		if errors.As(err, &exitErr) {
-			t.Fatalf("go list -deps ./cmd/eusov-server: %v\n%s", err, exitErr.Stderr)
+			t.Fatalf("go list -deps ./cmd/shift2eu-server: %v\n%s", err, exitErr.Stderr)
 		}
 
-		t.Fatalf("go list -deps ./cmd/eusov-server: %v", err)
+		t.Fatalf("go list -deps ./cmd/shift2eu-server: %v", err)
 	}
 
 	deps := strings.Fields(string(out))
@@ -805,8 +805,8 @@ func TestServerPathHasNoCloudSDKOrProcess(t *testing.T) {
 	// The listing must hold the server and what it serves, so a run that read
 	// nothing of it cannot pass.
 	for _, want := range []string{
-		"github.com/timothymamo/eu-sov-cloud/cmd/eusov-server",
-		"github.com/timothymamo/eu-sov-cloud/internal/httpapi",
+		"github.com/timothymamo/shift2eu/cmd/shift2eu-server",
+		"github.com/timothymamo/shift2eu/internal/httpapi",
 	} {
 		if !slices.Contains(deps, want) {
 			t.Errorf("the server does not depend on %s, so the checks above cover nothing of it", want)
@@ -860,7 +860,7 @@ func requireServerBinary(t *testing.T) {
 	t.Helper()
 
 	if serverBuildErr != nil {
-		t.Fatalf("the eusov-server binary did not build: %v", serverBuildErr)
+		t.Fatalf("the shift2eu-server binary did not build: %v", serverBuildErr)
 	}
 }
 

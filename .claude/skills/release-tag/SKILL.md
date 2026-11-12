@@ -1,13 +1,13 @@
 ---
 name: release-tag
-description: Cut a semantic-version release of eu-sov-cloud by tagging main, which triggers the GoReleaser workflow. Use when asked to release, publish a version, or tag a release.
+description: Cut a semantic-version release of shift2eu by tagging main, which triggers the GoReleaser workflow. Use when asked to release, publish a version, or tag a release.
 ---
 
 # Cut a release
 
 Releases are built by `.github/workflows/release.yml` when a `vX.Y.Z` tag is pushed: GoReleaser
 publishes the binaries, then the `image`, `sbom` and `sign` jobs the signed container image to
-`ghcr.io/timothymamo/eusov` (ADR 0015). The run's first check fails, and nothing is published, unless
+`ghcr.io/timothymamo/shift2eu` (ADR 0015). The run's first check fails, and nothing is published, unless
 the tagged commit is on `main`: always tag a commit of `main`.
 
 1. In the repository root, which always stays on `main` (check
@@ -47,17 +47,17 @@ the tagged commit is on `main`: always tag a commit of `main`.
 
    ```bash
    TAG=vX.Y.Z
-   DIGEST="$(/usr/local/bin/crane digest "ghcr.io/timothymamo/eusov:$TAG")"
-   IMAGE="ghcr.io/timothymamo/eusov@$DIGEST"
+   DIGEST="$(/usr/local/bin/crane digest "ghcr.io/timothymamo/shift2eu:$TAG")"
+   IMAGE="ghcr.io/timothymamo/shift2eu@$DIGEST"
    /usr/local/bin/cosign verify "$IMAGE" \
-     --certificate-identity "https://github.com/timothymamo/eu-sov-cloud/.github/workflows/release.yml@refs/tags/$TAG" \
+     --certificate-identity "https://github.com/timothymamo/shift2eu/.github/workflows/release.yml@refs/tags/$TAG" \
      --certificate-oidc-issuer https://token.actions.githubusercontent.com \
      --certificate-github-workflow-trigger push
-   /usr/local/bin/gh attestation verify "oci://$IMAGE" --repo timothymamo/eu-sov-cloud \
-     --signer-workflow timothymamo/eu-sov-cloud/.github/workflows/release.yml \
+   /usr/local/bin/gh attestation verify "oci://$IMAGE" --repo timothymamo/shift2eu \
+     --signer-workflow timothymamo/shift2eu/.github/workflows/release.yml \
      --source-ref "refs/tags/$TAG" --deny-self-hosted-runners
-   /usr/local/bin/gh attestation verify "oci://$IMAGE" --repo timothymamo/eu-sov-cloud \
-     --signer-workflow timothymamo/eu-sov-cloud/.github/workflows/release.yml \
+   /usr/local/bin/gh attestation verify "oci://$IMAGE" --repo timothymamo/shift2eu \
+     --signer-workflow timothymamo/shift2eu/.github/workflows/release.yml \
      --source-ref "refs/tags/$TAG" --deny-self-hosted-runners \
      --predicate-type https://spdx.dev/Document/v2.3
    /usr/local/nerdctl/bin/nerdctl run --rm --read-only --network none "$IMAGE" version   # prints X.Y.Z, without the v
@@ -66,7 +66,7 @@ the tagged commit is on `main`: always tag a commit of `main`.
    Report the digest and each command's outcome. Every command must exit 0 and `version` must print the
    tag without its `v`; if one fails, report its output and stop (never re-tag). After the very first
    push GHCR has created the package private, so `crane digest` and the pull fail anonymously: report
-   that a maintainer must make `ghcr.io/timothymamo/eusov` public once in the package settings (an agent
+   that a maintainer must make `ghcr.io/timothymamo/shift2eu` public once in the package settings (an agent
    cannot), and run the checks after that.
 
    This is a smoke test, not the trust anchor: every agent shares the VM user, which has passwordless

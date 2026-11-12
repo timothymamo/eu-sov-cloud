@@ -9,7 +9,7 @@ import (
 
 	"github.com/google/go-cmp/cmp"
 
-	"github.com/timothymamo/eu-sov-cloud/internal/httpapi"
+	"github.com/timothymamo/shift2eu/internal/httpapi"
 )
 
 // targetsDocument is what GET /v1/targets answers: every target with the name a

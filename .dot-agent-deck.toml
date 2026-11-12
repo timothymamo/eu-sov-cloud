@@ -1,4 +1,4 @@
-# dot-agent-deck orchestration for eu-sov-cloud.
+# dot-agent-deck orchestration for shift2eu.
 #
 # Run it inside the Lima VM (`make vm-up && make deck`), so every agent is
 # confined to this repository. Validate edits with `dot-agent-deck validate`.
@@ -13,7 +13,7 @@
 # Reference: https://agent-deck.devopstoolkit.ai/docs/orchestration.md
 
 [[orchestrations]]
-name = "eu-sov-cloud"
+name = "shift2eu"
 default = true
 
 [[orchestrations.roles]]

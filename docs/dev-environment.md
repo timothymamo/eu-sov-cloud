@@ -26,8 +26,8 @@ dot-agent-deck publishes Linux arm64 and amd64 builds and is documented to run o
    worktrees ([Dispatcher mode](#dispatcher-mode)):
 
    ```bash
-   mkdir eu-sov-cloud-ws && cd eu-sov-cloud-ws
-   git clone https://github.com/timothymamo/eu-sov-cloud.git && cd eu-sov-cloud
+   mkdir shift2eu-ws && cd shift2eu-ws
+   git clone https://github.com/timothymamo/shift2eu.git && cd shift2eu
    ```
 
 2. Create the credentials ([Credentials](#credentials) explains each one). For Claude, generate a token
@@ -103,7 +103,7 @@ was created with. To resize it without recreating it, keeping its tools, login a
 
 ```bash
 make vm-stop
-limactl edit --tty=false --memory=16 eu-sov-cloud   # memory in GiB; --cpus and --disk work the same way
+limactl edit --tty=false --memory=16 shift2eu   # memory in GiB; --cpus and --disk work the same way
 make vm-up
 ```
 
@@ -115,13 +115,13 @@ orchestrator. In the TUI press `Ctrl+n`, select the repository, set **Mode** to 
 start work on an issue or PRD.
 
 - **Where units run.** The deck creates each unit's worktree beside the repository, at
-  `../eu-sov-cloud-dispatch-<name>` on branch `agent/dispatch-<name>`. That location is fixed, which is
+  `../shift2eu-dispatch-<name>` on branch `agent/dispatch-<name>`. That location is fixed, which is
   why the VM mounts the workspace rather than the repository
   ([ADR 0008](adr/0008-mount-a-workspace-directory-for-dispatcher-mode.md)).
 - **PRs still get their own worktree.** A dispatched orchestrator follows the `start-work` skill like any
   other ([ADR 0004](adr/0004-one-worktree-per-pull-request.md)). Run from the dispatch worktree,
   `make worktree` creates the PR's branch and worktree under the dispatch worktree's own `.worktrees/`,
-  for example `../eu-sov-cloud-dispatch-<name>/.worktrees/feat-12-short-name`, so the unit's agents
+  for example `../shift2eu-dispatch-<name>/.worktrees/feat-12-short-name`, so the unit's agents
   never leave their working directory and never stop at a permission prompt
   ([ADR 0010](adr/0010-create-pull-request-worktrees-inside-the-dispatch-worktree.md)). `.worktrees/` is
   git-ignored, so the dispatch worktree stays clean. Its `agent/dispatch-*` branch never gets commits or
@@ -149,10 +149,10 @@ configuration:
 
 ```bash
 make vm-stop
-mkdir ../eu-sov-cloud-ws && mv ../eu-sov-cloud ../eu-sov-cloud-ws/
-cd ../eu-sov-cloud-ws/eu-sov-cloud
+mkdir ../shift2eu-ws && mv ../shift2eu ../shift2eu-ws/
+cd ../shift2eu-ws/shift2eu
 git worktree repair .worktrees/*                               # only if .worktrees/ holds any
-limactl edit --tty=false --mount-only "$(dirname "$PWD"):w" eu-sov-cloud
+limactl edit --tty=false --mount-only "$(dirname "$PWD"):w" shift2eu
 make vm-up
 direnv allow                                                   # direnv tracks .envrc files by path
 ```
@@ -169,7 +169,7 @@ that is not set is skipped. Two things read the file:
 
 - the deck's daemon service, through a systemd drop-in installed by `dev/lima.yaml`, so every agent it
   starts has the variables;
-- every login shell in the VM (`/etc/profile.d/eu-sov-cloud.sh`), so `make vm-shell` has them too.
+- every login shell in the VM (`/etc/profile.d/shift2eu.sh`), so `make vm-shell` has them too.
 
 | Variable | Used by | Notes |
 |---|---|---|
@@ -256,7 +256,7 @@ outside it.
 
 ## Containers and image verification
 
-The VM can verify, run and build the eusov image, as the VM user, with no root daemon
+The VM can verify, run and build the shift2eu image, as the VM user, with no root daemon
 ([ADR 0017](adr/0017-run-a-rootless-container-runtime-in-the-lima-vm.md)). `dev/lima.yaml` installs,
 each pinned under `param:` and authenticated before it is installed:
 
@@ -372,8 +372,8 @@ With a writable mount, agents change files on the Mac live. Lima 2.1+ can instea
 into a VM that has no host mounts and sync changes back only when you accept them:
 
 ```bash
-limactl start --name=eu-sov-cloud-sync --mount-none dev/lima.yaml
-limactl shell --sync . --sync-exclude .git eu-sov-cloud-sync
+limactl start --name=shift2eu-sync --mount-none dev/lima.yaml
+limactl shell --sync . --sync-exclude .git shift2eu-sync
 ```
 
 This suits one-off agent runs. For a long-lived orchestration that commits and opens PRs, the writable

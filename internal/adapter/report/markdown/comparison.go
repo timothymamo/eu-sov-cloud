@@ -7,9 +7,9 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/timothymamo/eu-sov-cloud/internal/app/analysis"
-	"github.com/timothymamo/eu-sov-cloud/internal/domain/assessment"
-	"github.com/timothymamo/eu-sov-cloud/internal/domain/mapping"
+	"github.com/timothymamo/shift2eu/internal/app/analysis"
+	"github.com/timothymamo/shift2eu/internal/domain/assessment"
+	"github.com/timothymamo/shift2eu/internal/domain/mapping"
 )
 
 // ReportComparison writes the Markdown comparison report of c and meta to w,

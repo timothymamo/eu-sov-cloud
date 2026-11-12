@@ -6,8 +6,8 @@ import (
 	"fmt"
 	"io"
 
-	"github.com/timothymamo/eu-sov-cloud/internal/domain/assessment"
-	"github.com/timothymamo/eu-sov-cloud/internal/domain/text"
+	"github.com/timothymamo/shift2eu/internal/domain/assessment"
+	"github.com/timothymamo/shift2eu/internal/domain/text"
 )
 
 // ErrInvalidTargets is returned by NewComparison for a list of targets it cannot

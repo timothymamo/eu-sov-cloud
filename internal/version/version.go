@@ -12,5 +12,5 @@ var (
 
 // String returns a one-line, human-readable build description.
 func String() string {
-	return fmt.Sprintf("eusov %s (commit %s, built %s)", version, commit, date)
+	return fmt.Sprintf("shift2eu %s (commit %s, built %s)", version, commit, date)
 }

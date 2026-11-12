@@ -6,7 +6,7 @@
 
 - [ ] `make check` passes locally (lint, tests, govulncheck)
 - [ ] New behaviour is covered by tests written before the implementation
-- [ ] Architecture rules hold (domain has no external imports; adapters are wired in `cmd/eusov`)
+- [ ] Architecture rules hold (domain has no external imports; adapters are wired in `cmd/shift2eu`)
 
 ## Review and audit
 

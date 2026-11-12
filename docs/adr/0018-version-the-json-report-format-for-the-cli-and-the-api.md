@@ -6,15 +6,15 @@
 ## Context
 
 PRD #103 (issue #103) serves assessments over an HTTP API, and its first milestone adds
-`eusov assess --format json`. Until now the only output was the Markdown report ([ADR 0016](0016-compare-targets-through-a-second-reporter-port-and-use-case.md) for the
+`shift2eu assess --format json`. Until now the only output was the Markdown report ([ADR 0016](0016-compare-targets-through-a-second-reporter-port-and-use-case.md) for the
 comparison), written for people. Scripts, CI jobs and the website need a document they can parse, and
 once one is published, changing what it means breaks them. [ADR 0006](0006-json-inventory-file-format-v1.md)
 gave the inventory file, our input, a recorded shape and a version policy; the report, our output,
 needs the same before anyone depends on it.
 
 The version policy deliberately differs from ADR 0006's. There, any change, even a new optional key, is
-a new version, because `eusov` is the reader and decodes strictly: a version 1 reader refuses a key it
-does not know, so an added key would break it anyway. Here `eusov` is the writer, and the readers are
+a new version, because `shift2eu` is the reader and decodes strictly: a version 1 reader refuses a key it
+does not know, so an added key would break it anyway. Here `shift2eu` is the writer, and the readers are
 scripts, CI jobs and the website, which ignore keys they do not know. Forcing a new version for every
 added key would make each of them upgrade for a change that cannot break them, and would contradict the
 API's rule that additive fields are not breaking (PRD #103). So only a change that can break such a
@@ -82,8 +82,12 @@ order. `retrieved` is the snapshot's UTC calendar date, `YYYY-MM-DD`, as the Mar
 - Removing, renaming or retyping a key, making a required key optional, adding a `fit` or `kind`
   value, or changing what a value means is a new `schemaVersion`, with new schema files beside the old
   ones and an ADR. This matches the API's rule that additive fields are not breaking (PRD #103).
+- Moving the schema files' `$id` URLs keeps `schemaVersion` 1: no document a reader receives
+  changes. The project's rename to `shift2eu` ([ADR 0020](0020-rename-the-project-to-shift2eu.md),
+  issue #117) moved them from the old repository to `https://github.com/timothymamo/shift2eu` this
+  way. The OpenAPI document's references to the schemas are relative and did not change.
 
-**One format for the CLI and the API.** `eusov assess --format json` writes these documents (the
+**One format for the CLI and the API.** `shift2eu assess --format json` writes these documents (the
 default stays `markdown`, byte-identical to before), and the HTTP API of PRD #103 answers with the
 same reporter and therefore the same bytes. The schema files are where milestone 2's API can serve
 or reference them from; embedding them is left to that milestone, so the reporter today imports only
@@ -110,7 +114,7 @@ or reference them from; embedding them is left to that milestone, so the reporte
 - The Markdown and JSON reports agree on ties and required changes because both read them from the
   domain.
 - `cli.Deps` now takes `Formats`, a map of `--format` value to `cli.Format` (the two reporter
-  constructors); adding a format is one entry in `cmd/eusov`.
+  constructors); adding a format is one entry in `cmd/shift2eu`.
 - A change to the report's structs must update the schemas, the goldens and, for anything but an
   additive change, the version and an ADR. The schema tests fail on a key the schema does not allow, so
   an unplanned addition is caught.

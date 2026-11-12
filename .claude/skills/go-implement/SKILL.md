@@ -1,6 +1,6 @@
 ---
 name: go-implement
-description: Implementation conventions for eu-sov-cloud Go code - layering, errors, context, logging, dependencies. Use when writing or changing production Go code, especially when making a failing test pass.
+description: Implementation conventions for shift2eu Go code - layering, errors, context, logging, dependencies. Use when writing or changing production Go code, especially when making a failing test pass.
 ---
 
 # Implementing Go code
@@ -28,9 +28,9 @@ description: Implementation conventions for eu-sov-cloud Go code - layering, err
 - `internal/adapter/...`: implements ports. Cloud SDKs live only here, in the provider's own package.
   Adapters translate external models into domain types at the boundary; SDK types never leak out.
   Adapters never import `internal/cli` or `cmd/`.
-- `internal/cli`: parses input, calls use cases, prints output. No business rules. Only `cmd/eusov`
+- `internal/cli`: parses input, calls use cases, prints output. No business rules. Only `cmd/shift2eu`
   imports it.
-- `cmd/eusov`: composition root. The only place that constructs adapters and injects them.
+- `cmd/shift2eu`: composition root. The only place that constructs adapters and injects them.
 
 If a change seems to need a forbidden import, the design is wrong: add or change a port instead, and
 mention it in your work-done summary.

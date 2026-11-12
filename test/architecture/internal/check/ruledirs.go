@@ -7,7 +7,7 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/timothymamo/eu-sov-cloud/test/internal/yamlread"
+	"github.com/timothymamo/shift2eu/test/internal/yamlread"
 )
 
 // testFiles is the files: entry that takes test files out of a depguard rule.

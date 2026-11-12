@@ -19,7 +19,7 @@ import (
 // probeEnv names the variable that turns a missing golangci-lint from a skip
 // into a failure. make lint and every entry of CI's lint-target matrix, which
 // have golangci-lint, set it to require.
-const probeEnv = "EUSOV_LINT_PROBES"
+const probeEnv = "SHIFT2EU_LINT_PROBES"
 
 // astPrefix starts the message of a rule test/lint checks itself, on the AST,
 // rather than golangci-lint. A probe's want comment with this prefix is for
@@ -50,7 +50,7 @@ type forbidigoProbe struct {
 // a depguard issue's its text. Lines are not merged (--uniq-by-line=false), so
 // two entries refusing one line are told apart. Every entry of the group must
 // refuse at least one line, so an entry that silently stops matching fails the
-// probe. Without golangci-lint on PATH it skips, unless EUSOV_LINT_PROBES=require.
+// probe. Without golangci-lint on PATH it skips, unless SHIFT2EU_LINT_PROBES=require.
 func runForbidigoProbe(t *testing.T, p forbidigoProbe) {
 	t.Helper()
 
@@ -91,7 +91,7 @@ func runForbidigoProbe(t *testing.T, p forbidigoProbe) {
 	}
 	writeFile(t, dst, "mod/.golangci.yml", string(config))
 
-	goMod := "module github.com/timothymamo/eu-sov-cloud\n\ngo " + goDirective(t, root) + "\n"
+	goMod := "module github.com/timothymamo/shift2eu\n\ngo " + goDirective(t, root) + "\n"
 	if len(p.stubs) > 0 {
 		var requires, replaces strings.Builder
 		for _, dir := range slices.Sorted(maps.Keys(p.stubs)) {

@@ -9,7 +9,7 @@ import (
 
 	"github.com/google/go-cmp/cmp"
 
-	"github.com/timothymamo/eu-sov-cloud/test/internal/yamlread"
+	"github.com/timothymamo/shift2eu/test/internal/yamlread"
 )
 
 // forbidigoTags are the tags of forbidigo's groups, each of which starts the

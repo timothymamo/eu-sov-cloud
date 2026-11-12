@@ -244,8 +244,8 @@ func shorten(s string, n int) string {
 // warning (audit L1, L4): none of them describes a request.
 func startLines(stderr string) []string {
 	startupPrefixes := []string{
-		"eusov-server: concurrency ",
-		"eusov-server: warning: ",
+		"shift2eu-server: concurrency ",
+		"shift2eu-server: warning: ",
 	}
 
 	var lines []string

@@ -1,5 +1,5 @@
-// Command eusov stands in for the composition root: it imports the standard
-// packages cmd/eusov imports today, a third-party library and a cloud SDK it
+// Command shift2eu stands in for the composition root: it imports the standard
+// packages cmd/shift2eu imports today, a third-party library and a cloud SDK it
 // must not, and a module of its own that sits under the probe's module path, so
 // the listing holds a package the composition-root rule's prefix entry would
 // allow and the main module is not (issue #101, security audit LOW-1). Test/

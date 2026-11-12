@@ -1,15 +1,15 @@
 version: 2
 
-project_name: eusov
+project_name: shift2eu
 
 before:
   hooks:
     - go mod tidy -diff
 
 builds:
-  - id: eusov
-    main: ./cmd/eusov
-    binary: eusov
+  - id: shift2eu
+    main: ./cmd/shift2eu
+    binary: shift2eu
     env:
       - CGO_ENABLED=0
       - GOWORK=off
@@ -18,9 +18,9 @@ builds:
       - -trimpath
     ldflags:
       - -s -w
-      - -X github.com/timothymamo/eu-sov-cloud/internal/version.version={{ .Version }}
-      - -X github.com/timothymamo/eu-sov-cloud/internal/version.commit={{ .ShortCommit }}
-      - -X github.com/timothymamo/eu-sov-cloud/internal/version.date={{ .Date }}
+      - -X github.com/timothymamo/shift2eu/internal/version.version={{ .Version }}
+      - -X github.com/timothymamo/shift2eu/internal/version.commit={{ .ShortCommit }}
+      - -X github.com/timothymamo/shift2eu/internal/version.date={{ .Date }}
     goos: [linux, darwin, windows]
     goarch: [amd64, arm64]
 

@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"slices"
 
-	"github.com/timothymamo/eu-sov-cloud/internal/domain/text"
+	"github.com/timothymamo/shift2eu/internal/domain/text"
 )
 
 // Category is a provider-neutral service type, such as compute.vm. Its string

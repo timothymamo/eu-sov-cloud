@@ -8,7 +8,7 @@ import (
 
 	"github.com/google/go-cmp/cmp"
 
-	"github.com/timothymamo/eu-sov-cloud/internal/httpapi"
+	"github.com/timothymamo/shift2eu/internal/httpapi"
 )
 
 // TestAssessOneTarget pins the single-target path of POST /v1/assessments: one

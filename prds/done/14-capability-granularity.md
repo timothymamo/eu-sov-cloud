@@ -47,7 +47,7 @@ reports have four kinds of gap:
    cluster, maps `direct` to it. The reason is that Managed Database lacks `autoscaling`.
 
 **Why now.** The first live source adapter has to decide which capabilities to emit. Once
-`eusov discover` writes inventory files, every change to the vocabulary breaks files that users already
+`shift2eu discover` writes inventory files, every change to the vocabulary breaks files that users already
 have. Today the only inventories are hand-written, and only two snapshots exist. UpCloud would be a
 third snapshot to migrate. PRD #2 left this as an open question ("capability granularity") until the
 first live source adapter. That adapter is next.
@@ -278,7 +278,7 @@ under `make test` or `make test-e2e`, unless marked *review*.
   `zone-high-availability` (not offered by the best offering).
 - [x] The parsed catalog of every target lists `node-high-availability` on every offering that lists
   `zone-high-availability`, whether or not its snapshot does (catalog goldens).
-- [x] Given an inventory file that lists `high-availability`, `eusov assess` exits 1 with one error line.
+- [x] Given an inventory file that lists `high-availability`, `shift2eu assess` exits 1 with one error line.
   The line names the resource, the value, and both `node-high-availability` and
   `zone-high-availability`. The value is never read as either of them.
 - [x] *Review:* the doc comments of `node-high-availability`, `zone-high-availability` and `ipv6` state
@@ -406,7 +406,7 @@ Each milestone ships as one PR. Milestones 2 and 3 depend only on 1, and can run
 - **Decided with A: retiring a vocabulary value is not a format change, for now.**
   The format refers to the vocabulary, and does not fix it. A retired value is refused by name, and is
   never reread, so a bump to `schemaVersion` 2 would add no safety. It would also refuse every existing
-  file, including files that do not use the value. Once `eusov discover` writes inventory files, a
+  file, including files that do not use the value. Once `shift2eu discover` writes inventory files, a
   retirement needs a new format version. The ADR amends ADR 0006's version policy to say so. Adding a
   capability stays allowed at version 1.
 - **Decided with F: the source rule.** A source adapter claims a capability whenever

@@ -14,7 +14,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/timothymamo/eu-sov-cloud/internal/httpapi"
+	"github.com/timothymamo/shift2eu/internal/httpapi"
 )
 
 // The http.Server limits (ADR 0019). A request's body is bounded by
@@ -75,7 +75,7 @@ type config struct {
 // run is the server: it reads the flags in args and the environment through
 // lookupEnv, listens, calls listening (when not nil) with the bound address,
 // and serves the API until ctx is cancelled, then shuts down gracefully. It
-// writes startup errors, prefixed "eusov-server: ", and the access log to
+// writes startup errors, prefixed "shift2eu-server: ", and the access log to
 // stderr. It returns 0 after a graceful shutdown, 2 for a usage or
 // configuration error, before anything listens, and 1 for a runtime failure.
 func run(ctx context.Context, args []string, lookupEnv func(string) (string, bool),
@@ -108,15 +108,15 @@ func run(ctx context.Context, args []string, lookupEnv func(string) (string, boo
 		WriteTimeout:      writeTimeout,
 		IdleTimeout:       idleTimeout,
 		MaxHeaderBytes:    maxHeaderBytes,
-		ErrorLog:          log.New(stderr, "eusov-server: ", 0),
+		ErrorLog:          log.New(stderr, "shift2eu-server: ", 0),
 	}
 
 	for _, warning := range set.warnings {
-		_, _ = fmt.Fprintf(stderr, "eusov-server: warning: %s\n", warning)
+		_, _ = fmt.Fprintf(stderr, "shift2eu-server: warning: %s\n", warning)
 	}
 
-	_, _ = fmt.Fprintf(stderr, "eusov-server: listening on %s\n", ln.Addr())
-	_, _ = fmt.Fprintf(stderr, "eusov-server: concurrency %d\n", set.concurrency)
+	_, _ = fmt.Fprintf(stderr, "shift2eu-server: listening on %s\n", ln.Addr())
+	_, _ = fmt.Fprintf(stderr, "shift2eu-server: concurrency %d\n", set.concurrency)
 
 	if listening != nil {
 		listening(ln.Addr())
@@ -134,7 +134,7 @@ var errMaxConnections = errors.New("--max-connections must be 1 or more")
 func parseFlags(args []string, stderr io.Writer) (config, int, bool) {
 	var cfg config
 
-	fs := flag.NewFlagSet("eusov-server", flag.ContinueOnError)
+	fs := flag.NewFlagSet("shift2eu-server", flag.ContinueOnError)
 	fs.SetOutput(stderr)
 	fs.StringVar(&cfg.listen, "listen", "127.0.0.1:8080",
 		"`address` to listen on, host:port; a non-loopback address needs a token or --insecure-no-auth")
@@ -158,7 +158,7 @@ func parseFlags(args []string, stderr io.Writer) (config, int, bool) {
 	}
 
 	if fs.NArg() > 0 {
-		printError(stderr, errors.New("unexpected arguments; eusov-server takes flags only"))
+		printError(stderr, errors.New("unexpected arguments; shift2eu-server takes flags only"))
 
 		return cfg, exitUsage, false
 	}
@@ -334,7 +334,7 @@ func serve(ctx context.Context, srv *http.Server, ln net.Listener, stderr io.Wri
 	return exitOK
 }
 
-// printError writes err as one line, prefixed "eusov-server: ".
+// printError writes err as one line, prefixed "shift2eu-server: ".
 func printError(stderr io.Writer, err error) {
-	_, _ = fmt.Fprintf(stderr, "eusov-server: %s\n", strings.ReplaceAll(err.Error(), "\n", " "))
+	_, _ = fmt.Fprintf(stderr, "shift2eu-server: %s\n", strings.ReplaceAll(err.Error(), "\n", " "))
 }

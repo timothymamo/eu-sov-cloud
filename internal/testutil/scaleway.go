@@ -4,8 +4,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/timothymamo/eu-sov-cloud/internal/domain/catalog"
-	"github.com/timothymamo/eu-sov-cloud/internal/domain/taxonomy"
+	"github.com/timothymamo/shift2eu/internal/domain/catalog"
+	"github.com/timothymamo/shift2eu/internal/domain/taxonomy"
 )
 
 // The fixture below is named after real Scaleway products and regions, but it is

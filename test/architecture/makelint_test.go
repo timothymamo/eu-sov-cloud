@@ -12,7 +12,7 @@ import (
 
 	"github.com/google/go-cmp/cmp"
 
-	"github.com/timothymamo/eu-sov-cloud/test/internal/releasetarget"
+	"github.com/timothymamo/shift2eu/test/internal/releasetarget"
 )
 
 // fakeLinter is the golangci-lint make lint finds on PATH. It records the
@@ -20,14 +20,14 @@ import (
 // per call, and fails only for the run a case names: a run of one target can
 // then be made to fail without stopping the runs before or after it, which is
 // what tells a lint that tries every target from one that gives up on the first.
-// EUSOV_FAKE_LINT_FAIL names a goos/goarch pair or, for the one run with cgo
+// SHIFT2EU_FAKE_LINT_FAIL names a goos/goarch pair or, for the one run with cgo
 // on, `native`.
 const fakeLinter = `#!/bin/sh
-printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' "${GOOS}" "${GOARCH}" "${CGO_ENABLED}" "${GOLANGCI_LINT_CACHE}" "${GOFLAGS}" "${GOEXPERIMENT}" "${GOAMD64}" "${GOARM64}" "${GOWORK}" "$*" >> "${EUSOV_FAKE_LINT_RECORD}"
-if [ "${EUSOV_FAKE_LINT_FAIL}" = "native" ] && [ "${CGO_ENABLED}" != "0" ]; then
+printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' "${GOOS}" "${GOARCH}" "${CGO_ENABLED}" "${GOLANGCI_LINT_CACHE}" "${GOFLAGS}" "${GOEXPERIMENT}" "${GOAMD64}" "${GOARM64}" "${GOWORK}" "$*" >> "${SHIFT2EU_FAKE_LINT_RECORD}"
+if [ "${SHIFT2EU_FAKE_LINT_FAIL}" = "native" ] && [ "${CGO_ENABLED}" != "0" ]; then
 	exit 3
 fi
-if [ "${GOOS}/${GOARCH}" = "${EUSOV_FAKE_LINT_FAIL}" ]; then
+if [ "${GOOS}/${GOARCH}" = "${SHIFT2EU_FAKE_LINT_FAIL}" ]; then
 	exit 3
 fi
 exit 0
@@ -35,14 +35,14 @@ exit 0
 
 // fakeGo is the go make lint finds on PATH. A go test call, the test/lint step
 // make lint ends with, is recorded in the same record as the linter runs, as a
-// line "#go\t<GOOS>\t<GOARCH>\t<CGO_ENABLED>\t<EUSOV_LINT_PROBES>\t<arguments>", so the record
+// line "#go\t<GOOS>\t<GOARCH>\t<CGO_ENABLED>\t<SHIFT2EU_LINT_PROBES>\t<arguments>", so the record
 // tells whether it ran and whether it ran after them; it fails when
-// EUSOV_FAKE_LINT_FAIL is test/lint. Every other call is handed to the real go
+// SHIFT2EU_FAKE_LINT_FAIL is test/lint. Every other call is handed to the real go
 // command, whose path replaces %s, single-quoted.
 const fakeGo = `#!/bin/sh
 if [ "$1" = test ]; then
-	printf '#go\t%%s\t%%s\t%%s\t%%s\t%%s\n' "${GOOS}" "${GOARCH}" "${CGO_ENABLED}" "${EUSOV_LINT_PROBES}" "$*" >> "${EUSOV_FAKE_LINT_RECORD}"
-	if [ "${EUSOV_FAKE_LINT_FAIL}" = "test/lint" ]; then
+	printf '#go\t%%s\t%%s\t%%s\t%%s\t%%s\n' "${GOOS}" "${GOARCH}" "${CGO_ENABLED}" "${SHIFT2EU_LINT_PROBES}" "$*" >> "${SHIFT2EU_FAKE_LINT_RECORD}"
+	if [ "${SHIFT2EU_FAKE_LINT_FAIL}" = "test/lint" ]; then
 		exit 3
 	fi
 	exit 0
@@ -87,7 +87,7 @@ type goTestRun struct {
 	GOOS       string
 	GOARCH     string
 	CGOEnabled string
-	Probes     string // EUSOV_LINT_PROBES
+	Probes     string // SHIFT2EU_LINT_PROBES
 	Args       string
 }
 
@@ -227,8 +227,8 @@ func TestMakeLintRunsEveryReleaseTarget(t *testing.T) {
 			writeFakeGo(t, fakeDir)
 
 			env := map[string]string{
-				"PATH":                   fakeDir + string(os.PathListSeparator) + os.Getenv("PATH"),
-				"EUSOV_FAKE_LINT_RECORD": record,
+				"PATH":                      fakeDir + string(os.PathListSeparator) + os.Getenv("PATH"),
+				"SHIFT2EU_FAKE_LINT_RECORD": record,
 			}
 
 			for name, value := range tc.env {
@@ -251,7 +251,7 @@ func TestMakeLintRunsEveryReleaseTarget(t *testing.T) {
 			}
 
 			if tc.fail != "" {
-				env["EUSOV_FAKE_LINT_FAIL"] = tc.fail
+				env["SHIFT2EU_FAKE_LINT_FAIL"] = tc.fail
 			}
 
 			out, err := runMakeLint(t, root, env)
@@ -279,7 +279,7 @@ func TestMakeLintRunsEveryReleaseTarget(t *testing.T) {
 				t.Errorf("make lint ran test/lint with GOOS=%q GOARCH=%q CGO_ENABLED=%q, want all three unset, so it runs for the host",
 					run.GOOS, run.GOARCH, run.CGOEnabled)
 			} else if run.Probes != "require" {
-				t.Errorf("make lint ran test/lint with EUSOV_LINT_PROBES=%q, want require, so the forbidigo probes fail rather than skip without golangci-lint",
+				t.Errorf("make lint ran test/lint with SHIFT2EU_LINT_PROBES=%q, want require, so the forbidigo probes fail rather than skip without golangci-lint",
 					run.Probes)
 			}
 
@@ -471,11 +471,11 @@ func makeEnv(env map[string]string) []string {
 		"GOWORK":              true,
 		// The fake linter's own knobs: what this test sets for its case
 		// is the only thing that may decide which run it fails.
-		"EUSOV_FAKE_LINT_FAIL":   true,
-		"EUSOV_FAKE_LINT_RECORD": true,
+		"SHIFT2EU_FAKE_LINT_FAIL":   true,
+		"SHIFT2EU_FAKE_LINT_RECORD": true,
 		// Only the Makefile may set it for test/lint: an inherited value
 		// would hide a Makefile that no longer does.
-		"EUSOV_LINT_PROBES": true,
+		"SHIFT2EU_LINT_PROBES": true,
 	}
 
 	out := make([]string, 0, len(os.Environ())+len(env))
@@ -526,7 +526,7 @@ func readLintRecord(t *testing.T, path string) ([]lintRun, []goTestRun) {
 		if rest, ok := strings.CutPrefix(line, "#go\t"); ok {
 			fields := strings.SplitN(rest, "\t", 5)
 			if len(fields) != 5 {
-				t.Fatalf("record line %d = %q, want #go and 5 tab-separated fields: GOOS, GOARCH, CGO_ENABLED, EUSOV_LINT_PROBES and the arguments", i+1, line)
+				t.Fatalf("record line %d = %q, want #go and 5 tab-separated fields: GOOS, GOARCH, CGO_ENABLED, SHIFT2EU_LINT_PROBES and the arguments", i+1, line)
 			}
 
 			goTests = append(goTests, goTestRun{

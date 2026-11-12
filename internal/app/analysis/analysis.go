@@ -7,8 +7,8 @@ import (
 	"io"
 	"strings"
 
-	"github.com/timothymamo/eu-sov-cloud/internal/domain/assessment"
-	"github.com/timothymamo/eu-sov-cloud/internal/domain/text"
+	"github.com/timothymamo/shift2eu/internal/domain/assessment"
+	"github.com/timothymamo/shift2eu/internal/domain/text"
 )
 
 var (

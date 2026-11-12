@@ -6,8 +6,8 @@
 
 ## Problem
 
-`eusov` now has three targets: Scaleway (PRD #2), OVHcloud (PRD #11) and UpCloud (PRD #77). The user's
-question is "where should this workload go?", but each run of `eusov assess` answers for one target only.
+`shift2eu` now has three targets: Scaleway (PRD #2), OVHcloud (PRD #11) and UpCloud (PRD #77). The user's
+question is "where should this workload go?", but each run of `shift2eu assess` answers for one target only.
 To compare, a platform engineer runs the command three times and puts three reports side by side by hand.
 The reports are long, and the facts that matter are spread across them: which resources are `direct` on
 one target and `partial` or `none` on another, and which blockers are on every target and so stay
@@ -18,7 +18,7 @@ that the report would be designed for three targets and not for two. They now ex
 
 ## Outcome
 
-A user can run `eusov assess --inventory inventory.json --target ovhcloud,scaleway,upcloud`, or
+A user can run `shift2eu assess --inventory inventory.json --target ovhcloud,scaleway,upcloud`, or
 `--target all`, and get one Markdown report. It starts with a comparison: fits counted per target, then
 one row per resource with its fit and best offering on each target, then the blockers that every target
 shares. Each target's full report follows, with the same sections as today. A run with one target prints

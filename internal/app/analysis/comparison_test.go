@@ -12,13 +12,13 @@ import (
 
 	"github.com/google/go-cmp/cmp"
 
-	"github.com/timothymamo/eu-sov-cloud/internal/app/analysis"
-	"github.com/timothymamo/eu-sov-cloud/internal/domain/assessment"
-	"github.com/timothymamo/eu-sov-cloud/internal/domain/catalog"
-	"github.com/timothymamo/eu-sov-cloud/internal/domain/inventory"
-	"github.com/timothymamo/eu-sov-cloud/internal/domain/taxonomy"
-	"github.com/timothymamo/eu-sov-cloud/internal/domain/text"
-	"github.com/timothymamo/eu-sov-cloud/internal/testutil"
+	"github.com/timothymamo/shift2eu/internal/app/analysis"
+	"github.com/timothymamo/shift2eu/internal/domain/assessment"
+	"github.com/timothymamo/shift2eu/internal/domain/catalog"
+	"github.com/timothymamo/shift2eu/internal/domain/inventory"
+	"github.com/timothymamo/shift2eu/internal/domain/taxonomy"
+	"github.com/timothymamo/shift2eu/internal/domain/text"
+	"github.com/timothymamo/shift2eu/internal/testutil"
 )
 
 // The keys the comparison tests compare their targets by: the CLI's keys, lower
@@ -31,7 +31,7 @@ const (
 
 // comparisonBody is what the fake comparison reporter writes, so a test can see
 // that the writer the use case passes on is the caller's.
-const comparisonBody = "# eusov comparison report\n"
+const comparisonBody = "# shift2eu comparison report\n"
 
 // fakeComparisonReporter is an in-memory ComparisonReporter. It keeps what the
 // use case handed it and writes body to the writer, so a test can observe both

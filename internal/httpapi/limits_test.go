@@ -12,7 +12,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/timothymamo/eu-sov-cloud/internal/httpapi"
+	"github.com/timothymamo/shift2eu/internal/httpapi"
 )
 
 // settle is how long a test waits for an answer before it calls the handler

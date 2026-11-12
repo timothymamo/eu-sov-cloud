@@ -73,30 +73,30 @@
 // rules (go-cmp-only-in-tests, cloud-sdks-only-in-provider-adapters) are held
 // by depguard in make lint alone. A third-party import in internal/cli is
 // refused by depguard alone, whose strict rule there allows only $gostd and
-// named module packages. One in cmd/eusov is refused by the strict rule
+// named module packages. One in cmd/shift2eu is refused by the strict rule
 // composition-root (issue #101), which allows the module path as its one prefix
-// entry and the standard packages cmd/eusov imports today, each exact:
+// entry and the standard packages cmd/shift2eu imports today, each exact:
 // TestCompositionRootRuleIsChecked pins its shape and that it is a reasoned
-// skip of the shared layer listing, since go list -deps ./cmd/eusov/... also
+// skip of the shared layer listing, since go list -deps ./cmd/shift2eu/... also
 // lists internal/cli and internal/version, which no rule the check reads holds.
 // TestCompositionRootIsHeldToItsRuleForEveryReleaseTarget holds the real
-// cmd/eusov to it on every release platform, with cgo off and on and every tag
+// cmd/shift2eu to it on every release platform, with cgo off and on and every tag
 // set TestReleaseTargetDependencies reads (cgoModes and tagSets, shared so the
 // two cannot drift), and fails any package of its listing under the module path
 // that does not belong to the main module: the rule's prefix entry would let a
 // module nested under that path in (the security audit's LOW-1).
 // TestCompositionRootRuleHoldsItsProbeForEveryReleaseTarget fails a fixture
-// cmd/eusov that imports a third-party library, a stand-in SDK and a nested
+// cmd/shift2eu that imports a third-party library, a stand-in SDK and a nested
 // module under the fixture's own module path, which the main-module assertion
-// must report, while the rule holds its sibling cmd/eusov-server not at all.
-// The server's composition root, cmd/eusov-server (PRD #103, milestone 3), is
+// must report, while the rule holds its sibling cmd/shift2eu-server not at all.
+// The server's composition root, cmd/shift2eu-server (PRD #103, milestone 3), is
 // held the same way by its sibling strict rule server-composition-root: the
 // module path as the one prefix entry and the standard packages the server
 // imports, each exact. TestCompositionRootRulesAreChecked pins both rules'
 // shape, TestCompositionRootRulesAreHeldToTheirRuleForEveryReleaseTarget holds
-// the real cmd/eusov and cmd/eusov-server to them on every release platform,
+// the real cmd/shift2eu and cmd/shift2eu-server to them on every release platform,
 // and TestCompositionRootRulesHoldTheirProbesForEveryReleaseTarget fails a
-// fixture cmd/eusov-server that imports a third-party library or a stand-in
+// fixture cmd/shift2eu-server that imports a third-party library or a stand-in
 // SDK.
 // The exemption trusts the import path, which is sound because nothing can
 // substitute other code for an allowed path: TestRootModuleHasNoReplace reads

@@ -1,6 +1,6 @@
 ---
 name: go-tdd
-description: Test-first workflow and Go testing conventions for eu-sov-cloud. Use when writing or changing tests, when asked to produce a failing (RED) test for a behaviour, or when confirming a test passes (GREEN) after implementation.
+description: Test-first workflow and Go testing conventions for shift2eu. Use when writing or changing tests, when asked to produce a failing (RED) test for a behaviour, or when confirming a test passes (GREEN) after implementation.
 ---
 
 # Go test-driven development

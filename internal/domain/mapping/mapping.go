@@ -4,9 +4,9 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/timothymamo/eu-sov-cloud/internal/domain/catalog"
-	"github.com/timothymamo/eu-sov-cloud/internal/domain/inventory"
-	"github.com/timothymamo/eu-sov-cloud/internal/domain/taxonomy"
+	"github.com/timothymamo/shift2eu/internal/domain/catalog"
+	"github.com/timothymamo/shift2eu/internal/domain/inventory"
+	"github.com/timothymamo/shift2eu/internal/domain/taxonomy"
 )
 
 // Fit is how well a target can take over a resource.

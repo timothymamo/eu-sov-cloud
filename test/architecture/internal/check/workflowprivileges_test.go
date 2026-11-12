@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/timothymamo/eu-sov-cloud/test/architecture/internal/check"
+	"github.com/timothymamo/shift2eu/test/architecture/internal/check"
 )
 
 // workflowDoc renders a small workflow with the trigger lines below on:, a

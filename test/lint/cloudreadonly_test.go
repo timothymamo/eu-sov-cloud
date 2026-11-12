@@ -697,8 +697,8 @@ func TestCloudReadOnlyPackages(t *testing.T) {
 		},
 		{
 			entry:   "cloud-read-only: a source adapter calls no method",
-			covers:  []string{"github.com/timothymamo/eu-sov-cloud/internal/adapter/source/aws", "github.com/timothymamo/eu-sov-cloud/internal/adapter/source/aws_test", "github.com/timothymamo/eu-sov-cloud/internal/adapter/source/awsutil"},
-			ignores: []string{"github.com/timothymamo/eu-sov-cloud/internal/adapter/target/ovhcloud"},
+			covers:  []string{"github.com/timothymamo/shift2eu/internal/adapter/source/aws", "github.com/timothymamo/shift2eu/internal/adapter/source/aws_test", "github.com/timothymamo/shift2eu/internal/adapter/source/awsutil"},
+			ignores: []string{"github.com/timothymamo/shift2eu/internal/adapter/target/ovhcloud"},
 		},
 	}
 	for _, tc := range tests {

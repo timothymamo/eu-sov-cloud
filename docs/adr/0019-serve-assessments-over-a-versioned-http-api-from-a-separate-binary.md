@@ -5,7 +5,7 @@
 
 ## Context
 
-PRD #103 (issue #103) makes `eusov` usable as the backend of a website: a client sends an inventory and
+PRD #103 (issue #103) makes `shift2eu` usable as the backend of a website: a client sends an inventory and
 gets the assessment back. Milestone 1 gave the CLI and the API one versioned JSON report format
 ([ADR 0018](0018-version-the-json-report-format-for-the-cli-and-the-api.md)). Milestone 2 adds the HTTP
 driving adapter, and this ADR records its design, versioning and security model.
@@ -13,7 +13,7 @@ driving adapter, and this ADR records its design, versioning and security model.
 Forces:
 
 - The CLI is guaranteed offline. `TestAssessPathHasNoNetworkOrCloudSDK` (`test/e2e`) fails if
-  `cmd/eusov` depends on `net` or `net/http` at all. That promise to users who run it on sensitive
+  `cmd/shift2eu` depends on `net` or `net/http` at all. That promise to users who run it on sensitive
   inventories must survive.
 - An inventory describes someone's infrastructure (CLAUDE.md rule 2). A server receives it from
   untrusted clients, who may send hostile or huge bodies, and many requests at once.
@@ -32,13 +32,13 @@ Forces:
 
 ## Decision
 
-A second binary, `eusov-server`, serves a small JSON API under `/v1/`, through a new driving adapter
+A second binary, `shift2eu-server`, serves a small JSON API under `/v1/`, through a new driving adapter
 `internal/httpapi`. The API takes inventory documents only, never cloud credentials, stores and logs
 nothing from a request, and leaves TLS and users to a reverse proxy or the website's backend.
 
-**A separate binary.** `cmd/eusov-server` is the API's composition root (milestone 3). `cmd/eusov`
+**A separate binary.** `cmd/shift2eu-server` is the API's composition root (milestone 3). `cmd/shift2eu`
 never imports `internal/httpapi` (depguard rule `httpapi-imported-only-by-the-server`, which exempts only
-`cmd/eusov-server`, the package itself and the parity test in `test/apiparity`, test files elsewhere
+`cmd/shift2eu-server`, the package itself and the parity test in `test/apiparity`, test files elsewhere
 included), so the CLI's offline test stays unchanged and passes. Both binaries are built from the same module and reuse every
 package.
 
@@ -80,7 +80,7 @@ package.
 - `POST /v1/assessments`: `Content-Type: application/json` and `{"inventory": {...}, "targets": [...]}`.
   One target runs `analysis.Analysis`; several, or `["all"]`, run `analysis.Comparison` in sorted key
   order. The target list follows the CLI's rules (unknown, repeated or empty keys, and `all` with another
-  key, are refused). The 200 body is what `eusov assess --format json` prints for the same inventory and
+  key, are refused). The 200 body is what `shift2eu assess --format json` prints for the same inventory and
   targets, byte for byte, and a parity test in `test/apiparity` compares the two.
 - `GET /v1/targets`: every target's key, display name and snapshot (`source`, `retrieved`), sorted by
   key, in the shape of the JSON report's `target` object.
@@ -187,7 +187,7 @@ the one source of truth for the report.
 - TLS, users, accounts and per-user rate limits belong to the reverse proxy or the website's backend,
   which the README will describe (milestone 4).
 
-**What milestone 3 adds, in `cmd/eusov-server`.** Flags and environment (listen address, token from an
+**What milestone 3 adds, in `cmd/shift2eu-server`.** Flags and environment (listen address, token from an
 environment variable or a file, never a flag; concurrency; CORS origins; allowed hosts), the server's
 read-header, read, write and idle timeouts and maximum header size, graceful shutdown on `SIGTERM` and
 `SIGINT`, the access log, the readiness check over every target's catalog, and the refusal to listen on
@@ -207,10 +207,10 @@ handler with no listener of its own. Milestone 3 **must** also:
   that case as a startup error, never as "any host";
 - size the concurrency default against memory and `GOMEMLIMIT`, not only the number of CPUs, using the
   benchmark `BenchmarkMaximalAllComparison` in `test/apiparity` for one request's peak;
-- check end to end that the built `eusov` and `eusov-server` binaries give the same bytes for the same
+- check end to end that the built `shift2eu` and `shift2eu-server` binaries give the same bytes for the same
   inventory and targets, beside the in-process parity test.
 
-**What milestone 3 decided, in `cmd/eusov-server`.** Its imports are a strict allow list,
+**What milestone 3 decided, in `cmd/shift2eu-server`.** Its imports are a strict allow list,
 `server-composition-root`, the sibling of `composition-root`: the module's own packages and the standard
 packages it needs, no third-party package, no cloud SDK, no `os/exec` and never `internal/cli`.
 
@@ -218,13 +218,13 @@ packages it needs, no third-party package, no cloud SDK, no `os/exec` and never 
   `--concurrency <n>` (0, the default, is the computed default below), `--max-connections <n>`
   (default 256; 0 or less is a configuration error), `--cors-origin <origin>` and
   `--allowed-host <host>` (both repeatable) and `--insecure-no-auth`. The token comes from
-  `EUSOV_SERVER_TOKEN` or `--token-file`, never a flag; both at once is a configuration error. A
+  `SHIFT2EU_SERVER_TOKEN` or `--token-file`, never a flag; both at once is a configuration error. A
   variable that is set but trims to nothing, an empty or blank file, and a file that cannot be read are
   configuration errors, never "no token"; an unset variable is no token source. White space around a
   token is trimmed, from the file and from the variable. A token shorter than 32 characters once
   trimmed is a configuration error naming its source and the minimum: a shorter one is within reach of
   a client that guesses, and 32 characters is what `openssl rand -hex 16` or a password manager give.
-  Every configuration error is one line, `eusov-server: ...`, exit code 2, before anything listens; no
+  Every configuration error is one line, `shift2eu-server: ...`, exit code 2, before anything listens; no
   error quotes the token. A failure to open the listener (an address in use) is a runtime failure,
   one line, exit code 1.
 - *The loopback rule.* A `--listen` host that is `localhost` or a loopback IP address is loopback;
@@ -280,17 +280,17 @@ packages it needs, no third-party package, no cloud SDK, no `os/exec` and never 
   A check that comes while another check is loading answers 503 at once rather than waiting for that
   load: a probe's timeout is short, and 503 is the answer it understands.
 - *Access log.* One line per request on stderr, once it is answered:
-  `eusov-server: access method=POST path="/v1/assessments" status=200 duration=12.3ms size=1234`. The
+  `shift2eu-server: access method=POST path="/v1/assessments" status=200 duration=12.3ms size=1234`. The
   path is quoted, so a path holding a line feed cannot forge a line, cut to its first 256 bytes and
   marked with `...` after the quotes when it is longer, so a client cannot write an unbounded run of
   its own into the log, and carries no query string; the
   size is the answer's body in bytes. Nothing else of the request is logged: no header value, no query,
   no body, no inventory value, no report. The `http.Server`'s own error log goes to stderr with the
   same prefix; it reports connection-level problems and no request content.
-- *Startup and shutdown.* Once listening, the server prints `eusov-server: listening on <host:port>`,
-  then `eusov-server: concurrency <n>`, the effective concurrency (the flag's value or the computed
+- *Startup and shutdown.* Once listening, the server prints `shift2eu-server: listening on <host:port>`,
+  then `shift2eu-server: concurrency <n>`, the effective concurrency (the flag's value or the computed
   default), so the operator sees what it picked. Two startup warnings, each one line
-  `eusov-server: warning: ...`, come before them, and the server starts anyway: `serving without
+  `shift2eu-server: warning: ...`, come before them, and the server starts anyway: `serving without
   authentication on <host:port>` (the bound address) for `--insecure-no-auth` on a non-loopback
   listener without a token, and, on systems with permission bits (not Windows), a `--token-file` that
   its group or other users can access (`mode & 0o077`), naming the path and never the token. Refusing
@@ -300,17 +300,17 @@ packages it needs, no third-party package, no cloud SDK, no `os/exec` and never 
   `SIGKILL`, for the requests in flight, then the process exits 0. Requests that outlast the deadline
   are closed and the process exits 1. A failure to listen (an address in use) or to serve is exit
   code 1.
-- *Build.* `make build` builds `bin/eusov-server` beside `bin/eusov`, with the same link flags
+- *Build.* `make build` builds `bin/shift2eu-server` beside `bin/shift2eu`, with the same link flags
   (`make server` builds it alone). An e2e test builds both binaries and checks that they give the same
   bytes for the same inventory and targets, in JSON and Markdown.
 
-**What milestone 4 adds (packaging).** The `eusov-server` image, the README's deployment notes, and a
+**What milestone 4 adds (packaging).** The `shift2eu-server` image, the README's deployment notes, and a
 published OpenAPI document that bundles the report's JSON Schemas: `api/openapi.json` refers to them by
 repo-relative path, which a reader outside the repository cannot follow.
 
 ## Alternatives considered
 
-- **`eusov serve`, a subcommand of the CLI.** One binary and one image, but `net/http` in the CLI's
+- **`shift2eu serve`, a subcommand of the CLI.** One binary and one image, but `net/http` in the CLI's
   dependencies ends the offline guarantee its test pins. A second binary from the same module costs
   only a build target and an image.
 - **Decode the request in `internal/httpapi` with `encoding/json`.** No new adapter, but a second set of
@@ -324,7 +324,7 @@ repo-relative path, which a reader outside the repository cannot follow.
   is what a browser form sends, but it needs a multipart parser and its limits; targets in the query
   string end up in access logs and proxy logs. One JSON object is simplest to decode strictly and to
   describe in OpenAPI.
-- **Version by header or media type** (`Accept: application/vnd.eusov.v1+json`). Harder to route at a
+- **Version by header or media type** (`Accept: application/vnd.shift2eu.v1+json`). Harder to route at a
   proxy, to see in a log and to try with `curl`; the PRD asks for path versioning.
 - **429 when busy.** 429 says the client sent too many requests; the cap is shared by all clients and
   is about the server's capacity, so 503 with `Retry-After` is the honest status. The PRD allows either.
@@ -357,9 +357,9 @@ repo-relative path, which a reader outside the repository cannot follow.
   `httpapi-imported-only-by-the-server`), and one the request decoders; all three are in the depguard pin
   (`test/architecture/depguardpin_test.go`). A standard package `internal/httpapi` needs is added to its
   allow list and the pin on purpose. A new test that needs the handler goes in `internal/httpapi` or
-  `test/apiparity`, or widens `httpapi-imported-only-by-the-server` on purpose. `cmd/eusov-server` is
+  `test/apiparity`, or widens `httpapi-imported-only-by-the-server` on purpose. `cmd/shift2eu-server` is
   held by `server-composition-root`, which is pinned too. It constructs adapters, so
-  `adapters-are-built-in-cmd` excludes it as it does `cmd/eusov`, and the depguard pin holds both
+  `adapters-are-built-in-cmd` excludes it as it does `cmd/shift2eu`, and the depguard pin holds both
   exclusions. That rule has a known gap, left for a follow-up of its own: depguard (v2.2.1) compares an
   import only with the one list entry that sorts nearest before it, as a prefix unless the entry ends
   in `$`, and the deny entry `internal/adapter/internal/` sorts after `internal/adapter/` and before
@@ -377,4 +377,4 @@ repo-relative path, which a reader outside the repository cannot follow.
 - Without `GOMEMLIMIT` the server serves at most two assessments at once, however many CPUs it has; an
   operator who wants more sets `GOMEMLIMIT` or `--concurrency`. The per-request peak is a measurement:
   a change that makes a maximal request larger reruns `BenchmarkMaximalAllComparison` and revisits the
-  1 GiB in `cmd/eusov-server`.
+  1 GiB in `cmd/shift2eu-server`.

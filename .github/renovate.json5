@@ -28,7 +28,7 @@
       groupName: 'GitHub Actions',
     },
     {
-      // eusov is an application, so it is built with the Go it declares. Renovate leaves the go
+      // shift2eu is an application, so it is built with the Go it declares. Renovate leaves the go
       // directive alone by default; bump it together with the VM's Go version.
       description: 'Go toolchain: go.mod go directive and dev/lima.yaml',
       matchDatasources: ['golang-version'],

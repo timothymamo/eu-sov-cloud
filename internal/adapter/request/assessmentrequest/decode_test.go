@@ -16,8 +16,8 @@ import (
 
 	"github.com/google/go-cmp/cmp"
 
-	"github.com/timothymamo/eu-sov-cloud/internal/adapter/request/assessmentrequest"
-	"github.com/timothymamo/eu-sov-cloud/internal/adapter/source/inventoryfile"
+	"github.com/timothymamo/shift2eu/internal/adapter/request/assessmentrequest"
+	"github.com/timothymamo/shift2eu/internal/adapter/source/inventoryfile"
 )
 
 // bodyMargin is the small margin the request-body cap adds to the inventory cap,

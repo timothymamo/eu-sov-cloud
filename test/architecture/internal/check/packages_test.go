@@ -8,11 +8,11 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/timothymamo/eu-sov-cloud/test/internal/releasetarget"
+	"github.com/timothymamo/shift2eu/test/internal/releasetarget"
 
 	"github.com/google/go-cmp/cmp"
 
-	"github.com/timothymamo/eu-sov-cloud/test/architecture/internal/check"
+	"github.com/timothymamo/shift2eu/test/architecture/internal/check"
 )
 
 // testModule is the module path the fake packages claim.

@@ -26,7 +26,7 @@ There are four kinds of gap:
 
 Forces:
 
-- The first live source adapter is next. Once `eusov discover` writes inventory files, every change to
+- The first live source adapter is next. Once `shift2eu discover` writes inventory files, every change to
   the vocabulary breaks files users already have. Today the only inventories are hand-written, and only
   two snapshots exist. This is the cheapest moment to change the vocabulary.
 - Both file formats (ADR 0006, ADR 0007) are strict and at `schemaVersion` 1. A new field is a new
@@ -98,7 +98,7 @@ While no tool writes inventory files, retiring a value is **not** a format versi
 `schemaVersion` stays 1 for both formats. The formats refer to the vocabulary and do not fix it. A
 retired value is refused by name, so a bump to version 2 would add no safety, and it would refuse every
 existing file, including those that never used the value. **This amends ADR 0006's schema version
-policy:** once `eusov discover` writes inventory files, retiring or narrowing a vocabulary value needs a
+policy:** once `shift2eu discover` writes inventory files, retiring or narrowing a vocabulary value needs a
 new format version and a new ADR. Adding a capability stays allowed at version 1, because a version 1
 file that does not use it means the same as before. Snapshots (ADR 0007) are embedded and rewritten in
 the same change as the vocabulary, so they follow the same rule without a version bump.

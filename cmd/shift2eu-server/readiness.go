@@ -7,7 +7,7 @@ import (
 	"slices"
 	"sync"
 
-	"github.com/timothymamo/eu-sov-cloud/internal/app/analysis"
+	"github.com/timothymamo/shift2eu/internal/app/analysis"
 )
 
 // readiness is the check GET /readyz runs: ready once every target's catalog

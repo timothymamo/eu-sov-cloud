@@ -1,15 +1,15 @@
-# eu-sov-cloud
+# shift2eu
 
 Analyse what you run on a hyperscaler today, and find out what can move to a European cloud provider.
 
-> **Status: walking skeleton.** `eusov assess` assesses an inventory file against an embedded snapshot
+> **Status: walking skeleton.** `shift2eu assess` assesses an inventory file against an embedded snapshot
 > of the OVHcloud, the Scaleway or the UpCloud catalog, offline, or compares several of them in one
 > report. Live discovery from AWS, Azure and GCP
 > is not implemented yet.
 
 ## What it will do
 
-`eusov` reads your current infrastructure **read-only** from a source hyperscaler, compares it with the
+`shift2eu` reads your current infrastructure **read-only** from a source hyperscaler, compares it with the
 service catalogs of EU providers, and reports per resource and per workload whether it can move as is,
 with changes, or not at all, and why.
 
@@ -45,20 +45,20 @@ on either side does not mean writing a mapping for every pair. See
 ## Usage
 
 ```text
-eusov assess --inventory <file> --target <targets> [--format <format>] [--output <file>]
+shift2eu assess --inventory <file> --target <targets> [--format <format>] [--output <file>]
 ```
 
 `<targets>` is one of `ovhcloud`, `scaleway` or `upcloud`, a comma-separated list of them, or `all` for
-every target; `eusov help` lists them. For example:
+every target; `shift2eu help` lists them. For example:
 
 ```bash
 make build
-./bin/eusov assess --inventory inventory.json --target ovhcloud
-./bin/eusov assess --inventory inventory.json --target scaleway --output report.md
-./bin/eusov assess --inventory inventory.json --target upcloud
-./bin/eusov assess --inventory inventory.json --target ovhcloud,upcloud
-./bin/eusov assess --inventory inventory.json --target all --output comparison.md
-./bin/eusov assess --inventory inventory.json --target scaleway --format json --output report.json
+./bin/shift2eu assess --inventory inventory.json --target ovhcloud
+./bin/shift2eu assess --inventory inventory.json --target scaleway --output report.md
+./bin/shift2eu assess --inventory inventory.json --target upcloud
+./bin/shift2eu assess --inventory inventory.json --target ovhcloud,upcloud
+./bin/shift2eu assess --inventory inventory.json --target all --output comparison.md
+./bin/shift2eu assess --inventory inventory.json --target scaleway --format json --output report.json
 ```
 
 `assess` reads an inventory file, compares every resource with the target's catalog and writes a
@@ -131,49 +131,52 @@ embedded in the binary, so `assess` runs offline and needs no credentials.
 | Exit code | Meaning |
 |---|---|
 | 0 | The assessment ran. Blockers are a result, not a failure. |
-| 1 | The inventory, the catalog, the report or the output failed, or the run was interrupted (SIGINT, SIGTERM, SIGHUP): one `eusov: ...` line on standard error. |
+| 1 | The inventory, the catalog, the report or the output failed, or the run was interrupted (SIGINT, SIGTERM, SIGHUP): one `shift2eu: ...` line on standard error. |
 | 2 | Usage error: missing or unknown flag, command or target, or a malformed target list. Usage text on standard error. |
 
 SIGQUIT is not part of the exit-code contract: it is the Go runtime's debugging signal, which dumps
 every goroutine to standard error and exits with code 2.
 
-`eusov version` prints the version, `eusov help` the usage.
+`shift2eu version` prints the version, `shift2eu help` the usage.
 
 ## Run with Docker
 
-Each release publishes a minimal image to `ghcr.io/timothymamo/eusov`: the static `eusov` binary on
+`shift2eu` images and binaries start at `v0.2.0`. `v0.1.0` and `v0.1.0-rc.1` were published under the
+project's old names: see [Releases before the rename](#releases-before-the-rename-v010-and-v010-rc1).
+
+Each release publishes a minimal image to `ghcr.io/timothymamo/shift2eu`: the static `shift2eu` binary on
 [distroless static](https://github.com/GoogleContainerTools/distroless) (CA certificates and a
 non-root user, no shell or package manager), for `linux/amd64` and `linux/arm64`
-([ADR 0013](docs/adr/0013-ship-eusov-as-a-distroless-container-image.md),
+([ADR 0013](docs/adr/0013-ship-shift2eu-as-a-distroless-container-image.md),
 [ADR 0015](docs/adr/0015-publish-the-signed-image-to-ghcr-with-docker-buildx.md)). It is tagged with
 the release tag (`vX.Y.Z`), `X.Y` and, for the highest release version that is not a pre-release,
-`latest`: a patch to an older line does not move it. A pre-release tag (`v0.1.0-rc.2`) gets only its
+`latest`: a patch to an older line does not move it. A pre-release tag (`v0.2.0-rc.1`) gets only its
 own image tag and is a pre-release on GitHub too, never the latest release. Pin a release tag, or better its digest (see
-below); `docker run ghcr.io/timothymamo/eusov:v0.1.0 version` reports that version without its `v`
-(`0.1.0`). The commands below use `v0.1.0`; put the release you want in its place:
+below); `docker run ghcr.io/timothymamo/shift2eu:v0.2.0 version` reports that version without its `v`
+(`0.2.0`). The commands below use `v0.2.0`; put the release you want in its place:
 
 ```bash
-docker pull ghcr.io/timothymamo/eusov:v0.1.0
+docker pull ghcr.io/timothymamo/shift2eu:v0.2.0
 ```
 
-The entrypoint is `eusov` and the working directory `/work`, so relative paths such as
+The entrypoint is `shift2eu` and the working directory `/work`, so relative paths such as
 `--inventory inventory.json` resolve there. Mount only the inventory file, read-only, and since
 `assess` is offline, give the container no network:
 
 ```bash
 docker run --rm --read-only --network none --user "$(id -u):$(id -g)" \
   --mount type=bind,src="$PWD/inventory.json",dst=/work/inventory.json,readonly \
-  ghcr.io/timothymamo/eusov:v0.1.0 assess --inventory inventory.json --target scaleway
+  ghcr.io/timothymamo/shift2eu:v0.2.0 assess --inventory inventory.json --target scaleway
 
 # The report describes your infrastructure: keep the file private.
 (umask 077 && docker run --rm --read-only --network none --user "$(id -u):$(id -g)" \
   --mount type=bind,src="$PWD/inventory.json",dst=/work/inventory.json,readonly \
-  ghcr.io/timothymamo/eusov:v0.1.0 assess --inventory inventory.json --target ovhcloud > report.md)
+  ghcr.io/timothymamo/shift2eu:v0.2.0 assess --inventory inventory.json --target ovhcloud > report.md)
 ```
 
-To build the image yourself from a clone instead, `make image` tags `eusov:<version>`, `eusov:dev` and
-`eusov:latest`, stamped from git (`docker build -t eusov .` builds it without the version stamp); use
-`eusov` in place of `ghcr.io/timothymamo/eusov:v0.1.0` in the commands here.
+To build the image yourself from a clone instead, `make image` tags `shift2eu:<version>`, `shift2eu:dev` and
+`shift2eu:latest`, stamped from git (`docker build -t shift2eu .` builds it without the version stamp); use
+`shift2eu` in place of `ghcr.io/timothymamo/shift2eu:v0.2.0` in the commands here.
 `make image PLATFORMS=linux/amd64,linux/arm64` builds both release platforms (with Docker, that needs
 the containerd image store). `make image` runs `docker`, or `nerdctl` where there is no `docker`, as in
 the project's Lima VM; set `DOCKER=` to choose.
@@ -189,22 +192,22 @@ A tag can be moved; a digest cannot. Resolve the release tag to its digest once,
 that digest:
 
 ```bash
-TAG=v0.1.0
-DIGEST="$(docker buildx imagetools inspect "ghcr.io/timothymamo/eusov:$TAG" --format '{{.Manifest.Digest}}')"
-IMAGE="ghcr.io/timothymamo/eusov@$DIGEST"
+TAG=v0.2.0
+DIGEST="$(docker buildx imagetools inspect "ghcr.io/timothymamo/shift2eu:$TAG" --format '{{.Manifest.Digest}}')"
+IMAGE="ghcr.io/timothymamo/shift2eu@$DIGEST"
 
 # The signature: made by release.yml, run on a push of exactly this tag.
 cosign verify "$IMAGE" \
-  --certificate-identity "https://github.com/timothymamo/eu-sov-cloud/.github/workflows/release.yml@refs/tags/$TAG" \
+  --certificate-identity "https://github.com/timothymamo/shift2eu/.github/workflows/release.yml@refs/tags/$TAG" \
   --certificate-oidc-issuer https://token.actions.githubusercontent.com \
   --certificate-github-workflow-trigger push
 
 # The build provenance (SLSA), then the SBOM: from release.yml, for this tag, on GitHub's runners.
-gh attestation verify "oci://$IMAGE" --repo timothymamo/eu-sov-cloud \
-  --signer-workflow timothymamo/eu-sov-cloud/.github/workflows/release.yml \
+gh attestation verify "oci://$IMAGE" --repo timothymamo/shift2eu \
+  --signer-workflow timothymamo/shift2eu/.github/workflows/release.yml \
   --source-ref "refs/tags/$TAG" --deny-self-hosted-runners
-gh attestation verify "oci://$IMAGE" --repo timothymamo/eu-sov-cloud \
-  --signer-workflow timothymamo/eu-sov-cloud/.github/workflows/release.yml \
+gh attestation verify "oci://$IMAGE" --repo timothymamo/shift2eu \
+  --signer-workflow timothymamo/shift2eu/.github/workflows/release.yml \
   --source-ref "refs/tags/$TAG" --deny-self-hosted-runners \
   --predicate-type https://spdx.dev/Document/v2.3
 
@@ -218,7 +221,7 @@ index and pulls nothing, and run with `nerdctl`; the `cosign` and `gh` commands 
 
 ```bash
 # Replaces the DIGEST= line and the final `docker run` line above; TAG, IMAGE, cosign and gh stay as they are.
-DIGEST="$(crane digest "ghcr.io/timothymamo/eusov:$TAG")"
+DIGEST="$(crane digest "ghcr.io/timothymamo/shift2eu:$TAG")"
 nerdctl run --rm --read-only --network none "$IMAGE" version
 ```
 
@@ -230,6 +233,32 @@ the same source, Go modules and distroless base (`crane digest --platform linux/
 platform's digest). The image's labels
 name the source repository (`org.opencontainers.image.source`) and the commit
 (`org.opencontainers.image.revision`).
+
+#### Releases before the rename: v0.1.0 and v0.1.0-rc.1
+
+The project was called `eu-sov-cloud` until v0.2.0
+([ADR 0020](docs/adr/0020-rename-the-project-to-shift2eu.md)). `v0.1.0` and `v0.1.0-rc.1` keep the
+names they were published with: binaries `eusov_*`, image `ghcr.io/timothymamo/eusov`, and the
+signing identity of the repository's old name. Verify them with the commands above, with these
+changes:
+
+```bash
+TAG=v0.1.0   # or v0.1.0-rc.1
+DIGEST="$(docker buildx imagetools inspect "ghcr.io/timothymamo/eusov:$TAG" --format '{{.Manifest.Digest}}')"
+IMAGE="ghcr.io/timothymamo/eusov@$DIGEST"
+
+cosign verify "$IMAGE" \
+  --certificate-identity "https://github.com/timothymamo/eu-sov-cloud/.github/workflows/release.yml@refs/tags/$TAG" \
+  --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+  --certificate-github-workflow-trigger push
+
+gh attestation verify "oci://$IMAGE" --repo timothymamo/eu-sov-cloud \
+  --signer-workflow timothymamo/eu-sov-cloud/.github/workflows/release.yml \
+  --source-ref "refs/tags/$TAG" --deny-self-hosted-runners
+```
+
+Add `--predicate-type https://spdx.dev/Document/v2.3` to the `gh attestation verify` line for the
+SBOM, as above. GitHub redirects the old repository name to the new one.
 
 ### Mounts, users and reports
 
@@ -252,7 +281,7 @@ mkdir -p reports && chmod 700 reports
 docker run --rm --read-only --network none --user "$(id -u):$(id -g)" \
   --mount type=bind,src="$PWD/inventory.json",dst=/work/inventory.json,readonly \
   --mount type=bind,src="$PWD/reports",dst=/out \
-  ghcr.io/timothymamo/eusov:v0.1.0 assess --inventory inventory.json --target ovhcloud --output /out/report.md
+  ghcr.io/timothymamo/shift2eu:v0.2.0 assess --inventory inventory.json --target ovhcloud --output /out/report.md
 ```
 
 Never make the report directory world-writable (`chmod 777`) to let the container's user in.
@@ -271,7 +300,7 @@ providers' SDKs read them, through their default credential chain, at `docker ru
   docker run --rm --read-only --user "$(id -u):$(id -g)" -e HOME=/home/nonroot -e AWS_PROFILE \
     --mount type=bind,src="$HOME/.aws",dst=/home/nonroot/.aws,readonly \
     --mount type=bind,src="$HOME/.aws/sso/cache",dst=/home/nonroot/.aws/sso/cache \
-    ghcr.io/timothymamo/eusov:v0.1.0 ...
+    ghcr.io/timothymamo/shift2eu:v0.2.0 ...
   ```
 
   A `--tmpfs` there would hide the cached token and SSO would fail. Keep `--tmpfs` for cache paths
@@ -290,7 +319,7 @@ or log them.
 ## Repository layout
 
 ```
-cmd/eusov/                    CLI entry point and composition root
+cmd/shift2eu/                 CLI entry point and composition root
 internal/
   domain/                     Pure business rules, standard library only
     taxonomy/                   provider-neutral service categories
@@ -335,7 +364,7 @@ preinstalled in the Lima VM below.
 ```bash
 make help     # list targets
 make check    # lint (incl. architecture rules) + tests + vulnerability scan
-make build    # ./bin/eusov
+make build    # ./bin/shift2eu
 ```
 
 ## Working with agents
@@ -354,8 +383,8 @@ directory you clone it into, which holds only the repository and the worktrees d
 dispatcher creates beside it) and nothing else on your Mac:
 
 ```bash
-mkdir eu-sov-cloud-ws && cd eu-sov-cloud-ws   # the workspace the VM mounts
-git clone https://github.com/timothymamo/eu-sov-cloud.git && cd eu-sov-cloud
+mkdir shift2eu-ws && cd shift2eu-ws   # the workspace the VM mounts
+git clone https://github.com/timothymamo/shift2eu.git && cd shift2eu
 brew install lima
 make vm-up        # first run provisions Go, Node.js, linters, gh, Claude Code, pi and dot-agent-deck
 make vm-env       # copy your Claude, DeepSeek and GitHub credentials into the VM
@@ -380,7 +409,7 @@ Details, including credentials and why Lima rather than devbox:
 
 ## License
 
-`eusov` is licensed under the [MIT License](LICENSE).
+`shift2eu` is licensed under the [MIT License](LICENSE).
 
 The sources cited in `internal/adapter/target/*/SOURCES.md` keep their own licences, which each
 `SOURCES.md` states. The embedded catalog snapshots hold only facts taken from them (names, taxonomy

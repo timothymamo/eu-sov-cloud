@@ -5,7 +5,7 @@
 
 ## Problem
 
-`eusov` has a package layout and nothing else. Every later feature (each source adapter, each target,
+`shift2eu` has a package layout and nothing else. Every later feature (each source adapter, each target,
 sizing, pricing, workload grouping) depends on the domain model and the three ports (inventory source,
 catalog source, reporter) that the architecture names but does not define. If the first real feature is
 "discover AWS", the ports get shaped around one SDK, the first tests need credentials, and the mapping
@@ -15,7 +15,7 @@ A platform engineer evaluating a move off a hyperscaler cannot get any answer fr
 
 ## Outcome
 
-A user can run `eusov assess --inventory inventory.json --target scaleway` on a hand-written or exported
+A user can run `shift2eu assess --inventory inventory.json --target scaleway` on a hand-written or exported
 inventory file and get a deterministic Markdown report that lists, for every resource, its taxonomy
 category, the candidate Scaleway offerings, the fit (direct, partial, none), the reasons for that fit, and
 a summary of blockers. The whole path runs offline, with no credentials, and every layer exists and is
@@ -39,7 +39,7 @@ All criteria are pinned by tests that run offline under `make test` or `make tes
 
 **Inventory input**
 
-- [x] Given a valid inventory file, when I run `eusov assess --inventory <file> --target scaleway`, then the
+- [x] Given a valid inventory file, when I run `shift2eu assess --inventory <file> --target scaleway`, then the
   command exits 0 and prints a Markdown report to stdout.
 - [x] Given `--output report.md`, then the report is written to that file and nothing but diagnostics goes
   to stdout or stderr.
@@ -83,16 +83,16 @@ All criteria are pinned by tests that run offline under `make test` or `make tes
 
 **CLI**
 
-- [x] `eusov assess` with a missing `--inventory`, a missing or unknown `--target`, or an unknown flag exits
+- [x] `shift2eu assess` with a missing `--inventory`, a missing or unknown `--target`, or an unknown flag exits
   2 and prints usage to stderr. Unknown targets list the supported ones.
-- [x] `eusov version` keeps working unchanged.
-- [x] `eusov assess` needs no credentials or network: the e2e test runs the binary with an empty
+- [x] `shift2eu version` keeps working unchanged.
+- [x] `shift2eu assess` needs no credentials or network: the e2e test runs the binary with an empty
   environment and gets the same report. No package on the `assess` path imports a cloud SDK or `net/http`.
 
 **Architecture**
 
 - [x] `make check` passes, including depguard: the domain imports only the standard library, the
-  application imports only the domain, and adapters are constructed only in `cmd/eusov`.
+  application imports only the domain, and adapters are constructed only in `cmd/shift2eu`.
 - [x] The inventory-file adapter passes the contract suite in `internal/adapter/source/sourcetest`, and
   the Scaleway adapter passes the suite in `internal/adapter/target/targettest`. Both suites exist and are
   written so the future AWS, Azure, GCP, OVHcloud and UpCloud adapters can run them unchanged.
@@ -132,10 +132,10 @@ Each milestone ships as one PR. Milestones 4, 5 and 6 depend only on 3 and can r
    `[`, `](` and `*`. Regions are not a table column; offering regions appear only if a later milestone
    adds them, escaped like every other value. Defines how an empty inventory name renders (the line is
    omitted).
-7. [x] **CLI and wiring.** `eusov assess` in `internal/cli`, adapters wired in `cmd/eusov`, exit codes,
+7. [x] **CLI and wiring.** `shift2eu assess` in `internal/cli`, adapters wired in `cmd/shift2eu`, exit codes,
    e2e test in `test/e2e` against a fixture inventory that exercises direct, partial, none and
    unclassified. README gains a usage section. Moves this PRD to `prds/done/` and closes #2. The CLI
-   prints every error as `eusov: <err>` through one sanitiser (control, format, Zl/Zp characters
+   prints every error as `shift2eu: <err>` through one sanitiser (control, format, Zl/Zp characters
    escaped, one line, capped at 1 KiB). `--output` is written atomically (temp file in the target
    directory, mode 0600, rename on success, removed on failure; the destination is never truncated
    before success). A test runs `go list -deps` on the assess path and asserts no net/http, os/exec or
@@ -173,14 +173,14 @@ fixtures in earlier milestones share a picture of the data:
 
 - **Decided: start offline, from a file, not from AWS.** It lets the ports be designed without an SDK
   pulling on their shape, keeps every test free of credentials and network, and puts the mapping rules
-  first. The file format also becomes the hand-off between a future `eusov discover` and `eusov assess`,
+  first. The file format also becomes the hand-off between a future `shift2eu discover` and `shift2eu assess`,
   so users can review, sanitise or edit an inventory before assessing it.
 - **Decided: one target.** One adapter is enough to pin the catalog port and its contract suite.
   Scaleway is first; OVHcloud and UpCloud follow in their own PRDs and must pass the same suite.
 - **Decided: the CLI uses the standard library `flag` package** (CLAUDE.md rule 6). Revisit with an ADR
   if subcommands outgrow it.
 - **Decided: exit codes.** 0 when the assessment ran (blockers are a result, not a failure), 1 for input
-  or runtime errors, 2 for usage errors, matching the existing `cmd/eusov` behaviour.
+  or runtime errors, 2 for usage errors, matching the existing `cmd/shift2eu` behaviour.
 - **Accepted risk: look-alike text.** The domain rejects control, invisible and format characters, edge
   white space and non-ASCII spaces in IDs, and compares IDs and offering names ignoring runs of white
   space. Homoglyphs (e.g. Cyrillic а for Latin a) and NFC/NFD differences are not detected: the standard

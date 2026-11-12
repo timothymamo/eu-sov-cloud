@@ -9,7 +9,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/timothymamo/eu-sov-cloud/internal/adapter/source/inventoryfile"
+	"github.com/timothymamo/shift2eu/internal/adapter/source/inventoryfile"
 )
 
 // This file measures the memory a maximal request costs, over the real

@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/timothymamo/eu-sov-cloud/internal/httpapi"
+	"github.com/timothymamo/shift2eu/internal/httpapi"
 )
 
 // TestBearerToken pins the optional bearer token: every /v1/ request needs it,
