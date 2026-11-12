@@ -26,7 +26,29 @@ builds:
       - -X github.com/timothymamo/shift2eu/internal/version.date={{ .CommitDate }}
     goos: [linux, darwin, windows]
     goarch: [amd64, arm64]
+  # The HTTP API (PRD #103, ADR 0019), built exactly as the CLI: the same env,
+  # flags, ldflags and platforms. test/container and releasetarget.Read hold the
+  # two entries to each other.
+  - id: shift2eu-server
+    main: ./cmd/shift2eu-server
+    binary: shift2eu-server
+    env:
+      - CGO_ENABLED=0
+      - GOWORK=off
+      - GOFLAGS=-mod=readonly
+    flags:
+      - -trimpath
+    ldflags:
+      - -s -w
+      - -X github.com/timothymamo/shift2eu/internal/version.version={{ .Version }}
+      - -X github.com/timothymamo/shift2eu/internal/version.commit={{ .ShortCommit }}
+      - -X github.com/timothymamo/shift2eu/internal/version.date={{ .CommitDate }}
+    goos: [linux, darwin, windows]
+    goarch: [amd64, arm64]
 
+# One archive per platform holds both binaries, shift2eu and shift2eu-server:
+# an archive without ids takes every build, so the archive names stay as they
+# were and a download gives the CLI and the server of the same release.
 archives:
   - formats: [tar.gz]
     format_overrides:

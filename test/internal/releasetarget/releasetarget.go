@@ -9,10 +9,15 @@ import (
 	"github.com/timothymamo/shift2eu/test/internal/yamlread"
 )
 
-// Main is the main package the release builds: Read refuses a
-// .goreleaser.yaml that builds another, and the repository test lists the
-// packages of the release binary from it.
+// Main is the main package of the CLI, the binary every release builds: Read
+// refuses a .goreleaser.yaml without a build of it, and the repository test
+// lists the packages of the release binary from it.
 const Main = "./cmd/shift2eu"
+
+// ServerMain is the main package of the HTTP API, shift2eu-server (PRD #103,
+// ADR 0019): the one other package Read lets a build compile. The repository
+// test lists the packages of the server binary from it.
+const ServerMain = "./cmd/shift2eu-server"
 
 // Env returns the environment every build of the release must set, exactly
 // and in this order (issue #102): CGO_ENABLED=0, so the binary links no C
@@ -31,7 +36,8 @@ type Target struct {
 }
 
 // Read returns the platforms a .goreleaser.yaml document builds: the
-// goos x goarch product of its one build, sorted by GOOS then GOARCH.
+// goos x goarch product of its builds, sorted by GOOS then GOARCH. Every build
+// must give the same product, so it is one list.
 //
 // It fails closed, and holds the document to the keys the check knows cannot
 // change what the release compiles:
@@ -45,12 +51,16 @@ type Target struct {
 //     could rewrite what it compiles; -diff fails when the module is not tidy
 //     and writes nothing, where plain go mod tidy would rewrite go.mod and
 //     go.sum for the -mod=readonly build to accept.
-//   - builds must hold exactly one entry. It may hold only id, main, binary,
+//   - builds must hold a build of Main and may hold one of ServerMain, and
+//     nothing else: each main once, no other package, so every binary the
+//     release ships is one the repository test lists the packages of. Every
+//     build must build the same goos x goarch product: one release ships both
+//     binaries for the same platforms, and the check reads one list. Each entry
+//     may hold only id, main, binary,
 //     env, flags, ldflags, goos and goarch: ignore and targets (which change
 //     the platform list), tags, overrides, goamd64 and goarm64 (which change
 //     the build tags a file is selected by) and every other key are refused.
-//     main must be ./cmd/shift2eu, the package the repository test lists as the
-//     release binary. env must be exactly Env(), in its order: cgo off,
+//     env must be exactly Env(), in its order: cgo off,
 //     GOWORK=off so a go.work file cannot swap in other module versions, and
 //     GOFLAGS=-mod=readonly so the build fails rather than changes go.mod or
 //     go.sum, and uses no vendor directory. No other entry is allowed:
@@ -75,13 +85,33 @@ func Read(goreleaser []byte) ([]Target, error) {
 		return nil, fmt.Errorf("read .goreleaser.yaml: builds: %w", err)
 	}
 
-	if len(builds) != 1 {
-		return nil, fmt.Errorf("read .goreleaser.yaml: %d builds, want exactly one, so its platforms are the one list the check reads", len(builds))
+	var (
+		targets []Target
+		mains   []string
+	)
+
+	for i, build := range builds {
+		mainPkg, buildTargets, err := readBuild(build)
+		if err != nil {
+			return nil, fmt.Errorf("read .goreleaser.yaml: the build at line %d: %w", build.Num, err)
+		}
+
+		if slices.Contains(mains, mainPkg) {
+			return nil, fmt.Errorf("read .goreleaser.yaml: the build at line %d builds %s a second time", build.Num, mainPkg)
+		}
+
+		mains = append(mains, mainPkg)
+
+		if i > 0 && !slices.Equal(buildTargets, targets) {
+			return nil, fmt.Errorf("read .goreleaser.yaml: the build at line %d builds %v, want %v, the platforms of the build at line %d: every binary of the release is built for the same platforms, so they are the one list the check reads",
+				build.Num, buildTargets, targets, builds[0].Num)
+		}
+
+		targets = buildTargets
 	}
 
-	targets, err := buildTargets(builds[0])
-	if err != nil {
-		return nil, fmt.Errorf("read .goreleaser.yaml: the build at line %d: %w", builds[0].Num, err)
+	if !slices.Contains(mains, Main) {
+		return nil, fmt.Errorf("read .goreleaser.yaml: no build of %s, the CLI every release ships", Main)
 	}
 
 	return targets, nil
@@ -155,12 +185,12 @@ func checkBefore(before yamlread.Entry) error {
 	return nil
 }
 
-// buildTargets returns the goos x goarch product of one build, sorted, after
-// checking every key the build holds.
-func buildTargets(build yamlread.Item) ([]Target, error) {
+// readBuild returns the main package of one build and the goos x goarch
+// product it builds, sorted, after checking every key the build holds.
+func readBuild(build yamlread.Item) (string, []Target, error) {
 	entries, err := yamlread.Mapping(build.Lines)
 	if err != nil {
-		return nil, err
+		return "", nil, err
 	}
 
 	var (
@@ -184,20 +214,20 @@ func buildTargets(build yamlread.Item) ([]Target, error) {
 		case "goarch":
 			goarch, err = yamlread.List(e)
 		default:
-			return nil, fmt.Errorf("line %d: key %s may change what the release compiles, and the check does not read it", e.Num, e.Key)
+			return "", nil, fmt.Errorf("line %d: key %s may change what the release compiles, and the check does not read it", e.Num, e.Key)
 		}
 
 		if err != nil {
-			return nil, err
+			return "", nil, err
 		}
 	}
 
-	if mainPkg != Main {
-		return nil, fmt.Errorf("main is %q, want %s, the package the check lists as the release binary", mainPkg, Main)
+	if mainPkg != Main && mainPkg != ServerMain {
+		return "", nil, fmt.Errorf("main is %q, want %s or %s, the packages the check lists as release binaries", mainPkg, Main, ServerMain)
 	}
 
 	if want := Env(); !slices.Equal(env, want) {
-		return nil, fmt.Errorf("env is %q, want exactly %q, in that order: goreleaser renders each entry, its name included, as a template, so any other entry may set a variable the go command reads", env, want)
+		return "", nil, fmt.Errorf("env is %q, want exactly %q, in that order: goreleaser renders each entry, its name included, as a template, so any other entry may set a variable the go command reads", env, want)
 	}
 
 	for _, kv := range []struct {
@@ -209,22 +239,22 @@ func buildTargets(build yamlread.Item) ([]Target, error) {
 		{key: "goarch", values: goarch},
 	} {
 		if err := checkNoTemplate(kv.key, kv.values); err != nil {
-			return nil, err
+			return "", nil, err
 		}
 	}
 
 	for _, flag := range flags {
 		if flag != "-trimpath" {
-			return nil, fmt.Errorf("flag %s may change what the release compiles, and the check does not apply it", flag)
+			return "", nil, fmt.Errorf("flag %s may change what the release compiles, and the check does not apply it", flag)
 		}
 	}
 
 	if err := checkPlatformNames("goos", goos); err != nil {
-		return nil, err
+		return "", nil, err
 	}
 
 	if err := checkPlatformNames("goarch", goarch); err != nil {
-		return nil, err
+		return "", nil, err
 	}
 
 	targets := make([]Target, 0, len(goos)*len(goarch))
@@ -243,7 +273,7 @@ func buildTargets(build yamlread.Item) ([]Target, error) {
 		return strings.Compare(a.GOARCH, b.GOARCH)
 	})
 
-	return targets, nil
+	return mainPkg, targets, nil
 }
 
 // checkNoTemplate refuses an entry that holds a template, which goreleaser

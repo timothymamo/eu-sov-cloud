@@ -212,8 +212,9 @@ func TestRepositoryHasNoLineDirectives(t *testing.T) {
 // every platform .goreleaser.yaml builds, with cgo off and on and with the e2e
 // and integration files off and on, the domain, the application layer and the
 // shared readers import nothing the depguard rules refuse, and the release
-// binary is built from packages of the main module alone, each in the directory
-// its import path names and holding no source but Go files.
+// binaries, the CLI and the server, are built from packages of the main module
+// alone, each in the directory its import path names and holding no source but
+// Go files.
 func TestReleaseTargetDependencies(t *testing.T) {
 	t.Parallel()
 
@@ -246,7 +247,9 @@ func TestReleaseTargetDependencies(t *testing.T) {
 					t.Parallel()
 
 					checkLayers(t, root, target, cgo.enabled, tags.tags, rules, patterns)
-					checkReleaseBinary(t, root, target, cgo.enabled, tags.tags)
+					for _, bin := range releaseBinaries {
+						checkReleaseBinary(t, root, target, cgo.enabled, tags.tags, bin.main, bin.required)
+					}
 				})
 			}
 		}
@@ -399,40 +402,62 @@ func checkLayers(
 	}
 }
 
-// checkReleaseBinary lists what the release binary, releasetarget.Main, is built
-// from for one build and fails when a package of the module breaks the source
-// rules: Sources checks every package whose import path is the module path or
-// under it and requires that it belongs to the main module, so a nested module
-// under that path is flagged, that its directory with symlinks resolved is the
-// one its import path names, and that it holds no source but Go files: no cgo,
-// C, C++, header, Fortran, Objective-C, assembly, SWIG or syso file. Imports are
+// releaseBinaries are the binaries the release ships, each with the packages
+// its listing must hold: without them the listing would pass over a binary
+// that carries none of the packages the check exists for. The CLI, Main, is
+// built from internal/cli and the server, ServerMain (PRD #103), from
+// internal/httpapi, and both carry the three target adapters.
+var releaseBinaries = []struct {
+	main     string
+	required []string
+}{
+	{
+		main: releasetarget.Main,
+		required: []string{
+			modulePath + "/internal/adapter/target/ovhcloud",
+			modulePath + "/internal/adapter/target/scaleway",
+			modulePath + "/internal/adapter/target/upcloud",
+			modulePath + "/internal/cli",
+		},
+	},
+	{
+		main: releasetarget.ServerMain,
+		required: []string{
+			modulePath + "/internal/adapter/target/ovhcloud",
+			modulePath + "/internal/adapter/target/scaleway",
+			modulePath + "/internal/adapter/target/upcloud",
+			modulePath + "/internal/httpapi",
+		},
+	},
+}
+
+// checkReleaseBinary lists what one release binary, mainPkg, is built from for
+// one build and fails when a package of the module breaks the source rules:
+// Sources checks every package whose import path is the module path or under
+// it and requires that it belongs to the main module, so a nested module under
+// that path is flagged, that its directory with symlinks resolved is the one
+// its import path names, and that it holds no source but Go files: no cgo, C,
+// C++, header, Fortran, Objective-C, assembly, SWIG or syso file. Imports are
 // not checked here, and the standard library and packages outside the module
 // path (third-party code) are skipped. It fails too when go list did not list
-// internal/cli or one of the three target adapters, since the checks above
-// would then read nothing of them.
-func checkReleaseBinary(t *testing.T, root string, target releasetarget.Target, cgo bool, tags []string) {
+// one of the required packages, since the checks above would then read nothing
+// of them.
+func checkReleaseBinary(t *testing.T, root string, target releasetarget.Target, cgo bool, tags []string, mainPkg string, required []string) {
 	t.Helper()
 
-	pkgs, err := check.ListPackages(t.Context(), root, target, cgo, tags, releasetarget.Main)
+	pkgs, err := check.ListPackages(t.Context(), root, target, cgo, tags, mainPkg)
 	if err != nil {
-		t.Fatalf("ListPackages(%s, %v, cgo=%t, tags=%v): %v", releasetarget.Main, target, cgo, tags, err)
+		t.Fatalf("ListPackages(%s, %v, cgo=%t, tags=%v): %v", mainPkg, target, cgo, tags, err)
 	}
 
 	if messages := check.Sources(root, modulePath, pkgs); len(messages) != 0 {
 		t.Errorf("Sources(%s, %v, cgo=%t, tags=%v) flagged %d package(s):\n%s",
-			releasetarget.Main, target, cgo, tags, len(messages), strings.Join(messages, "\n"))
+			mainPkg, target, cgo, tags, len(messages), strings.Join(messages, "\n"))
 	}
 
-	// Without them the listing would pass over a binary that carries none of
-	// the packages the check exists for.
-	for _, want := range []string{
-		modulePath + "/internal/adapter/target/ovhcloud",
-		modulePath + "/internal/adapter/target/scaleway",
-		modulePath + "/internal/adapter/target/upcloud",
-		modulePath + "/internal/cli",
-	} {
+	for _, want := range required {
 		if !slices.ContainsFunc(pkgs, func(pkg check.Package) bool { return pkg.ImportPath == want }) {
-			t.Errorf("go list did not list %s, so the check above read nothing of it", want)
+			t.Errorf("go list did not list %s in %s, so the check above read nothing of it", want, mainPkg)
 		}
 	}
 }
