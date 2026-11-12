@@ -56,13 +56,21 @@ moves or deletes a tag.
    (exactly; ADR 0021 says why), opened by the release App itself, not just any bot. Read the author
    with `gh pr view <n> --json author --jq '.author.is_bot, .author.login'`: `gh` gives an App's login
    as `app/<slug>` (the REST API's `<slug>[bot]`), so it must print `true` and `app/<slug>`; take
-   `<slug>` by removing `app/` (or a trailing `[bot]`, if a `gh` version prints that form). Then
-   `gh api apps/<slug> --jq .id` must equal the `RELEASE_APP_ID` read in step 2. A human author, a
-   login of another form, a slug that does not resolve, or a different id: report it and stop. If
-   there is none, check for a merged one still waiting for its tag
-   (`gh pr list --state merged --label "autorelease: pending" --json number,title,mergeCommit`): if
-   there is one, go to step 6 for it. Otherwise release-please found nothing to release since the last
-   release (only docs, test, ci, chore, build, style or refactor commits): report that and stop.
+   `<slug>` by removing `app/` (or a trailing `[bot]`, if a `gh` version prints that form). The slug
+   must match `^[a-z0-9][a-z0-9-]*$` before it goes into any command; if it does not, report it and
+   stop. Then `gh api apps/<slug> --jq .id` must equal the `RELEASE_APP_ID` read in step 2. The App
+   is private, so a 404 there means you cannot see it, not that it does not exist: report that and
+   stop. A human author, a login of another form, a slug that does not resolve, or a different id:
+   report it and stop. If there is no open release PR, check for a merged one still waiting for its
+   tag:
+   `gh pr list --state merged --label "autorelease: pending" --json number,title,author,headRefName,mergeCommit`.
+   Hold it to the same checks as an open one: exactly one, its `headRefName` exactly
+   `release-please--branches--main--components--shift2eu`, its author the release App (`is_bot`
+   `true`, login `app/<slug>`, the slug matching the pattern above, and `gh api apps/<slug> --jq .id`
+   equal to `RELEASE_APP_ID`). If it passes, go to step 6 for it; if it fails any check, or there is
+   more than one, report it and stop. If there is neither an open nor a merged one, release-please
+   found nothing to release since the last release (only docs, test, ci, chore, build, style or
+   refactor commits): report that and stop.
 4. Review the release PR against this skill's rules, and report:
    - the last release tag:
      `git -C <repository root> tag -l 'v*.*.*' --merged HEAD | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | sort -V | tail -n 1`,
