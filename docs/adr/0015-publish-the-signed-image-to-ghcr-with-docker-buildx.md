@@ -3,6 +3,8 @@
 - Status: Accepted. Amended by issue #92: a pre-release tag is a GitHub pre-release too (Tags, below).
   Amended by PRD #103: a second image, `shift2eu-server`, is published the same way (Consequences).
   Amended by issue #99: an independent `verify` job checks both published images (Consequences).
+  Amended by [ADR 0021](0021-propose-releases-with-release-please-and-tag-with-a-github-app.md) (issue
+  #142): the release App creates the tags, and the `v*` tag ruleset is split in two (Consequences).
 - Date: 2026-11-11
 
 ## Context
@@ -138,6 +140,10 @@ attestations, pushed to the registry beside the image.
   commits). It is set by hand and is the security boundary; the ancestry guard only catches mistakes.
   It is a precondition of every release: the `release-tag` skill checks that it exists
   (`gh api repos/{owner}/{repo}/rulesets`) and stops before tagging if it does not.
+  Since issue #142 (ADR 0021) the release App creates the tags, and the ruleset is split in two,
+  because a ruleset's bypass list applies to all its rules: `Release tag creation` restricts creation,
+  bypassed by repository admins and the release App; `Release tags` restricts update, deletion and
+  non-fast-forward, bypassed by repository admins only. The skill accepts their union.
 - **Verification instructions** pin an exact identity per release: `cosign verify` with
   `--certificate-identity .../release.yml@refs/tags/vX.Y.Z` and the GitHub OIDC issuer, and
   `gh attestation verify` with `--source-ref refs/tags/vX.Y.Z`, `--signer-workflow` and
