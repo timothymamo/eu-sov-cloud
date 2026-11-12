@@ -156,28 +156,39 @@ linters:
             - pkg: google.golang.org/api
               desc: cloud SDKs belong in internal/adapter/source/gcp
             # The assess path needs no network, process or OS access in the
-            # application layer: adapters do I/O behind the ports. The allow
-            # list already refuses everything below; these entries only say
-            # why. depguard prefix-matches, so net/http also covers
-            # net/http/httptest and every other net/http/* package, and net/rpc
-            # covers net/rpc/jsonrpc. net$ and os$ end in $ and cover that
-            # package only: depguard compares an import with the one entry that
-            # sorts nearest before it, so a bare net or os would be a strict
-            # prefix of net/http or os/exec and never decide an import under
-            # them, so the subpackages that need a reason are named one by one
-            # (issue #119; test/architecture, TestDepguardEntriesShadowNothing).
-            # Every net/* package that can open a connection is named, and so
-            # is crypto/tls, whose Dial opens one too, as are os/exec, os/user
-            # and os/signal, and syscall (which also covers syscall/js) and
-            # plugin, which reach files, sockets, processes and shared
-            # libraries without os or net: the lax
-            # app-tests-use-fakes-not-adapters rule shares this list and
-            # allows any package not named here, and the application layer's
-            # tests do no I/O. The pure net
-            # subpackages, net/url and net/netip, are left out on purpose: the
-            # strict app-uses-ports-not-adapters rule refuses them through its
-            # allow list, with depguard's generic message, and its tests may
-            # use them.
+            # application layer: adapters do I/O behind the ports. The strict
+            # app-uses-ports-not-adapters rule refuses everything its allow list
+            # leaves out, so for it the entries below only say why. The lax
+            # app-tests-use-fakes-not-adapters rule shares this list and allows
+            # any package not named here, so the list is not complete: it names
+            # the standard packages known to reach files, sockets, processes or
+            # shared libraries. Every net/* package that can open a connection
+            # (and crypto/tls, whose Dial opens one), os and os/exec, os/user
+            # and os/signal, syscall (which also covers syscall/js) and plugin;
+            # and the packages that do I/O without importing os or net:
+            # io/ioutil, log/syslog, text/template and html/template
+            # (ParseFiles, ParseGlob), archive/zip (OpenReader), every debug/*
+            # package (elf.Open, buildinfo.ReadFile, ...), go/build, go/importer
+            # and runtime/debug (WriteHeapDump, SetCrashOutput). A standard
+            # package that can do I/O and is added to Go must be added here;
+            # test/lint, TestAppTestsUseFakesNotAdaptersProbe, pins the list
+            # (issue #119). The pure packages are left out on purpose: net/url
+            # and net/netip, and path/filepath, whose Join and Base touch no
+            # file (its Walk and Glob do, but nothing in internal/app imports
+            # it); the strict rule refuses them through its allow list, with
+            # depguard's generic message, and the tests may use them.
+            #
+            # depguard prefix-matches, so net/http also covers
+            # net/http/httptest and every other net/http/* package, net/rpc
+            # covers net/rpc/jsonrpc and debug/ covers every debug/* package.
+            # net$, os$ and go/build$ end in $ and cover that package only
+            # (go/build/constraint is pure): depguard compares an import with
+            # the one entry that sorts nearest before it, so a bare net or os
+            # would be a strict prefix of net/http or os/exec and never decide
+            # an import under them, so the subpackages that need a reason are
+            # named one by one, and no bare log, debug or runtime entry stands
+            # above log/syslog, debug/ or runtime/debug (test/architecture,
+            # TestDepguardEntriesShadowNothing).
             - pkg: net/http
               desc: the application layer makes no HTTP calls; an adapter behind a port does
             - pkg: net/rpc
@@ -204,6 +215,24 @@ linters:
               desc: the application layer makes no system calls (files, sockets, processes); an adapter behind a port does
             - pkg: plugin
               desc: the application layer loads no code at run time; the composition root wires everything it needs
+            - pkg: io/ioutil
+              desc: the application layer reads and writes no files; an adapter behind a port does
+            - pkg: log/syslog
+              desc: the application layer writes no system log; it returns errors to the driving adapter
+            - pkg: text/template
+              desc: the application layer renders no templates and reads no template files; a report adapter renders
+            - pkg: html/template
+              desc: the application layer renders no templates and reads no template files; a report adapter renders
+            - pkg: archive/zip
+              desc: the application layer opens no archives; an adapter behind a port does
+            - pkg: debug/
+              desc: the application layer reads no binaries or build metadata; internal/version holds what the build records
+            - pkg: go/build$
+              desc: the application layer inspects no Go source trees on disk
+            - pkg: go/importer
+              desc: the application layer loads no compiled Go packages from disk
+            - pkg: runtime/debug
+              desc: the application layer reads no build info and writes no heap dumps or crash output; internal/version holds what the build records
         # The application layer's tests use fakes, not adapters, and keep the
         # same deny list. They are left out of the strict rule above because
         # they also need testing, go-cmp and testutil.

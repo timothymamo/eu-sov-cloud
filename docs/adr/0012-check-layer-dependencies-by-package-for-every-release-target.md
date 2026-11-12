@@ -223,6 +223,17 @@ or a file placed there directly, so a new adapter subtree cannot escape the rule
 module that imports an adapter from each subtree, and each subtree's root, outside the composition roots, and runs with
 `SHIFT2EU_LINT_PROBES=require` in `make lint` and every lint-target matrix entry.
 
+The lax rule `app-tests-use-fakes-not-adapters` shares the `&app-deny` list of the strict
+`app-uses-ports-not-adapters` and allows any package that list does not name, so the application
+layer's tests could import a standard package that does I/O without importing `os` or `net`. The list
+now also names `io/ioutil`, `log/syslog`, `text/template`, `html/template`, `archive/zip`, every
+`debug/*` package, `go/build`, `go/importer` and `runtime/debug`, besides `syscall` and `plugin`; it
+names the packages known to do I/O and does not claim to be complete. `test/lint`'s
+`TestAppTestsUseFakesNotAdaptersProbe` pins it: an application-layer `_test.go` file in a probe module
+imports each of them, which must be refused, and pure controls (`net/url`, `net/netip`, `strings`,
+`context`, `testing`, `runtime`), which must not. `path/filepath` stays allowed on purpose: `Join` and
+`Base` are pure, and nothing in `internal/app` imports it.
+
 The checks are ordinary tests, so `make test`, `make check` and CI's `make cover` run them with no
 workflow change.
 

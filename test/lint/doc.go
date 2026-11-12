@@ -50,7 +50,14 @@
 // from each subtree of internal/adapter, and each subtree's root package, in
 // packages outside the composition roots, and must be refused by
 // adapters-are-built-in-cmd, so a deny entry shadowed by another, as in issue
-// #119, fails. TestCloudReadOnlyPatterns and
+// #119, fails. TestAppTestsUseFakesNotAdaptersProbe (testdata/apptestimports)
+// imports, in an application-layer _test.go file, the standard packages that
+// do file, network or process I/O, os and net among them and those that need
+// neither (io/ioutil, text/template, debug/elf, runtime/debug, ...), and must be
+// refused by the lax app-tests-use-fakes-not-adapters rule, while its pure
+// controls (net/url, net/netip, strings, context, testing, runtime) must not:
+// the rule allows any package its deny list does not name, so the probe pins
+// that list. TestCloudReadOnlyPatterns and
 // TestCloudReadOnlyPackages check the group's allowlist patterns, read from
 // .golangci.yml, against lists of write and read names and of import paths,
 // without golangci-lint. TestForbidigoExclusionsDropOneGroup checks every
