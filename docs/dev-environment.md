@@ -80,6 +80,16 @@ exit
   the first `make deck`: if the TUI has already started a daemon of its own, the service is installed but
   not started, and you have to run `dot-agent-deck daemon stop` and
   `systemctl --user start dot-agent-deck.service` first.
+- **Agent panes have colour.** systemd gives the service no `TERM`, and every agent pane inherits the
+  service's environment, so a second drop-in installed by `dev/lima.yaml`
+  (`~/.config/systemd/user/dot-agent-deck.service.d/terminal.conf`) sets `TERM=xterm-256color` and
+  `COLORTERM=truecolor`. A VM created before it has colourless panes; add the drop-in by hand, then
+  restart the service (this stops the running agents):
+
+  ```bash
+  limactl shell --workdir / shift2eu sh -c 'printf "[Service]\nEnvironment=TERM=xterm-256color COLORTERM=truecolor\n" > ~/.config/systemd/user/dot-agent-deck.service.d/terminal.conf && systemctl --user daemon-reload'
+  make deck-restart
+  ```
 
 ### Every day
 
