@@ -69,6 +69,9 @@ FAKE
 chmod +x "${work}/bin/gh"
 
 repo=example/shift2eu
+slug=release-app
+bot="${slug}[bot]"
+branch=release-please--branches--main--components--shift2eu
 merge=1111111111111111111111111111111111111111
 object=2222222222222222222222222222222222222222
 other=3333333333333333333333333333333333333333
@@ -81,7 +84,7 @@ respond() { printf '%s\n' "$3" >"${FAKE_GH}/$(printf '%s %s' "$1" "$2" | sha256s
 # run_step runs a step's script as the workflow would and compares its exit with want (pass or fail).
 run_step() {
   local name="$1" step="$2" want="$3" got=pass
-  PATH="${work}/bin:${PATH}" FAKE_GH="${FAKE_GH}" GH_TOKEN=fake GH_REPO="${repo}" \
+  PATH="${work}/bin:${PATH}" FAKE_GH="${FAKE_GH}" GH_TOKEN=fake GH_REPO="${repo}" APP_SLUG="${slug}" \
     bash "${work}/${step}.sh" >"${FAKE_GH}/out" 2>&1 || got=fail
   if [ "${got}" != "${want}" ]; then
     echo "FAIL ${name}: the ${step} step's result is ${got}, want ${want}"; sed 's/^/    /' "${FAKE_GH}/out"
@@ -99,58 +102,117 @@ wrote_nothing() {
     echo "FAIL $1: the step wrote"; sed 's/^/    /' "${FAKE_GH}/calls"; failures=$((failures + 1))
   fi
 }
-
-runs() { echo "{\"total_count\": $1}"; }
-# guard_runs answers the guard's read of release.yml's runs: queued and in_progress as given, the
-# other unfinished statuses none.
-guard_runs() {
-  for status in requested waiting pending; do respond GET "repos/${repo}/actions/workflows/release.yml/runs?status=${status}&per_page=1" "$(runs 0)"; done
-  respond GET "repos/${repo}/actions/workflows/release.yml/runs?status=queued&per_page=1" "$(runs "$1")"
-  respond GET "repos/${repo}/actions/workflows/release.yml/runs?status=in_progress&per_page=1" "$(runs "$2")"
+# said checks that the step's output holds a line matching the pattern; never_said that none does.
+said() {
+  grep -qE -- "$2" "${FAKE_GH}/out" || { echo "FAIL $1: no output line matches $2"; sed 's/^/    /' "${FAKE_GH}/out"; failures=$((failures + 1)); }
+}
+never_said() {
+  if grep -qE -- "$2" "${FAKE_GH}/out"; then
+    echo "FAIL $1: an output line matches $2"; sed 's/^/    /' "${FAKE_GH}/out"; failures=$((failures + 1))
+  fi
 }
 
-scenario guard-idle; guard_runs 0 0; run_step "guard: no release in flight" guard pass
-scenario guard-queued; guard_runs 1 0; run_step "guard: a release run queued" guard fail
-scenario guard-running; guard_runs 0 1; run_step "guard: a release run in progress" guard fail
-
 pending="repos/${repo}/issues?state=closed&labels=autorelease:%20pending&per_page=100"
+
+# Items of the closed issues labelled autorelease: pending: a merged release PR of the App, a PR closed
+# without merging, a merged PR of someone else, and an issue.
+merged_pr() { echo "{\"number\": $1, \"user\": {\"login\": \"${2:-${bot}}\"}, \"pull_request\": {\"merged_at\": \"2026-11-12T10:00:00Z\"}}"; }
+unmerged_pr() { echo "{\"number\": $1, \"user\": {\"login\": \"${bot}\"}, \"pull_request\": {\"merged_at\": null}}"; }
+an_issue='{"number": 7, "user": {"login": "someone"}}'
+
+runs() { echo "{\"total_count\": $1}"; }
+# guard_runs answers the guard's read of release.yml's runs: one run in the status given, none in the
+# others ("" for none at all).
+guard_runs() {
+  local status n
+  for status in requested waiting pending queued in_progress; do
+    if [ "${status}" = "$1" ]; then n=1; else n=0; fi
+    respond GET "repos/${repo}/actions/workflows/release.yml/runs?status=${status}&per_page=1" "$(runs "${n}")"
+  done
+}
+
+scenario guard-idle; respond GET "${pending}" "[$(merged_pr 42)]"; guard_runs ""
+run_step "guard: a merged release PR, no release in flight" guard pass; wrote_nothing "guard: idle"
+for status in requested waiting pending queued in_progress; do
+  scenario "guard-${status}"; respond GET "${pending}" "[$(merged_pr 42)]"; guard_runs "${status}"
+  run_step "guard: a merged release PR, a release run ${status}" guard fail; wrote_nothing "guard: a release run ${status}"
+  scenario "guard-nothing-${status}"; respond GET "${pending}" "[$(unmerged_pr 41), $(merged_pr 43 someone), ${an_issue}]"; guard_runs "${status}"
+  run_step "guard: nothing to tag, a release run ${status}" guard pass; wrote_nothing "guard: nothing to tag, ${status}"
+done
 
 # merged_release answers for one merged release PR, #42, whose fields default to a well-formed release of
 # version (the manifest's) with the given title; extra jq edits the pull request.
 merged_release() {
   local version="$1" title="$2" edit="${3:-.}" ancestry="${4:-ahead}"
-  respond GET "${pending}" '[{"number": 42, "pull_request": {}}, {"number": 7}]'
-  respond GET "repos/${repo}/pulls/42" "$(jq -c "${edit}" <<<"{\"merged\": true, \"base\": {\"ref\": \"main\"}, \"head\": {\"ref\": \"release-please--branches--main--components--shift2eu\", \"repo\": {\"full_name\": \"${repo}\"}}, \"merge_commit_sha\": \"${merge}\", \"title\": \"${title}\"}")"
+  respond GET "${pending}" "[$(merged_pr 42), ${an_issue}]"
+  respond GET "repos/${repo}/pulls/42" "$(jq -c --arg version "${title}" "${edit}" <<<"{\"merged\": true, \"user\": {\"login\": \"${bot}\"}, \"base\": {\"ref\": \"main\"}, \"head\": {\"ref\": \"${branch}\", \"repo\": {\"full_name\": \"${repo}\"}}, \"merge_commit_sha\": \"${merge}\", \"title\": \"${title}\"}")"
+  respond GET "repos/${repo}/pulls/42/files?per_page=100" '[{"filename": "CHANGELOG.md"}, {"filename": ".release-please-manifest.json"}]'
   respond GET "repos/${repo}/compare/${merge}...main" "{\"status\": \"${ancestry}\"}"
-  respond GET "repos/${repo}/contents/.release-please-manifest.json?ref=${merge}" "{\".\": \"${version}\"}"
+  respond GET "repos/${repo}/contents/.release-please-manifest.json?ref=${merge}" "$(jq -nc --arg v "${version}" '{".": $v}')"
   respond GET "repos/${repo}/git/matching-refs/tags/v${version}" '[]'
   respond POST "repos/${repo}/git/tags" "{\"sha\": \"${object}\"}"
 }
+# tagged_42 checks the writes of a release of #42 as v0.3.0: the tag object, the ref, then the label
+# autorelease: tagged before autorelease: pending is removed.
+tagged_42() {
+  wrote "$1" "^POST repos/${repo}/git/tags tag=v0\.3\.0 message=v0\.3\.0 object=${merge} type=commit$"
+  wrote "$1" "^POST repos/${repo}/git/refs ref=refs/tags/v0\.3\.0 sha=${object}$"
+  local added removed
+  added="$(grep -nE "^POST repos/${repo}/issues/42/labels " "${FAKE_GH}/calls" | cut -d: -f1 | head -n 1)"
+  removed="$(grep -nE "^DELETE repos/${repo}/issues/42/labels/" "${FAKE_GH}/calls" | cut -d: -f1 | head -n 1)"
+  if [ -z "${added}" ] || [ -z "${removed}" ] || [ "${added}" -gt "${removed}" ]; then
+    echo "FAIL $1: want autorelease: tagged added, then autorelease: pending removed"; sed 's/^/    /' "${FAKE_GH}/calls"; failures=$((failures + 1))
+  fi
+  wrote "$1" "^POST repos/${repo}/issues/42/labels labels\[\]=autorelease: tagged$"
+  wrote "$1" "^DELETE repos/${repo}/issues/42/labels/autorelease:%20pending"
+  if grep -qE '/issues/(41|43|44)/' "${FAKE_GH}/calls"; then echo "FAIL $1: another PR was relabelled"; failures=$((failures + 1)); fi
+}
 
-scenario none; respond GET "${pending}" '[{"number": 7}]'
+scenario none; respond GET "${pending}" "[${an_issue}]"
 run_step "tag: no merged release PR" tag pass; wrote_nothing "tag: no merged release PR"
 
 scenario release; merged_release 0.3.0 "chore(main): release 0.3.0"
-run_step "tag: a merged release PR" tag pass
-wrote "tag: a merged release PR" "^POST repos/${repo}/git/tags tag=v0\.3\.0 message=v0\.3\.0 object=${merge} type=commit$"
-wrote "tag: a merged release PR" "^POST repos/${repo}/git/refs ref=refs/tags/v0\.3\.0 sha=${object}$"
-wrote "tag: a merged release PR" "^DELETE repos/${repo}/issues/42/labels/autorelease:%20pending"
-wrote "tag: a merged release PR" "^POST repos/${repo}/issues/42/labels labels\[\]=autorelease: tagged$"
+run_step "tag: a merged release PR" tag pass; tagged_42 "tag: a merged release PR"
+
+scenario unmerged-only; respond GET "${pending}" "[$(unmerged_pr 41), ${an_issue}]"
+run_step "tag: only a PR closed without merging" tag pass; wrote_nothing "tag: only a PR closed without merging"
+said "tag: only a PR closed without merging" '^::warning::#41 .*closed without merging'
+
+scenario unmerged-and-merged; merged_release 0.3.0 "chore(main): release 0.3.0"
+respond GET "${pending}" "[$(unmerged_pr 41), $(merged_pr 42)]"
+run_step "tag: a PR closed without merging beside a merged one" tag pass; tagged_42 "tag: a PR closed without merging beside a merged one"
+said "tag: a PR closed without merging beside a merged one" '^::warning::#41 '
+
+scenario author-only; respond GET "${pending}" "[$(merged_pr 43 someone)]"
+run_step "tag: only a PR of another author" tag pass; wrote_nothing "tag: only a PR of another author"
+said "tag: only a PR of another author" "^::warning::#43 .*not opened by ${slug}\[bot\]"
+
+scenario author-and-app; merged_release 0.3.0 "chore(main): release 0.3.0"
+respond GET "${pending}" "[$(merged_pr 43 someone), $(merged_pr 42)]"
+run_step "tag: a PR of another author beside the App's" tag pass; tagged_42 "tag: a PR of another author beside the App's"
+
+scenario author-pull; merged_release 0.3.0 "chore(main): release 0.3.0" '.user.login = "someone"'
+run_step "tag: a pull request whose author is not the App" tag fail; wrote_nothing "tag: a pull request whose author is not the App"
 
 scenario two; merged_release 0.3.0 "chore(main): release 0.3.0"
-respond GET "${pending}" '[{"number": 42, "pull_request": {}}, {"number": 43, "pull_request": {}}]'
-run_step "tag: two pending release PRs" tag fail; wrote_nothing "tag: two pending release PRs"
+respond GET "${pending}" "[$(merged_pr 42), $(merged_pr 44)]"
+run_step "tag: two merged release PRs" tag fail; wrote_nothing "tag: two merged release PRs"
 
 for bad in "0.3" "0.3.0-rc.1" "v0.3.0" "0.3.0 ; touch pwned" '0.3.0$(touch pwned)'; do
   scenario "version-$(printf '%s' "${bad}" | sha256sum | cut -c1-8)"; merged_release "${bad}" "chore(main): release ${bad}"
   run_step "tag: manifest version '${bad}'" tag fail; wrote_nothing "tag: manifest version '${bad}'"
 done
 
+# A version holding a newline and a workflow command is printed quoted, on one line.
+scenario version-command; merged_release $'0.3.0\n::error::injected' "chore(main): release 0.3.0"
+run_step "tag: a manifest version holding a workflow command" tag fail; wrote_nothing "tag: a manifest version holding a workflow command"
+never_said "tag: a manifest version holding a workflow command" '^::error::injected'
+
 scenario title; merged_release 0.3.0 'chore(main): release 0.4.0'
 run_step "tag: a title naming another version" tag fail; wrote_nothing "tag: a title naming another version"
 
 scenario unmerged; merged_release 0.3.0 "chore(main): release 0.3.0" '.merged = false'
-run_step "tag: a PR closed without merging" tag fail; wrote_nothing "tag: a PR closed without merging"
+run_step "tag: a listed merged PR that the pull request says is not merged" tag fail; wrote_nothing "tag: pull request not merged"
 
 scenario base; merged_release 0.3.0 "chore(main): release 0.3.0" '.base.ref = "next"'
 run_step "tag: a PR merged into another branch" tag fail; wrote_nothing "tag: a PR merged into another branch"
@@ -158,8 +220,30 @@ run_step "tag: a PR merged into another branch" tag fail; wrote_nothing "tag: a 
 scenario head; merged_release 0.3.0 "chore(main): release 0.3.0" '.head.ref = "feat/1-x"'
 run_step "tag: a PR from another branch" tag fail; wrote_nothing "tag: a PR from another branch"
 
+scenario head-merged; merged_release 0.3.0 "chore(main): release 0.3.0" '.head.ref = "release-please--branches--main"'
+run_step "tag: a PR from the merge plugin's branch" tag fail; wrote_nothing "tag: a PR from the merge plugin's branch"
+
+scenario head-component; merged_release 0.3.0 "chore(main): release 0.3.0" '.head.ref = "release-please--branches--main--components--other"'
+run_step "tag: a PR from another component's branch" tag fail; wrote_nothing "tag: a PR from another component's branch"
+
 scenario fork; merged_release 0.3.0 "chore(main): release 0.3.0" '.head.repo.full_name = "someone/shift2eu"'
 run_step "tag: a PR from a fork" tag fail; wrote_nothing "tag: a PR from a fork"
+
+scenario files-other; merged_release 0.3.0 "chore(main): release 0.3.0"
+respond GET "repos/${repo}/pulls/42/files?per_page=100" '[{"filename": "CHANGELOG.md"}, {"filename": ".github/workflows/release.yml"}]'
+run_step "tag: a PR changing another file" tag fail; wrote_nothing "tag: a PR changing another file"
+
+scenario files-third; merged_release 0.3.0 "chore(main): release 0.3.0"
+respond GET "repos/${repo}/pulls/42/files?per_page=100" '[{"filename": "CHANGELOG.md"}, {"filename": ".release-please-manifest.json"}, {"filename": "go.mod"}]'
+run_step "tag: a PR changing a third file" tag fail; wrote_nothing "tag: a PR changing a third file"
+
+scenario files-renamed; merged_release 0.3.0 "chore(main): release 0.3.0"
+respond GET "repos/${repo}/pulls/42/files?per_page=100" '[{"filename": "CHANGELOG.md", "previous_filename": "go.mod"}, {"filename": ".release-please-manifest.json"}]'
+run_step "tag: a PR renaming another file" tag fail; wrote_nothing "tag: a PR renaming another file"
+
+scenario files-no-manifest; merged_release 0.3.0 "chore(main): release 0.3.0"
+respond GET "repos/${repo}/pulls/42/files?per_page=100" '[{"filename": "CHANGELOG.md"}]'
+run_step "tag: a PR that leaves the manifest alone" tag fail; wrote_nothing "tag: a PR that leaves the manifest alone"
 
 scenario diverged; merged_release 0.3.0 "chore(main): release 0.3.0" . diverged
 run_step "tag: a merge commit not on main" tag fail; wrote_nothing "tag: a merge commit not on main"
@@ -175,6 +259,7 @@ respond GET "repos/${repo}/git/ref/tags/v0.3.0" "{\"object\": {\"type\": \"tag\"
 respond GET "repos/${repo}/git/tags/${object}" "{\"object\": {\"type\": \"commit\", \"sha\": \"${merge}\"}}"
 run_step "tag: the tag exists on the merge commit" tag pass
 wrote "tag: the tag exists on the merge commit" "^POST repos/${repo}/issues/42/labels labels\[\]=autorelease: tagged$"
+wrote "tag: the tag exists on the merge commit" "^DELETE repos/${repo}/issues/42/labels/autorelease:%20pending"
 if grep -q "git/" <(grep -vE '^GET ' "${FAKE_GH}/calls"); then
   echo "FAIL tag: the tag exists on the merge commit: the step created a tag"; failures=$((failures + 1))
 fi
