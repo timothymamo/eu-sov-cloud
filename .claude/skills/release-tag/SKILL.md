@@ -35,7 +35,7 @@ moves or deletes a tag.
    | App | App ID | Slug | Bot login |
    |---|---|---|---|
    | release-please App | `5729776` | `shift2eu-release` | `app/shift2eu-release` (`gh`), `shift2eu-release[bot]` (REST API) |
-   | release-tag App | `<RELEASE_TAG_APP_ID: set by the maintainer before merge>` | `<RELEASE_TAG_APP_SLUG: set by the maintainer before merge>` | `app/<slug>` |
+   | release-tag App | `5734263` | `shift2eu-release-tag` | `app/shift2eu-release-tag` (`gh`), `shift2eu-release-tag[bot]` (REST API) |
 
    **Fail closed:** if the release-tag App's ID above still reads `<RELEASE_TAG_APP_ID: ...>`, or is not
    a number, report "the release-tag App's ID is not recorded in the release-tag skill and ADR 0021: a

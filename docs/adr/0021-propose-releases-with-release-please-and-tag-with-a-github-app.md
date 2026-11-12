@@ -148,8 +148,8 @@ pass `client-id`, since `actions/create-github-app-token` v3 deprecates `app-id`
 | Environment | `release-please` (`main` only) | `release-tag` (`main` only) |
 | Variable | `RELEASE_APP_CLIENT_ID` | `RELEASE_TAG_APP_CLIENT_ID` |
 | Secret | `RELEASE_APP_PRIVATE_KEY` | `RELEASE_TAG_APP_PRIVATE_KEY` |
-| App ID | `5729776` | `<RELEASE_TAG_APP_ID: set by the maintainer before merge>` |
-| Slug (bot login) | `shift2eu-release` (`shift2eu-release[bot]`, `app/shift2eu-release` in `gh`) | `<RELEASE_TAG_APP_SLUG: set by the maintainer before merge>` |
+| App ID | `5729776` | `5734263` |
+| Slug (bot login) | `shift2eu-release` (`shift2eu-release[bot]`, `app/shift2eu-release` in `gh`) | `shift2eu-release-tag` (`shift2eu-release-tag[bot]`, `app/shift2eu-release-tag` in `gh`) |
 
 The App IDs and slugs are public identifiers, not secrets, and are recorded here and in the
 `release-tag` skill because the agents' token cannot look them up: `gh api user/installations` needs a
