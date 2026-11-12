@@ -39,9 +39,8 @@ moves or deletes a tag.
 
    **Fail closed:** if the release-tag App's ID above still reads `<RELEASE_TAG_APP_ID: ...>`, or is not
    a number, report "the release-tag App's ID is not recorded in the release-tag skill and ADR 0021: a
-   maintainer must record it before any release" and stop. If the release-tag App's recorded ID is the
-   release-please App's, `5729776`, or its recorded slug is the release-please App's, `shift2eu-release`,
-   report "the release-tag App recorded in the release-tag skill and ADR 0021 is the release-please App:
+   maintainer must record it before any release" and stop. If the release-tag App's recorded ID or slug is the
+   release-please App's ID or slug in the table above, report "the release-tag App recorded in the release-tag skill and ADR 0021 is the release-please App:
    a maintainer must record the release-tag App's own identifiers" and stop: the App that opens the
    release PR must never be the one that may bypass the tag ruleset. `check.ReleaseAppIdentifiers`
    holds the two records to each other and to these rules in CI.

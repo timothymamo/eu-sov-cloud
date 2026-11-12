@@ -71,10 +71,11 @@ var releaseRunStatuses = []string{"requested", "waiting", "pending", "queued", "
 // third-party release-please-action, is a value a job would trust.
 var allowedNeeds = []string{"needs.tag.outputs.pr", "needs.tag.outputs.tag"}
 
-// needsRef matches a needs context as a word and the property path that
-// follows it, dotted or in brackets, and captures the whole expression: bare
-// (toJSON(needs)), needs.<job>.outputs.<name> or needs['<job>'].
-var needsRef = regexp.MustCompile(`(?:^|[^A-Za-z0-9_-])(needs(?:\s*\.\s*[A-Za-z0-9_*-]+|\s*\[[^\]]*\])*)`)
+// needsRef matches a needs context as a word, in any case as GitHub Actions
+// reads expression contexts, and the property path that follows it, dotted
+// or in brackets, and captures the whole expression: bare (toJSON(needs)),
+// needs.<job>.outputs.<name>, NEEDS.<job> or Needs['<job>'].
+var needsRef = regexp.MustCompile(`(?i)(?:^|[^A-Za-z0-9_-])(needs(?:\s*\.\s*[A-Za-z0-9_*-]+|\s*\[[^\]]*\])*)`)
 
 // guardStatusLoop matches the guard's loop over the statuses it waits for.
 var guardStatusLoop = regexp.MustCompile(`(?m)^\s*for\s+status\s+in\s+([A-Za-z_ ]+?)\s*;\s*do\s*$`)
@@ -335,8 +336,8 @@ var releaseJobSpecs = []releaseJobSpec{
 //   - tag, which needs release-please, in the release-tag environment, mints
 //     the release-tag App's token, waits in a run: step with id: guard that
 //     reads release.yml's requested, waiting, pending, queued and in_progress
-//     runs, and whose env: is exactly GH_TOKEN, GITHUB_TOKEN, GH_REPO and
-//     APP_SLUG: shift2eu-release, then creates the tag in a run: step with
+//     runs, and whose env: is exactly GH_TOKEN (the automatic token, either
+//     spelling), GH_REPO and APP_SLUG: shift2eu-release, then creates the tag in a run: step with
 //     id: tag whose env: is exactly GH_TOKEN, the release-tag App's token,
 //     GH_REPO and APP_SLUG, the release-please App's slug shift2eu-release,
 //     whose gh api calls reach only tagEndpoints, and which outputs the PR and
@@ -356,8 +357,9 @@ var releaseJobSpecs = []releaseJobSpec{
 //     attest), pushes no tag with git, creates no GitHub Release and calls no
 //     host of its own (no gh release, curl or wget);
 //   - holds no needs expression outside comments but needs.tag.outputs.pr and
-//     needs.tag.outputs.tag: no job reads the release-please job's outputs,
-//     in any spelling, nor every job's at once (toJSON(needs));
+//     needs.tag.outputs.tag, each as the whole of its ${{ }} or as the
+//     relabel job's exact if:: no job reads the release-please job's outputs,
+//     in any spelling or case, nor every job's at once (toJSON(needs));
 //   - pastes no expression but ${{ github.repository }} into a script.
 //
 // It reads the document with the strict line reader and refuses what it does
@@ -572,8 +574,12 @@ func (r *schemaReader) releasePleaseJobs(e yamlread.Entry) {
 
 // needsReach refuses every needs expression outside comments but
 // allowedNeeds, quoting it: the release-please job runs the third-party
-// release-please-action, so no job trusts its outputs, in any spelling, and
-// toJSON(needs) would hand a step every output of every job before it. A
+// release-please-action, so no job trusts its outputs, in any spelling or
+// case, and toJSON(needs) would hand a step every output of every job before
+// it. An allowed expression is accepted only as the whole of its ${{ }}
+// (whitespace inside the braces aside), or bare as the relabel job's exact
+// if:, relabelCondition: inside a larger expression, such as a fallback
+// (|| 'x') or fromJSON(...), it is refused with that expression quoted. A
 // job's needs: key is not an expression and is skipped, as are comment lines.
 // Any other word needs, in a script's text too, is refused: the check fails
 // closed rather than tell an expression from prose.
@@ -595,10 +601,36 @@ func (r *schemaReader) needsReach() {
 			}
 
 			if !slices.Contains(allowedNeeds, expr) {
-				r.fail("line %d: %s holds the needs expression %q; want only %s: the release-please job runs %s, so no job trusts its outputs, and the tag job holds the release-please App's slug as the constant %s", i+1, releasePleaseWorkflowName, expr, strings.Join(allowedNeeds, " and "), releasePleaseAction, releasePleaseSlug)
+				r.fail("line %d: %s holds the needs expression %q (a bare word needs counts too: the check does not tell prose from an expression); want only %s: the release-please job runs %s, so no job trusts its outputs, and the tag job holds the release-please App's slug as the constant %s", i+1, releasePleaseWorkflowName, expr, strings.Join(allowedNeeds, " and "), releasePleaseAction, releasePleaseSlug)
+
+				continue
+			}
+
+			if whole, ok := wholeNeedsExpression(line, trimmed, m[2], m[3]); !ok {
+				r.fail("line %d: %s holds %s inside the expression %q; want it only as the whole of ${{ %s }}, or as the relabel job's if: %s: a larger expression around it may change what the step reads", i+1, releasePleaseWorkflowName, expr, whole, expr, relabelCondition)
 			}
 		}
 	}
+}
+
+// wholeNeedsExpression reports whether the allowed needs expression at
+// line[start:end] is the whole of the ${{ }} around it, or, outside any, the
+// whole relabel job's if: (trimmed is the line without its indentation). It
+// returns the expression around it, to quote when it is not.
+func wholeNeedsExpression(line, trimmed string, start, end int) (string, bool) {
+	open := strings.LastIndex(line[:start], "${{")
+	if open >= 0 && !strings.Contains(line[open:start], "}}") {
+		closing := strings.Index(line[end:], "}}")
+		if closing < 0 {
+			return line[open:], false
+		}
+
+		whole := line[open : end+closing+2]
+
+		return whole, strings.TrimSpace(line[open+3:end+closing]) == line[start:end]
+	}
+
+	return trimmed, trimmed == "if: "+relabelCondition
 }
 
 // isNameByte reports whether b may continue a name in an expression.
