@@ -137,11 +137,12 @@ func TestServerTokenFromFile(t *testing.T) {
 // not exist, and two sources at once, which leave the operator unsure which one
 // wins. Each is exit code 2 with one line, and no line quotes the token.
 //
-// A source that is set to nothing is refused too, and run's lookupEnv is what
-// makes the environment case observable: os.LookupEnv reports a variable that is
-// set to the empty string as set, so ADR 0019 reads that as a configured source
-// with no token, which is a startup error and not the unset variable that lets
-// the server run without one on loopback.
+// A source that is set to nothing is refused too, and run's token source is what
+// makes the environment case observable: the test hands it a source over the
+// variables its case sets, and os.LookupEnv reports a variable that is set to the
+// empty string as set, so ADR 0019 reads that as a configured source with no
+// token, which is a startup error and not the unset variable that lets the server
+// run without one on loopback.
 func TestServerTokenConfigurationErrors(t *testing.T) {
 	t.Parallel()
 

@@ -16,12 +16,14 @@ import (
 	"syscall"
 )
 
-// run stands in for the server's run, which takes the environment lookup as a
+// run stands in for the server's run, which takes a token source with no name
 // parameter rather than reading the environment itself.
-func run(lookup func(string) (string, bool)) {}
+func run(lookup func() (string, bool)) {}
 
 func main() {
-	run(os.LookupEnv) // the one exception: no composition-root-env issue here
+	// The one exception: no composition-root-env issue here, as the source
+	// reads the one variable the server names.
+	run(func() (string, bool) { return os.LookupEnv("SHIFT2EU_SERVER_TOKEN") })
 
 	_ = os.Getenv("SHIFT2EU_SERVER_TOKEN")         // want "composition-root-env: "
 	_, _ = syscall.Getenv("SHIFT2EU_SERVER_TOKEN") // want "composition-root-env: "

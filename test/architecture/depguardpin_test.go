@@ -730,6 +730,37 @@ var pinnedDepguardRules = []check.DepguardRule{
 			"google.golang.org/api",
 		},
 	},
+	{
+		// The composition roots' _test.go files (issue #111). The two strict
+		// rules above skip test files (!$test), and a test is compiled into
+		// the same package and runs with the same process: it could start a
+		// program, load a plugin, hand a path to a CGI handler, or reach a
+		// foreign symbol through unsafe and //go:linkname. The rule is lax,
+		// so its deny list alone decides and no allow list has to follow
+		// every pure import a test makes; it is no layer the package check
+		// reads, which is why it is no strict rule
+		// (TestEveryStrictRuleIsChecked). syscall/js is pinned here and by no
+		// probe line, as it builds for js/wasm only
+		// (TestCompositionRootTestsReachNoForeignCodeProbe).
+		Name:     "composition-root-tests",
+		ListMode: "lax",
+		Files: []string{
+			"**/cmd/shift2eu/*_test.go",
+			"**/cmd/shift2eu/**/*_test.go",
+			"**/cmd/shift2eu-server/*_test.go",
+			"**/cmd/shift2eu-server/**/*_test.go",
+		},
+		Allow: nil,
+		Deny: []string{
+			"go/build",
+			"net/http/cgi",
+			"os/exec",
+			"plugin",
+			"runtime/cgo",
+			"syscall/js",
+			"unsafe",
+		},
+	},
 }
 
 // TestDepguardRulesArePinned pins every depguard rule of .golangci.yml against

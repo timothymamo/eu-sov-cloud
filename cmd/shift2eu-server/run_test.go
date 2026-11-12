@@ -1,7 +1,7 @@
 // White-box tests of the composition root: cmd/shift2eu-server is a main package,
 // so its tests are package main, the only way a test file reaches the package at
 // all (Go refuses an import of a main package). The seam is run, the sibling of
-// cli.Run: a test passes the flags, a fake lookupEnv and a stderr it reads,
+// cli.Run: a test passes the flags, a fake token source and a stderr it reads,
 // learns the bound address through the listening callback, and cancels the
 // context to shut the server down, so no test starts a process and none needs
 // a port of its own beyond 127.0.0.1:0.
@@ -90,24 +90,18 @@ func (b *syncBuffer) String() string {
 	return b.buf.String()
 }
 
-// lookupEnvOf returns the lookupEnv run takes, over vars: a key the map holds is
-// a variable that is set, with that value, and a key it does not hold is a
-// variable that is unset, which is what os.LookupEnv reports. The map is copied,
-// so no test can change the environment of a run it already handed over, and a
-// variable the map holds as "" is set to nothing: the server must tell that apart
-// from an unset variable, because ADR 0019 refuses a token source that is
-// configured but holds no token.
-func lookupEnvOf(vars map[string]string) func(string) (string, bool) {
-	copied := make(map[string]string, len(vars))
-	for name, value := range vars {
-		copied[name] = value
-	}
+// tokenSourceOf returns the token source run takes, over vars: a map that holds
+// tokenEnv is a source that is set, with that value, and a map that does not
+// hold it is an unset source, which is what os.LookupEnv reports for a variable
+// the process does not hold. run takes func() (string, bool) with no name
+// parameter, so the fake needs no name either: the one variable the server reads
+// is the map's tokenEnv key. A variable the map holds as "" is set to nothing:
+// the server must tell that apart from an unset variable, because ADR 0019
+// refuses a token source that is configured but holds no token.
+func tokenSourceOf(vars map[string]string) func() (string, bool) {
+	value, set := vars[tokenEnv]
 
-	return func(name string) (string, bool) {
-		value, ok := copied[name]
-
-		return value, ok
-	}
+	return func() (string, bool) { return value, set }
 }
 
 // server is one run of run in a goroutine: the address it listens on, the
@@ -152,7 +146,7 @@ func startServer(t *testing.T, listen string, vars map[string]string, args ...st
 	argv := append([]string{"--listen", listen}, args...)
 
 	go func() {
-		code := run(ctx, argv, lookupEnvOf(vars), s.stderr, func(addr net.Addr) { listening <- addr })
+		code := run(ctx, argv, tokenSourceOf(vars), s.stderr, func(addr net.Addr) { listening <- addr })
 
 		s.mu.Lock()
 		s.code = code
@@ -966,7 +960,7 @@ func runOnce(t *testing.T, vars map[string]string, args ...string) runResult {
 	exited := make(chan int, 1)
 
 	go func() {
-		exited <- run(ctx, args, lookupEnvOf(vars), &stderr, func(addr net.Addr) { listening <- addr })
+		exited <- run(ctx, args, tokenSourceOf(vars), &stderr, func(addr net.Addr) { listening <- addr })
 	}()
 
 	select {

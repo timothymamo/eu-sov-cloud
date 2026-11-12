@@ -129,7 +129,10 @@ var noExecRefused = []rootRefused{
 	{rootName{"os", "os.Environ"}, "composition-root-no-exec: "},
 	{rootName{"syscall", "syscall.Environ"}, "composition-root-no-exec: "},
 	// The windows entry points: a composition root starts no program there
-	// either, and loading a DLL runs its code.
+	// either, and loading a DLL runs its code. Every name here exists in
+	// syscall on a release target, which is where the probe lints it: a name
+	// no target has, such as syscall.LoadLibraryEx, is no pattern's and no
+	// probe's to pin.
 	{rootName{"syscall", "syscall.CreateProcess"}, "composition-root-no-exec: "},
 	{rootName{"syscall", "syscall.CreateProcessAsUser"}, "composition-root-no-exec: "},
 	{rootName{"syscall", "syscall.GetEnvironmentStrings"}, "composition-root-no-exec: "},
@@ -137,7 +140,6 @@ var noExecRefused = []rootRefused{
 	{rootName{"syscall", "syscall.MustLoadDLL"}, "composition-root-no-exec: "},
 	{rootName{"syscall", "syscall.NewLazyDLL"}, "composition-root-no-exec: "},
 	{rootName{"syscall", "syscall.LoadLibrary"}, "composition-root-no-exec: "},
-	{rootName{"syscall", "syscall.LoadLibraryEx"}, "composition-root-no-exec: "},
 	{rootName{"syscall", "syscall.GetProcAddress"}, "composition-root-no-exec: "},
 	// A raw system call starts a process where the kernel call does, and the
 	// syscall.SYS_* numbers are what an exec call is made of.
