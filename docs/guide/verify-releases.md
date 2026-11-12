@@ -1,8 +1,8 @@
 # Verify a release
 
 Every published image is signed and carries build provenance and an SBOM. This page shows how to check
-all three for a release before you run it, inside the project's Lima VM too, and how to verify the
-releases published before the project's rename.
+all three for a release before you run it, inside the project's Lima VM too, how to check a release
+archive against its checksums, and how to verify the releases published before the project's rename.
 
 ## Verify the image
 
@@ -59,6 +59,28 @@ the same source, Go modules and distroless base (`crane digest --platform linux/
 platform's digest). The image's labels
 name the source repository (`org.opencontainers.image.source`) and the commit
 (`org.opencontainers.image.revision`).
+
+## Verify an archive
+
+The release archives, the CLI's `shift2eu_*` and the HTTP API's `shift2eu-server_*`
+([Install](install.md#the-release-archives)), are listed in one `checksums.txt`, published with the
+release. The archives and `checksums.txt` are neither signed nor attested: only the images are. A
+matching checksum shows the download is the file the release published, not who published it; for
+that, use the images. Check either archive the same way:
+
+```bash
+TAG=v0.2.0
+VERSION="${TAG#v}"
+ARCHIVE="shift2eu_${VERSION}_linux_amd64.tar.gz"   # the HTTP API's: shift2eu-server_${VERSION}_linux_amd64.tar.gz
+
+gh release download "$TAG" --repo timothymamo/shift2eu --pattern "$ARCHIVE" --pattern checksums.txt
+sha256sum --check --ignore-missing checksums.txt   # macOS: shasum -a 256 --check --ignore-missing checksums.txt
+tar -xzf "$ARCHIVE"
+```
+
+`sha256sum` must print `OK` for the archive. Each archive holds only its own binary (`shift2eu` or
+`shift2eu-server`), with `README.md`, `LICENSE` and `docs/`. The `shift2eu-server_*` archives start
+with the first release after `v0.2.0`; up to `v0.2.0`, the `shift2eu_*` archive holds both binaries.
 
 ## Releases before the rename: v0.1.0 and v0.1.0-rc.1
 

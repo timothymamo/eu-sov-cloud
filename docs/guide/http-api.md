@@ -53,8 +53,10 @@ docker run --rm "$IMAGE" --help   # prints the flags and exits 0
 
 It is distroless and runs as `nonroot`, with the entrypoint `/shift2eu-server` and the default
 arguments (`CMD`) `--listen 0.0.0.0:8080`. Arguments given to `docker run` replace those, so pass
-`--listen 0.0.0.0:8080` again with any of your own. The release archives hold the `shift2eu-server`
-binary beside `shift2eu`. From a clone, `make server` builds `./bin/shift2eu-server` and
+`--listen 0.0.0.0:8080` again with any of your own. Each release also publishes the binary in
+archives of its own, `shift2eu-server_<version>_<os>_<arch>` ([Install](install.md#the-release-archives)),
+listed in the same `checksums.txt` as the CLI's and verified the same way
+([Verify an archive](verify-releases.md#verify-an-archive)). From a clone, `make server` builds `./bin/shift2eu-server` and
 `make server-image` the image `shift2eu-server:<version>` (`docker build --target server .` without
 the version stamp). Deploy it as [Behind a reverse proxy](reverse-proxy.md) describes.
 

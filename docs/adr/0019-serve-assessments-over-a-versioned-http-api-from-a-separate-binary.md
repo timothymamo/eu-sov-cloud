@@ -1,6 +1,7 @@
 # 0019. Serve assessments over a versioned HTTP API from a separate binary
 
-- Status: Accepted; amended 2026-11-12: the bundled OpenAPI document moves from milestone 4 to [issue #139](https://github.com/timothymamo/shift2eu/issues/139)
+- Status: Accepted; amended 2026-11-12: the bundled OpenAPI document moves from milestone 4 to [issue #139](https://github.com/timothymamo/shift2eu/issues/139);
+  amended by issue #147: `shift2eu-server` ships in release archives of its own (Consequences)
 - Date: 2026-11-11 (accepted 2026-11-12, issue #112; milestone 3 decisions added 2026-11-12)
 
 ## Context
@@ -385,3 +386,10 @@ cannot follow, until then.
   operator who wants more sets `GOMEMLIMIT` or `--concurrency`. The per-request peak is a measurement:
   a change that makes a maximal request larger reruns `BenchmarkMaximalAllComparison` and revisits the
   1 GiB in `cmd/shift2eu-server`.
+- *Amended (issue #147):* the release ships `shift2eu-server` in archives of its own,
+  `shift2eu-server_<version>_<os>_<arch>`, with the same tag and version as `shift2eu`, whose archives
+  no longer hold it ([ADR 0015](0015-publish-the-signed-image-to-ghcr-with-docker-buildx.md),
+  Consequences). An operator who runs the binary rather than the image fetches that archive and checks
+  it against the release's one `checksums.txt`, exactly as the CLI's (`docs/guide/verify-releases.md`,
+  "Verify an archive"). The archive is not signed or attested; the image is, so an operator who needs
+  the publisher verified runs the image.

@@ -2,6 +2,8 @@
 
 - Status: Accepted. Amends [0015](0015-publish-the-signed-image-to-ghcr-with-docker-buildx.md): the `v*`
   tag ruleset is split in two, and tags are created by the release App.
+  Amended by issue #147: the changelog stays grouped by commit type, not by binary (Alternatives
+  considered, Consequences).
 - Date: 2026-11-12
 
 ## Context
@@ -144,6 +146,17 @@ GitHub App's token, and the tag starts `release.yml` as before.**
 - **Share the `release` concurrency group.** See above: a queued `release-please` run would cancel a
   pending release run.
 
+- **Group the changelog by binary** (issue #147, amendment). Once `shift2eu` and `shift2eu-server`
+  ship in archives of their own, a changelog section per binary looks natural. release-please groups
+  `changelog-sections` by commit type only; a commit's scope is a bold prefix within a section, never a
+  group of its own. Grouping by binary needs one release-please component per binary, each a package
+  with its own path, version, tag and `CHANGELOG.md` (the linked-versions plugin aligns the versions,
+  not the tags or changelogs). That contradicts the one tag and one version both binaries ship from,
+  and with `include-component-in-tag: false` the two components would both claim `vX.Y.Z`. Nor is
+  there a path to split on: the binaries share almost all their code (`internal/domain`,
+  `internal/app`, the adapters), and only `cmd/` and the driving adapters differ. The changelog stays
+  one, grouped by commit type; a scope (`feat(server): ...`) says which binary a change is for.
+
 ## Consequences
 
 - Cutting a release is merging the release PR. The `release-tag` skill now reviews the open release PR
@@ -213,3 +226,8 @@ GitHub App's token, and the tag starts `release.yml` as before.**
 - New actions to keep updated: `googleapis/release-please-action`, `actions/create-github-app-token`.
   The latter's `app-id` input is deprecated in favour of `client-id` from v3; moving to `client-id`
   needs the App's client ID in the environment and a matching change to `check.ReleasePleaseWorkflow`.
+- Amended by issue #147: the two binaries ship in archives of their own, from the one tag and version
+  this ADR computes; `CHANGELOG.md` stays one, grouped by commit type (Alternatives considered). With
+  `skip-github-release: true`, release-please writes only `CHANGELOG.md`: GoReleaser still creates the
+  GitHub Release and writes its notes from the `changelog:` section of `.goreleaser.yaml`, so that
+  section stays.
