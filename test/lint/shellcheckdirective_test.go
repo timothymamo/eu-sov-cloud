@@ -5,6 +5,7 @@ import (
 	"io/fs"
 	"os"
 	"os/exec"
+	"path"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -114,6 +115,34 @@ func TestCheckShellcheckDirectives(t *testing.T) {
 			name: "a directive trailing a line of code",
 			src:  "eval \"$cmd\" # shellcheck disable=SC2086 # the list must split\n",
 		},
+		// The shell starts a comment at the beginning of any word, so a
+		// directive after an operator, or after a "#" inside a word the
+		// shell quotes, is a directive all the same, and a good one must
+		// not be refused.
+		{
+			name: "a directive after a semicolon",
+			src:  "true;# shellcheck disable=SC2086 # the list must split\n",
+		},
+		{
+			name: "a directive after a double ampersand",
+			src:  "true &&# shellcheck disable=SC2086 # the list must split\n",
+		},
+		{
+			name: "a directive after a pipe",
+			src:  "x |# shellcheck disable=SC2086 # the list must split\n",
+		},
+		{
+			name: "a directive after a parenthesis",
+			src:  "(# shellcheck disable=SC2086 # a subshell of its own\n",
+		},
+		{
+			name: "a directive after a quoted hash",
+			src:  "x=\"a #b\"; echo $1 # shellcheck disable=SC2086 # the list must split\n",
+		},
+		{
+			name: "a quoted hash and a reason holding one",
+			src:  "x=\"a #b\"; echo $1 # shellcheck disable=SC2086 # FLAGS # is a list\n",
+		},
 		{
 			name: "another key alone",
 			src:  "# shellcheck source=lib.sh\n",
@@ -201,6 +230,40 @@ func TestCheckShellcheckDirectives(t *testing.T) {
 			name: "no reason on a line of code",
 			src:  "eval \"$cmd\" # shellcheck disable=SC2086\n",
 			want: []string{"a.sh:1"},
+		},
+		{
+			name: "all after a semicolon",
+			src:  "true;# shellcheck disable=all # the whole file is generated\n",
+			want: []string{"a.sh:1"},
+		},
+		{
+			name: "no reason after a double ampersand",
+			src:  "a &&# shellcheck disable=SC2086\n",
+			want: []string{"a.sh:1"},
+		},
+		{
+			name: "no reason after a parenthesis",
+			src:  "(# shellcheck disable=SC2086\n",
+			want: []string{"a.sh:1"},
+		},
+		{
+			name: "no code after a pipe",
+			src:  "x |# shellcheck disable=\n",
+			want: []string{"a.sh:1"},
+		},
+		{
+			name: "a bad directive after a quoted hash",
+			src:  "x=\"a #b\"; echo $1 # shellcheck disable=all # the whole file is generated\n",
+			want: []string{"a.sh:1"},
+		},
+		{
+			name: "a directive in the text of a workflow run block",
+			path: ".github/workflows/ci.yml",
+			src: "      - name: shellcheck the tracked shell scripts\n" +
+				"        run: |\n" +
+				"          # shellcheck disable=all # the workflow is generated\n" +
+				"          dev/shellcheck.sh\n",
+			want: []string{".github/workflows/ci.yml:3"},
 		},
 		{
 			name: "an empty reason",
@@ -299,18 +362,8 @@ func TestTrackedShellScriptsNameTheirShellcheckCodes(t *testing.T) {
 
 	root := moduleRoot(t)
 
-	// -z keeps a path with a space in it whole, as test/architecture reads the
-	// index too.
-	out, err := exec.CommandContext(t.Context(), "git", "-C", root, "ls-files", "-z").Output()
-	if err != nil {
-		t.Fatalf("git ls-files in %s: %v", root, err)
-	}
-
 	var checked, withSuffix []string
-	for _, rel := range strings.Split(string(out), "\x00") {
-		if rel == "" {
-			continue
-		}
+	for _, rel := range trackedFiles(t) {
 		src, err := os.ReadFile(filepath.Join(root, filepath.FromSlash(rel)))
 		if err != nil {
 			if errors.Is(err, fs.ErrNotExist) {
@@ -347,4 +400,87 @@ func TestTrackedShellScriptsNameTheirShellcheckCodes(t *testing.T) {
 		}
 	}
 	t.Logf("checked %d tracked shell scripts", len(checked))
+}
+
+// TestTrackedWorkflowsNameTheirShellcheckCodes extends the scan above to the
+// workflows under .github/workflows, .yml and .yaml alike: actionlint hands
+// every run: script to shellcheck (issue #164, ADR 0022), so a disable
+// directive in one of them hides a finding from the same lint, and a directive
+// that names no code or gives no reason hides it from the reader. A workflow is
+// not a shell script, so IsShellScript never reaches it; the whole file is
+// checked, its YAML included, because the script text inside it may be indented
+// by any amount.
+func TestTrackedWorkflowsNameTheirShellcheckCodes(t *testing.T) {
+	t.Parallel()
+
+	root := moduleRoot(t)
+	var scanned []string
+	for _, rel := range trackedFiles(t) {
+		if !strings.HasPrefix(rel, ".github/workflows/") || (!strings.HasSuffix(rel, ".yml") && !strings.HasSuffix(rel, ".yaml")) {
+			continue
+		}
+		src, err := os.ReadFile(filepath.Join(root, filepath.FromSlash(rel)))
+		if err != nil {
+			if errors.Is(err, fs.ErrNotExist) {
+				continue // tracked but not in this checkout, as a sparse one has it
+			}
+			t.Fatalf("read %s: %v", rel, err)
+		}
+		scanned = append(scanned, rel)
+		for _, problem := range lint.CheckShellcheckDirectives(rel, src) {
+			t.Error(problem)
+		}
+	}
+
+	// Guard the walk itself: a workflow scan that found nothing would pass
+	// whatever the workflows say.
+	if len(scanned) == 0 {
+		t.Fatal("found no tracked workflow to check; the .github/workflows walk is broken")
+	}
+	for _, rel := range []string{".github/workflows/ci.yml"} {
+		if !slices.Contains(scanned, rel) {
+			t.Errorf("the scan skipped %s, a tracked workflow", rel)
+		}
+	}
+	t.Logf("checked %d tracked workflows", len(scanned))
+}
+
+// TestNoTrackedConfigSilencesShellcheckOrActionlint refuses a configuration
+// file that would switch a lint off rather than fix what it reports: ShellCheck
+// reads .shellcheckrc, or shellcheckrc, from the working directory upwards, and
+// actionlint reads .github/actionlint.yml, which can ignore whole rules or
+// paths (issue #164, ADR 0022). Neither is tracked today, so this test guards
+// the rule: the branch that adds one fails here.
+func TestNoTrackedConfigSilencesShellcheckOrActionlint(t *testing.T) {
+	t.Parallel()
+
+	refused := []string{".shellcheckrc", "shellcheckrc", ".github/actionlint.yml", ".github/actionlint.yaml"}
+	for _, rel := range trackedFiles(t) {
+		if slices.Contains(refused, rel) || slices.Contains(refused, path.Base(rel)) {
+			t.Errorf("git tracks %s, which silences shellcheck or actionlint; fix the finding it would hide instead", rel)
+		}
+	}
+}
+
+// trackedFiles returns every path git tracks in the module root, slash
+// separated, as the repository scans above read the index.
+func trackedFiles(t *testing.T) []string {
+	t.Helper()
+
+	root := moduleRoot(t)
+
+	// -z keeps a path with a space in it whole, as test/architecture reads the
+	// index too.
+	out, err := exec.CommandContext(t.Context(), "git", "-C", root, "ls-files", "-z").Output()
+	if err != nil {
+		t.Fatalf("git ls-files in %s: %v", root, err)
+	}
+
+	var files []string
+	for _, rel := range strings.Split(string(out), "\x00") {
+		if rel != "" {
+			files = append(files, rel)
+		}
+	}
+	return files
 }
