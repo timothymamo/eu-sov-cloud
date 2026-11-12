@@ -64,8 +64,8 @@ func TestWorkflowPrivileges(t *testing.T) {
 	// releasePleaseWriting is the release-please workflow of issue #142, with a
 	// packages: write through GITHUB_TOKEN added to its job.
 	releasePleaseWriting := mutate(t, releasePleaseWorkflow,
-		"    permissions:\n      contents: read\n",
-		"    permissions:\n      contents: read\n      packages: write\n",
+		"    permissions:\n      contents: read\n      actions: read\n",
+		"    permissions:\n      contents: read\n      actions: read\n      packages: write\n",
 	)
 
 	tests := []struct {
@@ -165,14 +165,15 @@ func TestWorkflowPrivileges(t *testing.T) {
 			wantIn:   "jobs: build: permissions: packages is write; only",
 		},
 
-		// The workflow of issue #142, release-please.yml, pushes no tag and
-		// publishes nothing itself: a push to main runs it, it holds no
-		// top-level permission, and its job only reads, because the token that
-		// writes is the release App's, not GITHUB_TOKEN. So this check has
-		// nothing to refuse in it, as it has in release.yml, and its name buys
-		// it nothing: a workflow with its shape that writes through
-		// GITHUB_TOKEN, under that name or any other, is refused like every
-		// other workflow that is not release.yml.
+		// The workflow of issue #142, release-please.yml, publishes nothing
+		// itself: a push to main runs it, it holds no top-level permission, and
+		// its job only reads, contents and actions alike, because the token
+		// that writes is the release App's, not GITHUB_TOKEN, and the tag it
+		// creates is created by that App. So this check has nothing to refuse
+		// in it, as it has in release.yml, and its name buys it nothing: a
+		// workflow with its shape that writes through GITHUB_TOKEN, under that
+		// name or any other, is refused like every other workflow that is not
+		// release.yml.
 		{name: "the release-please workflow", workflow: ".github/workflows/release-please.yml", src: releasePleaseWorkflow},
 		{
 			name:     "the release-please workflow writing packages",
