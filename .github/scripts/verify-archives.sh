@@ -7,7 +7,10 @@
 # README.md and Markdown pages under docs/ (no path segment may start with a dot, so no ., .. or hidden
 # file): any other entry fails the run, so a stray file under docs/ never ships unnoticed. Every entry
 # must be a regular file or a directory: a symbolic link, hard link or device fails the run too. Every built platform has one archive of each, and checksums.txt lists and
-# matches every archive. It then mirrors release.yml's hand-over of the archives to attest-archives
+# matches every archive. checksums.txt also lists, exactly once, shift2eu-server_openapi.json, the bundled
+# OpenAPI document the release publishes beside the archives (issue #139), with the sha256 of the
+# committed api/openapi.bundled.json, and a copy GoReleaser puts in dist/, if any, must match it too.
+# It then mirrors release.yml's hand-over of the archives to attest-archives
 # (issues #156 and #163): the files its patterns pick must pass sha256sum -c checksums.txt, and the
 # subjects they attest must be exactly the archives and checksums.txt, which must also be exactly what
 # GoReleaser would upload to the release (artifacts.json), or release.yml's publish job would refuse the
@@ -128,7 +131,25 @@ for archive in "${cli[@]}" "${server[@]}"; do
   grep -qE "  $(basename "${archive}" | sed 's/\./\\./g')$" "${dist}/checksums.txt" ||
     problem "checksums.txt does not list $(basename "${archive}")"
 done
-(cd "${dist}" && sha256sum --quiet -c checksums.txt) || problem "checksums.txt does not match the archives"
+
+# ... and the bundled OpenAPI document (issue #139): checksum.extra_files lists it under its release name
+# with the sum of the committed file, which GoReleaser reads in place rather than copying into dist/.
+bundle=api/openapi.bundled.json
+bundle_asset=shift2eu-server_openapi.json
+want_sum="$(sha256sum "${bundle}" | cut -d' ' -f1)"
+bundle_lines="$(grep -E "  ${bundle_asset//./\\.}$" "${dist}/checksums.txt" || true)"
+if [ "$(grep -c . <<<"${bundle_lines}")" != 1 ]; then
+  problem "checksums.txt lists ${bundle_asset} $(grep -c . <<<"${bundle_lines}") times, want exactly once"
+elif [ "${bundle_lines%% *}" != "${want_sum}" ]; then
+  problem "checksums.txt lists ${bundle_asset} with ${bundle_lines%% *}, want ${want_sum}, the sha256 of ${bundle}"
+fi
+if [ -e "${dist}/${bundle_asset}" ] && [ "$(sha256sum "${dist}/${bundle_asset}" | cut -d' ' -f1)" != "${want_sum}" ]; then
+  problem "${dist}/${bundle_asset} is not ${bundle}"
+fi
+
+# Every other line is a file in dist/ and must match it.
+grep -vE "  ${bundle_asset//./\\.}$" "${dist}/checksums.txt" >"${work}/archives.sha256" || true
+(cd "${dist}" && sha256sum --quiet -c "${work}/archives.sha256") || problem "checksums.txt does not match the archives"
 
 # The release's hand-over of the archives (issues #156 and #163), on this snapshot: release.yml's
 # goreleaser job uploads the files its patterns match, dist/shift2eu_*.tar.gz, dist/shift2eu_*.zip,
@@ -171,4 +192,4 @@ fi
 if [ "${fail}" != 0 ]; then
   exit 1
 fi
-echo "${#cli[@]} CLI and ${#server[@]} server archives, one per built platform, each holding exactly its own binary, LICENSE, README.md and docs/**/*.md, all in checksums.txt"
+echo "${#cli[@]} CLI and ${#server[@]} server archives, one per built platform, each holding exactly its own binary, LICENSE, README.md and docs/**/*.md, all in checksums.txt with ${bundle_asset}"

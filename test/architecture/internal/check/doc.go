@@ -109,10 +109,12 @@
 // unreviewed, and one package at the repository root.
 //
 // GitHubRelease holds the release section of .goreleaser.yaml to exactly
-// draft: true and prerelease: auto, optionally with replace_existing_draft:
-// true, so every asset is uploaded to a draft that release.yml publishes last
-// (issue #156), and a pre-release tag is a GitHub pre-release and never the
-// latest release (issue #92).
+// draft: true, prerelease: auto and replace_existing_draft: true, so every
+// asset is uploaded to a draft that release.yml publishes last (issue #156),
+// and a pre-release tag is a GitHub pre-release and never the latest release
+// (issue #92), and one extra file, the bundled OpenAPI document
+// ./api/openapi.bundled.json published as the asset
+// shift2eu-server_openapi.json (issue #139).
 //
 // GoReleaserArchives and DryRunVerifiesArchives hold the release to shipping
 // each binary in archives of its own, under one tag and version (issue #147).
@@ -121,7 +123,9 @@
 // ids: names, no two with the same id, the CLI's archive keeping its name
 // shift2eu_<version>_<os>_<arch> and the server's shift2eu-server_<version>_
 // <os>_<arch>, both tar.gz (zip on Windows) with LICENSE, README.md and docs/,
-// and one checksums.txt covering every archive. DryRunVerifiesArchives holds
+// and one checksums.txt covering every archive and the bundled OpenAPI
+// document, the same single extra_files entry release: holds (issue #139).
+// DryRunVerifiesArchives holds
 // ci.yml's test job to one step running .github/scripts/verify-archives.sh,
 // which builds a goreleaser snapshot and fails unless each archive holds
 // exactly its own binary, after one goreleaser-action step that installs
