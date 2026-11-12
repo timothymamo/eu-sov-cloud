@@ -87,7 +87,8 @@ func syscallProblems(rel string, src []byte) ([]string, error) {
 
 // TestCompositionRootsUseSyscallOnlyForSignals checks every Go file of the two
 // composition roots, _test.go files included, for a reference to package
-// syscall that is no signal constant (syscallProblems). The tree holds two
+// syscall that is neither a signal constant nor the type syscall.Signal
+// (syscallProblems). The tree holds two
 // references today, syscall.SIGTERM and syscall.SIGHUP, and the test pins that:
 // a composition root that made a raw system call, loaded a DLL or took a
 // process entry point would run code the operator of a report did not ask for,
@@ -238,6 +239,25 @@ func write(pid int) { _ = syscall.PtracePokeText(pid, 0, []byte{0}) }
 `,
 			want: []string{
 				rel + `:5: the composition roots reference package syscall only through a signal constant (syscall.SIGTERM, syscall.SIGHUP) and the type syscall.Signal, and syscall.PtracePokeText is neither; a raw system call, a DLL or a process entry point is no composition root's`,
+			},
+		},
+		{
+			// The pin: a second name for the package is a second way to
+			// reach a refused name, and staticcheck's ST1019 is a nolint
+			// away.
+			name: "the package imported twice under two names is refused",
+			src: `package main
+
+import (
+	"syscall"
+	sc "syscall"
+)
+
+var _ = sc.AllThreadsSyscall
+`,
+			want: []string{
+				rel + `:5: the file imports syscall 2 times; a composition root imports it once, so every name it takes from the package is one reference`,
+				rel + `:8: the composition roots reference package syscall only through a signal constant (syscall.SIGTERM, syscall.SIGHUP) and the type syscall.Signal, and sc.AllThreadsSyscall is neither; a raw system call, a DLL or a process entry point is no composition root's`,
 			},
 		},
 		{

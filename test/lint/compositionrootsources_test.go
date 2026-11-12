@@ -272,10 +272,23 @@ func isName(expr ast.Expr, name string) bool {
 	return ok && id.Name == name
 }
 
+// tokenEnvVarShadow is the problem lookupEnvProblems reports at line of rel for
+// a declaration or assignment of tokenEnvVar: the identifier the token source
+// passes os.LookupEnv then names that declaration, not the constant
+// cmd/shift2eu-server/token.go declares.
+func tokenEnvVarShadow(rel string, line int) string {
+	return fmt.Sprintf("%s:%d: %s is declared or assigned here, so the identifier the token source passes os.LookupEnv is no longer the constant cmd/shift2eu-server/token.go declares; a composition root names that constant and declares nothing of its own", rel, line, envVarIdent)
+}
+
 // TestLookupEnvProblems pins lookupEnvProblems, the seam of
 // TestCompositionRootPassesLookupEnvToRun: the one shape ADR 0019 allows, the
 // token source run takes, and every shape it refuses, the old one that handed
 // os.LookupEnv itself to run included.
+//
+// No fixture declares tokenEnvVar: the constant lives in
+// cmd/shift2eu-server/token.go, another file of the package, and the check
+// holds main.go to naming it and to declaring nothing of its own. The fixtures
+// that name it in a local scope pin that too (shadowsOf).
 func TestLookupEnvProblems(t *testing.T) {
 	t.Parallel()
 
@@ -293,8 +306,6 @@ func TestLookupEnvProblems(t *testing.T) {
 
 import "os"
 
-const tokenEnvVar = "SHIFT2EU_SERVER_TOKEN"
-
 func main() {
 	run(func() (string, bool) { return os.LookupEnv(tokenEnvVar) })
 }
@@ -305,8 +316,6 @@ func main() {
 			src: `package main
 
 import stdos "os"
-
-const tokenEnvVar = "SHIFT2EU_SERVER_TOKEN"
 
 func main() {
 	run(func() (string, bool) { return stdos.LookupEnv(tokenEnvVar) })
@@ -335,16 +344,14 @@ func main() { run(os.LookupEnv) }
 
 import "os"
 
-const tokenEnvVar = "SHIFT2EU_SERVER_TOKEN"
-
 func main() {
 	run(func() (string, bool) { return os.LookupEnv(tokenEnvVar) })
 	_, _ = os.LookupEnv("AWS_SECRET_ACCESS_KEY")
 }
 `,
 			want: []string{
-				rel + ":8: os.LookupEnv is reference 1 of 2 in this file; a composition root holds exactly one, in the token source it passes to run",
-				rel + ":9: os.LookupEnv is reference 2 of 2 in this file; a composition root holds exactly one, in the token source it passes to run",
+				rel + ":6: os.LookupEnv is reference 1 of 2 in this file; a composition root holds exactly one, in the token source it passes to run",
+				rel + ":7: os.LookupEnv is reference 2 of 2 in this file; a composition root holds exactly one, in the token source it passes to run",
 			},
 		},
 		{
@@ -426,8 +433,6 @@ func decorate(lookup func() (string, bool)) func() (string, bool) { return looku
 
 import "os"
 
-const tokenEnvVar = "SHIFT2EU_SERVER_TOKEN"
-
 func main() {
 	run(func() (string, bool) {
 		value, ok := os.LookupEnv(tokenEnvVar)
@@ -436,7 +441,7 @@ func main() {
 }
 `,
 			want: []string{
-				rel + ":9: os.LookupEnv is no token source: run takes a func() (string, bool) whose sole return expression is this call, passed to run directly (ADR 0019)",
+				rel + ":7: os.LookupEnv is no token source: run takes a func() (string, bool) whose sole return expression is this call, passed to run directly (ADR 0019)",
 			},
 		},
 		{
@@ -445,15 +450,13 @@ func main() {
 
 import "os"
 
-const tokenEnvVar = "SHIFT2EU_SERVER_TOKEN"
-
 func main() {
 	lookup := func() (string, bool) { return os.LookupEnv(tokenEnvVar) }
 	_ = lookup
 }
 `,
 			want: []string{
-				rel + ":8: os.LookupEnv is no token source: run takes a func() (string, bool) whose sole return expression is this call, passed to run directly (ADR 0019)",
+				rel + ":6: os.LookupEnv is no token source: run takes a func() (string, bool) whose sole return expression is this call, passed to run directly (ADR 0019)",
 			},
 		},
 		{
@@ -464,15 +467,13 @@ func main() {
 
 import "os"
 
-const tokenEnvVar = "SHIFT2EU_SERVER_TOKEN"
-
 func main() {
 	run := func(lookup func() (string, bool)) {}
 	run(func() (string, bool) { return os.LookupEnv(tokenEnvVar) })
 }
 `,
 			want: []string{
-				rel + ":8: run is declared or assigned here, so the call in this file is no call of the package's run; the token source is an argument of the run cmd/shift2eu-server/run.go declares",
+				rel + ":6: run is declared or assigned here, so the call in this file is no call of the package's run; the token source is an argument of the run cmd/shift2eu-server/run.go declares",
 			},
 		},
 		{
@@ -481,8 +482,6 @@ func main() {
 
 import "os"
 
-const tokenEnvVar = "SHIFT2EU_SERVER_TOKEN"
-
 var run = func(lookup func() (string, bool)) {}
 
 func main() {
@@ -490,7 +489,125 @@ func main() {
 }
 `,
 			want: []string{
-				rel + ":7: run is declared or assigned here, so the call in this file is no call of the package's run; the token source is an argument of the run cmd/shift2eu-server/run.go declares",
+				rel + ":5: run is declared or assigned here, so the call in this file is no call of the package's run; the token source is an argument of the run cmd/shift2eu-server/run.go declares",
+			},
+		},
+		{
+			// The pin: the exception names a variable, and a local of
+			// that name is a different one, so the source reads whatever
+			// the local holds.
+			name: "a local of the source's name is refused",
+			src: `package main
+
+import "os"
+
+func main() {
+	tokenEnvVar := "AWS_PROFILE"
+	run(func() (string, bool) { return os.LookupEnv(tokenEnvVar) })
+}
+`,
+			want: []string{tokenEnvVarShadow(rel, 6)},
+		},
+		{
+			name: "a package-level variable of that name is refused",
+			src: `package main
+
+import "os"
+
+var tokenEnvVar = "AWS_PROFILE"
+
+func main() {
+	run(func() (string, bool) { return os.LookupEnv(tokenEnvVar) })
+}
+`,
+			want: []string{tokenEnvVarShadow(rel, 5)},
+		},
+		{
+			name: "a function of that name is refused",
+			src: `package main
+
+import "os"
+
+func tokenEnvVar() string { return "AWS_PROFILE" }
+
+func main() {
+	run(func() (string, bool) { return os.LookupEnv(tokenEnvVar) })
+}
+`,
+			want: []string{tokenEnvVarShadow(rel, 5)},
+		},
+		{
+			name: "a type of that name is refused",
+			src: `package main
+
+import "os"
+
+func main() {
+	type tokenEnvVar string
+	run(func() (string, bool) { return os.LookupEnv(tokenEnvVar) })
+}
+`,
+			want: []string{tokenEnvVarShadow(rel, 6)},
+		},
+		{
+			name: "a parameter of that name is refused",
+			src: `package main
+
+import "os"
+
+func configure(tokenEnvVar string) string { return tokenEnvVar }
+
+func main() {
+	run(func() (string, bool) { return os.LookupEnv(tokenEnvVar) })
+}
+`,
+			want: []string{tokenEnvVarShadow(rel, 5)},
+		},
+		{
+			name: "a func literal's parameter of that name is refused",
+			src: `package main
+
+import "os"
+
+func main() {
+	run(func(tokenEnvVar string) (string, bool) { return os.LookupEnv(tokenEnvVar) })
+}
+`,
+			want: []string{tokenEnvVarShadow(rel, 6)},
+		},
+		{
+			name: "a range variable of that name is refused",
+			src: `package main
+
+import "os"
+
+func main() {
+	for _, tokenEnvVar := range os.Environ() {
+		_ = tokenEnvVar
+	}
+	run(func() (string, bool) { return os.LookupEnv(tokenEnvVar) })
+}
+`,
+			want: []string{tokenEnvVarShadow(rel, 6)},
+		},
+		{
+			// The pin: a second name for the package is a second way to
+			// reach os.LookupEnv, and staticcheck's ST1019 is a nolint
+			// away.
+			name: "the package imported twice under two names is refused",
+			src: `package main
+
+import (
+	"os"
+	o "os"
+)
+
+func main() {
+	run(func() (string, bool) { return o.LookupEnv(tokenEnvVar) })
+}
+`,
+			want: []string{
+				rel + ":5: the file imports os 2 times; a composition root imports it once, so the token source's one os.LookupEnv reference has one name",
 			},
 		},
 		{
