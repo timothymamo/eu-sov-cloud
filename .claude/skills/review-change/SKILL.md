@@ -1,6 +1,6 @@
 ---
 name: review-change
-description: Review a change in eu-sov-cloud for correctness, architecture, test quality and readability, reporting findings without editing code. Use when asked to review a diff, branch, commit range or pull request.
+description: Review a change in shift2eu for correctness, architecture, test quality and readability, reporting findings without editing code. Use when asked to review a diff, branch, commit range or pull request.
 ---
 
 # Review a change

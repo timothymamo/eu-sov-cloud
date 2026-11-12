@@ -1,6 +1,6 @@
-// Command eusov-server stands in for the second composition root (PRD #103): it
+// Command shift2eu-server stands in for the second composition root (PRD #103): it
 // imports the standard packages the server-composition-root rule allows, and the
-// same third-party library and cloud SDK its sibling cmd/eusov imports, which the
+// same third-party library and cloud SDK its sibling cmd/shift2eu imports, which the
 // rule must refuse. Test/architecture holds it to that rule for every platform
 // the release builds, and Test/architecture's composition-root probe proves the
 // composition-root rule does not hold it at all.

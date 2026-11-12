@@ -5,7 +5,7 @@
 
 ## Problem
 
-`eusov` answers "what can move?" for two of the three targets the project names: Scaleway (PRD #2) and
+`shift2eu` answers "what can move?" for two of the three targets the project names: Scaleway (PRD #2) and
 OVHcloud (PRD #11). A platform engineer comparing EU providers also needs the answer for UpCloud, and
 today `--target upcloud` does not exist. `internal/adapter/target/upcloud` holds only a `doc.go`.
 
@@ -23,7 +23,7 @@ zone-level availability.
 
 ## Outcome
 
-A user can run `eusov assess --inventory inventory.json --target upcloud` and get the same kind of report
+A user can run `shift2eu assess --inventory inventory.json --target upcloud` and get the same kind of report
 as for Scaleway and OVHcloud. It comes from an embedded, dated snapshot of UpCloud's public cloud
 products in its EU zones, and runs offline with no credentials. Resources in a category UpCloud has no
 offering for (serverless functions and message queues, as of this PRD) are reported with fit `none` and
@@ -48,12 +48,12 @@ All criteria are pinned by tests that run offline under `make test` or `make tes
 
 **Target selection**
 
-- [x] Given a valid inventory file, when I run `eusov assess --inventory <file> --target upcloud`, then
+- [x] Given a valid inventory file, when I run `shift2eu assess --inventory <file> --target upcloud`, then
   the command exits 0 and prints a Markdown report naming the target `UpCloud`, the snapshot's source URL
   and its retrieval date.
 - [x] `--target` accepts `ovhcloud`, `scaleway` and `upcloud`. Given an unknown target, the command exits
   2 and the usage error lists all three, sorted.
-- [x] `eusov assess --target upcloud` needs no credentials or network. The e2e test runs it with an empty
+- [x] `shift2eu assess --target upcloud` needs no credentials or network. The e2e test runs it with an empty
   environment and gets the same report.
 
 **Catalog**
@@ -114,7 +114,7 @@ Each milestone ships as one PR. Both depend on this PRD being merged first.
    does, the same PR updates this PRD's scope and criteria. The reviewer checks every zone against
    UpCloud's locations page and each product's availability page, and every capability against the
    product documentation. The adapter's `doc.go` says how to refresh the snapshot.
-2. [x] **CLI, e2e and docs.** `--target upcloud` is wired in `cmd/eusov`, and the usage error lists all
+2. [x] **CLI, e2e and docs.** `--target upcloud` is wired in `cmd/shift2eu`, and the usage error lists all
    three targets. The e2e test runs one fixture inventory against all three targets and compares the
    output with golden reports. For UpCloud the fixture exercises direct, partial, `none` (from a category
    UpCloud does not serve) and unclassified. The `go list -deps` check includes the UpCloud adapter, and

@@ -7,7 +7,7 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/timothymamo/eu-sov-cloud/test/internal/yamlread"
+	"github.com/timothymamo/shift2eu/test/internal/yamlread"
 )
 
 // The release workflow is read as a closed schema: every key, job and step it
@@ -69,10 +69,10 @@ func exactly(value string) *regexp.Regexp {
 // builds and gives as its output; and the expression through which the sbom
 // and sign jobs read that output, to read, sign and attest the image by.
 const (
-	imageName     = "ghcr.io/timothymamo/eusov"
+	imageName     = "ghcr.io/timothymamo/shift2eu"
 	builtDigest   = "${{ steps.build.outputs.digest }}"
 	imageDigest   = "${{ needs.image.outputs.digest }}"
-	sbomFile      = "eusov.spdx.json"
+	sbomFile      = "shift2eu.spdx.json"
 	sbomArtifact  = "sbom"
 	registryLogin = "ghcr.io"
 )
@@ -191,7 +191,7 @@ var (
 				"platforms":   exactly("linux/amd64,linux/arm64"),
 				"push":        exactly("true"),
 				"tags":        exactly("${{ steps.tags.outputs.tags }}"),
-				"annotations": exactly("index:org.opencontainers.image.source=https://github.com/timothymamo/eu-sov-cloud"),
+				"annotations": exactly("index:org.opencontainers.image.source=https://github.com/timothymamo/shift2eu"),
 				"provenance":  exactly("false"),
 				"sbom":        exactly("false"),
 				"build-args": exactly(strings.Join([]string{

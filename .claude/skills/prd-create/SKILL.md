@@ -1,6 +1,6 @@
 ---
 name: prd-create
-description: Write a Product Requirements Document (PRD) for a new eu-sov-cloud capability and open its GitHub issue. Use when the user wants to plan a feature, a new provider, a new service category, or any change too big for a single PR.
+description: Write a Product Requirements Document (PRD) for a new shift2eu capability and open its GitHub issue. Use when the user wants to plan a feature, a new provider, a new service category, or any change too big for a single PR.
 ---
 
 # Create a PRD

@@ -6,7 +6,7 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/timothymamo/eu-sov-cloud/internal/domain/text"
+	"github.com/timothymamo/shift2eu/internal/domain/text"
 )
 
 // Capability is a feature a source resource depends on or a target offering

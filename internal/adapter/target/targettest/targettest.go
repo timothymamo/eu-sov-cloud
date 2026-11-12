@@ -8,10 +8,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/timothymamo/eu-sov-cloud/internal/app/analysis"
-	"github.com/timothymamo/eu-sov-cloud/internal/domain/catalog"
-	"github.com/timothymamo/eu-sov-cloud/internal/domain/taxonomy"
-	"github.com/timothymamo/eu-sov-cloud/internal/domain/text"
+	"github.com/timothymamo/shift2eu/internal/app/analysis"
+	"github.com/timothymamo/shift2eu/internal/domain/catalog"
+	"github.com/timothymamo/shift2eu/internal/domain/taxonomy"
+	"github.com/timothymamo/shift2eu/internal/domain/text"
 )
 
 // Expectations is what a target adapter declares about the catalog it must

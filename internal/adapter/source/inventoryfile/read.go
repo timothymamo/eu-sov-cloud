@@ -8,7 +8,7 @@ import (
 	"io/fs"
 	"os"
 
-	"github.com/timothymamo/eu-sov-cloud/internal/domain/text"
+	"github.com/timothymamo/shift2eu/internal/domain/text"
 )
 
 // readResult is what the goroutine of read sends back.

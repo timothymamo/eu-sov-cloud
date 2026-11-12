@@ -5,7 +5,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/timothymamo/eu-sov-cloud/test/architecture/internal/check"
+	"github.com/timothymamo/shift2eu/test/architecture/internal/check"
 )
 
 // TestGitHubRelease pins how the GitHub release is published: release holds

@@ -15,15 +15,15 @@ import (
 	"unicode"
 	"unicode/utf8"
 
-	"github.com/timothymamo/eu-sov-cloud/internal/app/analysis"
-	"github.com/timothymamo/eu-sov-cloud/internal/cli"
-	"github.com/timothymamo/eu-sov-cloud/internal/domain/assessment"
-	"github.com/timothymamo/eu-sov-cloud/internal/domain/catalog"
-	"github.com/timothymamo/eu-sov-cloud/internal/domain/inventory"
-	"github.com/timothymamo/eu-sov-cloud/internal/domain/taxonomy"
-	"github.com/timothymamo/eu-sov-cloud/internal/domain/text"
-	"github.com/timothymamo/eu-sov-cloud/internal/testutil"
-	"github.com/timothymamo/eu-sov-cloud/internal/version"
+	"github.com/timothymamo/shift2eu/internal/app/analysis"
+	"github.com/timothymamo/shift2eu/internal/cli"
+	"github.com/timothymamo/shift2eu/internal/domain/assessment"
+	"github.com/timothymamo/shift2eu/internal/domain/catalog"
+	"github.com/timothymamo/shift2eu/internal/domain/inventory"
+	"github.com/timothymamo/shift2eu/internal/domain/taxonomy"
+	"github.com/timothymamo/shift2eu/internal/domain/text"
+	"github.com/timothymamo/shift2eu/internal/testutil"
+	"github.com/timothymamo/shift2eu/internal/version"
 )
 
 // truncationRE matches the marker a cut error message ends with, on the one
@@ -37,7 +37,7 @@ var escapeRE = regexp.MustCompile(`\\u[0-9a-f]{4}|\\x[0-9a-f]{2}`)
 const (
 	// reportBody is what the fake reporter writes, so a test can tell the
 	// reporter's output from anything the CLI writes itself.
-	reportBody = "# eusov report\n"
+	reportBody = "# shift2eu report\n"
 	// inventoryPath is the --inventory value the tests below use: a path with a
 	// directory, so the test can see that a report shows the base name only.
 	inventoryPath = "dir/inv.json"
@@ -55,7 +55,7 @@ const (
 	// --format json run from the default one.
 	jsonReportBody = `{"schemaVersion": 1, "kind": "assessment"}` + "\n"
 	// errPrefix is how the CLI writes an error to stderr.
-	errPrefix = "eusov: "
+	errPrefix = "shift2eu: "
 	// maxErrorLine is the longest error line the CLI may write: the cap on the
 	// message, the prefix, a short truncation marker and the newline.
 	maxErrorLine = 1024 + len(errPrefix) + 64 + 1
@@ -1530,7 +1530,7 @@ func tempReportFiles(t *testing.T, dir string) []string {
 	var names []string
 
 	for _, e := range entries {
-		if strings.HasPrefix(e.Name(), ".eusov-report-") {
+		if strings.HasPrefix(e.Name(), ".shift2eu-report-") {
 			names = append(names, e.Name())
 		}
 	}

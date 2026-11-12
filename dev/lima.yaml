@@ -269,7 +269,7 @@ provision:
         apparmor_parser -r /etc/apparmor.d/usr.local.nerdctl.bin.rootlesskit
       fi
 
-      cat > /etc/profile.d/eu-sov-cloud.sh <<'PROFILE'
+      cat > /etc/profile.d/shift2eu.sh <<'PROFILE'
       export PATH="$HOME/.local/bin:$HOME/go/bin:/usr/local/go/bin:/usr/local/node/bin:/usr/local/nerdctl/bin:$PATH"
       # Agent credentials, copied in from the Mac by `make vm-env` (docs/dev-environment.md).
       if [ -r "$HOME/.config/dot-agent-deck/daemon.env" ]; then
@@ -329,7 +329,7 @@ provision:
       # The user's systemd manager (user@UID.service) starts asynchronously once lingering is on: wait for it,
       # as Lima's own rootless containerd setup does.
       timeout 120s bash -c 'until [ -S "$XDG_RUNTIME_DIR/systemd/private" ]; do sleep 2; done'
-      stamp="$HOME/.local/state/eu-sov-cloud/nerdctl-version"
+      stamp="$HOME/.local/state/shift2eu/nerdctl-version"
       # Keyed on the outcome, not on the unit file: the setuptool writes the unit before enabling it, so a
       # failed first start is retried on the next boot.
       systemctl --user is-enabled --quiet containerd.service || containerd-rootless-setuptool.sh install

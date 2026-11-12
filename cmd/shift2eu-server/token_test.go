@@ -28,7 +28,7 @@ const (
 	tokenMinLength = "32"
 )
 
-// TestServerBearerToken pins the token from EUSOV_SERVER_TOKEN: every /v1/
+// TestServerBearerToken pins the token from SHIFT2EU_SERVER_TOKEN: every /v1/
 // request without Authorization: Bearer <token> is refused with 401 and without
 // a hint of the token, the same request with it answers 200, and the health
 // endpoints stay open, because a platform's probe carries no credentials.

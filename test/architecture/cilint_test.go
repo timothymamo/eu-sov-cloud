@@ -12,7 +12,7 @@ import (
 
 	"github.com/google/go-cmp/cmp"
 
-	"github.com/timothymamo/eu-sov-cloud/test/internal/releasetarget"
+	"github.com/timothymamo/shift2eu/test/internal/releasetarget"
 )
 
 // ciMatrixEntry matches one entry of the lint-target matrix as the workflow
@@ -371,7 +371,7 @@ func TestCILintMatrixCoversEveryReleaseTarget(t *testing.T) {
 	})
 
 	// test/lint runs the forbidigo probes with the golangci-lint the step above
-	// installs, and EUSOV_LINT_PROBES=require makes a missing golangci-lint
+	// installs, and SHIFT2EU_LINT_PROBES=require makes a missing golangci-lint
 	// fail them rather than skip them.
 	probes := slices.IndexFunc(items, func(item ciItem) bool {
 		_, run, ok := ciScalar(item.lines, "run")
@@ -383,10 +383,10 @@ func TestCILintMatrixCoversEveryReleaseTarget(t *testing.T) {
 	}
 
 	if probesEnv, ok := ciBlock(items[probes].lines, "env"); !ok {
-		t.Errorf("line %d: the test/lint step holds no env: block, want EUSOV_LINT_PROBES: require so the probes fail rather than skip",
+		t.Errorf("line %d: the test/lint step holds no env: block, want SHIFT2EU_LINT_PROBES: require so the probes fail rather than skip",
 			items[probes].num)
-	} else if _, got, ok := ciScalar(probesEnv, "EUSOV_LINT_PROBES"); !ok || got != "require" {
-		t.Errorf("line %d: the test/lint step sets EUSOV_LINT_PROBES to %q, want require so the probes fail rather than skip",
+	} else if _, got, ok := ciScalar(probesEnv, "SHIFT2EU_LINT_PROBES"); !ok || got != "require" {
+		t.Errorf("line %d: the test/lint step sets SHIFT2EU_LINT_PROBES to %q, want require so the probes fail rather than skip",
 			items[probes].num, got)
 	}
 

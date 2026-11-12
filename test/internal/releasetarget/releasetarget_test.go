@@ -7,7 +7,7 @@ import (
 
 	"github.com/google/go-cmp/cmp"
 
-	"github.com/timothymamo/eu-sov-cloud/test/internal/releasetarget"
+	"github.com/timothymamo/shift2eu/test/internal/releasetarget"
 )
 
 // The .goreleaser.yaml documents below are hand-written copies of this
@@ -47,9 +47,9 @@ const (
 	buildBlock = `version: 2
 
 builds:
-  - id: eusov
-    main: ./cmd/eusov
-    binary: eusov
+  - id: shift2eu
+    main: ./cmd/shift2eu
+    binary: shift2eu
     env:
       - CGO_ENABLED=0
       - GOWORK=off
@@ -68,8 +68,8 @@ builds:
 	buildEnvFlow = `version: 2
 
 builds:
-  - id: eusov
-    main: ./cmd/eusov
+  - id: shift2eu
+    main: ./cmd/shift2eu
     env: [CGO_ENABLED=0, GOWORK=off, GOFLAGS=-mod=readonly]
     goos: [linux, darwin, windows]
     goarch: [amd64, arm64]
@@ -81,8 +81,8 @@ builds:
 	buildCgoOn = `version: 2
 
 builds:
-  - id: eusov
-    main: ./cmd/eusov
+  - id: shift2eu
+    main: ./cmd/shift2eu
     env:
       - CGO_ENABLED=1
       - GOWORK=off
@@ -96,8 +96,8 @@ builds:
 	buildNoEnv = `version: 2
 
 builds:
-  - id: eusov
-    main: ./cmd/eusov
+  - id: shift2eu
+    main: ./cmd/shift2eu
     goos: [linux, darwin, windows]
     goarch: [amd64, arm64]
 `
@@ -106,8 +106,8 @@ builds:
 	buildEmptyGoos = `version: 2
 
 builds:
-  - id: eusov
-    main: ./cmd/eusov
+  - id: shift2eu
+    main: ./cmd/shift2eu
     env:
       - CGO_ENABLED=0
       - GOWORK=off
@@ -121,8 +121,8 @@ builds:
 	buildNoGoarch = `version: 2
 
 builds:
-  - id: eusov
-    main: ./cmd/eusov
+  - id: shift2eu
+    main: ./cmd/shift2eu
     env:
       - CGO_ENABLED=0
       - GOWORK=off
@@ -135,16 +135,16 @@ builds:
 	buildTwo = `version: 2
 
 builds:
-  - id: eusov
-    main: ./cmd/eusov
+  - id: shift2eu
+    main: ./cmd/shift2eu
     env:
       - CGO_ENABLED=0
       - GOWORK=off
       - GOFLAGS=-mod=readonly
     goos: [linux, darwin, windows]
     goarch: [amd64, arm64]
-  - id: eusov-helper
-    main: ./cmd/eusov-helper
+  - id: shift2eu-helper
+    main: ./cmd/shift2eu-helper
     env:
       - CGO_ENABLED=0
       - GOWORK=off
@@ -158,8 +158,8 @@ builds:
 	buildIgnore = `version: 2
 
 builds:
-  - id: eusov
-    main: ./cmd/eusov
+  - id: shift2eu
+    main: ./cmd/shift2eu
     env:
       - CGO_ENABLED=0
       - GOWORK=off
@@ -176,8 +176,8 @@ builds:
 	buildTargets = `version: 2
 
 builds:
-  - id: eusov
-    main: ./cmd/eusov
+  - id: shift2eu
+    main: ./cmd/shift2eu
     env:
       - CGO_ENABLED=0
       - GOWORK=off
@@ -196,8 +196,8 @@ gomod:
   gobinary: go1.22.0
 
 builds:
-  - id: eusov
-    main: ./cmd/eusov
+  - id: shift2eu
+    main: ./cmd/shift2eu
     env:
       - CGO_ENABLED=0
       - GOWORK=off
@@ -216,8 +216,8 @@ before:
     - go generate ./...
 
 builds:
-  - id: eusov
-    main: ./cmd/eusov
+  - id: shift2eu
+    main: ./cmd/shift2eu
     env:
       - CGO_ENABLED=0
       - GOWORK=off
@@ -235,8 +235,8 @@ before:
     - FOO=bar
 
 builds:
-  - id: eusov
-    main: ./cmd/eusov
+  - id: shift2eu
+    main: ./cmd/shift2eu
     env:
       - CGO_ENABLED=0
       - GOWORK=off
@@ -250,8 +250,8 @@ builds:
 	buildRepeatedGoos = `version: 2
 
 builds:
-  - id: eusov
-    main: ./cmd/eusov
+  - id: shift2eu
+    main: ./cmd/shift2eu
     env:
       - CGO_ENABLED=0
       - GOWORK=off
@@ -267,8 +267,8 @@ builds:
 	buildTemplatedGoos = `version: 2
 
 builds:
-  - id: eusov
-    main: ./cmd/eusov
+  - id: shift2eu
+    main: ./cmd/shift2eu
     env:
       - CGO_ENABLED=0
       - GOWORK=off
@@ -284,8 +284,8 @@ builds:
 <<: *base
 
 builds:
-  - id: eusov
-    main: ./cmd/eusov
+  - id: shift2eu
+    main: ./cmd/shift2eu
     env:
       - CGO_ENABLED=0
       - GOWORK=off
@@ -299,8 +299,8 @@ builds:
 	buildAnchoredEnv = `version: 2
 
 builds:
-  - id: eusov
-    main: ./cmd/eusov
+  - id: shift2eu
+    main: ./cmd/shift2eu
     env: &envs
       - CGO_ENABLED=0
       - GOWORK=off
@@ -314,8 +314,8 @@ builds:
 	buildAliasedGoos = `version: 2
 
 builds:
-  - id: eusov
-    main: ./cmd/eusov
+  - id: shift2eu
+    main: ./cmd/shift2eu
     env:
       - CGO_ENABLED=0
       - GOWORK=off
@@ -330,8 +330,8 @@ builds:
 	buildCRInComment = `version: 2
 
 builds:
-  - id: eusov
-    main: ./cmd/eusov
+  - id: shift2eu
+    main: ./cmd/shift2eu
     env:
       - CGO_ENABLED=0
       - GOWORK=off
@@ -351,7 +351,7 @@ const envDoc = "    env:\n      - CGO_ENABLED=0\n      - GOWORK=off\n      - GOF
 // already indented under the build's dash, then the six-platform goos and
 // goarch lists.
 func buildDoc(lines string) string {
-	return "version: 2\n\nbuilds:\n  - id: eusov\n    main: ./cmd/eusov\n" + lines +
+	return "version: 2\n\nbuilds:\n  - id: shift2eu\n    main: ./cmd/shift2eu\n" + lines +
 		"    goos: [linux, darwin, windows]\n    goarch: [amd64, arm64]\n"
 }
 
@@ -367,7 +367,7 @@ func buildWithBefore(hooks string) string {
 // build's dash: for a case about a list itself rather than about the keys
 // around it.
 func buildLists(goos, goarch string) string {
-	return "version: 2\n\nbuilds:\n  - id: eusov\n    main: ./cmd/eusov\n" + envDoc +
+	return "version: 2\n\nbuilds:\n  - id: shift2eu\n    main: ./cmd/shift2eu\n" + envDoc +
 		goos + "\n" + goarch + "\n"
 }
 
@@ -375,7 +375,7 @@ func buildLists(goos, goarch string) string {
 // above project_name. The reader skips comments, so a character the check must
 // refuse is the only reason a case using it fails.
 func buildWithComment(comment string) string {
-	return strings.Replace(buildReal, "project_name: eusov", comment+"\nproject_name: eusov", 1)
+	return strings.Replace(buildReal, "project_name: shift2eu", comment+"\nproject_name: shift2eu", 1)
 }
 
 // TestRead pins the platform list the release builds: every goos x

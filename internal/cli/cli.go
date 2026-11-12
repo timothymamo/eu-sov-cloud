@@ -9,9 +9,9 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/timothymamo/eu-sov-cloud/internal/app/analysis"
-	"github.com/timothymamo/eu-sov-cloud/internal/domain/text"
-	"github.com/timothymamo/eu-sov-cloud/internal/version"
+	"github.com/timothymamo/shift2eu/internal/app/analysis"
+	"github.com/timothymamo/shift2eu/internal/domain/text"
+	"github.com/timothymamo/shift2eu/internal/version"
 )
 
 // The exit codes Run returns.
@@ -26,7 +26,7 @@ const (
 	exitUsage = 2
 )
 
-// Deps are the adapters the CLI runs with. The composition root (cmd/eusov)
+// Deps are the adapters the CLI runs with. The composition root (cmd/shift2eu)
 // builds them; the CLI never constructs an adapter itself. Run calls a
 // constructor only once the command line is valid, so a usage error builds
 // nothing.
@@ -103,7 +103,7 @@ func usageError(stderr io.Writer, deps Deps, err error) int {
 	return exitUsage
 }
 
-// printError writes err to w as "eusov: " and its message made safe by
+// printError writes err to w as "shift2eu: " and its message made safe by
 // sanitise, on one line. It is the only way the CLI prints an error.
 func printError(w io.Writer, err error) {
 	msg := err.Error()
@@ -111,16 +111,16 @@ func printError(w io.Writer, err error) {
 		msg = "unknown error"
 	}
 
-	fmt.Fprintf(w, "eusov: %s\n", sanitise(msg))
+	fmt.Fprintf(w, "shift2eu: %s\n", sanitise(msg))
 }
 
 // usage is the help text; the verbs are the list of supported targets, the
 // list of supported formats and the default format.
 const usage = `Usage:
-  eusov assess --inventory <file> --target <targets> [--format <format>]
+  shift2eu assess --inventory <file> --target <targets> [--format <format>]
                [--output <file>]
-  eusov version
-  eusov help
+  shift2eu version
+  shift2eu help
 
 Commands:
   assess   Assess the resources of an inventory file against the catalog of a

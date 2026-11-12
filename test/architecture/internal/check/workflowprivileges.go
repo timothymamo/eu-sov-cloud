@@ -5,7 +5,7 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/timothymamo/eu-sov-cloud/test/internal/yamlread"
+	"github.com/timothymamo/shift2eu/test/internal/yamlread"
 )
 
 // releaseWorkflowName is the one workflow that may publish: ReleaseWorkflow

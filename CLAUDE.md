@@ -4,15 +4,15 @@ Guidance for every agent working in this repository. Claude Code and pi both loa
 
 ## What this project is
 
-`eusov` is a Go CLI that analyses infrastructure running in a hyperscaler (**AWS, Azure, GCP**) and
+`shift2eu` is a Go CLI that analyses infrastructure running in a hyperscaler (**AWS, Azure, GCP**) and
 reports what can be moved to an EU cloud provider (**OVHcloud, Scaleway, UpCloud**): which resources
 have a direct equivalent, which a partial one, which have none, and what blocks the move.
 
-**Status:** walking skeleton. `eusov assess` works offline: it reads an inventory file and assesses it
+**Status:** walking skeleton. `shift2eu assess` works offline: it reads an inventory file and assesses it
 against an embedded OVHcloud, Scaleway or UpCloud catalog snapshot, through every layer, or compares
 several targets in one report (`--target all` or a list), as Markdown or as versioned JSON
 (`--format json`, ADR 0018) (PRD #2, OVHcloud from PRD #11, UpCloud from PRD #77 and the comparison
-from PRD #89, all in `prds/done/`; the JSON report from PRD #103). A second binary, `eusov-server`,
+from PRD #89, all in `prds/done/`; the JSON report from PRD #103). A second binary, `shift2eu-server`,
 serves the same assessments over a versioned HTTP API (PRD #103, ADR 0019). Live source adapters do not
 exist yet. Work is planned as PRDs in `prds/`.
 
@@ -42,7 +42,7 @@ Hexagonal (ports and adapters). Dependencies point inwards only. See `docs/archi
 | Application | `internal/app/analysis` | Domain. Declares the ports (interfaces) it consumes |
 | Adapters | `internal/adapter/source/{inventoryfile,aws,azure,gcp}`, `internal/adapter/target/{ovhcloud,scaleway,upcloud}`, `internal/adapter/report/{markdown,jsonreport}`, `internal/adapter/request/assessmentrequest` (the HTTP API's request decoder), and `internal/adapter/internal/jsondoc`, the JSON decoder they share | Domain, the ports they implement, SDKs. Never `internal/cli`, `internal/httpapi` or `cmd/` |
 | Driving adapters | `internal/cli` (the CLI) and `internal/httpapi` (the HTTP API, ADR 0019) | Application, domain, `internal/version`; never each other, an adapter or `cmd/` |
-| Composition roots | `cmd/eusov` (the CLI, offline: never imports `internal/httpapi`) and `cmd/eusov-server` (the HTTP API, PRD #103 milestone 3; never imports `internal/cli`) | Everything but a cloud SDK; the only places adapters are constructed. Each one's imports are a strict allow list (`composition-root`, `server-composition-root`): the module's own packages and the standard packages it needs, no third-party package |
+| Composition roots | `cmd/shift2eu` (the CLI, offline: never imports `internal/httpapi`) and `cmd/shift2eu-server` (the HTTP API, PRD #103 milestone 3; never imports `internal/cli`) | Everything but a cloud SDK; the only places adapters are constructed. Each one's imports are a strict allow list (`composition-root`, `server-composition-root`): the module's own packages and the standard packages it needs, no third-party package |
 
 - The dependency rule is **enforced by `golangci-lint` (depguard)** and, package by package for every
   release target, by `test/architecture` (ADR 0012). Do not add `//nolint:depguard`; fix the design.
@@ -64,8 +64,8 @@ make test-integration  # real cloud APIs, read-only credentials (never in defaul
 make test-e2e          # build the binary and run it against testdata fixtures
 make lint              # golangci-lint natively and for every release target, then test/lint, incl. architecture rules
 make fmt               # gofumpt + goimports
-make build             # ./bin/eusov and ./bin/eusov-server (the HTTP API)
-make server            # ./bin/eusov-server only
+make build             # ./bin/shift2eu and ./bin/shift2eu-server (the HTTP API)
+make server            # ./bin/shift2eu-server only
 ```
 
 ## Testing

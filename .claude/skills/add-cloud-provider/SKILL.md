@@ -1,6 +1,6 @@
 ---
 name: add-cloud-provider
-description: Add or extend a cloud provider adapter in eu-sov-cloud - a source hyperscaler (AWS, Azure, GCP, others) that is discovered, or a target EU provider (OVHcloud, Scaleway, UpCloud, others) whose catalog is compared. Use when adding a provider, adding a service or resource type to an existing provider, or changing how a provider's services are classified.
+description: Add or extend a cloud provider adapter in shift2eu - a source hyperscaler (AWS, Azure, GCP, others) that is discovered, or a target EU provider (OVHcloud, Scaleway, UpCloud, others) whose catalog is compared. Use when adding a provider, adding a service or resource type to an existing provider, or changing how a provider's services are classified.
 ---
 
 # Add or extend a cloud provider
@@ -84,4 +84,4 @@ narrows that list further and never widens it.
 
 ## Finish
 
-Wire the adapter in `cmd/eusov`, update the provider tables in README.md, and run `make check`.
+Wire the adapter in `cmd/shift2eu`, update the provider tables in README.md, and run `make check`.

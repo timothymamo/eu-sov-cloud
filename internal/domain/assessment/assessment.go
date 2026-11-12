@@ -3,10 +3,10 @@ package assessment
 import (
 	"slices"
 
-	"github.com/timothymamo/eu-sov-cloud/internal/domain/catalog"
-	"github.com/timothymamo/eu-sov-cloud/internal/domain/inventory"
-	"github.com/timothymamo/eu-sov-cloud/internal/domain/mapping"
-	"github.com/timothymamo/eu-sov-cloud/internal/domain/taxonomy"
+	"github.com/timothymamo/shift2eu/internal/domain/catalog"
+	"github.com/timothymamo/shift2eu/internal/domain/inventory"
+	"github.com/timothymamo/shift2eu/internal/domain/mapping"
+	"github.com/timothymamo/shift2eu/internal/domain/taxonomy"
 )
 
 // Blocker is one reason a resource cannot move to the target at all.

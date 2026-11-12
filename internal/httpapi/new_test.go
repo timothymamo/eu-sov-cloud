@@ -4,8 +4,8 @@ import (
 	"net/http"
 	"testing"
 
-	"github.com/timothymamo/eu-sov-cloud/internal/app/analysis"
-	"github.com/timothymamo/eu-sov-cloud/internal/httpapi"
+	"github.com/timothymamo/shift2eu/internal/app/analysis"
+	"github.com/timothymamo/shift2eu/internal/httpapi"
 )
 
 // TestNewRejectsIncompleteDeps pins that the handler the composition root gets

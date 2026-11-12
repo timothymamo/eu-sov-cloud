@@ -1,7 +1,7 @@
 // Package httpapi is the HTTP driving adapter, beside internal/cli: it serves
 // the analysis use cases over a small, versioned JSON API (PRD #103, ADR 0019).
 // It contains no business rules and constructs no adapter: the composition
-// root (cmd/eusov-server) passes everything in through Deps, as cmd/eusov does
+// root (cmd/shift2eu-server) passes everything in through Deps, as cmd/shift2eu does
 // for the CLI through cli.Deps. New returns an http.Handler; listening, flags,
 // the environment, timeouts, graceful shutdown and the access log belong to
 // the composition root, not to this package.
@@ -33,7 +33,7 @@
 // never sends part of one.
 //
 // Content negotiation on Accept: none, */*, application/* or application/json
-// gives the JSON report (ADR 0018), byte for byte what eusov assess --format
+// gives the JSON report (ADR 0018), byte for byte what shift2eu assess --format
 // json prints; text/markdown or text/* gives the Markdown report, byte for
 // byte the CLI's, as text/markdown; charset=utf-8. A media range with q=0 is
 // excluded, and an entry whose q is not a number in [0, 1] (NaN included) is

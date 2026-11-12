@@ -13,8 +13,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/timothymamo/eu-sov-cloud/internal/app/analysis"
-	"github.com/timothymamo/eu-sov-cloud/internal/domain/inventory"
+	"github.com/timothymamo/shift2eu/internal/app/analysis"
+	"github.com/timothymamo/shift2eu/internal/domain/inventory"
 )
 
 // allTargets is the target value that selects every supported target.

@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"io"
 
-	"github.com/timothymamo/eu-sov-cloud/internal/app/analysis"
-	"github.com/timothymamo/eu-sov-cloud/internal/domain/assessment"
+	"github.com/timothymamo/shift2eu/internal/app/analysis"
+	"github.com/timothymamo/shift2eu/internal/domain/assessment"
 )
 
 // comparisonDocument is the document of several targets, kind "comparison".

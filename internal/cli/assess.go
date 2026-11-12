@@ -13,8 +13,8 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/timothymamo/eu-sov-cloud/internal/app/analysis"
-	"github.com/timothymamo/eu-sov-cloud/internal/domain/text"
+	"github.com/timothymamo/shift2eu/internal/app/analysis"
+	"github.com/timothymamo/shift2eu/internal/domain/text"
 )
 
 // assessOptions are the flags of the assess command.
@@ -321,7 +321,7 @@ const reportMode = 0o600
 // report or left as it was, and never truncated. Every error names dest, never
 // the temporary file.
 func writeFile(dest string, report []byte) error {
-	tmp, err := os.CreateTemp(filepath.Dir(dest), ".eusov-report-*.tmp")
+	tmp, err := os.CreateTemp(filepath.Dir(dest), ".shift2eu-report-*.tmp")
 	if err != nil {
 		return fmt.Errorf("output %s: create a temporary file in its directory: %w",
 			text.Quote(dest), withoutPath(err))

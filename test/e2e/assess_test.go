@@ -18,7 +18,7 @@ import (
 
 	"github.com/google/go-cmp/cmp"
 
-	"github.com/timothymamo/eu-sov-cloud/internal/testutil"
+	"github.com/timothymamo/shift2eu/internal/testutil"
 )
 
 const (
@@ -28,7 +28,7 @@ const (
 	scalewayKey = "scaleway"
 	upcloudKey  = "upcloud"
 	// errPrefix is how the binary writes an error to stderr.
-	errPrefix = "eusov: "
+	errPrefix = "shift2eu: "
 	// maxErrorLine is the longest error line the binary may write: the cap on
 	// the message, the prefix, a short truncation marker and the newline.
 	maxErrorLine = 1024 + len(errPrefix) + 64 + 1
@@ -88,11 +88,11 @@ func targets() []targetCase {
 	}
 }
 
-// binaryPath is the eusov binary every test runs, built once by TestMain.
+// binaryPath is the shift2eu binary every test runs, built once by TestMain.
 var binaryPath string
 
-// serverBinaryPath is the eusov-server binary the server tests run, built beside
-// eusov by TestMain. serverBuildErr holds why it could not be built, which the
+// serverBinaryPath is the shift2eu-server binary the server tests run, built beside
+// shift2eu by TestMain. serverBuildErr holds why it could not be built, which the
 // server tests report: the CLI's own tests say whether the CLI works even when
 // the server does not build, so one binary's build failure cannot hide the
 // other's results.
@@ -123,25 +123,25 @@ func TestMain(m *testing.M) {
 
 // buildAndRun builds the binary and runs the tests, returning the exit code.
 func buildAndRun(m *testing.M) (int, error) {
-	dir, err := os.MkdirTemp("", "eusov-e2e-")
+	dir, err := os.MkdirTemp("", "shift2eu-e2e-")
 	if err != nil {
 		return 0, fmt.Errorf("create the directory for the binary: %w", err)
 	}
 
 	defer os.RemoveAll(dir)
 
-	binaryPath = filepath.Join(dir, "eusov")
+	binaryPath = filepath.Join(dir, "shift2eu")
 
-	build := exec.Command("go", "build", "-trimpath", "-o", binaryPath, filepath.Join("..", "..", "cmd", "eusov"))
+	build := exec.Command("go", "build", "-trimpath", "-o", binaryPath, filepath.Join("..", "..", "cmd", "shift2eu"))
 	if out, err := build.CombinedOutput(); err != nil {
-		return 0, fmt.Errorf("build eusov: %w\n%s", err, out)
+		return 0, fmt.Errorf("build shift2eu: %w\n%s", err, out)
 	}
 
-	serverBinaryPath = filepath.Join(dir, "eusov-server")
+	serverBinaryPath = filepath.Join(dir, "shift2eu-server")
 
-	server := exec.Command("go", "build", "-trimpath", "-o", serverBinaryPath, filepath.Join("..", "..", "cmd", "eusov-server"))
+	server := exec.Command("go", "build", "-trimpath", "-o", serverBinaryPath, filepath.Join("..", "..", "cmd", "shift2eu-server"))
 	if out, err := server.CombinedOutput(); err != nil {
-		serverBuildErr = fmt.Errorf("build eusov-server: %w\n%s", err, out)
+		serverBuildErr = fmt.Errorf("build shift2eu-server: %w\n%s", err, out)
 	}
 
 	return m.Run(), nil
@@ -186,13 +186,13 @@ func run(t *testing.T, env []string, args ...string) result {
 	case errors.As(err, &exitErr):
 		return result{code: exitErr.ExitCode(), stdout: stdout.String(), stderr: stderr.String()}
 	default:
-		t.Fatalf("running eusov %q: %v", args, err)
+		t.Fatalf("running shift2eu %q: %v", args, err)
 
 		return result{}
 	}
 }
 
-// assess runs `eusov assess --inventory inventory --target target` with no
+// assess runs `shift2eu assess --inventory inventory --target target` with no
 // environment and returns the result.
 func assess(t *testing.T, target, inventory string, extra ...string) result {
 	t.Helper()
@@ -885,7 +885,7 @@ func TestAssessUsage(t *testing.T) {
 	}
 }
 
-// TestVersion pins that `eusov version` still works: one non-empty line, exit
+// TestVersion pins that `shift2eu version` still works: one non-empty line, exit
 // code 0, nothing on stderr.
 func TestVersion(t *testing.T) {
 	t.Parallel()
@@ -952,17 +952,17 @@ func TestAssessPathHasNoNetworkOrCloudSDK(t *testing.T) {
 		t.Fatalf("resolving the module root: %v", err)
 	}
 
-	cmd := exec.Command("go", "list", "-deps", "./cmd/eusov")
+	cmd := exec.Command("go", "list", "-deps", "./cmd/shift2eu")
 	cmd.Dir = root
 
 	out, err := cmd.Output()
 	if err != nil {
 		var exitErr *exec.ExitError
 		if errors.As(err, &exitErr) {
-			t.Fatalf("go list -deps ./cmd/eusov: %v\n%s", err, exitErr.Stderr)
+			t.Fatalf("go list -deps ./cmd/shift2eu: %v\n%s", err, exitErr.Stderr)
 		}
 
-		t.Fatalf("go list -deps ./cmd/eusov: %v", err)
+		t.Fatalf("go list -deps ./cmd/shift2eu: %v", err)
 	}
 
 	deps := strings.Fields(string(out))
@@ -976,12 +976,12 @@ func TestAssessPathHasNoNetworkOrCloudSDK(t *testing.T) {
 
 	// The check above can only refuse what the binary imports, so the adapters
 	// the CLI assesses against must be on the path: a target wired out of
-	// cmd/eusov, or one the build drops, would pass by absence.
+	// cmd/shift2eu, or one the build drops, would pass by absence.
 	for _, tc := range targets() {
-		want := "github.com/timothymamo/eu-sov-cloud/internal/adapter/target/" + tc.key
+		want := "github.com/timothymamo/shift2eu/internal/adapter/target/" + tc.key
 
 		if !slices.Contains(deps, want) {
-			t.Errorf("the assess path does not depend on %s: wire the %s target in cmd/eusov so "+
+			t.Errorf("the assess path does not depend on %s: wire the %s target in cmd/shift2eu so "+
 				"that the checks above cover it", want, tc.key)
 		}
 	}

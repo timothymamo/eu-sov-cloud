@@ -5,7 +5,7 @@
 
 ## Problem
 
-After PRD #2, `eusov` answers "what can move?" for one target only, Scaleway. A platform engineer choosing
+After PRD #2, `shift2eu` answers "what can move?" for one target only, Scaleway. A platform engineer choosing
 an EU provider needs the same answer for every candidate. OVHcloud is the second of the three targets the
 project names, and today `--target ovhcloud` does not exist.
 
@@ -16,7 +16,7 @@ If it copies Scaleway's snapshot parser, the two copies drift apart.
 
 ## Outcome
 
-A user can run `eusov assess --inventory inventory.json --target ovhcloud` and get the same kind of report
+A user can run `shift2eu assess --inventory inventory.json --target ovhcloud` and get the same kind of report
 PRD #2 gives for Scaleway. It comes from an embedded, dated snapshot of OVHcloud Public Cloud in its EU
 regions, and runs offline with no credentials. Resources in a category OVHcloud has no offering for
 (serverless functions and message queues, as of this PRD) are reported with fit `none` and listed as
@@ -40,12 +40,12 @@ All criteria are pinned by tests that run offline under `make test` or `make tes
 
 **Target selection**
 
-- [x] Given a valid inventory file, when I run `eusov assess --inventory <file> --target ovhcloud`, then
+- [x] Given a valid inventory file, when I run `shift2eu assess --inventory <file> --target ovhcloud`, then
   the command exits 0 and prints a Markdown report naming the target `OVHcloud`, the snapshot's source URL
   and its retrieval date.
 - [x] `--target` accepts `ovhcloud` and `scaleway`. Given an unknown target, the command exits 2 and the
   usage error lists both, sorted.
-- [x] `eusov assess --target ovhcloud` needs no credentials or network. The e2e test runs it with an empty
+- [x] `shift2eu assess --target ovhcloud` needs no credentials or network. The e2e test runs it with an empty
   environment and gets the same report.
 
 **Catalog**
@@ -115,7 +115,7 @@ Each milestone ships as one PR. This PRD starts after PRD #2: milestone 1 needs 
    `messaging.queue`. If one does, it updates this PRD's scope and criteria in the same PR. The reviewer
    checks every region against OVHcloud's published regions page and every capability against the
    product documentation. Depends on 1.
-3. [x] **CLI, e2e and docs.** `--target ovhcloud` is wired in `cmd/eusov`, and the usage error lists
+3. [x] **CLI, e2e and docs.** `--target ovhcloud` is wired in `cmd/shift2eu`, and the usage error lists
    both targets. The e2e test runs one fixture inventory against both targets and compares the output
    with golden reports. For OVHcloud the fixture exercises direct, partial, `none` (from a category
    OVHcloud does not serve) and unclassified. The `go list -deps` check includes the OVHcloud adapter,

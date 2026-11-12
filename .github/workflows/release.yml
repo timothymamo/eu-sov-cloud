@@ -142,7 +142,7 @@ jobs:
         id: tags
         uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6.2.0
         with:
-          images: ghcr.io/timothymamo/eusov
+          images: ghcr.io/timothymamo/shift2eu
           flavor: latest=${{ steps.stamp.outputs.latest }}
           tags: |
             type=semver,pattern={{raw}}
@@ -157,7 +157,7 @@ jobs:
           platforms: linux/amd64,linux/arm64
           push: true
           tags: ${{ steps.tags.outputs.tags }}
-          annotations: index:org.opencontainers.image.source=https://github.com/timothymamo/eu-sov-cloud
+          annotations: index:org.opencontainers.image.source=https://github.com/timothymamo/shift2eu
           provenance: false
           sbom: false
           build-args: |
@@ -183,9 +183,9 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
       - uses: anchore/sbom-action@66cbf4bc1f1c0d2edc94016e65bc221b6bb0ad6c # v0.24.3
         with:
-          image: registry:ghcr.io/timothymamo/eusov@${{ needs.image.outputs.digest }}
+          image: registry:ghcr.io/timothymamo/shift2eu@${{ needs.image.outputs.digest }}
           format: spdx-json
-          output-file: eusov.spdx.json
+          output-file: shift2eu.spdx.json
           upload-artifact: false
           upload-release-assets: false
           # renovate: datasource=github-releases depName=anchore/syft
@@ -193,7 +193,7 @@ jobs:
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: sbom
-          path: eusov.spdx.json
+          path: shift2eu.spdx.json
           if-no-files-found: error
           retention-days: 1
 
@@ -224,12 +224,12 @@ jobs:
       - name: Sign the image
         env:
           DIGEST: ${{ needs.image.outputs.digest }}
-        run: cosign sign --yes --recursive "ghcr.io/timothymamo/eusov@${DIGEST}"
+        run: cosign sign --yes --recursive "ghcr.io/timothymamo/shift2eu@${DIGEST}"
       # SLSA build provenance: actions/attest's default without sbom-path.
       - name: Attest the build provenance
         uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
         with:
-          subject-name: ghcr.io/timothymamo/eusov
+          subject-name: ghcr.io/timothymamo/shift2eu
           subject-digest: ${{ needs.image.outputs.digest }}
           push-to-registry: true
           create-storage-record: false # an organisation API; needs artifact-metadata: write
@@ -239,8 +239,8 @@ jobs:
       - name: Attest the SBOM
         uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
         with:
-          subject-name: ghcr.io/timothymamo/eusov
+          subject-name: ghcr.io/timothymamo/shift2eu
           subject-digest: ${{ needs.image.outputs.digest }}
-          sbom-path: eusov.spdx.json
+          sbom-path: shift2eu.spdx.json
           push-to-registry: true
           create-storage-record: false

@@ -1,8 +1,8 @@
-// Command eusov-server serves the assessments of eusov over a versioned HTTP
+// Command shift2eu-server serves the assessments of shift2eu over a versioned HTTP
 // API (PRD #103, ADR 0019): POST /v1/assessments, GET /v1/targets, GET /healthz
 // and GET /readyz.
 //
-// It is the HTTP API's composition root, the sibling of cmd/eusov: the only
+// It is the HTTP API's composition root, the sibling of cmd/shift2eu: the only
 // place that wires the concrete adapters (the request decoder, the in-memory
 // inventory reader, the embedded OVHcloud, Scaleway and UpCloud catalogs and the
 // JSON and Markdown reporters) into internal/httpapi. Around the handler it

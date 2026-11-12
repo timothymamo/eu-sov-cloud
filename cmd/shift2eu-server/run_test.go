@@ -1,4 +1,4 @@
-// White-box tests of the composition root: cmd/eusov-server is a main package,
+// White-box tests of the composition root: cmd/shift2eu-server is a main package,
 // so its tests are package main, the only way a test file reaches the package at
 // all (Go refuses an import of a main package). The seam is run, the sibling of
 // cli.Run: a test passes the flags, a fake lookupEnv and a stderr it reads,
@@ -7,8 +7,8 @@
 // a port of its own beyond 127.0.0.1:0.
 //
 // run's flags and the shape of its errors are the ones the CLI uses
-// (cmd/eusov/main.go, internal/cli): one line per startup error, prefixed
-// "eusov-server: ", and exit code 2 for a usage or configuration error.
+// (cmd/shift2eu/main.go, internal/cli): one line per startup error, prefixed
+// "shift2eu-server: ", and exit code 2 for a usage or configuration error.
 package main
 
 import (
@@ -37,12 +37,12 @@ const (
 	loopbackListen = "127.0.0.1:0"
 
 	// errorPrefix is how the server prefixes a startup error line on stderr.
-	errorPrefix = "eusov-server: "
+	errorPrefix = "shift2eu-server: "
 
 	// tokenEnv is the name of the environment variable the bearer token comes
 	// from, never a token. There is no token flag: a token in an argument would
 	// show in the process list.
-	tokenEnv = "EUSOV_SERVER_TOKEN" //nolint:gosec // this is the variable's name, not a credential
+	tokenEnv = "SHIFT2EU_SERVER_TOKEN" //nolint:gosec // this is the variable's name, not a credential
 
 	// startBound is how long a run may take to listen or to return before a
 	// test calls it hung: a configuration error returns at once, so only a
@@ -597,14 +597,14 @@ func TestServerLocalhostListen(t *testing.T) {
 func TestServerInsecureNoAuthWarning(t *testing.T) {
 	t.Parallel()
 
-	const warning = "eusov-server: warning: serving without authentication on "
+	const warning = "shift2eu-server: warning: serving without authentication on "
 
 	t.Run("a non-loopback listener warns", func(t *testing.T) {
 		t.Parallel()
 
 		s := startServer(t, "0.0.0.0:0", nil, "--insecure-no-auth")
 
-		line := s.waitForLine(t, "eusov-server: warning: ")
+		line := s.waitForLine(t, "shift2eu-server: warning: ")
 		if !strings.HasPrefix(line, warning) {
 			t.Fatalf("the warning line = %q, want it to start with %q", line, warning)
 		}
@@ -784,7 +784,7 @@ func readTimedOut(err error) bool {
 
 // TestServerListenFailure pins a listener that cannot open (review S2): an
 // address already in use is a runtime failure, exit 1 with one line prefixed
-// "eusov-server: ", not the exit 2 of a configuration error and not a silent
+// "shift2eu-server: ", not the exit 2 of a configuration error and not a silent
 // exit 0.
 func TestServerListenFailure(t *testing.T) {
 	t.Parallel()
@@ -829,8 +829,8 @@ func TestServerConcurrencyLine(t *testing.T) {
 	t.Parallel()
 
 	const (
-		prefix    = "eusov-server: concurrency "
-		listening = "eusov-server: listening on "
+		prefix    = "shift2eu-server: concurrency "
+		listening = "shift2eu-server: listening on "
 	)
 
 	tests := []struct {

@@ -9,7 +9,7 @@ import (
 
 	"github.com/google/go-cmp/cmp"
 
-	"github.com/timothymamo/eu-sov-cloud/test/architecture/internal/check"
+	"github.com/timothymamo/shift2eu/test/architecture/internal/check"
 )
 
 // The fixture below is .github/workflows/release.yml in parts: the top level,
@@ -202,7 +202,7 @@ var imageSteps = []string{
         id: tags
         uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6.2.0
         with:
-          images: ghcr.io/timothymamo/eusov
+          images: ghcr.io/timothymamo/shift2eu
           flavor: latest=${{ steps.stamp.outputs.latest }}
           tags: |
             type=semver,pattern={{raw}}
@@ -218,7 +218,7 @@ var imageSteps = []string{
           platforms: linux/amd64,linux/arm64
           push: true
           tags: ${{ steps.tags.outputs.tags }}
-          annotations: index:org.opencontainers.image.source=https://github.com/timothymamo/eu-sov-cloud
+          annotations: index:org.opencontainers.image.source=https://github.com/timothymamo/shift2eu
           provenance: false
           sbom: false
           build-args: |
@@ -255,9 +255,9 @@ var sbomSteps = []string{
 `,
 	`      - uses: anchore/sbom-action@66cbf4bc1f1c0d2edc94016e65bc221b6bb0ad6c # v0.24.3
         with:
-          image: registry:ghcr.io/timothymamo/eusov@${{ needs.image.outputs.digest }}
+          image: registry:ghcr.io/timothymamo/shift2eu@${{ needs.image.outputs.digest }}
           format: spdx-json
-          output-file: eusov.spdx.json
+          output-file: shift2eu.spdx.json
           upload-artifact: false
           upload-release-assets: false
           # renovate: datasource=github-releases depName=anchore/syft
@@ -266,7 +266,7 @@ var sbomSteps = []string{
 	`      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: sbom
-          path: eusov.spdx.json
+          path: shift2eu.spdx.json
           if-no-files-found: error
           retention-days: 1
 `,
@@ -310,13 +310,13 @@ var signSteps = []string{
       - name: Sign the image
         env:
           DIGEST: ${{ needs.image.outputs.digest }}
-        run: cosign sign --yes --recursive "ghcr.io/timothymamo/eusov@${DIGEST}"
+        run: cosign sign --yes --recursive "ghcr.io/timothymamo/shift2eu@${DIGEST}"
 `,
 	`      # SLSA build provenance: actions/attest's default without sbom-path.
       - name: Attest the build provenance
         uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
         with:
-          subject-name: ghcr.io/timothymamo/eusov
+          subject-name: ghcr.io/timothymamo/shift2eu
           subject-digest: ${{ needs.image.outputs.digest }}
           push-to-registry: true
           create-storage-record: false # an organisation API; needs artifact-metadata: write
@@ -328,9 +328,9 @@ var signSteps = []string{
 	`      - name: Attest the SBOM
         uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
         with:
-          subject-name: ghcr.io/timothymamo/eusov
+          subject-name: ghcr.io/timothymamo/shift2eu
           subject-digest: ${{ needs.image.outputs.digest }}
-          sbom-path: eusov.spdx.json
+          sbom-path: shift2eu.spdx.json
           push-to-registry: true
           create-storage-record: false
 `,
@@ -738,7 +738,7 @@ func TestReleaseWorkflow(t *testing.T) {
 		{name: "push: false", workflow: in("image", "          push: true\n", "          push: false\n"), wantIn: "push"},
 		{name: "one platform", workflow: in("image", "          platforms: linux/amd64,linux/arm64\n", "          platforms: linux/amd64\n"), wantIn: "platforms"},
 		{name: "a third platform", workflow: in("image", "          platforms: linux/amd64,linux/arm64\n", "          platforms: linux/amd64,linux/arm64,linux/arm/v7\n"), wantIn: "platforms"},
-		{name: "another source annotation", workflow: in("image", "          annotations: index:org.opencontainers.image.source=https://github.com/timothymamo/eu-sov-cloud\n", "          annotations: index:org.opencontainers.image.source=https://example.com\n"), wantIn: "annotations"},
+		{name: "another source annotation", workflow: in("image", "          annotations: index:org.opencontainers.image.source=https://github.com/timothymamo/shift2eu\n", "          annotations: index:org.opencontainers.image.source=https://example.com\n"), wantIn: "annotations"},
 		{name: "BuildKit's provenance on", workflow: in("image", "          provenance: false\n", "          provenance: true\n"), wantIn: "with: provenance"},
 		{name: "BuildKit's SBOM on", workflow: in("image", "          sbom: false\n", "          sbom: true\n"), wantIn: "with: sbom"},
 		{name: "a build argument from git", workflow: in("image", "            VERSION=${{ steps.stamp.outputs.version }}\n", "            VERSION=$(git describe --tags)\n"), wantIn: "build-args"},
@@ -792,7 +792,7 @@ func TestReleaseWorkflow(t *testing.T) {
 		// the release publishes.
 		{name: "another registry", workflow: in("image", "          registry: ghcr.io\n", "          registry: docker.io\n"), wantIn: "registry"},
 		{name: "another user", workflow: in("image", "          username: ${{ github.actor }}\n", "          username: someone\n"), wantIn: "username"},
-		{name: "another image name", workflow: in("image", "          images: ghcr.io/timothymamo/eusov\n", "          images: ghcr.io/example/eusov\n"), wantIn: "images"},
+		{name: "another image name", workflow: in("image", "          images: ghcr.io/timothymamo/shift2eu\n", "          images: ghcr.io/example/shift2eu\n"), wantIn: "images"},
 
 		// latest comes from the stamp step's output alone: no literal, no
 		// other step, no latest=auto.
@@ -817,13 +817,13 @@ func TestReleaseWorkflow(t *testing.T) {
 		{name: "an extra step in the sbom job", workflow: steps("sbom", beforeStep(t, sbomSteps, "      - uses: anchore/sbom-action@", "run: ./scripts/prepare.sh")), wantIn: "holds 4 steps, want exactly 3"},
 		{name: "a missing step in the sbom job", workflow: steps("sbom", withoutStep(t, sbomSteps, "actions/upload-artifact@")), wantIn: "holds 2 steps, want exactly 3"},
 		{name: "two sbom steps swapped", workflow: steps("sbom", swappedSteps(t, sbomSteps, "docker/login-action@", "anchore/sbom-action@")), wantIn: "want docker/login-action: uses is"},
-		{name: "the SBOM read by tag", workflow: in("sbom", "image: registry:ghcr.io/timothymamo/eusov@${{ needs.image.outputs.digest }}", "image: registry:ghcr.io/timothymamo/eusov:latest"), wantIn: "with: image"},
+		{name: "the SBOM read by tag", workflow: in("sbom", "image: registry:ghcr.io/timothymamo/shift2eu@${{ needs.image.outputs.digest }}", "image: registry:ghcr.io/timothymamo/shift2eu:latest"), wantIn: "with: image"},
 		{name: "another SBOM format", workflow: in("sbom", "          format: spdx-json\n", "          format: cyclonedx-json\n"), wantIn: "format"},
 		{name: "the SBOM uploaded to the run", workflow: in("sbom", "          upload-artifact: false\n", "          upload-artifact: true\n"), wantIn: "upload-artifact"},
 		{name: "the SBOM uploaded to the release", workflow: in("sbom", "          upload-release-assets: false\n", "          upload-release-assets: true\n"), wantIn: "upload-release-assets"},
 		{name: "a syft version range", workflow: in("sbom", "syft-version: v1.57.1", "syft-version: ~> v1"), wantIn: "syft-version"},
 		{name: "another SBOM artifact name", workflow: in("sbom", "          name: sbom\n", "          name: sboms\n"), wantIn: "name"},
-		{name: "another SBOM artifact path", workflow: in("sbom", "          path: eusov.spdx.json\n", "          path: report.json\n"), wantIn: "path"},
+		{name: "another SBOM artifact path", workflow: in("sbom", "          path: shift2eu.spdx.json\n", "          path: report.json\n"), wantIn: "path"},
 		{name: "a tolerated missing SBOM", workflow: in("sbom", "          if-no-files-found: error\n", "          if-no-files-found: warn\n"), wantIn: "if-no-files-found"},
 		{name: "a longer SBOM retention", workflow: in("sbom", "          retention-days: 1\n", "          retention-days: 7\n"), wantIn: "retention-days"},
 		{name: "sbom-action pinned by tag", workflow: in("sbom", "anchore/sbom-action@66cbf4bc1f1c0d2edc94016e65bc221b6bb0ad6c", "anchore/sbom-action@v0"), wantIn: "sbom-action@v0"},
@@ -853,8 +853,8 @@ func TestReleaseWorkflow(t *testing.T) {
 
 		// The signature: keyless, recursive, by digest, with the digest through
 		// env:.
-		{name: "the sign step without --recursive", workflow: in("sign", `run: cosign sign --yes --recursive "ghcr.io/timothymamo/eusov@${DIGEST}"`, `run: cosign sign --yes "ghcr.io/timothymamo/eusov@${DIGEST}"`), wantIn: "--recursive"},
-		{name: "the sign step by tag", workflow: in("sign", `run: cosign sign --yes --recursive "ghcr.io/timothymamo/eusov@${DIGEST}"`, `run: cosign sign --yes --recursive "ghcr.io/timothymamo/eusov:${DIGEST}"`), wantIn: "@${DIGEST}"},
+		{name: "the sign step without --recursive", workflow: in("sign", `run: cosign sign --yes --recursive "ghcr.io/timothymamo/shift2eu@${DIGEST}"`, `run: cosign sign --yes "ghcr.io/timothymamo/shift2eu@${DIGEST}"`), wantIn: "--recursive"},
+		{name: "the sign step by tag", workflow: in("sign", `run: cosign sign --yes --recursive "ghcr.io/timothymamo/shift2eu@${DIGEST}"`, `run: cosign sign --yes --recursive "ghcr.io/timothymamo/shift2eu:${DIGEST}"`), wantIn: "@${DIGEST}"},
 		{name: "the sign step without the digest env", workflow: in("sign", "        env:\n          DIGEST: ${{ needs.image.outputs.digest }}\n", ""), wantIn: `no "env"`},
 		{name: "a shell on the sign step", workflow: in("sign", "        env:\n          DIGEST: ${{ needs.image.outputs.digest }}\n", "        shell: bash\n        env:\n          DIGEST: ${{ needs.image.outputs.digest }}\n"), wantIn: `key "shell"`},
 		{name: "GOFLAGS on the sign step", workflow: in("sign", "          DIGEST: ${{ needs.image.outputs.digest }}\n", "          DIGEST: ${{ needs.image.outputs.digest }}\n          GOFLAGS: -tags=sneaky\n"), wantIn: `the signature: env holds ["DIGEST: ${{ needs.image.outputs.digest }}" "GOFLAGS: -tags=sneaky"]`},
@@ -862,14 +862,14 @@ func TestReleaseWorkflow(t *testing.T) {
 		// The attestations: the image and its SBOM by digest, pushed to the
 		// registry, and nothing stored in an organisation API.
 		{name: "provenance not pushed to the registry", workflow: in("sign", "          push-to-registry: true\n          create-storage-record: false # an organisation API; needs artifact-metadata: write\n", "          push-to-registry: false\n          create-storage-record: false # an organisation API; needs artifact-metadata: write\n"), wantIn: "push-to-registry"},
-		{name: "the SBOM attestation not pushed to the registry", workflow: in("sign", "          sbom-path: eusov.spdx.json\n          push-to-registry: true\n", "          sbom-path: eusov.spdx.json\n          push-to-registry: false\n"), wantIn: "push-to-registry"},
+		{name: "the SBOM attestation not pushed to the registry", workflow: in("sign", "          sbom-path: shift2eu.spdx.json\n          push-to-registry: true\n", "          sbom-path: shift2eu.spdx.json\n          push-to-registry: false\n"), wantIn: "push-to-registry"},
 		{name: "the provenance attestation stored in the repository", workflow: in("sign", "          create-storage-record: false # an organisation API; needs artifact-metadata: write\n", "          create-storage-record: true # an organisation API; needs artifact-metadata: write\n"), wantIn: "create-storage-record"},
 		{name: "the SBOM attestation stored in the repository", workflow: in("sign", "          push-to-registry: true\n          create-storage-record: false\n", "          push-to-registry: true\n          create-storage-record: true\n"), wantIn: "create-storage-record"},
-		{name: "a provenance attestation of another subject", workflow: in("sign", "      - name: Attest the build provenance\n        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2\n        with:\n          subject-name: ghcr.io/timothymamo/eusov\n", "      - name: Attest the build provenance\n        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2\n        with:\n          subject-name: ghcr.io/example/eusov\n"), wantIn: "subject-name"},
-		{name: "an SBOM attestation of another digest", workflow: in("sign", "          subject-digest: ${{ needs.image.outputs.digest }}\n          sbom-path: eusov.spdx.json\n", "          subject-digest: ${{ github.sha }}\n          sbom-path: eusov.spdx.json\n"), wantIn: "subject-digest"},
-		{name: "an SBOM attestation without the SBOM", workflow: in("sign", "          sbom-path: eusov.spdx.json\n", ""), wantIn: `no "sbom-path"`},
-		{name: "the provenance attested from a file", workflow: in("sign", "      - name: Attest the build provenance\n        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2\n        with:\n          subject-name: ghcr.io/timothymamo/eusov\n", "      - name: Attest the build provenance\n        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2\n        with:\n          subject-path: dist/eusov\n"), wantIn: "subject-path"},
-		{name: "an artifact downloaded under another name", workflow: in("sign", "      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2\n        with:\n          name: sbom\n", "      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2\n        with:\n          name: eusov-sbom\n"), wantIn: "name"},
+		{name: "a provenance attestation of another subject", workflow: in("sign", "      - name: Attest the build provenance\n        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2\n        with:\n          subject-name: ghcr.io/timothymamo/shift2eu\n", "      - name: Attest the build provenance\n        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2\n        with:\n          subject-name: ghcr.io/example/shift2eu\n"), wantIn: "subject-name"},
+		{name: "an SBOM attestation of another digest", workflow: in("sign", "          subject-digest: ${{ needs.image.outputs.digest }}\n          sbom-path: shift2eu.spdx.json\n", "          subject-digest: ${{ github.sha }}\n          sbom-path: shift2eu.spdx.json\n"), wantIn: "subject-digest"},
+		{name: "an SBOM attestation without the SBOM", workflow: in("sign", "          sbom-path: shift2eu.spdx.json\n", ""), wantIn: `no "sbom-path"`},
+		{name: "the provenance attested from a file", workflow: in("sign", "      - name: Attest the build provenance\n        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2\n        with:\n          subject-name: ghcr.io/timothymamo/shift2eu\n", "      - name: Attest the build provenance\n        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2\n        with:\n          subject-path: dist/shift2eu\n"), wantIn: "subject-path"},
+		{name: "an artifact downloaded under another name", workflow: in("sign", "      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2\n        with:\n          name: sbom\n", "      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2\n        with:\n          name: shift2eu-sbom\n"), wantIn: "name"},
 		{name: "another action in place of the artifact download", workflow: in("sign", "      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2\n", "      - uses: example/attest@0123456789abcdef0123456789abcdef01234567\n"), wantIn: "download-artifact"},
 
 		{name: "an empty document", workflow: "", wantIn: "release workflow"},

@@ -11,8 +11,8 @@ import (
 
 	"github.com/google/go-cmp/cmp"
 
-	"github.com/timothymamo/eu-sov-cloud/test/architecture/internal/check"
-	"github.com/timothymamo/eu-sov-cloud/test/internal/releasetarget"
+	"github.com/timothymamo/shift2eu/test/architecture/internal/check"
+	"github.com/timothymamo/shift2eu/test/internal/releasetarget"
 )
 
 const (
@@ -21,7 +21,7 @@ const (
 	repoRoot = "../.."
 
 	// modulePath is the module the check reads import paths under.
-	modulePath = "github.com/timothymamo/eu-sov-cloud"
+	modulePath = "github.com/timothymamo/shift2eu"
 )
 
 // skippedStrictRules are the strict rules of .golangci.yml the package check
@@ -32,8 +32,8 @@ const (
 var skippedStrictRules = map[string]string{
 	"cli-gets-adapters-from-cmd": "it allows $gostd, which depguard expands to one prefix entry per top-level directory of GOROOT/src, so no allow list of package-by-package imports can say what it means",
 	"e2e-is-black-box":           "test/e2e holds test files only, so go list -deps reaches no package of it: it is no layer of the production packages the check holds, and a package only a test file imports is never listed at all",
-	compositionRootRule:          "go list -deps ./cmd/eusov/... lists the composition root's whole dependency tree, internal/cli and internal/version included, and no rule the check reads holds those (internal/cli's own rule allows $gostd and is skipped), so listing the composition root beside the other layers would flag them as outside every directory the check holds. TestCompositionRootRulesAreHeldToTheirRuleForEveryReleaseTarget holds cmd/eusov to this rule's allow list instead, on every release target",
-	serverCompositionRootRule:    "go list -deps ./cmd/eusov-server/... lists the server's whole dependency tree, the target adapters and the report adapters included, and the lax rule adapters-are-built-in-cmd holds those, which the check does not read, so listing the server's root beside the layers would flag them as outside every directory the check holds. TestCompositionRootRulesAreHeldToTheirRuleForEveryReleaseTarget holds cmd/eusov-server to this rule's allow list instead, on every release target",
+	compositionRootRule:          "go list -deps ./cmd/shift2eu/... lists the composition root's whole dependency tree, internal/cli and internal/version included, and no rule the check reads holds those (internal/cli's own rule allows $gostd and is skipped), so listing the composition root beside the other layers would flag them as outside every directory the check holds. TestCompositionRootRulesAreHeldToTheirRuleForEveryReleaseTarget holds cmd/shift2eu to this rule's allow list instead, on every release target",
+	serverCompositionRootRule:    "go list -deps ./cmd/shift2eu-server/... lists the server's whole dependency tree, the target adapters and the report adapters included, and the lax rule adapters-are-built-in-cmd holds those, which the check does not read, so listing the server's root beside the layers would flag them as outside every directory the check holds. TestCompositionRootRulesAreHeldToTheirRuleForEveryReleaseTarget holds cmd/shift2eu-server to this rule's allow list instead, on every release target",
 }
 
 // sdkRule is the strict depguard rule that holds every cloud source adapter, and
@@ -44,18 +44,18 @@ var skippedStrictRules = map[string]string{
 const sdkRule = "cloud-adapters-reach-the-cloud-through-the-sdk"
 
 // compositionRootRule is the strict depguard rule that holds the composition
-// root, cmd/eusov, and nothing beside it (issue #101): main wires every adapter
+// root, cmd/shift2eu, and nothing beside it (issue #101): main wires every adapter
 // into the application, so it may import every package of the module, and no
 // third-party package, the lax cloud SDK and go-cmp denies aside. Its files:
-// list names cmd/eusov alone, so a sibling such as the cmd/eusov-server PRD #103
+// list names cmd/shift2eu alone, so a sibling such as the cmd/shift2eu-server PRD #103
 // may add gets a rule of its own, written the same way, and not a wider glob.
 const compositionRootRule = "composition-root"
 
 // compositionRootDir is the directory the composition-root rule holds: the one
 // package of the repository that may import every package of the module.
-const compositionRootDir = "cmd/eusov"
+const compositionRootDir = "cmd/shift2eu"
 
-// compositionRootStds are the standard packages cmd/eusov imports today, each
+// compositionRootStds are the standard packages cmd/shift2eu imports today, each
 // allowed exactly as the rule writes it: context for the context a run takes, os
 // for os.Interrupt, os.Args and os.Exit, os/signal for signal.NotifyContext and
 // syscall for SIGTERM and SIGHUP. A standard package the composition root starts
@@ -63,7 +63,7 @@ const compositionRootDir = "cmd/eusov"
 var compositionRootStds = []string{"context", "os", "os/signal", "syscall"}
 
 // serverCompositionRootRule is the strict depguard rule that holds the second
-// composition root, cmd/eusov-server, and nothing beside it (PRD #103, milestone
+// composition root, cmd/shift2eu-server, and nothing beside it (PRD #103, milestone
 // 3): it is written the way composition-root is, with a files: list naming its
 // own directory and its own allow list, so the two roots cannot widen each
 // other's imports.
@@ -71,7 +71,7 @@ const serverCompositionRootRule = "server-composition-root"
 
 // serverCompositionRootDir is the directory the server-composition-root rule
 // holds.
-const serverCompositionRootDir = "cmd/eusov-server"
+const serverCompositionRootDir = "cmd/shift2eu-server"
 
 // serverCompositionRootStds are the standard packages the server imports: context
 // for the run and its shutdown, flag for the flags, fmt and io for the stderr a
@@ -115,7 +115,7 @@ type compositionRoot struct {
 }
 
 // compositionRoots returns the composition roots, in the order .golangci.yml
-// holds their rules: cmd/eusov (issue #101) and cmd/eusov-server (PRD #103,
+// holds their rules: cmd/shift2eu (issue #101) and cmd/shift2eu-server (PRD #103,
 // milestone 3). Each is held by a rule of its own, written the same way, so a
 // third-party import in either is refused by a strict allow list rather than by
 // review alone. A third root gets a row here and a rule beside the other two.
@@ -742,10 +742,10 @@ func TestCloudAdapterSDKRuleHoldsItsSDKProbeForEveryReleaseTarget(t *testing.T) 
 // root and no sibling beside it, whose allow list is the module path as the one
 // prefix entry, so main may import any package of the module, and the standard
 // packages the binary imports today, each exact, so no third-party package gets
-// in. Before cmd/eusov's rule, a new dependency of main was refused by no rule but
+// in. Before cmd/shift2eu's rule, a new dependency of main was refused by no rule but
 // the lax cloud-sdks-only-in-provider-adapters and go-cmp-only-in-tests denies, so
 // it was held by review of the import and of go.mod alone: the gap issue #79 left,
-// and ADR 0012 records. cmd/eusov-server (PRD #103, milestone 3) gets the same
+// and ADR 0012 records. cmd/shift2eu-server (PRD #103, milestone 3) gets the same
 // rule, written the same way, when the server binary arrives.
 //
 // Each rule is a reasoned skip of the shared layer listing (skippedStrictRules):
@@ -945,10 +945,10 @@ type compositionRootProbe struct {
 // SDK, as a composition root must not, fails the package check with the rule read
 // from .golangci.yml.
 //
-// The fixture's cmd/eusov also imports the standard packages cmd/eusov imports today
+// The fixture's cmd/shift2eu also imports the standard packages cmd/shift2eu imports today
 // and a nested module, example.com/cmdprobe/nested, whose path is under the probe's
 // module path: the listing must report it as a package that is not the main module.
-// The fixture's cmd/eusov-server imports the standard packages the server needs, the
+// The fixture's cmd/shift2eu-server imports the standard packages the server needs, the
 // same third-party library and the same cloud SDK, so an allow list that lost a
 // package or a deny list that lost a cloud SDK fails here as well. Each rule holds
 // its own root and no sibling: the paths in this table are the ones each rule must
@@ -965,8 +965,8 @@ func TestCompositionRootRulesHoldTheirProbesForEveryReleaseTarget(t *testing.T) 
 		loggingPkg  = "example.com/logging"
 		sdkPkg      = "github.com/aws/aws-sdk-go-v2/service/ec2"
 		nestedPkg   = probeModule + "/nested"
-		cliPkg      = probeModule + "/cmd/eusov"
-		serverPkg   = probeModule + "/cmd/eusov-server"
+		cliPkg      = probeModule + "/cmd/shift2eu"
+		serverPkg   = probeModule + "/cmd/shift2eu-server"
 	)
 
 	roots := compositionRoots()

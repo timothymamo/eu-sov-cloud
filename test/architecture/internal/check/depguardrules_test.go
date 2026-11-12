@@ -8,7 +8,7 @@ import (
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
 
-	"github.com/timothymamo/eu-sov-cloud/test/architecture/internal/check"
+	"github.com/timothymamo/shift2eu/test/architecture/internal/check"
 )
 
 // depguardRulesYAML holds the rules DepguardRules reads whole: a strict rule
@@ -40,15 +40,15 @@ linters:
             - "$all"
             - "!$test"
           deny:
-            - pkg: github.com/timothymamo/eu-sov-cloud/internal/testutil
+            - pkg: github.com/timothymamo/shift2eu/internal/testutil
               desc: testutil may only be imported from _test.go files
         adapters-are-built-in-cmd:
           list-mode: lax
           files:
             - "$all"
           deny: &adapters
-            - pkg: github.com/timothymamo/eu-sov-cloud/internal/adapter/
-              desc: adapters are constructed only in cmd/eusov
+            - pkg: github.com/timothymamo/shift2eu/internal/adapter/
+              desc: adapters are constructed only in cmd/shift2eu
             - pkg: net$
               desc: an adapter opens no connection of its own
         app-tests-use-fakes-not-adapters:
@@ -89,21 +89,21 @@ func TestDepguardRules(t *testing.T) {
 					ListMode: "",
 					Files:    []string{"$all", "!$test"},
 					Allow:    nil,
-					Deny:     []string{"github.com/timothymamo/eu-sov-cloud/internal/testutil"},
+					Deny:     []string{"github.com/timothymamo/shift2eu/internal/testutil"},
 				},
 				{
 					Name:     "adapters-are-built-in-cmd",
 					ListMode: "lax",
 					Files:    []string{"$all"},
 					Allow:    nil,
-					Deny:     []string{"github.com/timothymamo/eu-sov-cloud/internal/adapter/", "net$"},
+					Deny:     []string{"github.com/timothymamo/shift2eu/internal/adapter/", "net$"},
 				},
 				{
 					Name:     "app-tests-use-fakes-not-adapters",
 					ListMode: "lax",
 					Files:    []string{"**/internal/app/**/*_test.go"},
 					Allow:    nil,
-					Deny:     []string{"github.com/timothymamo/eu-sov-cloud/internal/adapter/", "net$"},
+					Deny:     []string{"github.com/timothymamo/shift2eu/internal/adapter/", "net$"},
 				},
 			},
 		},
@@ -325,7 +325,7 @@ func pinnedRules() []check.DepguardRule {
 			Files:    []string{"**/internal/domain/**", "!$test"},
 			Allow: []string{
 				"errors$",
-				"github.com/timothymamo/eu-sov-cloud/internal/adapter/internal/jsondoc$",
+				"github.com/timothymamo/shift2eu/internal/adapter/internal/jsondoc$",
 			},
 			Deny: []string{"os", "net"},
 		},

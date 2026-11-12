@@ -15,7 +15,7 @@ agents will work on the code in parallel, so boundaries must be obvious and chec
 Use ports and adapters. A pure domain (`internal/domain`, standard library only) holds the taxonomy,
 inventory, catalog, mapping and assessment models. The application layer (`internal/app`) declares the
 ports it needs. Each source and target provider is an adapter in its own package, and cloud SDKs exist
-only there. `cmd/eusov` wires everything. The dependency rule is enforced with `depguard`.
+only there. `cmd/shift2eu` wires everything. The dependency rule is enforced with `depguard`.
 
 Sources and targets meet only through a provider-neutral taxonomy of service categories and
 capabilities: each provider maps into it once, instead of maintaining a table for every

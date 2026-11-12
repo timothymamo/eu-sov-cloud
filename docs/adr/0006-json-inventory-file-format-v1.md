@@ -6,13 +6,13 @@
   [0009](0009-decode-adapter-json-documents-through-one-strict-decoder.md); the schema version policy
   is amended by [0011](0011-scope-capabilities-and-one-offering-per-tier.md): retiring a vocabulary
   value is not a version change while no tool writes inventory files, and needs a new version once
-  `eusov discover` does
+  `shift2eu discover` does
 - Date: 2026-11-10
 
 ## Context
 
-PRD 2 (issue #2) makes `eusov assess --inventory <file>` work offline, before any live source adapter
-exists. The file it reads is not a test fixture: a future `eusov discover` will write it, and users will
+PRD 2 (issue #2) makes `shift2eu assess --inventory <file>` work offline, before any live source adapter
+exists. The file it reads is not a test fixture: a future `shift2eu discover` will write it, and users will
 review, sanitise or hand-edit it before assessing it. Once inventories exist in the wild, changing what
 they mean is a breaking change, so the format needs a recorded shape and a version policy from the start.
 
@@ -173,7 +173,7 @@ buffers it (ADR 0005), so the adapter still reads a file.
 
 ## Consequences
 
-- `eusov discover`, when it comes, writes version 1 exactly as recorded here, and a round-trip test pins
+- `shift2eu discover`, when it comes, writes version 1 exactly as recorded here, and a round-trip test pins
   that its output reads back to the same inventory.
 - The format cannot grow without a version bump and an ADR. That is deliberate friction.
 - The version 1 reader leaves no known gap from `encoding/json`: inexact keys, repeated keys, invalid

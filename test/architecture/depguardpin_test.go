@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/timothymamo/eu-sov-cloud/test/architecture/internal/check"
+	"github.com/timothymamo/shift2eu/test/architecture/internal/check"
 )
 
 // pinnedDepguardRules is a copy of every depguard rule of .golangci.yml: the
@@ -44,12 +44,12 @@ var pinnedDepguardRules = []check.DepguardRule{
 			"time$",
 			"unicode$",
 			"unicode/utf8$",
-			"github.com/timothymamo/eu-sov-cloud/internal/domain/assessment$",
-			"github.com/timothymamo/eu-sov-cloud/internal/domain/catalog$",
-			"github.com/timothymamo/eu-sov-cloud/internal/domain/inventory$",
-			"github.com/timothymamo/eu-sov-cloud/internal/domain/mapping$",
-			"github.com/timothymamo/eu-sov-cloud/internal/domain/taxonomy$",
-			"github.com/timothymamo/eu-sov-cloud/internal/domain/text$",
+			"github.com/timothymamo/shift2eu/internal/domain/assessment$",
+			"github.com/timothymamo/shift2eu/internal/domain/catalog$",
+			"github.com/timothymamo/shift2eu/internal/domain/inventory$",
+			"github.com/timothymamo/shift2eu/internal/domain/mapping$",
+			"github.com/timothymamo/shift2eu/internal/domain/taxonomy$",
+			"github.com/timothymamo/shift2eu/internal/domain/text$",
 		},
 		Deny: []string{
 			"os",
@@ -73,16 +73,16 @@ var pinnedDepguardRules = []check.DepguardRule{
 			"fmt$",
 			"io$",
 			"strings$",
-			"github.com/timothymamo/eu-sov-cloud/internal/domain/assessment$",
-			"github.com/timothymamo/eu-sov-cloud/internal/domain/catalog$",
-			"github.com/timothymamo/eu-sov-cloud/internal/domain/inventory$",
-			"github.com/timothymamo/eu-sov-cloud/internal/domain/mapping$",
-			"github.com/timothymamo/eu-sov-cloud/internal/domain/taxonomy$",
-			"github.com/timothymamo/eu-sov-cloud/internal/domain/text$",
+			"github.com/timothymamo/shift2eu/internal/domain/assessment$",
+			"github.com/timothymamo/shift2eu/internal/domain/catalog$",
+			"github.com/timothymamo/shift2eu/internal/domain/inventory$",
+			"github.com/timothymamo/shift2eu/internal/domain/mapping$",
+			"github.com/timothymamo/shift2eu/internal/domain/taxonomy$",
+			"github.com/timothymamo/shift2eu/internal/domain/text$",
 		},
 		Deny: []string{
-			"github.com/timothymamo/eu-sov-cloud/internal/adapter",
-			"github.com/timothymamo/eu-sov-cloud/internal/cli",
+			"github.com/timothymamo/shift2eu/internal/adapter",
+			"github.com/timothymamo/shift2eu/internal/cli",
 			"github.com/aws/aws-sdk-go-v2",
 			"github.com/Azure/azure-sdk-for-go",
 			"cloud.google.com/go",
@@ -107,8 +107,8 @@ var pinnedDepguardRules = []check.DepguardRule{
 		},
 		Allow: nil,
 		Deny: []string{
-			"github.com/timothymamo/eu-sov-cloud/internal/adapter",
-			"github.com/timothymamo/eu-sov-cloud/internal/cli",
+			"github.com/timothymamo/shift2eu/internal/adapter",
+			"github.com/timothymamo/shift2eu/internal/cli",
 			"github.com/aws/aws-sdk-go-v2",
 			"github.com/Azure/azure-sdk-for-go",
 			"cloud.google.com/go",
@@ -133,17 +133,17 @@ var pinnedDepguardRules = []check.DepguardRule{
 		},
 		Allow: []string{
 			"$gostd",
-			"github.com/timothymamo/eu-sov-cloud/internal/app/analysis$",
-			"github.com/timothymamo/eu-sov-cloud/internal/domain/assessment$",
-			"github.com/timothymamo/eu-sov-cloud/internal/domain/catalog$",
-			"github.com/timothymamo/eu-sov-cloud/internal/domain/inventory$",
-			"github.com/timothymamo/eu-sov-cloud/internal/domain/mapping$",
-			"github.com/timothymamo/eu-sov-cloud/internal/domain/taxonomy$",
-			"github.com/timothymamo/eu-sov-cloud/internal/domain/text$",
-			"github.com/timothymamo/eu-sov-cloud/internal/version$",
+			"github.com/timothymamo/shift2eu/internal/app/analysis$",
+			"github.com/timothymamo/shift2eu/internal/domain/assessment$",
+			"github.com/timothymamo/shift2eu/internal/domain/catalog$",
+			"github.com/timothymamo/shift2eu/internal/domain/inventory$",
+			"github.com/timothymamo/shift2eu/internal/domain/mapping$",
+			"github.com/timothymamo/shift2eu/internal/domain/taxonomy$",
+			"github.com/timothymamo/shift2eu/internal/domain/text$",
+			"github.com/timothymamo/shift2eu/internal/version$",
 		},
 		Deny: []string{
-			"github.com/timothymamo/eu-sov-cloud/internal/adapter",
+			"github.com/timothymamo/shift2eu/internal/adapter",
 			"net$",
 			"net/http$",
 			"net/http/cgi$",
@@ -171,12 +171,12 @@ var pinnedDepguardRules = []check.DepguardRule{
 		// the one prefix entry, and the standard packages it imports today,
 		// each exact. A third-party import is refused by the allow list, and
 		// the cloud SDKs by the deny list too, as in app-uses-ports-not-adapters.
-		// A sibling such as cmd/eusov-server gets a rule of its own, written
+		// A sibling such as cmd/shift2eu-server gets a rule of its own, written
 		// the same way, with its own files: entry.
 		Name:     "composition-root",
 		ListMode: "strict",
 		Files: []string{
-			"**/cmd/eusov/**",
+			"**/cmd/shift2eu/**",
 			"!$test",
 		},
 		Allow: []string{
@@ -184,7 +184,7 @@ var pinnedDepguardRules = []check.DepguardRule{
 			"os$",
 			"os/signal$",
 			"syscall$",
-			"github.com/timothymamo/eu-sov-cloud/",
+			"github.com/timothymamo/shift2eu/",
 		},
 		Deny: []string{
 			"github.com/aws/aws-sdk-go-v2",
@@ -196,7 +196,7 @@ var pinnedDepguardRules = []check.DepguardRule{
 	{
 		// The server's composition root (PRD #103, milestone 3), the sibling of
 		// composition-root and written the same way: its files: list names
-		// cmd/eusov-server and nothing beside it, its allow list is the module
+		// cmd/shift2eu-server and nothing beside it, its allow list is the module
 		// path as the one prefix entry plus the standard packages the server
 		// imports today, each exact, and its deny list names the four cloud
 		// SDKs. A third-party package the allow list does not name is refused by
@@ -206,13 +206,13 @@ var pinnedDepguardRules = []check.DepguardRule{
 		// TestCompositionRootRulesAreChecked pins its files, allow and prefix
 		// entries and its skip of the shared layer listing,
 		// TestCompositionRootRulesAreHeldToTheirRuleForEveryReleaseTarget holds
-		// cmd/eusov-server to it on every release target, and
+		// cmd/shift2eu-server to it on every release target, and
 		// TestCompositionRootRulesHoldTheirProbesForEveryReleaseTarget fails a
 		// fixture server root that imports a third-party library or a cloud SDK.
 		Name:     "server-composition-root",
 		ListMode: "strict",
 		Files: []string{
-			"**/cmd/eusov-server/**",
+			"**/cmd/shift2eu-server/**",
 			"!$test",
 		},
 		Allow: []string{
@@ -235,7 +235,7 @@ var pinnedDepguardRules = []check.DepguardRule{
 			"sync$",
 			"syscall$",
 			"time$",
-			"github.com/timothymamo/eu-sov-cloud/",
+			"github.com/timothymamo/shift2eu/",
 		},
 		Deny: []string{
 			"github.com/aws/aws-sdk-go-v2",
@@ -250,16 +250,16 @@ var pinnedDepguardRules = []check.DepguardRule{
 		Files: []string{
 			"$all",
 			"!$test",
-			"!**/cmd/eusov/**",
-			"!**/cmd/eusov-server/**",
+			"!**/cmd/shift2eu/**",
+			"!**/cmd/shift2eu-server/**",
 		},
 		Allow: []string{
-			"github.com/timothymamo/eu-sov-cloud/internal/adapter/internal/jsondoc$",
-			"github.com/timothymamo/eu-sov-cloud/internal/adapter/target/snapshot$",
+			"github.com/timothymamo/shift2eu/internal/adapter/internal/jsondoc$",
+			"github.com/timothymamo/shift2eu/internal/adapter/target/snapshot$",
 		},
 		Deny: []string{
-			"github.com/timothymamo/eu-sov-cloud/internal/adapter/internal/",
-			"github.com/timothymamo/eu-sov-cloud/internal/adapter/",
+			"github.com/timothymamo/shift2eu/internal/adapter/internal/",
+			"github.com/timothymamo/shift2eu/internal/adapter/",
 		},
 	},
 	{
@@ -268,15 +268,15 @@ var pinnedDepguardRules = []check.DepguardRule{
 		Files: []string{
 			"$all",
 			"!$test",
-			"!**/cmd/eusov/**",
+			"!**/cmd/shift2eu/**",
 			"!**/internal/cli/**",
 		},
 		Allow: nil,
 		Deny: []string{
-			"github.com/timothymamo/eu-sov-cloud/internal/cli$",
-			"github.com/timothymamo/eu-sov-cloud/internal/cli/",
-			"github.com/timothymamo/eu-sov-cloud/cmd$",
-			"github.com/timothymamo/eu-sov-cloud/cmd/",
+			"github.com/timothymamo/shift2eu/internal/cli$",
+			"github.com/timothymamo/shift2eu/internal/cli/",
+			"github.com/timothymamo/shift2eu/cmd$",
+			"github.com/timothymamo/shift2eu/cmd/",
 		},
 	},
 	{
@@ -307,19 +307,19 @@ var pinnedDepguardRules = []check.DepguardRule{
 			"sync$",
 			"time$",
 			"unicode/utf8$",
-			"github.com/timothymamo/eu-sov-cloud/internal/app/analysis$",
-			"github.com/timothymamo/eu-sov-cloud/internal/domain/assessment$",
-			"github.com/timothymamo/eu-sov-cloud/internal/domain/catalog$",
-			"github.com/timothymamo/eu-sov-cloud/internal/domain/inventory$",
-			"github.com/timothymamo/eu-sov-cloud/internal/domain/mapping$",
-			"github.com/timothymamo/eu-sov-cloud/internal/domain/taxonomy$",
-			"github.com/timothymamo/eu-sov-cloud/internal/domain/text$",
-			"github.com/timothymamo/eu-sov-cloud/internal/version$",
+			"github.com/timothymamo/shift2eu/internal/app/analysis$",
+			"github.com/timothymamo/shift2eu/internal/domain/assessment$",
+			"github.com/timothymamo/shift2eu/internal/domain/catalog$",
+			"github.com/timothymamo/shift2eu/internal/domain/inventory$",
+			"github.com/timothymamo/shift2eu/internal/domain/mapping$",
+			"github.com/timothymamo/shift2eu/internal/domain/taxonomy$",
+			"github.com/timothymamo/shift2eu/internal/domain/text$",
+			"github.com/timothymamo/shift2eu/internal/version$",
 		},
 		Deny: []string{
-			"github.com/timothymamo/eu-sov-cloud/internal/adapter",
-			"github.com/timothymamo/eu-sov-cloud/internal/cli",
-			"github.com/timothymamo/eu-sov-cloud/cmd",
+			"github.com/timothymamo/shift2eu/internal/adapter",
+			"github.com/timothymamo/shift2eu/internal/cli",
+			"github.com/timothymamo/shift2eu/cmd",
 			"os",
 			"syscall",
 			"plugin",
@@ -332,13 +332,13 @@ var pinnedDepguardRules = []check.DepguardRule{
 		Files: []string{
 			"$all",
 			"!**/test/apiparity/**",
-			"!**/cmd/eusov-server/**",
+			"!**/cmd/shift2eu-server/**",
 			"!**/internal/httpapi/**",
 		},
 		Allow: nil,
 		Deny: []string{
-			"github.com/timothymamo/eu-sov-cloud/internal/httpapi$",
-			"github.com/timothymamo/eu-sov-cloud/internal/httpapi/",
+			"github.com/timothymamo/shift2eu/internal/httpapi$",
+			"github.com/timothymamo/shift2eu/internal/httpapi/",
 		},
 	},
 	{
@@ -351,7 +351,7 @@ var pinnedDepguardRules = []check.DepguardRule{
 		},
 		Allow: nil,
 		Deny: []string{
-			"github.com/timothymamo/eu-sov-cloud/internal/adapter/target/snapshot",
+			"github.com/timothymamo/shift2eu/internal/adapter/target/snapshot",
 		},
 	},
 	{
@@ -367,10 +367,10 @@ var pinnedDepguardRules = []check.DepguardRule{
 			"strconv$",
 			"strings$",
 			"time$",
-			"github.com/timothymamo/eu-sov-cloud/internal/adapter/internal/jsondoc$",
-			"github.com/timothymamo/eu-sov-cloud/internal/domain/catalog$",
-			"github.com/timothymamo/eu-sov-cloud/internal/domain/taxonomy$",
-			"github.com/timothymamo/eu-sov-cloud/internal/domain/text$",
+			"github.com/timothymamo/shift2eu/internal/adapter/internal/jsondoc$",
+			"github.com/timothymamo/shift2eu/internal/domain/catalog$",
+			"github.com/timothymamo/shift2eu/internal/domain/taxonomy$",
+			"github.com/timothymamo/shift2eu/internal/domain/text$",
 		},
 		Deny: nil,
 	},
@@ -405,7 +405,7 @@ var pinnedDepguardRules = []check.DepguardRule{
 			"unicode$",
 			"unicode/utf16$",
 			"unicode/utf8$",
-			"github.com/timothymamo/eu-sov-cloud/internal/domain/text$",
+			"github.com/timothymamo/shift2eu/internal/domain/text$",
 		},
 		Deny: []string{
 			"io/fs",
@@ -437,7 +437,7 @@ var pinnedDepguardRules = []check.DepguardRule{
 			"unicode$",
 			"unicode/utf16$",
 			"unicode/utf8$",
-			"github.com/timothymamo/eu-sov-cloud/internal/domain/text$",
+			"github.com/timothymamo/shift2eu/internal/domain/text$",
 		},
 		Deny: nil,
 	},
@@ -455,10 +455,10 @@ var pinnedDepguardRules = []check.DepguardRule{
 			"io$",
 			"io/fs$",
 			"os$",
-			"github.com/timothymamo/eu-sov-cloud/internal/adapter/internal/jsondoc$",
-			"github.com/timothymamo/eu-sov-cloud/internal/domain/inventory$",
-			"github.com/timothymamo/eu-sov-cloud/internal/domain/taxonomy$",
-			"github.com/timothymamo/eu-sov-cloud/internal/domain/text$",
+			"github.com/timothymamo/shift2eu/internal/adapter/internal/jsondoc$",
+			"github.com/timothymamo/shift2eu/internal/domain/inventory$",
+			"github.com/timothymamo/shift2eu/internal/domain/taxonomy$",
+			"github.com/timothymamo/shift2eu/internal/domain/text$",
 		},
 		Deny: []string{
 			"encoding/json",
@@ -474,13 +474,13 @@ var pinnedDepguardRules = []check.DepguardRule{
 		Allow: []string{
 			"errors$",
 			"fmt$",
-			"github.com/timothymamo/eu-sov-cloud/internal/adapter/internal/jsondoc$",
+			"github.com/timothymamo/shift2eu/internal/adapter/internal/jsondoc$",
 		},
 		Deny: []string{
 			"encoding/json",
 			"net",
 			"os",
-			"github.com/timothymamo/eu-sov-cloud/internal/httpapi",
+			"github.com/timothymamo/shift2eu/internal/httpapi",
 		},
 	},
 	{
@@ -521,15 +521,15 @@ var pinnedDepguardRules = []check.DepguardRule{
 			"google.golang.org/grpc/status$",
 			"github.com/google/go-cmp/cmp$",
 			"github.com/google/go-cmp/cmp/",
-			"github.com/timothymamo/eu-sov-cloud/internal/adapter/source/aws$",
-			"github.com/timothymamo/eu-sov-cloud/internal/adapter/source/azure$",
-			"github.com/timothymamo/eu-sov-cloud/internal/adapter/source/gcp$",
-			"github.com/timothymamo/eu-sov-cloud/internal/adapter/source/sourcetest$",
-			"github.com/timothymamo/eu-sov-cloud/internal/app/analysis$",
-			"github.com/timothymamo/eu-sov-cloud/internal/domain/inventory$",
-			"github.com/timothymamo/eu-sov-cloud/internal/domain/taxonomy$",
-			"github.com/timothymamo/eu-sov-cloud/internal/domain/text$",
-			"github.com/timothymamo/eu-sov-cloud/internal/testutil$",
+			"github.com/timothymamo/shift2eu/internal/adapter/source/aws$",
+			"github.com/timothymamo/shift2eu/internal/adapter/source/azure$",
+			"github.com/timothymamo/shift2eu/internal/adapter/source/gcp$",
+			"github.com/timothymamo/shift2eu/internal/adapter/source/sourcetest$",
+			"github.com/timothymamo/shift2eu/internal/app/analysis$",
+			"github.com/timothymamo/shift2eu/internal/domain/inventory$",
+			"github.com/timothymamo/shift2eu/internal/domain/taxonomy$",
+			"github.com/timothymamo/shift2eu/internal/domain/text$",
+			"github.com/timothymamo/shift2eu/internal/testutil$",
 		},
 		Deny: []string{
 			"reflect",
@@ -584,9 +584,9 @@ var pinnedDepguardRules = []check.DepguardRule{
 			"context$",
 			"embed$",
 			"fmt$",
-			"github.com/timothymamo/eu-sov-cloud/internal/adapter/target/snapshot$",
-			"github.com/timothymamo/eu-sov-cloud/internal/domain/catalog$",
-			"github.com/timothymamo/eu-sov-cloud/internal/domain/text$",
+			"github.com/timothymamo/shift2eu/internal/adapter/target/snapshot$",
+			"github.com/timothymamo/shift2eu/internal/domain/catalog$",
+			"github.com/timothymamo/shift2eu/internal/domain/text$",
 		},
 		Deny: []string{
 			"io/fs",
@@ -612,9 +612,9 @@ var pinnedDepguardRules = []check.DepguardRule{
 			"strconv$",
 			"strings$",
 			"encoding/json$",
-			"github.com/timothymamo/eu-sov-cloud/internal/app/analysis$",
-			"github.com/timothymamo/eu-sov-cloud/internal/domain/assessment$",
-			"github.com/timothymamo/eu-sov-cloud/internal/domain/mapping$",
+			"github.com/timothymamo/shift2eu/internal/app/analysis$",
+			"github.com/timothymamo/shift2eu/internal/domain/assessment$",
+			"github.com/timothymamo/shift2eu/internal/domain/mapping$",
 		},
 		Deny: []string{
 			"io/fs",
@@ -638,7 +638,7 @@ var pinnedDepguardRules = []check.DepguardRule{
 		},
 		Allow: nil,
 		Deny: []string{
-			"github.com/timothymamo/eu-sov-cloud/internal/testutil",
+			"github.com/timothymamo/shift2eu/internal/testutil",
 		},
 	},
 	{
@@ -652,8 +652,8 @@ var pinnedDepguardRules = []check.DepguardRule{
 		},
 		Allow: nil,
 		Deny: []string{
-			"github.com/timothymamo/eu-sov-cloud/internal/adapter/source/sourcetest",
-			"github.com/timothymamo/eu-sov-cloud/internal/adapter/target/targettest",
+			"github.com/timothymamo/shift2eu/internal/adapter/source/sourcetest",
+			"github.com/timothymamo/shift2eu/internal/adapter/target/targettest",
 		},
 	},
 	{
@@ -677,10 +677,10 @@ var pinnedDepguardRules = []check.DepguardRule{
 		Allow: []string{
 			"$gostd",
 			"github.com/google/go-cmp",
-			"github.com/timothymamo/eu-sov-cloud/internal/testutil$",
+			"github.com/timothymamo/shift2eu/internal/testutil$",
 		},
 		Deny: []string{
-			"github.com/timothymamo/eu-sov-cloud/",
+			"github.com/timothymamo/shift2eu/",
 			"github.com/aws/aws-sdk-go-v2",
 			"github.com/Azure/azure-sdk-for-go",
 			"cloud.google.com/go",

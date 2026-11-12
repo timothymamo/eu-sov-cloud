@@ -170,7 +170,7 @@ func TestServerLoopbackBound(t *testing.T) {
 		{
 			name:  "named loopback that bound no TCP address",
 			named: true,
-			bound: &net.UnixAddr{Name: "/tmp/eusov.sock", Net: "unix"},
+			bound: &net.UnixAddr{Name: "/tmp/shift2eu.sock", Net: "unix"},
 		},
 		{
 			name:  "named loopback with no bound address",

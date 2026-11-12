@@ -232,7 +232,7 @@ both use is issue #13.
     reader.
   - `snapshot-reader-only-in-targets` keeps the reader to the packages under `internal/adapter/target`:
     the target adapters, `targettest` and the reader itself. It denies the reader to every other file
-    that is not a `_test.go` file, `cmd/eusov` included. A source adapter, a reporter, `internal/config`
+    that is not a `_test.go` file, `cmd/shift2eu` included. A source adapter, a reporter, `internal/config`
     and the CLI have no snapshot to read, and the composition root gets each catalog through the target
     adapter it constructs.
   - `embedded-snapshot-targets-stay-offline` limits every file of a target that serves an embedded

@@ -10,7 +10,7 @@ import (
 
 	"github.com/google/go-cmp/cmp"
 
-	"github.com/timothymamo/eu-sov-cloud/test/internal/releasetarget"
+	"github.com/timothymamo/shift2eu/test/internal/releasetarget"
 )
 
 // TestLintLoadsEveryGoFile fails on every Go file of the module that

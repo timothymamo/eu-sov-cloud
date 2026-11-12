@@ -4,10 +4,10 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/timothymamo/eu-sov-cloud/internal/adapter/internal/jsondoc"
-	"github.com/timothymamo/eu-sov-cloud/internal/domain/inventory"
-	"github.com/timothymamo/eu-sov-cloud/internal/domain/taxonomy"
-	"github.com/timothymamo/eu-sov-cloud/internal/domain/text"
+	"github.com/timothymamo/shift2eu/internal/adapter/internal/jsondoc"
+	"github.com/timothymamo/shift2eu/internal/domain/inventory"
+	"github.com/timothymamo/shift2eu/internal/domain/taxonomy"
+	"github.com/timothymamo/shift2eu/internal/domain/text"
 )
 
 // This file holds the in-memory mode's errors (FromBytes). A document held in

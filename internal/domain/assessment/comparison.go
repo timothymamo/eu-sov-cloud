@@ -5,7 +5,7 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/timothymamo/eu-sov-cloud/internal/domain/mapping"
+	"github.com/timothymamo/shift2eu/internal/domain/mapping"
 )
 
 // TargetAssessment is the assessment of an inventory against one target, named

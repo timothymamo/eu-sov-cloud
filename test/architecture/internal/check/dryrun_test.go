@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/timothymamo/eu-sov-cloud/test/architecture/internal/check"
+	"github.com/timothymamo/shift2eu/test/architecture/internal/check"
 )
 
 // ciDryRun is the image job of .github/workflows/ci.yml as far as the dry run
@@ -46,7 +46,7 @@ jobs:
       - name: Image tags for a sample release tag, the highest
         uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6.2.0
         with:
-          images: ghcr.io/timothymamo/eusov
+          images: ghcr.io/timothymamo/shift2eu
           flavor: latest=${{ steps.latest.outputs.highest }}
           tags: |
             type=semver,pattern={{raw}},value=v1.2.3
@@ -57,8 +57,8 @@ jobs:
           context: .
           platforms: linux/amd64,linux/arm64
           push: false
-          outputs: type=oci,dest=${{ runner.temp }}/eusov.oci.tar
-          annotations: index:org.opencontainers.image.source=https://github.com/timothymamo/eu-sov-cloud
+          outputs: type=oci,dest=${{ runner.temp }}/shift2eu.oci.tar
+          annotations: index:org.opencontainers.image.source=https://github.com/timothymamo/shift2eu
           provenance: false
           sbom: false
       - name: Load linux/amd64 for the smoke test
@@ -70,9 +70,9 @@ jobs:
       - name: SBOM of the built image
         uses: anchore/sbom-action@66cbf4bc1f1c0d2edc94016e65bc221b6bb0ad6c # v0.24.3
         with:
-          image: oci-archive:${{ runner.temp }}/eusov.oci.tar
+          image: oci-archive:${{ runner.temp }}/shift2eu.oci.tar
           format: spdx-json
-          output-file: ${{ runner.temp }}/eusov.spdx.json
+          output-file: ${{ runner.temp }}/shift2eu.spdx.json
           syft-version: v1.57.1
 `
 
@@ -109,7 +109,7 @@ jobs:
       - name: Image tags
         uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6.2.0
         with:
-          images: ghcr.io/timothymamo/eusov
+          images: ghcr.io/timothymamo/shift2eu
           flavor: latest=${{ steps.stamp.outputs.latest }}
           tags: |
             type=semver,pattern={{raw}}
@@ -120,7 +120,7 @@ jobs:
           context: .
           platforms: linux/amd64,linux/arm64
           push: true
-          annotations: index:org.opencontainers.image.source=https://github.com/timothymamo/eu-sov-cloud
+          annotations: index:org.opencontainers.image.source=https://github.com/timothymamo/shift2eu
           provenance: false
           sbom: false
   sbom:
@@ -129,9 +129,9 @@ jobs:
     steps:
       - uses: anchore/sbom-action@66cbf4bc1f1c0d2edc94016e65bc221b6bb0ad6c # v0.24.3
         with:
-          image: registry:ghcr.io/timothymamo/eusov@${{ needs.image.outputs.digest }}
+          image: registry:ghcr.io/timothymamo/shift2eu@${{ needs.image.outputs.digest }}
           format: spdx-json
-          output-file: eusov.spdx.json
+          output-file: shift2eu.spdx.json
           syft-version: v1.57.1
 `
 
@@ -180,7 +180,7 @@ func TestDryRunMirrorsRelease(t *testing.T) {
 		// the release publishes (not the ci's second, single-platform load for
 		// the smoke test).
 		{name: "a drifted platform", ci: mutate(t, ciDryRun, "          platforms: linux/amd64,linux/arm64\n", "          platforms: linux/amd64\n"), release: releaseDryRun, wantIn: `with: platforms is "linux/amd64", release.yml's`},
-		{name: "a drifted annotation", ci: mutate(t, ciDryRun, "https://github.com/timothymamo/eu-sov-cloud", "https://example.com"), release: releaseDryRun, wantIn: "with: annotations is"},
+		{name: "a drifted annotation", ci: mutate(t, ciDryRun, "https://github.com/timothymamo/shift2eu", "https://example.com"), release: releaseDryRun, wantIn: "with: annotations is"},
 		{name: "a drifted provenance", ci: mutate(t, ciDryRun, "          provenance: false\n", "          provenance: true\n"), release: releaseDryRun, wantIn: `with: provenance is "true"`},
 		{name: "a drifted sbom setting", ci: mutate(t, ciDryRun, "          sbom: false\n", "          sbom: true\n"), release: releaseDryRun, wantIn: `with: sbom is "true"`},
 
@@ -198,7 +198,7 @@ func TestDryRunMirrorsRelease(t *testing.T) {
 			release: releaseDryRun,
 			wantIn:  "with: tags are",
 		},
-		{name: "a drifted image name", ci: mutate(t, ciDryRun, "          images: ghcr.io/timothymamo/eusov\n", "          images: ghcr.io/example/eusov\n"), release: releaseDryRun, wantIn: `with: images is "ghcr.io/example/eusov"`},
+		{name: "a drifted image name", ci: mutate(t, ciDryRun, "          images: ghcr.io/timothymamo/shift2eu\n", "          images: ghcr.io/example/shift2eu\n"), release: releaseDryRun, wantIn: `with: images is "ghcr.io/example/shift2eu"`},
 
 		// The SBOM: the release's format and exact syft.
 		{name: "a drifted syft version", ci: mutate(t, ciDryRun, "syft-version: v1.57.1", "syft-version: v1.58.0"), release: releaseDryRun, wantIn: `with: syft-version is "v1.58.0"`},
@@ -216,13 +216,13 @@ func TestDryRunMirrorsRelease(t *testing.T) {
 		// image: none left, or a second one, is refused rather than guessed at.
 		{
 			name:    "a multi-platform build that loads the image too",
-			ci:      mutate(t, ciDryRun, "          outputs: type=oci,dest=${{ runner.temp }}/eusov.oci.tar\n", "          load: true\n          outputs: type=oci,dest=${{ runner.temp }}/eusov.oci.tar\n"),
+			ci:      mutate(t, ciDryRun, "          outputs: type=oci,dest=${{ runner.temp }}/shift2eu.oci.tar\n", "          load: true\n          outputs: type=oci,dest=${{ runner.temp }}/shift2eu.oci.tar\n"),
 			release: releaseDryRun,
 			wantIn:  "load: true left out, holds 0 docker/build-push-action steps, want exactly 1",
 		},
 		{
 			name:    "a second build that does not load the image",
-			ci:      mutate(t, ciDryRun, "      - name: Load linux/amd64 for the smoke test\n", "      - name: Build once more\n        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0\n        with:\n          context: .\n          platforms: linux/amd64,linux/arm64\n          push: false\n          outputs: type=oci,dest=${{ runner.temp }}/eusov-2.oci.tar\n      - name: Load linux/amd64 for the smoke test\n"),
+			ci:      mutate(t, ciDryRun, "      - name: Load linux/amd64 for the smoke test\n", "      - name: Build once more\n        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0\n        with:\n          context: .\n          platforms: linux/amd64,linux/arm64\n          push: false\n          outputs: type=oci,dest=${{ runner.temp }}/shift2eu-2.oci.tar\n      - name: Load linux/amd64 for the smoke test\n"),
 			release: releaseDryRun,
 			wantIn:  "load: true left out, holds 2 docker/build-push-action steps, want exactly 1",
 		},
@@ -250,7 +250,7 @@ func TestDryRunMirrorsRelease(t *testing.T) {
 		},
 		{
 			name:    "a dry run without the metadata-action step",
-			ci:      mutate(t, ciDryRun, "      - name: Image tags for a sample release tag, the highest\n        uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6.2.0\n        with:\n          images: ghcr.io/timothymamo/eusov\n          flavor: latest=${{ steps.latest.outputs.highest }}\n          tags: |\n            type=semver,pattern={{raw}},value=v1.2.3\n            type=semver,pattern={{major}}.{{minor}},value=v1.2.3,enable=${{ !contains('v1.2.3', '-') }}\n", ""),
+			ci:      mutate(t, ciDryRun, "      - name: Image tags for a sample release tag, the highest\n        uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6.2.0\n        with:\n          images: ghcr.io/timothymamo/shift2eu\n          flavor: latest=${{ steps.latest.outputs.highest }}\n          tags: |\n            type=semver,pattern={{raw}},value=v1.2.3\n            type=semver,pattern={{major}}.{{minor}},value=v1.2.3,enable=${{ !contains('v1.2.3', '-') }}\n", ""),
 			release: releaseDryRun,
 			wantIn:  "so the dry run checks none of the release's tags",
 		},
@@ -320,7 +320,7 @@ func TestDryRunMirrorsRelease(t *testing.T) {
 		// The with: keys the build and the SBOM are compared on, and the steps
 		// themselves: a key or a step the dry run does not have is named.
 		{name: "a build step without platforms", ci: mutate(t, ciDryRun, "          platforms: linux/amd64,linux/arm64\n          push: false\n", "          push: false\n"), release: releaseDryRun, wantIn: "holds no with: platforms"},
-		{name: "a metadata step without images", ci: mutate(t, ciDryRun, "          images: ghcr.io/timothymamo/eusov\n", ""), release: releaseDryRun, wantIn: "holds no with: images"},
+		{name: "a metadata step without images", ci: mutate(t, ciDryRun, "          images: ghcr.io/timothymamo/shift2eu\n", ""), release: releaseDryRun, wantIn: "holds no with: images"},
 
 		// The BuildKit image comes from the job's env:, which the check resolves
 		// and refuses when it cannot.

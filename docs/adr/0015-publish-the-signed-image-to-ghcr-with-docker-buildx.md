@@ -14,7 +14,7 @@ Forces:
 
 - **One build.** The published image must be the `Dockerfile`'s: its builder stage is what
   `test/container` pins to `go.mod` and `.goreleaser.yaml`, and its final stage is the distroless choice
-  of ADR 0013. `eusov version` in the image must report what the release binary reports.
+  of ADR 0013. `shift2eu version` in the image must report what the release binary reports.
 - **Least privilege per job.** Pushing needs `packages: write`, keyless signing an OIDC token
   (`id-token: write`), and GitHub attestations `attestations: write`. The goreleaser job already holds
   `contents: write` (it creates the release); one job holding all of them would let a compromise of
@@ -33,7 +33,7 @@ Forces:
 
 Three jobs in `.github/workflows/release.yml` publish the image, after `test` and `goreleaser`. `image`
 builds the `Dockerfile` with `docker/build-push-action` on a pinned BuildKit and pushes the multi-arch
-index to `ghcr.io/timothymamo/eusov`. `sbom` generates an SPDX SBOM of the pushed index. `sign` signs
+index to `ghcr.io/timothymamo/shift2eu`. `sbom` generates an SPDX SBOM of the pushed index. `sign` signs
 the index with cosign (keyless, GitHub OIDC) and attaches build provenance and the SBOM as GitHub
 attestations, pushed to the registry beside the image.
 
@@ -69,7 +69,7 @@ attestations, pushed to the registry beside the image.
   QEMU, as ADR 0013 explains); `docker/login-action` to `ghcr.io` with the job's `GITHUB_TOKEN`;
   `docker/metadata-action` for the tags; `docker/build-push-action`. `sbom`: `docker/login-action`;
   `anchore/sbom-action`; `actions/upload-artifact`. `sign`: `sigstore/cosign-installer`; `cosign login`;
-  `cosign sign --yes --recursive ghcr.io/timothymamo/eusov@<digest>`; `actions/attest` (provenance);
+  `cosign sign --yes --recursive ghcr.io/timothymamo/shift2eu@<digest>`; `actions/attest` (provenance);
   `actions/download-artifact`; `actions/attest` (SBOM).
 - **Tags.** The git tag (`vX.Y.Z`) and `X.Y` from `metadata-action`'s semver rules. `latest` only when
   the tag is the highest release tag on `main`: the build-arguments step sorts
@@ -169,13 +169,13 @@ attestations, pushed to the registry beside the image.
 
 ## Consequences
 
-- `docker pull ghcr.io/timothymamo/eusov:<version>` works for every release from the first tag on, for
+- `docker pull ghcr.io/timothymamo/shift2eu:<version>` works for every release from the first tag on, for
   both platforms; `cosign verify` and `gh attestation verify` check signature, provenance and SBOM. The
   README documents the exact commands.
 - `check.ReleaseWorkflow` lists the `image`, `sbom` and `sign` jobs, their permissions and their steps.
-- `eusov version` in the release binaries and in the image now reports the commit date, not the build
+- `shift2eu version` in the release binaries and in the image now reports the commit date, not the build
   time; a binary from `make build` still reports the time it was built.
-- `eusov version` prints the version without its leading `v` (`0.1.0` for the tag `v0.1.0`).
+- `shift2eu version` prints the version without its leading `v` (`0.1.0` for the tag `v0.1.0`).
 - A failed GoReleaser run publishes no image; a failed `image`, `sbom` or `sign` job does not undo the
   GitHub release. A failure is fixed forward with a new tag. An image pushed by a run whose `sign` job
   failed stays unsigned and fails verification.

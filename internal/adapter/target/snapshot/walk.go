@@ -1,8 +1,8 @@
 package snapshot
 
 import (
-	"github.com/timothymamo/eu-sov-cloud/internal/adapter/internal/jsondoc"
-	"github.com/timothymamo/eu-sov-cloud/internal/domain/taxonomy"
+	"github.com/timothymamo/shift2eu/internal/adapter/internal/jsondoc"
+	"github.com/timothymamo/shift2eu/internal/domain/taxonomy"
 )
 
 // walk reads the whole document with w, a walker at its start, and returns what

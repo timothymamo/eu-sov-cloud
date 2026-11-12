@@ -16,8 +16,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/timothymamo/eu-sov-cloud/internal/httpapi"
-	"github.com/timothymamo/eu-sov-cloud/internal/testutil"
+	"github.com/timothymamo/shift2eu/internal/httpapi"
+	"github.com/timothymamo/shift2eu/internal/testutil"
 )
 
 // This file holds the handler to the document it publishes: api/openapi.json

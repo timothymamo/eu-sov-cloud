@@ -1,5 +1,5 @@
 // Package logging stands in for a third-party library the composition root must
-// not import: no rule for cmd/eusov allows a package outside the module, so the
+// not import: no rule for cmd/shift2eu allows a package outside the module, so the
 // probe's import of it is refused. Test/architecture lists the probe module for
 // every platform the release builds.
 package logging

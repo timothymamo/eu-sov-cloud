@@ -9,7 +9,7 @@
 // The test runs without the network, without credentials and without a build
 // tag, so `make test` runs it with every other default test. It copies a
 // sanitised inventory fixture to a temporary directory as inventory.json and
-// asserts that `eusov assess` and POST /v1/assessments answer the same bytes
+// asserts that `shift2eu assess` and POST /v1/assessments answer the same bytes
 // for the same inventory and targets, and that the JSON body matches
 // jsonreport's schema.
 package apiparity

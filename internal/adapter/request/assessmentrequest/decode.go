@@ -4,7 +4,7 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/timothymamo/eu-sov-cloud/internal/adapter/internal/jsondoc"
+	"github.com/timothymamo/shift2eu/internal/adapter/internal/jsondoc"
 )
 
 // MaxBodySize is the largest request body Decode reads, in bytes: the inventory

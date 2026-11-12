@@ -16,6 +16,6 @@
 // own port.
 //
 // The package depends only on internal/domain/... and the standard library.
-// Concrete adapters implement the ports and are wired in cmd/eusov, never
+// Concrete adapters implement the ports and are wired in cmd/shift2eu, never
 // imported here. The port shapes are recorded in docs/adr/0005.
 package analysis

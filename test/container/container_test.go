@@ -17,7 +17,7 @@ import (
 
 	"github.com/google/go-cmp/cmp"
 
-	"github.com/timothymamo/eu-sov-cloud/test/internal/releasetarget"
+	"github.com/timothymamo/shift2eu/test/internal/releasetarget"
 )
 
 const (
@@ -25,8 +25,8 @@ const (
 	dockerignoreName   = ".dockerignore"
 	goModName          = "go.mod"
 	goreleaserName     = ".goreleaser.yaml"
-	versionPackagePath = "github.com/timothymamo/eu-sov-cloud/internal/version"
-	mainPackage        = "./cmd/eusov"
+	versionPackagePath = "github.com/timothymamo/shift2eu/internal/version"
+	mainPackage        = "./cmd/shift2eu"
 )
 
 // TestBuilderGoVersionMatchesGoMod pins that the builder stage is the golang
@@ -192,7 +192,7 @@ func TestBuildMatchesGoReleaser(t *testing.T) {
 	// The -o value is where this build writes the binary, and the one path the
 	// final stage copies it from is the binary the image ships. It is pinned to
 	// that path rather than read as an opaque value: a shell reads
-	// `/out/eusov;GOFLAGS=-mod=mod${IFS}go${IFS}build ...` as the end of this go
+	// `/out/shift2eu;GOFLAGS=-mod=mod${IFS}go${IFS}build ...` as the end of this go
 	// build and a second command, so an -o value that is not the copied path
 	// leaves the image shipping a binary built outside the release env.
 	copied := copiedBinaryPath(t, dockerfile)
@@ -245,7 +245,7 @@ func TestBuildMatchesGoReleaser(t *testing.T) {
 // quotation marks, and a field that carries a shell operator outside any
 // quotation marks is refused. The -o value and an unquoted -ldflags= value are
 // one field each however long they are, so without the refusal a payload such as
-// `/out/eusov;GOFLAGS=-mod=mod${IFS}go${IFS}build${IFS}-o${IFS}/out/eusov ...`
+// `/out/shift2eu;GOFLAGS=-mod=mod${IFS}go${IFS}build${IFS}-o${IFS}/out/shift2eu ...`
 // reads as a path here while the shell runs a second build with it.
 func TestBuildCommandFields(t *testing.T) {
 	t.Parallel()
@@ -258,47 +258,47 @@ func TestBuildCommandFields(t *testing.T) {
 	}{
 		{
 			name:    "a quoted value reads as one field and keeps its quotes",
-			command: `go build -trimpath -ldflags "-s -w -X pkg.version=${VERSION}" -o /out/eusov ./cmd/eusov`,
-			want:    []string{"go", "build", "-trimpath", "-ldflags", `"-s -w -X pkg.version=${VERSION}"`, "-o", "/out/eusov", "./cmd/eusov"},
+			command: `go build -trimpath -ldflags "-s -w -X pkg.version=${VERSION}" -o /out/shift2eu ./cmd/shift2eu`,
+			want:    []string{"go", "build", "-trimpath", "-ldflags", `"-s -w -X pkg.version=${VERSION}"`, "-o", "/out/shift2eu", "./cmd/shift2eu"},
 		},
 		{
 			name:    "an operator inside the quotation marks is part of the value",
-			command: `go build -trimpath -ldflags "-s -w" -o "/out/eusov;true" ./cmd/eusov`,
-			want:    []string{"go", "build", "-trimpath", "-ldflags", `"-s -w"`, "-o", `"/out/eusov;true"`, "./cmd/eusov"},
+			command: `go build -trimpath -ldflags "-s -w" -o "/out/shift2eu;true" ./cmd/shift2eu`,
+			want:    []string{"go", "build", "-trimpath", "-ldflags", `"-s -w"`, "-o", `"/out/shift2eu;true"`, "./cmd/shift2eu"},
 		},
 		{
 			name:    "an unquoted semicolon in the -o value is refused",
-			command: `go build -trimpath -ldflags "-s -w" -o /out/eusov;GOFLAGS=-mod=mod${IFS}go${IFS}build${IFS}-o${IFS}/out/eusov${IFS}./cmd/eusov;: ./cmd/eusov`,
+			command: `go build -trimpath -ldflags "-s -w" -o /out/shift2eu;GOFLAGS=-mod=mod${IFS}go${IFS}build${IFS}-o${IFS}/out/shift2eu${IFS}./cmd/shift2eu;: ./cmd/shift2eu`,
 			wantErr: ";",
 		},
 		{
 			name:    "an unquoted semicolon in an unquoted -ldflags value is refused",
-			command: `go build -trimpath -ldflags=-s;true -o /out/eusov ./cmd/eusov`,
+			command: `go build -trimpath -ldflags=-s;true -o /out/shift2eu ./cmd/shift2eu`,
 			wantErr: ";",
 		},
 		{
 			name:    "an unquoted ampersand is refused",
-			command: `go build -trimpath -ldflags "-s -w" -o /out/eusov&&true ./cmd/eusov`,
+			command: `go build -trimpath -ldflags "-s -w" -o /out/shift2eu&&true ./cmd/shift2eu`,
 			wantErr: "&",
 		},
 		{
 			name:    "an unquoted pipe is refused",
-			command: `go build -trimpath -ldflags "-s -w" -o /out/eusov|true ./cmd/eusov`,
+			command: `go build -trimpath -ldflags "-s -w" -o /out/shift2eu|true ./cmd/shift2eu`,
 			wantErr: "|",
 		},
 		{
 			name:    "an unquoted backtick is refused",
-			command: "go build -trimpath -ldflags \"-s -w\" -o /out/`true` ./cmd/eusov",
+			command: "go build -trimpath -ldflags \"-s -w\" -o /out/`true` ./cmd/shift2eu",
 			wantErr: "`",
 		},
 		{
 			name:    "an unquoted command substitution is refused",
-			command: `go build -trimpath -ldflags "-s -w" -o /out/$(true) ./cmd/eusov`,
+			command: `go build -trimpath -ldflags "-s -w" -o /out/$(true) ./cmd/shift2eu`,
 			wantErr: "$(",
 		},
 		{
 			name:    "a quote the command never closes is refused",
-			command: `go build -trimpath -ldflags "-s -w -o /out/eusov ./cmd/eusov`,
+			command: `go build -trimpath -ldflags "-s -w -o /out/shift2eu ./cmd/shift2eu`,
 			wantErr: "unclosed",
 		},
 	}
@@ -335,7 +335,7 @@ func TestBuildCommandFields(t *testing.T) {
 // `go build` starts FROM --platform=$BUILDPLATFORM, so `docker buildx build
 // --platform linux/arm64` compiles the binary on the build host and
 // cross-compiles it for the target, instead of running the whole builder stage
-// under QEMU emulation (docs/adr/0013-ship-eusov-as-a-distroless-container-image.md).
+// under QEMU emulation (docs/adr/0013-ship-shift2eu-as-a-distroless-container-image.md).
 // The builder is found by the go build it runs rather than by its name, so a
 // renamed or reordered stage is still the one checked.
 func TestBuilderStageCrossCompilesOnBuildPlatform(t *testing.T) {
@@ -393,14 +393,14 @@ func TestFinalStageIsMinimalAndNonRoot(t *testing.T) {
 	entrypoint, ok := lastInstruction(final, "ENTRYPOINT")
 	switch {
 	case !ok:
-		t.Errorf("%s: the final stage has no ENTRYPOINT: want ENTRYPOINT [\"/eusov\"] in exec form, so the binary runs without a shell",
+		t.Errorf("%s: the final stage has no ENTRYPOINT: want ENTRYPOINT [\"/shift2eu\"] in exec form, so the binary runs without a shell",
 			dockerfileName)
 	default:
 		var argv []string
 		if err := json.Unmarshal([]byte(entrypoint.arguments()), &argv); err != nil {
 			t.Errorf("%s:%d: ENTRYPOINT %s is not in exec (JSON array) form, so Docker wraps it in /bin/sh, which the image does not hold: %v",
 				dockerfileName, entrypoint.line, entrypoint.arguments(), err)
-		} else if diff := cmp.Diff([]string{"/eusov"}, argv); diff != "" {
+		} else if diff := cmp.Diff([]string{"/shift2eu"}, argv); diff != "" {
 			t.Errorf("%s:%d: ENTRYPOINT mismatch (-want +got):\n%s",
 				dockerfileName, entrypoint.line, diff)
 		}
@@ -558,7 +558,7 @@ func TestDockerignoreKeepsDataOutOfContext(t *testing.T) {
 		{name: "env file at the context root", path: ".env", why: "holds credentials"},
 		{name: "env file in a package", path: "internal/x/.env", why: "holds credentials"},
 		{name: "env variant in a package", path: "internal/x/.env.local", why: "holds credentials"},
-		{name: "envrc in a package", path: "cmd/eusov/.envrc", why: "holds credentials"},
+		{name: "envrc in a package", path: "cmd/shift2eu/.envrc", why: "holds credentials"},
 		{name: "private key in a package", path: "internal/x/key.pem", why: "is a private key"},
 		{name: "key file in a package", path: "internal/x/id.key", why: "is a private key"},
 		{name: "aws credentials", path: "internal/x/.aws/credentials", why: "holds cloud credentials"},
@@ -567,7 +567,7 @@ func TestDockerignoreKeepsDataOutOfContext(t *testing.T) {
 		{name: "inventory in a package", path: "internal/x/inventory.json", why: "describes real infrastructure"},
 		{name: "report in a package", path: "internal/x/report.md", why: "describes real infrastructure"},
 		{name: "git data", path: ".git/config", why: "holds the repository's history and remotes"},
-		{name: "local build", path: "bin/eusov", why: "is a locally built binary"},
+		{name: "local build", path: "bin/shift2eu", why: "is a locally built binary"},
 		{name: "coverage report", path: "coverage.out", why: "is a local build artefact"},
 		{name: "worktree module", path: ".worktrees/x/go.mod", why: "belongs to a worktree, not the build"},
 		{name: "test fixture", path: "internal/x/testdata/inventory.json", why: "is test data the binary does not build"},
@@ -932,7 +932,7 @@ func goBuildRun(t *testing.T, dockerfile string) instruction {
 
 	switch len(builds) {
 	case 0:
-		t.Fatalf("%s: no RUN instruction runs `go build`, so there is no build whose settings can be matched with %s; want one RUN such as `CGO_ENABLED=0 GOWORK=off go build ./cmd/eusov`",
+		t.Fatalf("%s: no RUN instruction runs `go build`, so there is no build whose settings can be matched with %s; want one RUN such as `CGO_ENABLED=0 GOWORK=off go build ./cmd/shift2eu`",
 			dockerfileName, goreleaserName)
 	case 1:
 		return builds[0]
@@ -966,7 +966,7 @@ type buildCommand struct {
 // `go build` and holds it to the release build: the environment prefix must be
 // followed directly by `go build`, and the go build may carry only -trimpath,
 // -ldflags with the internal/version stamps and -o with the binary's path, then
-// the package ./cmd/eusov.
+// the package ./cmd/shift2eu.
 //
 // It fails the test rather than reporting a mismatch: a command line that is
 // not shaped like the release build is not the thing the caller set out to
@@ -1109,7 +1109,7 @@ func commandFields(t *testing.T, command string) []string {
 // A field that carries a shell operator outside any quotes is refused rather
 // than kept as an opaque value: the -o value and an unquoted -ldflags= value are
 // one field each however much of a command line they hold, so
-// `/out/eusov;GOFLAGS=-mod=mod${IFS}go${IFS}build${IFS}-o${IFS}/out/eusov ...`
+// `/out/shift2eu;GOFLAGS=-mod=mod${IFS}go${IFS}build${IFS}-o${IFS}/out/shift2eu ...`
 // would read as a path while the shell reads it as a second build that
 // overwrites the binary outside the release env.
 func splitCommandFields(command string) ([]string, error) {
@@ -1342,7 +1342,7 @@ func builderStage(t *testing.T, dockerfile string) instruction {
 
 // copiedBinaryPath returns the path in the build stage that the final stage
 // copies to become the image's binary: the source of its COPY --from=<builder>
-// instruction, /out/eusov for the committed Dockerfile. It fails the test when
+// instruction, /out/shift2eu for the committed Dockerfile. It fails the test when
 // the final stage copies nothing from the stage that runs `go build`, or copies
 // more than one thing from it, so the path the build writes and the path the
 // image ships cannot drift apart.
@@ -1392,7 +1392,7 @@ func copiedBinaryPath(t *testing.T, dockerfile string) string {
 	case 1:
 		return sources[0]
 	case 0:
-		t.Fatalf("%s: the final stage has no COPY instruction with --from=%s, the stage that runs `go build`: want one, such as `COPY --from=%s /out/eusov /eusov`, so the binary the image ships is the one that build writes",
+		t.Fatalf("%s: the final stage has no COPY instruction with --from=%s, the stage that runs `go build`: want one, such as `COPY --from=%s /out/shift2eu /shift2eu`, so the binary the image ships is the one that build writes",
 			dockerfileName, builderName, builderName)
 	}
 

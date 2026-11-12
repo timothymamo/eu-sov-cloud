@@ -19,10 +19,10 @@
   "autoMode": {
     "environment": [
       "$defaults",
-      "Organization: personal open-source project. Primary use: building the eusov Go CLI with a team of agents run by dot-agent-deck. Tasks arrive from the orchestrator role through dot-agent-deck, and workers report back with `dot-agent-deck work-done`. Delegating to the deck's roles is routine, including the tester, which runs pi without approvals by design (docs/adr/0003-pi-with-deepseek-for-the-tester-role.md)",
-      "Host containment: Claude Code runs in a Lima VM (docs/adr/0002-lima-vm-for-agent-isolation.md). The only host path mounted is @WORKSPACE@, which holds the repository and the dot-agent-deck dispatch worktrees beside it (eu-sov-cloud-dispatch-*); all of it is working space. Open internet egress. No cloud credentials and no cloud metadata endpoint",
-      "Repository visibility: github.com/timothymamo/eu-sov-cloud is public",
-      "Source control: github.com/timothymamo/eu-sov-cloud only. Agents push their own feature branches and open pull requests there; git hooks refuse commits and pushes to main",
+      "Organization: personal open-source project. Primary use: building the shift2eu Go CLI with a team of agents run by dot-agent-deck. Tasks arrive from the orchestrator role through dot-agent-deck, and workers report back with `dot-agent-deck work-done`. Delegating to the deck's roles is routine, including the tester, which runs pi without approvals by design (docs/adr/0003-pi-with-deepseek-for-the-tester-role.md)",
+      "Host containment: Claude Code runs in a Lima VM (docs/adr/0002-lima-vm-for-agent-isolation.md). The only host path mounted is @WORKSPACE@, which holds the repository and the dot-agent-deck dispatch worktrees beside it (shift2eu-dispatch-*); all of it is working space. Open internet egress. No cloud credentials and no cloud metadata endpoint",
+      "Repository visibility: github.com/timothymamo/shift2eu is public",
+      "Source control: github.com/timothymamo/shift2eu only. Agents push their own feature branches and open pull requests there; git hooks refuse commits and pushes to main",
       "Trusted internal domains: proxy.golang.org, sum.golang.org, go.dev, pkg.go.dev, api.github.com, raw.githubusercontent.com, www.scaleway.com, www.ovhcloud.com, docs.ovhcloud.com",
       "Secrets management: the agents' tokens are environment variables loaded from ~/.config/dot-agent-deck/daemon.env. Never read, print or copy them"
     ],

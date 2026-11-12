@@ -6,7 +6,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/timothymamo/eu-sov-cloud/test/internal/yamlread"
+	"github.com/timothymamo/shift2eu/test/internal/yamlread"
 )
 
 // architectureLinters are the linters the architecture rules depend on:

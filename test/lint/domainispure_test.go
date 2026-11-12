@@ -123,8 +123,8 @@ var domainAllowed = []domainName{
 	{"time", "time.Locale"},
 	// A domain function named println has a package, so the builtins' entry
 	// (pkg ^$) does not refuse it.
-	{"github.com/timothymamo/eu-sov-cloud/internal/domain/shadow", "println"},
-	{"github.com/timothymamo/eu-sov-cloud/internal/domain/shadow", "shadow.println"},
+	{"github.com/timothymamo/shift2eu/internal/domain/shadow", "println"},
+	{"github.com/timothymamo/shift2eu/internal/domain/shadow", "shadow.println"},
 }
 
 // TestDomainIsPurePatterns checks the entries of forbidigo's domain-is-pure

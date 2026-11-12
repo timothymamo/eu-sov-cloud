@@ -28,7 +28,7 @@ jobs:
         with:
           go-version-file: go.mod
       # govulncheck reports standard-library vulnerabilities for the Go it runs with, so that Go must be
-      # the one eusov is built and released with.
+      # the one shift2eu is built and released with.
       - name: Go matches go.mod
         run: |
           want="go$(go list -m -f '{{.GoVersion}}')"

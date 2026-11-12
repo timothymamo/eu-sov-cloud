@@ -21,7 +21,7 @@
 // rules (go-cmp-only-in-tests, cloud-sdks-only-in-provider-adapters) are held
 // by depguard in make lint alone. A third-party import in internal/cli is
 // refused by depguard alone, whose strict rule allows only $gostd and named
-// module packages. One in cmd/eusov is refused by the strict rule
+// module packages. One in cmd/shift2eu is refused by the strict rule
 // composition-root (issue #101), which the architecture tests hold the
 // composition root to with Packages, apart from the shared layer listing.
 // The exemption trusts the import path, which is sound because the root

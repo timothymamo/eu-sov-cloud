@@ -1,6 +1,6 @@
 ---
 name: start-work
-description: Start or resume work on a PRD, PRD milestone or GitHub issue in eu-sov-cloud in its own git worktree and branch, never on main. Use before the first change for any PRD, milestone or issue, and to reopen the worktree of an existing branch.
+description: Start or resume work on a PRD, PRD milestone or GitHub issue in shift2eu in its own git worktree and branch, never on main. Use before the first change for any PRD, milestone or issue, and to reopen the worktree of an existing branch.
 ---
 
 # Start work in a worktree
@@ -56,7 +56,7 @@ those of healthy worktrees on a disk that is not mounted.
 - A pull request's worktree lives under `.worktrees/` in the main checkout, or in the dispatch worktree
   of a dispatched unit. Never create one elsewhere (for example `../`), and never `git switch` the
   repository root to another branch.
-- The directories beside the repository, `../eu-sov-cloud-dispatch-*` on `agent/dispatch-*` branches,
+- The directories beside the repository, `../shift2eu-dispatch-*` on `agent/dispatch-*` branches,
   belong to dot-agent-deck's dispatcher, which creates and removes them
   (`docs/adr/0008-mount-a-workspace-directory-for-dispatcher-mode.md`). An orchestration started in one
   still runs `make worktree` for each pull request, from the dispatch worktree, which puts the PR's

@@ -1,6 +1,6 @@
 ---
 name: adr
-description: Write an Architecture Decision Record for eu-sov-cloud under docs/adr. Use when a change introduces or alters an architectural decision - a new layer or port, a dependency or framework choice, a data format, the taxonomy structure, the testing approach, or tooling - or when asked to document a decision.
+description: Write an Architecture Decision Record for shift2eu under docs/adr. Use when a change introduces or alters an architectural decision - a new layer or port, a dependency or framework choice, a data format, the taxonomy structure, the testing approach, or tooling - or when asked to document a decision.
 ---
 
 # Write an ADR

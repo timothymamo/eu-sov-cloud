@@ -1,4 +1,4 @@
-// Command eusov analyses infrastructure running in a hyperscaler (AWS, Azure,
+// Command shift2eu analyses infrastructure running in a hyperscaler (AWS, Azure,
 // GCP) and reports what can move to an EU cloud provider (OVHcloud, Scaleway,
 // UpCloud).
 //
@@ -13,14 +13,14 @@ import (
 	"os/signal"
 	"syscall"
 
-	"github.com/timothymamo/eu-sov-cloud/internal/adapter/report/jsonreport"
-	"github.com/timothymamo/eu-sov-cloud/internal/adapter/report/markdown"
-	"github.com/timothymamo/eu-sov-cloud/internal/adapter/source/inventoryfile"
-	"github.com/timothymamo/eu-sov-cloud/internal/adapter/target/ovhcloud"
-	"github.com/timothymamo/eu-sov-cloud/internal/adapter/target/scaleway"
-	"github.com/timothymamo/eu-sov-cloud/internal/adapter/target/upcloud"
-	"github.com/timothymamo/eu-sov-cloud/internal/app/analysis"
-	"github.com/timothymamo/eu-sov-cloud/internal/cli"
+	"github.com/timothymamo/shift2eu/internal/adapter/report/jsonreport"
+	"github.com/timothymamo/shift2eu/internal/adapter/report/markdown"
+	"github.com/timothymamo/shift2eu/internal/adapter/source/inventoryfile"
+	"github.com/timothymamo/shift2eu/internal/adapter/target/ovhcloud"
+	"github.com/timothymamo/shift2eu/internal/adapter/target/scaleway"
+	"github.com/timothymamo/shift2eu/internal/adapter/target/upcloud"
+	"github.com/timothymamo/shift2eu/internal/app/analysis"
+	"github.com/timothymamo/shift2eu/internal/cli"
 )
 
 func main() {

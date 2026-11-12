@@ -1,12 +1,12 @@
 # Architecture
 
-`eusov` follows a hexagonal (ports and adapters) architecture with a small, explicit domain model.
+`shift2eu` follows a hexagonal (ports and adapters) architecture with a small, explicit domain model.
 The decision and its alternatives are in [ADR 0001](adr/0001-hexagonal-architecture-with-provider-neutral-taxonomy.md).
 
 ## Layers and the dependency rule
 
 ```
-            ┌────────────── cmd/eusov, cmd/eusov-server (composition roots) ───────────────────────┐
+            ┌────────────── cmd/shift2eu, cmd/shift2eu-server (composition roots) ───────────────────────┐
             │                                                                                      │
             │   internal/cli ──────▶ internal/app/analysis ◀────── internal/adapter/...           │
             │   internal/httpapi ──┘                                                               │
@@ -43,7 +43,7 @@ Arrows are imports. They point inwards only:
   call. The live sources share one strict allow list, `cloud-adapters-reach-the-cloud-through-the-sdk`
   (Cloud read-only rule below).
 - **CLI** (`internal/cli`) turns user input into use-case calls and prints results. No business rules.
-  Only `cmd/eusov` imports it.
+  Only `cmd/shift2eu` imports it.
 - **HTTP API** (`internal/httpapi`) is the second driving adapter, beside the CLI
   ([ADR 0019](adr/0019-serve-assessments-over-a-versioned-http-api-from-a-separate-binary.md)): it serves
   the same use cases over `/v1/` and returns an `http.Handler`. Like the CLI it gets every adapter from
@@ -54,23 +54,23 @@ Arrows are imports. They point inwards only:
   `adapter/request/assessmentrequest` (`request-decoders-parse-bytes`: `errors`, `fmt` and `jsondoc`
   only, no `net/http`), and the inventory in it by `inventoryfile.FromBytes`, both passed in as function
   values. `FromBytes` reads in an in-memory-only mode whose errors name a position and field, never a
-  value, so no value from a request is ever echoed in an API error. Only `cmd/eusov-server` imports it,
+  value, so no value from a request is ever echoed in an API error. Only `cmd/shift2eu-server` imports it,
   and of the tests only the parity test in `test/apiparity` (`httpapi-imported-only-by-the-server`);
-  `cmd/eusov` never does, so the CLI stays offline. `api/openapi.json` (OpenAPI 3.1) describes the API
+  `cmd/shift2eu` never does, so the CLI stays offline. `api/openapi.json` (OpenAPI 3.1) describes the API
   and refers to the JSON report's schemas rather than copying them; milestone 4 bundles them into the
   published document.
-- **`cmd/eusov`** and **`cmd/eusov-server`** are the composition roots, the only places that construct
-  adapters and inject them: `cmd/eusov` into the CLI, `cmd/eusov-server` into the HTTP API. `cmd/eusov`'s
+- **`cmd/shift2eu`** and **`cmd/shift2eu-server`** are the composition roots, the only places that construct
+  adapters and inject them: `cmd/shift2eu` into the CLI, `cmd/shift2eu-server` into the HTTP API. `cmd/shift2eu`'s
   imports are a strict allow list (`composition-root`, issue #101): the module's own packages and the
   standard packages it needs today (`context`, `os`, `os/signal`, `syscall`), and no third-party package.
-  The rule holds `cmd/eusov` only. `cmd/eusov-server` (PRD #103 milestone 3) is held by its sibling,
+  The rule holds `cmd/shift2eu` only. `cmd/shift2eu-server` (PRD #103 milestone 3) is held by its sibling,
   `server-composition-root`, written the same way: the module's own packages and the standard packages
   the server needs (`context`, `errors`, `flag`, `fmt`, `io`, `log`, `math`, `net`,
   `net/http`, `os`, `os/signal`, `runtime`, `runtime/debug`, `slices`, `strconv`, `strings`, `sync`,
   `syscall`, `time`), no third-party package and no cloud SDK. `test/architecture` holds it to that
   list on every release target, and `TestServerPathHasNoCloudSDKOrProcess` (`test/e2e`) refuses a cloud
-  SDK or `os/exec` anywhere in its dependency tree. Around the handler, `cmd/eusov-server` owns what a
-  running server needs: the flags and the token (from `EUSOV_SERVER_TOKEN` or `--token-file`, never a
+  SDK or `os/exec` anywhere in its dependency tree. Around the handler, `cmd/shift2eu-server` owns what a
+  running server needs: the flags and the token (from `SHIFT2EU_SERVER_TOKEN` or `--token-file`, never a
   flag), the loopback rule, the `http.Server` timeouts, the `Host` allow-list, the concurrency default,
   the readiness check, the access log and the graceful shutdown (ADR 0019).
 
@@ -139,7 +139,7 @@ the ways code could be hidden from it, and what refuses each:
 A cloud SDK is imported only in its provider's adapter package (`source/aws`, `source/azure`,
 `source/gcp`, `target/ovhcloud`, `target/scaleway`, `target/upcloud`): the depguard rule
 `cloud-sdks-only-in-provider-adapters` refuses it everywhere else, a sibling helper package and
-`cmd/eusov` included.
+`cmd/shift2eu` included.
 
 ## Cloud read-only rule
 
@@ -266,7 +266,7 @@ hand-written GCP package, add an entry for it, a probe line only it refuses and 
   strict allow lists only: the lax deny rules (`go-cmp-only-in-tests`,
   `cloud-sdks-only-in-provider-adapters`) are held by depguard in `make lint` alone. A third-party
   import in `internal/cli` is refused by depguard alone, whose strict rule there allows only `$gostd`
-  and named module packages; one in `cmd/eusov` is refused by the strict rule `composition-root`
+  and named module packages; one in `cmd/shift2eu` is refused by the strict rule `composition-root`
   (issue #101), which `test/architecture` holds the composition root to on every release target,
   cgo mode and tag set, apart from the shared layer listing, and whose listing must hold no package
   under the module path from a module other than the main one, since the rule's prefix entry would
@@ -274,12 +274,12 @@ hand-written GCP package, add an entry for it, a probe line only it refuses and 
   `go list -deps` lists the imports of a held package's tests but not those imported packages
   themselves, so a package only a test imports is checked against the test's allow list, not for
   its own module, directory or non-Go sources.
-- **Process and environment calls in `cmd/eusov`.** The `composition-root` rule allows `os` and
+- **Process and environment calls in `cmd/shift2eu`.** The `composition-root` rule allows `os` and
   `syscall`, so the composition root could call `os.StartProcess`, `syscall.Exec` or
   `syscall.ForkExec`, shelling out to a cloud CLI, or `os.Environ` and `os.Getenv`, dumping the
   environment, and only review catches it (the security audit's LOW-2 on issue #101). A forbidigo
-  group scoped to `cmd/eusov` would close it; that is follow-up work outside issue #101. The same
-  holds for `cmd/eusov-server` under `server-composition-root`, which allows `os` and `syscall` too;
+  group scoped to `cmd/shift2eu` would close it; that is follow-up work outside issue #101. The same
+  holds for `cmd/shift2eu-server` under `server-composition-root`, which allows `os` and `syscall` too;
   `os/exec` is refused there by the allow list and, for its whole dependency tree, by `test/e2e`.
 - **`adapters-are-built-in-cmd` reports nothing.** depguard (v2.2.1) compares an import only with
   the one list entry that sorts nearest before it, as a prefix unless the entry ends in `$`. Sorted,
@@ -288,7 +288,7 @@ hand-written GCP package, add an entry for it, a probe line only it refuses and 
   with `internal/adapter/internal/` alone and nothing fires; with only the `internal/adapter/` entry, a
   probe that imports `internal/adapter/target/ovhcloud` is reported. No probe in `test/lint` or
   `test/architecture` covers the rule (lax with `$all`, which `check.RuleDirs` skips). Until the
-  follow-up fixes it, an adapter imported outside `cmd/eusov` and `cmd/eusov-server` is caught only
+  follow-up fixes it, an adapter imported outside `cmd/shift2eu` and `cmd/shift2eu-server` is caught only
   where a strict rule holds the importer (the offline adapters, `internal/cli`, `internal/httpapi`)
   and by review (ADR 0019).
 - **Files lint never loads**: a file behind a build tag other than `integration` and `e2e`, a

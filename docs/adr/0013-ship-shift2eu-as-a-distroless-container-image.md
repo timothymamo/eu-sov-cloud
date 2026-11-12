@@ -1,12 +1,12 @@
-# 0013. Ship eusov as a distroless container image, built but not yet published
+# 0013. Ship shift2eu as a distroless container image, built but not yet published
 
 - Status: Accepted
 - Date: 2026-11-11
 
 ## Context
 
-`eusov` ships as GoReleaser archives and `make build`. Running it means downloading the binary for the
-platform or having a Go toolchain. A container image lets people run `eusov assess` with `docker run`,
+`shift2eu` ships as GoReleaser archives and `make build`. Running it means downloading the binary for the
+platform or having a Go toolchain. A container image lets people run `shift2eu assess` with `docker run`,
 pinned to a version, in CI pipelines and on hosts with no Go (issue #55).
 
 Forces:
@@ -25,13 +25,13 @@ Forces:
 
 ## Decision
 
-A multi-stage `Dockerfile` at the root builds `./cmd/eusov` in the `golang` image and copies only the
+A multi-stage `Dockerfile` at the root builds `./cmd/shift2eu` in the `golang` image and copies only the
 binary into `gcr.io/distroless/static-debian13:nonroot` (Debian 13, trixie). CI builds it for both Linux release platforms
 and smoke-tests it on every pull request; publishing it to a registry is a follow-up.
 
 - **Final stage: distroless static, `nonroot` tag.** It holds CA certificates, tzdata, an `/etc/passwd`
   with the `nonroot` user (65532) and nothing to run but the binary: no shell, no package manager.
-  `USER nonroot:nonroot`, `ENTRYPOINT ["/eusov"]` in exec form, `WORKDIR /work` for the mounted
+  `USER nonroot:nonroot`, `ENTRYPOINT ["/shift2eu"]` in exec form, `WORKDIR /work` for the mounted
   inventory, and the OCI labels `source`, `version`, `revision`, `licenses`.
 - **Builder: `golang:<go.mod version>-alpine`.** The tag is the exact Go version in `go.mod`.
   It runs on `$BUILDPLATFORM` and cross-compiles with `GOOS=$TARGETOS GOARCH=$TARGETARCH`, so
@@ -44,8 +44,8 @@ and smoke-tests it on every pull request; publishing it to a registry is a follo
   `internal/version` `-X` flags, as in `.goreleaser.yaml`. `test/container` reads those settings from
   `.goreleaser.yaml` and fails when the `Dockerfile` drifts from them, or from the `go.mod` version.
 - **Versioning from git.** `VERSION`, `COMMIT` and `DATE` are build args, defaulting to the values in
-  `internal/version`. `make image` passes the values `make build` computes and tags `eusov:<version>`,
-  `eusov:dev` and `eusov:latest`, locally only, so `docker run ... eusov` finds it; CI passes the same.
+  `internal/version`. `make image` passes the values `make build` computes and tags `shift2eu:<version>`,
+  `shift2eu:dev` and `shift2eu:latest`, locally only, so `docker run ... shift2eu` finds it; CI passes the same.
 - **Digest pinning.** Every base image is `image:tag@sha256:<digest>`, the digest of the multi-arch
   index, so both platforms resolve and a rebuild uses the same bytes. The tag stays in the reference,
   so Renovate's `dockerfile` manager (enabled by `config:recommended`) updates tag and digest together.
@@ -54,7 +54,7 @@ and smoke-tests it on every pull request; publishing it to a registry is a follo
 - **Nothing in layers but the binary.** Modules and the build cache are BuildKit cache mounts, never
   layer content. `.dockerignore` is an allow list (`go.mod`, `go.sum`, `cmd/`, `internal/`) minus tests,
   `testdata` and any inventory or report file, with `.git`, `.worktrees`, `bin`, coverage and credential
-  files also named explicitly. The final stage copies `/eusov` and nothing else.
+  files also named explicitly. The final stage copies `/shift2eu` and nothing else.
 - **Distribution: not yet.** This change builds the image in CI without pushing it. Publishing to GHCR
   from `release.yml`, signing (cosign) and SBOM or provenance attestations are a follow-up issue: they
   need `packages: write`, an identity for signing and a review of the release workflow's closed step
@@ -67,7 +67,7 @@ and smoke-tests it on every pull request; publishing it to a registry is a follo
 - **`scratch` as the final stage.** Smaller, but the CA bundle (and tzdata, if the binary ever needs
   it) and an `/etc/passwd` entry for the user would have to be copied from the builder by hand, and
   kept current with it. distroless maintains them; it is built from Debian packages that its own
-  scanners track. Measured in CI (run 43033381347, linux/amd64): the `eusov` binary is 3.17 MB and the
+  scanners track. Measured in CI (run 43033381347, linux/amd64): the `shift2eu` binary is 3.17 MB and the
   distroless `static-debian13` layers about 5.8 MB, for about 9.0 MB uncompressed. tzdata is most of
   the base (4.39 MB, as trixie splits it into `tzdata` and `tzdata-legacy`), then base-files (0.75 MB)
   and the CA bundle (0.32 MB), the rest under 0.2 MB.

@@ -42,7 +42,7 @@
 // refuse a line of its own, so a pattern that silently stops matching fails.
 // The harness, runForbidigoProbe, serves any forbidigo group. Where
 // golangci-lint is not on PATH (CI's Test job) it skips, unless
-// EUSOV_LINT_PROBES=require, which make lint and every entry of CI's
+// SHIFT2EU_LINT_PROBES=require, which make lint and every entry of CI's
 // lint-target matrix (the Lint check) set. Only CI fails on a golangci-lint
 // version other than the pinned one; elsewhere the probe runs and logs a
 // warning. TestCloudReadOnlyPatterns and

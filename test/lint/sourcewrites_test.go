@@ -258,7 +258,7 @@ func TestNoTypeHidesACloudSDKType(t *testing.T) {
 func TestWriteVerbsMatchForbidigo(t *testing.T) {
 	t.Parallel()
 
-	const pkgLine = `pkg: '^github\.com/timothymamo/eu-sov-cloud/internal/adapter/source/'`
+	const pkgLine = `pkg: '^github\.com/timothymamo/shift2eu/internal/adapter/source/'`
 	want := `- pattern: '^\w+\.\w+\.` + verbAlternation + `(?:[A-Z0-9]\w*)?$'`
 
 	config, err := os.ReadFile(filepath.Join(moduleRoot(t), ".golangci.yml"))

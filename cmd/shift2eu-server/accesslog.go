@@ -27,7 +27,7 @@ func (l *lockedWriter) Write(p []byte) (int, error) {
 // accessLog wraps next so that every request writes one line to log once it is
 // answered:
 //
-//	eusov-server: access method=POST path="/v1/assessments" status=200 duration=12.3ms size=1234
+//	shift2eu-server: access method=POST path="/v1/assessments" status=200 duration=12.3ms size=1234
 //
 // The line holds the method, the path, the status, the duration and the size
 // of the answer's body, and nothing else: never the query string, a header, the
@@ -46,7 +46,7 @@ func accessLog(next http.Handler, log io.Writer, now func() time.Time) http.Hand
 				status = http.StatusOK
 			}
 
-			_, _ = fmt.Fprintf(log, "eusov-server: access method=%s path=%s status=%d duration=%s size=%d\n",
+			_, _ = fmt.Fprintf(log, "shift2eu-server: access method=%s path=%s status=%d duration=%s size=%d\n",
 				r.Method, loggedPath(r.URL.Path), status, now().Sub(start), rec.size)
 		}()
 

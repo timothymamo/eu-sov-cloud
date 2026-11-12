@@ -66,7 +66,7 @@ jobs:
       - name: Source rules and lint probes
         run: go test -count=1 ./test/lint/
         env:
-          EUSOV_LINT_PROBES: require
+          SHIFT2EU_LINT_PROBES: require
 
   # Lint is a required status check, and a matrix reports one check per entry under its own name: this
   # job reports the whole matrix as the one Lint check, and fails unless every entry succeeded. It runs
@@ -115,7 +115,7 @@ jobs:
     name: Container image
     runs-on: ubuntu-latest
     env:
-      IMAGE: eusov:ci
+      IMAGE: shift2eu:ci
       # The BuildKit image setup-buildx-action runs, pinned by tag and multi-arch index digest.
       # renovate: datasource=docker depName=moby/buildkit versioning=semver
       BUILDKIT_VERSION: v0.34.2@sha256:c5f8862f52499773af85bc07695b2379ef08e8002352b0df2c4864c91d78dabe
@@ -163,7 +163,7 @@ jobs:
         id: tags-release
         uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6.2.0
         with:
-          images: ghcr.io/timothymamo/eusov
+          images: ghcr.io/timothymamo/shift2eu
           flavor: latest=${{ steps.latest.outputs.highest }}
           tags: |
             type=semver,pattern={{raw}},value=v1.2.3
@@ -172,7 +172,7 @@ jobs:
         id: tags-older
         uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6.2.0
         with:
-          images: ghcr.io/timothymamo/eusov
+          images: ghcr.io/timothymamo/shift2eu
           flavor: latest=${{ steps.latest.outputs.older }}
           tags: |
             type=semver,pattern={{raw}},value=v1.2.3
@@ -181,7 +181,7 @@ jobs:
         id: tags-prerelease
         uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6.2.0
         with:
-          images: ghcr.io/timothymamo/eusov
+          images: ghcr.io/timothymamo/shift2eu
           flavor: latest=${{ steps.latest.outputs.prerelease }}
           tags: |
             type=semver,pattern={{raw}},value=v1.2.3-rc.1
@@ -201,7 +201,7 @@ jobs:
               exit 1
             fi
           }
-          image=ghcr.io/timothymamo/eusov
+          image=ghcr.io/timothymamo/shift2eu
           check release "$RELEASE" "$image:v1.2.3
           $image:1.2
           $image:latest"
@@ -215,9 +215,9 @@ jobs:
           context: .
           platforms: linux/amd64,linux/arm64
           push: false
-          outputs: type=oci,dest=${{ runner.temp }}/eusov.oci.tar
+          outputs: type=oci,dest=${{ runner.temp }}/shift2eu.oci.tar
           tags: ${{ steps.tags-release.outputs.tags }}
-          annotations: index:org.opencontainers.image.source=https://github.com/timothymamo/eu-sov-cloud
+          annotations: index:org.opencontainers.image.source=https://github.com/timothymamo/shift2eu
           provenance: false
           sbom: false
           build-args: |
@@ -227,20 +227,20 @@ jobs:
       - name: SBOM of the built image
         uses: anchore/sbom-action@66cbf4bc1f1c0d2edc94016e65bc221b6bb0ad6c # v0.24.3
         with:
-          image: oci-archive:${{ runner.temp }}/eusov.oci.tar
+          image: oci-archive:${{ runner.temp }}/shift2eu.oci.tar
           format: spdx-json
-          output-file: ${{ runner.temp }}/eusov.spdx.json
+          output-file: ${{ runner.temp }}/shift2eu.spdx.json
           upload-artifact: false
           upload-release-assets: false
           # renovate: datasource=github-releases depName=anchore/syft
           syft-version: v1.57.1
-      - name: The SBOM is SPDX and lists eusov
+      - name: The SBOM is SPDX and lists shift2eu
         env:
-          SBOM: ${{ runner.temp }}/eusov.spdx.json
+          SBOM: ${{ runner.temp }}/shift2eu.spdx.json
         run: |
           jq -r '.spdxVersion, (.packages | length | "\(.) packages")' "$SBOM"
           jq -e '.spdxVersion == "SPDX-2.3"' "$SBOM" > /dev/null
-          jq -e 'any(.packages[]; .name == "github.com/timothymamo/eu-sov-cloud")' "$SBOM" > /dev/null
+          jq -e 'any(.packages[]; .name == "github.com/timothymamo/shift2eu")' "$SBOM" > /dev/null
       - name: Load linux/amd64 for the smoke test
         uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
         with:

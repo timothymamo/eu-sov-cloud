@@ -4,7 +4,7 @@ import (
 	"net/http"
 	"testing"
 
-	"github.com/timothymamo/eu-sov-cloud/internal/httpapi"
+	"github.com/timothymamo/shift2eu/internal/httpapi"
 )
 
 // This file pins the optional host allow list: when the composition root names

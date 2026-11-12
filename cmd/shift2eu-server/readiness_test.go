@@ -1,6 +1,6 @@
 // White-box tests of the readiness check the composition root hands
 // internal/httpapi: GET /readyz answers 200 once every target's embedded catalog
-// has loaded, and 503 until then. cmd/eusov-server is a main package, so its
+// has loaded, and 503 until then. cmd/shift2eu-server is a main package, so its
 // tests are package main, the only way a test file reaches the package at all
 // (Go refuses an import of a main package). The check is driven directly here,
 // over a fake catalog source, so a test counts the loads a readiness check makes
@@ -16,8 +16,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/timothymamo/eu-sov-cloud/internal/app/analysis"
-	"github.com/timothymamo/eu-sov-cloud/internal/domain/catalog"
+	"github.com/timothymamo/shift2eu/internal/app/analysis"
+	"github.com/timothymamo/shift2eu/internal/domain/catalog"
 )
 
 // readinessBound bounds how long a check that must not wait may take to answer:

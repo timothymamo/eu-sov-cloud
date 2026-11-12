@@ -5,7 +5,7 @@ import (
 
 	"github.com/google/go-cmp/cmp"
 
-	"github.com/timothymamo/eu-sov-cloud/test/architecture/internal/check"
+	"github.com/timothymamo/shift2eu/test/architecture/internal/check"
 )
 
 // golangciYAML is a cut-down .golangci.yml holding the shapes the check must
@@ -32,7 +32,7 @@ linters:
             # A comment line between two entries is not an entry.
             - fmt$
             - "strings$"
-            - github.com/timothymamo/eu-sov-cloud/internal/domain/text$
+            - github.com/timothymamo/shift2eu/internal/domain/text$
             # Non-ASCII printable text is fine (naïve — ünïcode).
           deny:
             - pkg: os
@@ -128,7 +128,7 @@ func TestAllowList(t *testing.T) {
 				{Path: "errors"},
 				{Path: "fmt"},
 				{Path: "strings"},
-				{Path: "github.com/timothymamo/eu-sov-cloud/internal/domain/text"},
+				{Path: "github.com/timothymamo/shift2eu/internal/domain/text"},
 			},
 		},
 		{

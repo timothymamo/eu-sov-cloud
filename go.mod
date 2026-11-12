@@ -1,4 +1,4 @@
-module github.com/timothymamo/eu-sov-cloud
+module github.com/timothymamo/shift2eu
 
 go 1.27.4
 

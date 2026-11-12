@@ -8,7 +8,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/timothymamo/eu-sov-cloud/test/internal/yamlread"
+	"github.com/timothymamo/shift2eu/test/internal/yamlread"
 )
 
 // AllowEntry is one entry of a depguard allow list, read the way depguard reads

@@ -12,17 +12,17 @@ import (
 
 	"github.com/google/go-cmp/cmp"
 
-	"github.com/timothymamo/eu-sov-cloud/internal/adapter/report/jsonreport"
-	"github.com/timothymamo/eu-sov-cloud/internal/adapter/report/markdown"
-	"github.com/timothymamo/eu-sov-cloud/internal/adapter/request/assessmentrequest"
-	"github.com/timothymamo/eu-sov-cloud/internal/adapter/source/inventoryfile"
-	"github.com/timothymamo/eu-sov-cloud/internal/adapter/target/ovhcloud"
-	"github.com/timothymamo/eu-sov-cloud/internal/adapter/target/scaleway"
-	"github.com/timothymamo/eu-sov-cloud/internal/adapter/target/upcloud"
-	"github.com/timothymamo/eu-sov-cloud/internal/app/analysis"
-	"github.com/timothymamo/eu-sov-cloud/internal/cli"
-	"github.com/timothymamo/eu-sov-cloud/internal/httpapi"
-	"github.com/timothymamo/eu-sov-cloud/internal/testutil"
+	"github.com/timothymamo/shift2eu/internal/adapter/report/jsonreport"
+	"github.com/timothymamo/shift2eu/internal/adapter/report/markdown"
+	"github.com/timothymamo/shift2eu/internal/adapter/request/assessmentrequest"
+	"github.com/timothymamo/shift2eu/internal/adapter/source/inventoryfile"
+	"github.com/timothymamo/shift2eu/internal/adapter/target/ovhcloud"
+	"github.com/timothymamo/shift2eu/internal/adapter/target/scaleway"
+	"github.com/timothymamo/shift2eu/internal/adapter/target/upcloud"
+	"github.com/timothymamo/shift2eu/internal/app/analysis"
+	"github.com/timothymamo/shift2eu/internal/cli"
+	"github.com/timothymamo/shift2eu/internal/httpapi"
+	"github.com/timothymamo/shift2eu/internal/testutil"
 )
 
 // The two sanitised inventories the parity cases read: one with several
@@ -63,7 +63,7 @@ type parityCase struct {
 
 // TestTheAPIAndTheCLIAgreeOnTheReport pins the parity PRD #103 promises: for the
 // same inventory and targets, POST /v1/assessments answers the bytes
-// `eusov assess` writes, for the JSON report and the Markdown report, for one
+// `shift2eu assess` writes, for the JSON report and the Markdown report, for one
 // target, a list and every target, and for a hostile inventory too. Both sides
 // are wired with the real adapters, as their composition roots wire them, so a
 // difference in decoding, target rules, ordering or rendering shows up as a
@@ -129,7 +129,7 @@ func TestTheAPIAndTheCLIAgreeOnTheReport(t *testing.T) {
 			apiReport := postAssessment(t, document, tc.targets, tc.accept)
 
 			if !bytes.Equal(cliReport, apiReport) {
-				t.Errorf("the API's body differs from `eusov assess --target %s --format %s` (-CLI +API):\n%s",
+				t.Errorf("the API's body differs from `shift2eu assess --target %s --format %s` (-CLI +API):\n%s",
 					strings.Join(tc.targets, ","), tc.format, cmp.Diff(string(cliReport), string(apiReport)))
 			}
 
@@ -155,11 +155,11 @@ func runAssess(t *testing.T, inventoryPath string, tc parityCase) []byte {
 	var stdout, stderr bytes.Buffer
 
 	if code := cli.Run(t.Context(), args, &stdout, &stderr, cliDeps()); code != 0 {
-		t.Fatalf("eusov %s = exit %d, want 0; stderr: %q", strings.Join(args, " "), code, stderr.String())
+		t.Fatalf("shift2eu %s = exit %d, want 0; stderr: %q", strings.Join(args, " "), code, stderr.String())
 	}
 
 	if stderr.Len() != 0 {
-		t.Errorf("eusov %s wrote to stderr on success: %q", strings.Join(args, " "), stderr.String())
+		t.Errorf("shift2eu %s wrote to stderr on success: %q", strings.Join(args, " "), stderr.String())
 	}
 
 	return stdout.Bytes()
@@ -362,7 +362,7 @@ func validateReport(t *testing.T, schemas map[string]*testutil.Schema, report []
 	schema.ValidateJSON(t, report)
 }
 
-// cliDeps wires the assess path of the CLI as cmd/eusov does: the inventory
+// cliDeps wires the assess path of the CLI as cmd/shift2eu does: the inventory
 // file, the embedded OVHcloud, Scaleway and UpCloud catalogs and the two report
 // formats, each rendering a single report and a comparison.
 func cliDeps() cli.Deps {

@@ -6,13 +6,13 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/timothymamo/eu-sov-cloud/test/internal/yamlread"
+	"github.com/timothymamo/shift2eu/test/internal/yamlread"
 )
 
 // Main is the main package the release builds: Read refuses a
 // .goreleaser.yaml that builds another, and the repository test lists the
 // packages of the release binary from it.
-const Main = "./cmd/eusov"
+const Main = "./cmd/shift2eu"
 
 // Env returns the environment every build of the release must set, exactly
 // and in this order (issue #102): CGO_ENABLED=0, so the binary links no C
@@ -49,7 +49,7 @@ type Target struct {
 //     env, flags, ldflags, goos and goarch: ignore and targets (which change
 //     the platform list), tags, overrides, goamd64 and goarm64 (which change
 //     the build tags a file is selected by) and every other key are refused.
-//     main must be ./cmd/eusov, the package the repository test lists as the
+//     main must be ./cmd/shift2eu, the package the repository test lists as the
 //     release binary. env must be exactly Env(), in its order: cgo off,
 //     GOWORK=off so a go.work file cannot swap in other module versions, and
 //     GOFLAGS=-mod=readonly so the build fails rather than changes go.mod or

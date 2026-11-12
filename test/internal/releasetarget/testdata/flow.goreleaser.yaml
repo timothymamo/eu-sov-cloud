@@ -1,11 +1,11 @@
 version: 2
 
-project_name: eusov
+project_name: shift2eu
 
 builds:
-  - id: eusov
-    main: ./cmd/eusov
-    binary: eusov
+  - id: shift2eu
+    main: ./cmd/shift2eu
+    binary: shift2eu
     env:
       - CGO_ENABLED=0
       - GOWORK=off

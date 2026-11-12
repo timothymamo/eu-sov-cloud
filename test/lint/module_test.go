@@ -16,7 +16,7 @@ import (
 
 	"github.com/google/go-cmp/cmp"
 
-	"github.com/timothymamo/eu-sov-cloud/test/internal/releasetarget"
+	"github.com/timothymamo/shift2eu/test/internal/releasetarget"
 )
 
 // lintTags are the build tags golangci-lint loads files with, as the go
@@ -281,7 +281,7 @@ func TestTargetEnvPinsTheReleaseBuild(t *testing.T) {
 // TestChildEnvPassesOnlyItsList pins that a child process gets the variables
 // of passedEnv and the extras, and no other variable of this process.
 func TestChildEnvPassesOnlyItsList(t *testing.T) {
-	t.Setenv("EUSOV_CHILD_ENV_SENTINEL", "must-not-cross")
+	t.Setenv("SHIFT2EU_CHILD_ENV_SENTINEL", "must-not-cross")
 	t.Setenv("GOCACHE", "/cache")
 
 	env := childEnv("GOPROXY=off")
@@ -291,7 +291,7 @@ func TestChildEnvPassesOnlyItsList(t *testing.T) {
 		key, _, _ := strings.Cut(kv, "=")
 		keys[key] = true
 	}
-	if keys["EUSOV_CHILD_ENV_SENTINEL"] {
+	if keys["SHIFT2EU_CHILD_ENV_SENTINEL"] {
 		t.Error("childEnv passed a variable that is not in passedEnv")
 	}
 	for _, key := range []string{"GOCACHE", "GOPROXY"} {

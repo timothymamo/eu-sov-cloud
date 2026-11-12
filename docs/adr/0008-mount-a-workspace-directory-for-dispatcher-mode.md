@@ -19,7 +19,7 @@ as it is would expose every other repository and file next to this one.
 ## Decision
 
 Keep the repository in a directory of its own, the workspace (for example
-`eu-sov-cloud-ws/eu-sov-cloud`), and mount the workspace instead of the repository. The dispatcher's
+`shift2eu-ws/shift2eu`), and mount the workspace instead of the repository. The dispatcher's
 worktrees are created in it, on the Mac, and nothing else on the Mac becomes visible to the VM.
 
 - `make vm-up` mounts the repository's parent directory, found from the main checkout, and refuses to

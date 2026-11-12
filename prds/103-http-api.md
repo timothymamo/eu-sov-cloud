@@ -6,15 +6,15 @@ are marked *Decided* (issue #112).
 
 ## Problem
 
-The user wants to run `eusov` as the backend of a website at a later stage: a visitor uploads an
-inventory, the site calls `eusov`, and shows the assessment. Today that is not possible:
+The user wants to run `shift2eu` as the backend of a website at a later stage: a visitor uploads an
+inventory, the site calls `shift2eu`, and shows the assessment. Today that is not possible:
 
-- `eusov` is a CLI. Its only commands are `assess` and `version`, and nothing in the module serves
+- `shift2eu` is a CLI. Its only commands are `assess` and `version`, and nothing in the module serves
   HTTP.
 - The only report format is Markdown. `internal/adapter/report/jsonreport` is an empty package, and every
   PRD so far deferred JSON to "its own PRD". A website needs data it can lay out, not Markdown.
 - The CLI binary is guaranteed offline. `TestAssessPathHasNoNetworkOrCloudSDK` (`test/e2e`) fails if
-  `cmd/eusov` depends on `net` or `net/http` at all. That is a promise to CLI users, that the tool never
+  `cmd/shift2eu` depends on `net` or `net/http` at all. That is a promise to CLI users, that the tool never
   opens a connection, and it should not be given up to add a server.
 
 A web backend also brings risks the CLI does not have. An inventory describes someone's infrastructure,
@@ -23,14 +23,14 @@ requests at once.
 
 ## Outcome
 
-A second binary, `eusov-server`, serves the same assessments over a small, versioned JSON API:
+A second binary, `shift2eu-server`, serves the same assessments over a small, versioned JSON API:
 `POST /v1/assessments` takes an inventory document and one or more targets, and returns the assessment
 (or the comparison, PRD #89) as JSON. `GET /v1/targets` lists the targets and their snapshot dates.
 Health endpoints let a platform run it. It is stateless: it stores nothing, and logs no request content.
 It has the same strict input rules as the CLI, plus HTTP limits (body size, timeouts, concurrency). It is
 meant to run behind the website's own backend or a reverse proxy, which handles TLS and users. The CLI
-`eusov` stays offline, and its output does not change. Both share one JSON report format, which the CLI
-also offers as `eusov assess --format json`.
+`shift2eu` stays offline, and its output does not change. Both share one JSON report format, which the CLI
+also offers as `shift2eu assess --format json`.
 
 ## Scope
 
@@ -40,7 +40,7 @@ also offers as `eusov assess --format json`.
 | Target providers | OVHcloud, Scaleway and UpCloud, from their embedded snapshots as they are | Catalog changes |
 | Output | A versioned JSON report (schema v1) for one assessment and for a comparison, shared by the CLI (`--format json`) and the API. The Markdown report, available from the API too. | HTML. PDF. Changes to the Markdown report. |
 | API | `POST /v1/assessments`, `GET /v1/targets`, `GET /healthz`, `GET /readyz`, an OpenAPI 3.1 document in the repository | Users, accounts, sessions, storage of inventories or reports, async jobs, webhooks, a web UI |
-| Deployment | A separate `eusov-server` binary and container image, built and signed by the release workflow like `eusov`. Docs for running it behind a reverse proxy. | A hosted service. TLS termination or user authentication inside the server (the proxy's job, see *Decisions*). |
+| Deployment | A separate `shift2eu-server` binary and container image, built and signed by the release workflow like `shift2eu`. Docs for running it behind a reverse proxy. | A hosted service. TLS termination or user authentication inside the server (the proxy's job, see *Decisions*). |
 
 ## Acceptance criteria
 
@@ -49,7 +49,7 @@ use `net/http/httptest` and a server on `127.0.0.1`), unless marked *review*.
 
 **JSON report**
 
-- [x] `eusov assess --format json` prints the assessment as JSON. Its document has a `schemaVersion` of
+- [x] `shift2eu assess --format json` prints the assessment as JSON. Its document has a `schemaVersion` of
   `1`, and holds the target, the snapshot source and date, the inventory name, the summary counts, and
   every verdict with its fit, best offering, ties, reasons and required changes, as well as blockers.
   This is the same content as the Markdown report, in the same resource order. `--format markdown` is
@@ -66,7 +66,7 @@ use `net/http/httptest` and a server on `127.0.0.1`), unless marked *review*.
 
 - [x] `POST /v1/assessments` with `Content-Type: application/json`, and a body holding `inventory` (an
   inventory document) and `targets` (one or more target keys, or `["all"]`), answers `200` with the JSON
-  report (one target) or comparison (several). The body is the same document `eusov assess --format json`
+  report (one target) or comparison (several). The body is the same document `shift2eu assess --format json`
   prints for the same inventory and targets. Pinned by comparing the two.
 - [x] With `Accept: text/markdown`, the same request answers with the Markdown report, byte-identical to
   the CLI's.
@@ -120,10 +120,10 @@ use `net/http/httptest` and a server on `127.0.0.1`), unless marked *review*.
 
 - [x] The HTTP API is a driving adapter, `internal/httpapi`, beside `internal/cli`. It may import the
   application and domain layers, and the report adapters through the composition root's wiring, but never
-  `internal/cli`. `cmd/eusov-server` is its composition root. depguard rules and `test/architecture` hold
+  `internal/cli`. `cmd/shift2eu-server` is its composition root. depguard rules and `test/architecture` hold
   this for every release target, and the depguard pin (#84) includes the new rules.
-- [x] `cmd/eusov` still depends on no `net` package: `TestAssessPathHasNoNetworkOrCloudSDK` is unchanged
-  and passes. A matching test pins that `cmd/eusov-server` depends on no cloud SDK and no `os/exec`.
+- [x] `cmd/shift2eu` still depends on no `net` package: `TestAssessPathHasNoNetworkOrCloudSDK` is unchanged
+  and passes. A matching test pins that `cmd/shift2eu-server` depends on no cloud SDK and no `os/exec`.
 - [x] *Review:* the use cases (`analysis.Analysis`, `analysis.Comparison`), the target adapters and the
   Markdown renderer's output are reused unchanged. The domain changes only by the accepted refactor of
   milestone 1 (issue #112): the tie list and the required-changes list moved into it (`Verdict.Ties`,
@@ -133,9 +133,9 @@ use `net/http/httptest` and a server on `127.0.0.1`), unless marked *review*.
 
 **Packaging**
 
-- [ ] The release workflow builds `eusov-server` for the release targets, and publishes its container
-  image `ghcr.io/timothymamo/eusov-server`. The image is non-root and distroless, signed and attested like
-  `eusov`'s (ADR 0015), with `ENTRYPOINT ["/eusov-server"]`. `check.ReleaseWorkflow` and the CI dry run
+- [ ] The release workflow builds `shift2eu-server` for the release targets, and publishes its container
+  image `ghcr.io/timothymamo/shift2eu-server`. The image is non-root and distroless, signed and attested like
+  `shift2eu`'s (ADR 0015), with `ENTRYPOINT ["/shift2eu-server"]`. `check.ReleaseWorkflow` and the CI dry run
   cover it.
 - [ ] The README documents running the server behind a reverse proxy (TLS, authentication, rate limits),
   the environment it reads, and an example request.
@@ -145,12 +145,12 @@ use `net/http/httptest` and a server on `127.0.0.1`), unless marked *review*.
 Each milestone ships as one PR, in this order.
 
 1. [x] **JSON report v1.** `internal/adapter/report/jsonreport` renders an assessment and a comparison as
-   versioned JSON, with JSON Schemas, goldens and hostile goldens. `eusov assess --format json|markdown`.
+   versioned JSON, with JSON Schemas, goldens and hostile goldens. `shift2eu assess --format json|markdown`.
    An ADR records the schema and its versioning, the counterpart of ADR 0006 for inventories. No HTTP yet.
 
    *Done:* `jsonreport` renders both documents (`schemaVersion` 1), with JSON Schemas under
    `internal/adapter/report/jsonreport/schema/`, goldens and hostile goldens validated against them,
-   and `--format json` e2e goldens. `eusov assess --format json|markdown` selects the renderer;
+   and `--format json` e2e goldens. `shift2eu assess --format json|markdown` selects the renderer;
    Markdown stays the default and unchanged. A comparison is validated once, in the domain, for every
    reporter. The format and its version policy are recorded in
    [ADR 0018](../docs/adr/0018-version-the-json-report-format-for-the-cli-and-the-api.md).
@@ -178,11 +178,11 @@ Each milestone ships as one PR, in this order.
    whose errors on this path name a position and field, never a value; `New(path)` keeps the CLI's
    messages. The OpenAPI 3.1 document `api/openapi.json` refers to the report's JSON Schemas by `$ref`,
    and a conformance test holds the handler's routes, statuses and shapes to it. `test/apiparity` pins
-   that the API and `eusov assess` give the same bytes, in JSON and Markdown, and that no inventory
+   that the API and `shift2eu assess` give the same bytes, in JSON and Markdown, and that no inventory
    value is echoed. The depguard rules `httpapi-gets-adapters-from-cmd`,
    `httpapi-imported-only-by-the-server` and `request-decoders-parse-bytes` are in the depguard pin, and
    `test/architecture` holds them for every release target. The design is recorded in
-   [ADR 0019](../docs/adr/0019-serve-assessments-over-a-versioned-http-api-from-a-separate-binary.md). The handler's halves of four criteria are done, and `cmd/eusov-server` adds the rest in
+   [ADR 0019](../docs/adr/0019-serve-assessments-over-a-versioned-http-api-from-a-separate-binary.md). The handler's halves of four criteria are done, and `cmd/shift2eu-server` adds the rest in
    milestone 3: the readiness check over every catalog, the concurrency flag and its default, the token
    from an environment variable or a file with the loopback rule, and the composition root with its
    dependency test. ADR 0019 also binds milestone 3 to: set the server's read-header, read, write and
@@ -192,16 +192,16 @@ Each milestone ships as one PR, in this order.
    resolved host list as a startup error; trim the white space around a token read from a file; set
    the `Host` allow-list whenever it listens on loopback without a token; and keep request content out
    of the access log, which holds the method, path, status, duration and size only.
-3. [x] **`eusov-server` binary.** `cmd/eusov-server` wires the adapters. It adds flags and environment
+3. [x] **`shift2eu-server` binary.** `cmd/shift2eu-server` wires the adapters. It adds flags and environment
    (listen address, token, concurrency, CORS origins), timeouts, graceful shutdown, the access log, the
    readiness check, and the loopback-without-token rule. e2e tests start the binary on `127.0.0.1` and call
-   it. The offline test for `cmd/eusov` stays as it is, and a new one pins `cmd/eusov-server`'s
+   it. The offline test for `cmd/shift2eu` stays as it is, and a new one pins `cmd/shift2eu-server`'s
    dependencies. Depends on 2.
 
-   *Done:* `cmd/eusov-server` is the API's composition root, held by the strict depguard rule
+   *Done:* `cmd/shift2eu-server` is the API's composition root, held by the strict depguard rule
    `server-composition-root` (in the depguard pin, and held by `test/architecture` for every release
-   target). It wires the adapters `cmd/eusov` wires into `httpapi.New` and adds `--listen`,
-   `--token-file` or `EUSOV_SERVER_TOKEN` (never a flag; a configured but empty source, or both at
+   target). It wires the adapters `cmd/shift2eu` wires into `httpapi.New` and adds `--listen`,
+   `--token-file` or `SHIFT2EU_SERVER_TOKEN` (never a flag; a configured but empty source, or both at
    once, is a startup error, the token is trimmed and must be at least 32 characters), `--concurrency`,
    `--max-connections` (default 256; a connection over the cap is closed at once), `--cors-origin`,
    `--allowed-host` and `--insecure-no-auth`. It refuses a non-loopback address without a token unless
@@ -214,18 +214,18 @@ Each milestone ships as one PR, in this order.
    from `BenchmarkMaximalAllComparison`'s 1.05 GB per maximal request. `/readyz` answers 200 once every
    catalog has loaded, and 503 at once while another check is loading. The access log writes one line per request to stderr with the method, the
    quoted path (cut to 256 bytes), the status, the duration and the size, and nothing else. `SIGTERM` and `SIGINT` shut it
-   down gracefully within 25 s and exit 0. `make build` builds `bin/eusov-server` too. White-box tests
+   down gracefully within 25 s and exit 0. `make build` builds `bin/shift2eu-server` too. White-box tests
    of `run` pin the token, the loopback and `Host` rules, the concurrency, the access log, stalled
    header and body clients and the graceful shutdown; e2e tests run the built binary, compare its bytes
-   with `eusov assess` in JSON and Markdown, and pin that its dependencies hold no cloud SDK and no
+   with `shift2eu assess` in JSON and Markdown, and pin that its dependencies hold no cloud SDK and no
    `os/exec`. The decisions are recorded in [ADR 0019](../docs/adr/0019-serve-assessments-over-a-versioned-http-api-from-a-separate-binary.md).
-4. [ ] **Packaging and docs.** GoReleaser builds, the `eusov-server` image in the `Dockerfile`, the
+4. [ ] **Packaging and docs.** GoReleaser builds, the `shift2eu-server` image in the `Dockerfile`, the
    release workflow (publish, sign, attest) and its checks, and the README's deployment section. Moves this
    PRD to `prds/done/` and completes #103. Depends on 3. Security-sensitive: the release workflow changes.
 
 ## Decisions and open questions
 
-- **Decided: a separate binary, not `eusov serve`** ([ADR 0019](../docs/adr/0019-serve-assessments-over-a-versioned-http-api-from-a-separate-binary.md)
+- **Decided: a separate binary, not `shift2eu serve`** ([ADR 0019](../docs/adr/0019-serve-assessments-over-a-versioned-http-api-from-a-separate-binary.md)
   records it with the API's design, versioning and security model). The CLI's guarantee, that nothing it reaches can
   open a connection, is pinned by a test, and is worth keeping for users who run it on sensitive
   inventories. A `serve` subcommand would put `net/http` in the CLI's dependencies and end that guarantee.
@@ -246,8 +246,8 @@ Each milestone ships as one PR, in this order.
   pins that both give the same bytes. The format carries a `schemaVersion`: adding an optional key or a
   new value of an open set (such as a reason code) keeps it, and readers ignore what they do not know;
   removing, renaming or retyping a key, or any other change that can break a reader, is a new
-  `schemaVersion` with an ADR. Unlike the inventory format (ADR 0006), where `eusov` is the strict
-  reader, here `eusov` is the writer.
+  `schemaVersion` with an ADR. Unlike the inventory format (ADR 0006), where `shift2eu` is the strict
+  reader, here `shift2eu` is the writer.
 - **Decided: the API is versioned in the path (`/v1/`).** Recorded in [ADR 0019](../docs/adr/0019-serve-assessments-over-a-versioned-http-api-from-a-separate-binary.md). A breaking change is a `/v2/` route beside
   `/v1/` for a deprecation period. Additive fields are not breaking.
 - **Decided: no request content is ever stored or logged.** Inventories and reports are customer data

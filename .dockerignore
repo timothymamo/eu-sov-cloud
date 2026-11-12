@@ -1,4 +1,4 @@
-# The build context is an allow list: everything is left out, then only what `go build ./cmd/eusov`
+# The build context is an allow list: everything is left out, then only what `go build ./cmd/shift2eu`
 # needs is let back in. Later lines win, so the exclusions at the end apply inside the allowed paths too.
 *
 

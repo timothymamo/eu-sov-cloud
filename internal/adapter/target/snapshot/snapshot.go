@@ -6,10 +6,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/timothymamo/eu-sov-cloud/internal/adapter/internal/jsondoc"
-	"github.com/timothymamo/eu-sov-cloud/internal/domain/catalog"
-	"github.com/timothymamo/eu-sov-cloud/internal/domain/taxonomy"
-	"github.com/timothymamo/eu-sov-cloud/internal/domain/text"
+	"github.com/timothymamo/shift2eu/internal/adapter/internal/jsondoc"
+	"github.com/timothymamo/shift2eu/internal/domain/catalog"
+	"github.com/timothymamo/shift2eu/internal/domain/taxonomy"
+	"github.com/timothymamo/shift2eu/internal/domain/text"
 )
 
 // schemaVersion is the only version of the snapshot format this package reads
