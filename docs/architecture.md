@@ -472,16 +472,20 @@ directory a `t.Parallel` test shares. The forbidigo group **`tests-no-process-st
   also `pkg.wrapper.Setenv` for a struct that embeds `*testing.T` and `pkg.iface.Setenv` for a named
   interface `t` is assigned to (probed on the golangci-lint version CI pins). The first version of the
   group named `testing.(T|B|F|TB)` only and missed those two.
-- `pattern: '^os\.(?:Unsetenv|Clearenv)$'` with `pkg: '^os$'`.
+- `pattern: '^(?:os|syscall)\.(?:Unsetenv|Clearenv|Fchdir)$'` with `pkg: '^(?:os|syscall)$'`, which
+  refuses `os.Unsetenv`, `os.Clearenv`, `syscall.Unsetenv`, `syscall.Clearenv` and `syscall.Fchdir`
+  (the review of #153: `syscall` writes the same environment and working directory `os` does; `os`
+  has no `Fchdir`, and the pattern refuses one all the same).
 
 forbidigo renders nothing for a call through an interface literal
 (`var s interface{ Setenv(k, v string) } = t`) or through a type parameter constrained by one, so
-`test/lint`'s `TestTestsChangeNoProcessStateByNoSelector` refuses every selector named `Setenv` or
-`Chdir` on the AST in the group's scope, and `TestProcessStateSelectorFindings` pins that check.
+`test/lint`'s `TestTestsChangeNoProcessStateByNoSelector` refuses every selector named `Setenv`,
+`Chdir`, `Unsetenv`, `Clearenv` or `Fchdir` on the AST in the group's scope, and
+`TestProcessStateSelectorFindings` pins that check.
 
 The group owns the writes: `testutil-no-env` and `cli-no-env-or-process` leave `os.Setenv`,
-`os.Unsetenv` and `os.Clearenv` out, so no line is reported by two groups. Its one exclusion rule,
-`path: ^test/(?:lint|architecture)/`, drops it in those two harnesses only, which call `t.Setenv` on
+`os.Unsetenv`, `os.Clearenv` and the `syscall` writes out, so no line is reported by two groups.
+Its one exclusion rule, `path: ^test/(?:lint|architecture)/`, drops it in those two harnesses only, which call `t.Setenv` on
 purpose, in test binaries of their own, to run the go command in a known environment (`GOCACHE`,
 `GOFLAGS`, `HOME`). Everywhere else it holds: the application layer, the test helpers, the driving
 adapters, the composition roots, and since the review of #153 the adapters', the domain's and the e2e
@@ -508,11 +512,6 @@ Known gaps, which these rules do not close:
 - **A method called through `reflect`.** `reflect.ValueOf(t).MethodByName("Setenv").Call(...)`
   changes the environment past every name rule and the AST selector check; no lint rule here can
   see a method named by a string.
-- **`Unsetenv` and `Clearenv` through an interface literal or a type parameter.** The group refuses
-  `os.Unsetenv` and `os.Clearenv` by name, not any method so named, and `test/lint`'s selector check
-  covers `Setenv` and `Chdir` only. A method named `Unsetenv` or `Clearenv` that wraps the `os` call
-  in a package outside the group's scope, called through an interface literal or a type parameter
-  (which forbidigo renders not at all), gets through.
 
 ## Domain-is-pure rule
 

@@ -1759,11 +1759,13 @@ linters:
         # the golangci-lint version CI pins). A testing-only entry missed the
         # last two. forbidigo renders nothing for a call through an interface
         # literal or a type parameter, so test/lint refuses every selector
-        # named Setenv or Chdir in the group's scope on the AST
-        # (TestTestsChangeNoProcessStateByNoSelector). The second entry
-        # refuses os.Unsetenv and os.Clearenv; reached through an interface
-        # literal or a type parameter they stay a gap, as does a method
-        # called through reflect (docs/architecture.md, Known gaps). This
+        # named Setenv, Chdir, Unsetenv, Clearenv or Fchdir in the group's
+        # scope on the AST (TestTestsChangeNoProcessStateByNoSelector). The
+        # second entry refuses os.Unsetenv, os.Clearenv, syscall.Unsetenv,
+        # syscall.Clearenv and syscall.Fchdir (issue #153's review: syscall
+        # writes the same environment and working directory os does; os has
+        # no Fchdir, the pattern refuses one all the same). A method called
+        # through reflect stays a gap (docs/architecture.md, Known gaps). This
         # group owns the writes: testutil-no-env and cli-no-env-or-process
         # leave them out, so no line is reported twice.
         #
@@ -1778,9 +1780,9 @@ linters:
         # credential path (docs/architecture.md, Known gaps).
         - pattern: '^(?:[\w*()\[\]]+\.)+(?:Setenv|Chdir)$'
           msg: 'tests-no-process-state: a test changes no environment variable and no working directory, which every test of the process shares; pass the value to the code under test through a fake or a parameter (CLAUDE.md rule 3)'
-        - pattern: '^os\.(?:Unsetenv|Clearenv)$'
-          pkg: '^os$'
-          msg: 'tests-no-process-state: a test changes no environment variable of the process, which every test in it shares; pass the value to the code under test through a fake or a parameter (CLAUDE.md rule 3)'
+        - pattern: '^(?:os|syscall)\.(?:Unsetenv|Clearenv|Fchdir)$'
+          pkg: '^(?:os|syscall)$'
+          msg: 'tests-no-process-state: a test changes no environment variable and no working directory of the process, which every test in it shares; pass the value to the code under test through a fake or a parameter (CLAUDE.md rule 3)'
     gosec:
       excludes:
         - G104 # unchecked errors are already reported by errcheck

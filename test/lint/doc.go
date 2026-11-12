@@ -88,7 +88,8 @@
 // refused.
 // TestTestsNoProcessStateProbe (testdata/testsprocessstate) runs the forbidigo
 // group tests-no-process-state (issue #153) on t.Setenv, t.Chdir, os.Setenv,
-// os.Unsetenv, os.Clearenv and os.Chdir, and on a struct that embeds
+// os.Unsetenv, os.Clearenv, os.Chdir, syscall.Unsetenv, syscall.Clearenv and
+// syscall.Fchdir, and on a struct that embeds
 // *testing.T, in the application layer, the test helpers, the driving
 // adapters, the roots, a source adapter, the domain and the e2e tier, where
 // each must be refused, while t.TempDir, os.MkdirTemp and os.CreateTemp pass;
@@ -96,8 +97,9 @@
 // TestTestsNoProcessStateForbidigoPatterns pins its patterns.
 // forbidigo renders no call through an interface literal or a type
 // parameter, so TestTestsChangeNoProcessStateByNoSelector refuses every
-// selector named Setenv or Chdir in the group's scope, every file but those of
-// test/lint and test/architecture, on the AST, and
+// selector named Setenv, Chdir, Unsetenv, Clearenv or Fchdir in the group's
+// scope, every file but those of test/lint and test/architecture, on the AST,
+// and
 // TestProcessStateSelectorFindings pins that check on fixtures.
 // TestCloudReadOnlyPatterns and
 // TestCloudReadOnlyPackages check the group's allowlist patterns, read from

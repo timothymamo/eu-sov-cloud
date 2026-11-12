@@ -374,12 +374,16 @@ and `t.Chdir` and `os.Chdir` the working directory every `t.Parallel` test share
 named, whatever its receiver: `analyze-types` renders a call on the type the method is found on, so
 it covers `*testing.T`, `*testing.B`, `*testing.F`, a helper's `testing.TB`, a method value, `os.Setenv`,
 `os.Chdir`, a struct embedding `*testing.T` and a named interface `t` is assigned to. The group's first
-version named `testing.(T|B|F|TB)` only and missed the last two. The second entry refuses
-`os.Unsetenv` and `os.Clearenv`. forbidigo renders nothing for a call through an interface literal or
-a type parameter, so `test/lint` refuses every selector named `Setenv` or `Chdir` on the AST in the
-group's scope (`TestTestsChangeNoProcessStateByNoSelector`). A method called through
-`reflect.MethodByName`, and an `Unsetenv` or `Clearenv` method reached through an interface literal or
-a type parameter, remain gaps (docs/architecture.md, Known gaps). The group owns the writes:
+version named `testing.(T|B|F|TB)` only and missed the last two. The second entry,
+`pattern: '^(?:os|syscall)\.(?:Unsetenv|Clearenv|Fchdir)$'` with `pkg: '^(?:os|syscall)$'`, refuses
+`os.Unsetenv`, `os.Clearenv`, `syscall.Unsetenv`, `syscall.Clearenv` and `syscall.Fchdir`; its first
+version named `os` only, and the review of #153 found that `syscall` writes the same environment and
+working directory. forbidigo renders nothing for a call through an interface literal or a type
+parameter, so `test/lint` refuses every selector named `Setenv`, `Chdir`, `Unsetenv`, `Clearenv` or
+`Fchdir` on the AST in the group's scope (`TestTestsChangeNoProcessStateByNoSelector`); the three
+later names were added with the `syscall` writes, and no selector so named exists outside `test/lint`,
+which the check leaves out, so the widening has no false positive. A method called through
+`reflect.MethodByName` remains a gap (docs/architecture.md, Known gaps). The group owns the writes:
 `testutil-no-env` and `cli-no-env-or-process` leave them out, so no line is reported by two groups.
 
 The group's first scope was five named areas (`internal/app`, `internal/testutil`, the driving
