@@ -61,11 +61,13 @@ func TestWorkflowPrivileges(t *testing.T) {
 		noPermission = "permissions: {}\n"
 	)
 
-	// releasePleaseWriting is the release-please workflow of issue #142, with a
-	// packages: write through GITHUB_TOKEN added to its job.
+	// releasePleaseWriting is the release-please workflow of issues #142 and
+	// #157, with a packages: write through GITHUB_TOKEN added to its
+	// release-please job, the only job it holds that writes at all: the tag and
+	// relabel jobs' tokens are the Apps'.
 	releasePleaseWriting := mutate(t, releasePleaseWorkflow,
-		"    permissions:\n      contents: read\n      actions: read\n",
-		"    permissions:\n      contents: read\n      actions: read\n      packages: write\n",
+		"    # GITHUB_TOKEN reads only: the App's token does the writing.\n    permissions:\n      contents: read\n",
+		"    # GITHUB_TOKEN reads only: the App's token does the writing.\n    permissions:\n      contents: read\n      packages: write\n",
 	)
 
 	tests := []struct {
