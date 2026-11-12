@@ -63,6 +63,8 @@ on `v0.x`).
 ## Consequences
 
 - Verifying `v0.1.0` and `v0.1.0-rc.1` needs the old image name and identity; the README says how.
+- The old GHCR package `ghcr.io/timothymamo/eusov` is kept, deprecated and never deleted: the
+  README's commands for verifying v0.1.0 and v0.1.0-rc.1 depend on it.
 - `go install` and imports use `github.com/timothymamo/shift2eu`; the old module path resolves only
   through GitHub's redirect and is not supported.
 - Reusing the name `eu-sov-cloud` for a new repository would end GitHub's redirect and let that

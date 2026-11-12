@@ -141,6 +141,9 @@ every goroutine to standard error and exits with code 2.
 
 ## Run with Docker
 
+`shift2eu` images and binaries start at `v0.2.0`. `v0.1.0` and `v0.1.0-rc.1` were published under the
+project's old names: see [Releases before the rename](#releases-before-the-rename-v010-and-v010-rc1).
+
 Each release publishes a minimal image to `ghcr.io/timothymamo/shift2eu`: the static `shift2eu` binary on
 [distroless static](https://github.com/GoogleContainerTools/distroless) (CA certificates and a
 non-root user, no shell or package manager), for `linux/amd64` and `linux/arm64`

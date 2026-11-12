@@ -82,10 +82,10 @@ order. `retrieved` is the snapshot's UTC calendar date, `YYYY-MM-DD`, as the Mar
 - Removing, renaming or retyping a key, making a required key optional, adding a `fit` or `kind`
   value, or changing what a value means is a new `schemaVersion`, with new schema files beside the old
   ones and an ADR. This matches the API's rule that additive fields are not breaking (PRD #103).
-- Moving the schema files' `$id` URLs, or the OpenAPI document's references to them, keeps
-  `schemaVersion` 1: no document a reader receives changes. The project's rename to `shift2eu`
-  ([ADR 0020](0020-rename-the-project-to-shift2eu.md), issue #117) moved them from the old repository
-  to `https://github.com/timothymamo/shift2eu` this way.
+- Moving the schema files' `$id` URLs keeps `schemaVersion` 1: no document a reader receives
+  changes. The project's rename to `shift2eu` ([ADR 0020](0020-rename-the-project-to-shift2eu.md),
+  issue #117) moved them from the old repository to `https://github.com/timothymamo/shift2eu` this
+  way. The OpenAPI document's references to the schemas are relative and did not change.
 
 **One format for the CLI and the API.** `shift2eu assess --format json` writes these documents (the
 default stays `markdown`, byte-identical to before), and the HTTP API of PRD #103 answers with the
