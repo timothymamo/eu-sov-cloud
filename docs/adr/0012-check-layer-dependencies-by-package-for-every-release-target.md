@@ -402,8 +402,9 @@ doc-only `internal/adapter/target` to `errors$`: an empty allow list would say i
 `check.AllowList` refuses a strict rule with none, and `errors$` is the smallest it reads (follow-up
 issue #166 lets it accept an empty list). `test-docs-are-pure` holds the doc-only `test/apiparity`,
 `test/architecture` (minus its `internal/` tree), `test/container`, `test/devenv`, `test/docs`,
-`test/e2e` and `test/lint` to the same placeholder, their tests left out with `!$test`; the `test/e2e`
-glob sits before `!$test`, so the e2e test files stay on `e2e-is-black-box`. A future
+`test/e2e` and `test/lint` to the same placeholder, their tests left out with `!$test`: it takes the
+e2e test files out too (depguard applies negated globs whatever their position), so they stay on
+`e2e-is-black-box` alone. A future
 `os` import in `internal/config` must come with a forbidigo group for its reads, and any read of a
 named variable with an exception decided in an ADR. The forbidigo group `inventoryfile-no-env`
 refuses the nine reads under `internal/adapter/source/inventoryfile/`, tests included; and

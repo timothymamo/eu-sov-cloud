@@ -537,9 +537,9 @@ target, with the `e2e` and `integration` tags (`strictcoverage_test.go`):
   the same `errors$` placeholder (issue #166). Each is a production package a root could import
   through the module prefix. `!$test` leaves their tests out, and a negated glob takes out
   `test/architecture/internal/...`, which Go's internal rule hides from the roots and which reads
-  `os` and `os/exec`. `test/e2e`'s untagged `doc.go` is held here as well (the third property): its
-  glob sits before `!$test`, so the e2e test files stay on `e2e-is-black-box`, which allows `$gostd`
-  and holds the package too. A package that starts importing something names it there and in the
+  `os` and `os/exec`. `test/e2e`'s untagged `doc.go` is held here as well (the third property):
+  `!$test` takes the e2e test files out (depguard applies negated globs whatever their position), so
+  they stay on `e2e-is-black-box` alone, which allows `$gostd` and holds the package too. A package that starts importing something names it there and in the
   pin in the same commit.
 
 ### Tests change no process state
