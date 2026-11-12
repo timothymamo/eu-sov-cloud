@@ -44,10 +44,13 @@ GitHub App's token, and the tag starts `release.yml` as before.**
 - **`skip-github-release: true`.** GoReleaser in `release.yml` keeps creating the GitHub Release.
   release-please creates a tag only by creating a Release, so it creates none, and it opens no new
   release PR while a merged one is still labelled `autorelease: pending`. The workflow therefore tags
-  in a step of its own. Its candidates are the merged PRs labelled `autorelease: pending` that the App
-  itself opened (`<app slug>[bot]`, from the token action's `app-slug` output); a PR closed without
-  merging, or opened by anyone else, is skipped with a warning, so a label set by hand can neither
-  release nor block a release. For the one candidate it reads the version from
+  in a step of its own. It lists the closed PRs into `main` from release-please's branch through
+  `GET /repos/{owner}/{repo}/pulls?state=closed&base=main&head=<owner>:<branch>`, every page, and keeps
+  those labelled `autorelease: pending`; never through the issues listing, which an App token reads
+  only with Issues read. Its candidates are those merged that the App itself opened
+  (`<app slug>[bot]`, from the token action's `app-slug` output); a PR closed without merging, or
+  opened by anyone else, is skipped with a warning, so a label set by hand can neither release nor
+  block a release. For the one candidate it reads the version from
   `.release-please-manifest.json` at the PR's merge commit, holds it to `^[0-9]+\.[0-9]+\.[0-9]+$` and
   to the PR's title, creates the annotated tag `vX.Y.Z` on that merge commit through the Git database
   API, labels the PR `autorelease: tagged` and then removes `autorelease: pending` (a run stopped
@@ -72,12 +75,25 @@ GitHub App's token, and the tag starts `release.yml` as before.**
   the tag) and **Pull requests: read and write** (the release PR and its labels) only, and the workflow
   asks for exactly those two. Adding and removing labels on a pull request goes through the Issues
   labels endpoints, which accept either Issues or Pull requests write; the two `autorelease` labels are
-  created beforehand by a maintainer, so the App needs no Issues permission. `Protect main` still keeps
-  the App from pushing to `main`: release-please writes only its own branch.
+  created beforehand by a maintainer, so the App needs no Issues permission. The tag step's calls and
+  the App token's permission each needs:
+
+  | Endpoint | Call | Permission |
+  |---|---|---|
+  | `pulls` (list), `pulls/<n>`, `pulls/<n>/files` | `GET` | Pull requests: read |
+  | `issues/<n>/labels` (add), `issues/<n>/labels/<name>` (remove) on the PR | `POST`, `DELETE` | Pull requests: write |
+  | `contents/.release-please-manifest.json`, `compare/<sha>...main` | `GET` | Contents: read |
+  | `git/matching-refs/tags/<tag>`, `git/ref/tags/<tag>`, `git/tags/<sha>` | `GET` | Contents: read |
+  | `git/tags`, `git/refs` | `POST` | Contents: write |
+
+  `check.ReleasePleaseWorkflow` holds the tag step to these endpoints alone. release-please writes only
+  its own branch, but `Protect main` does not stop the token from doing more: see the residual risk
+  below.
 - **The App's ID and key live in the `release-please` environment**, limited to `main` by its
   deployment branch policy: the `RELEASE_APP_ID` variable and the `RELEASE_APP_PRIVATE_KEY` secret. A
   workflow on another branch cannot read the key. `GITHUB_TOKEN` holds `permissions: {}` at the top
-  level and `contents: read`, `actions: read`, `issues: read`, `pull-requests: read` in the job. The
+  level and `contents: read`, `actions: read`, `pull-requests: read` in the job (the guard lists the
+  release PRs with the tag step's own pulls query). The
   job runs on `ubuntu-latest` alone, never a self-hosted runner. The App's token reaches two places
   only: release-please's `token` input and the tag step's `GH_TOKEN`, whose `env:` is exactly that
   token, the repository and the App's slug, and whose `gh api` calls reach only the release PR's, the
@@ -134,8 +150,9 @@ GitHub App's token, and the tag starts `release.yml` as before.**
   (version, changelog and commits against its bump rules), and after the merge verifies the tag, the
   `release.yml` run and the published images.
 - A new credential: the release App's private key. It is held by the `release-please` environment,
-  limited to `main`, and can create release tags (not move or delete them), push branches other than
-  `main` and manage pull requests. It is the second identity that can start a release, so the App is
+  limited to `main`, and can create release tags (not move or delete them), push branches, manage pull
+  requests and, while `Protect main` asks for no approving review, merge a pull request into `main`
+  once its checks pass (see the residual risk below). It is the second identity that can start a release, so the App is
   installed on this repository only, with the two permissions above.
 - **Residual risk: one App token, two holders, a tag anywhere.** The one installation token is handed
   to the third-party `googleapis/release-please-action` as well as to the tag step. With Contents
@@ -154,6 +171,20 @@ GitHub App's token, and the tag starts `release.yml` as before.**
   App that may bypass `Release tag creation`, used only in a separate job that runs no third-party
   action; and optionally put `release.yml`'s signing jobs behind an environment with required
   reviewers.
+- **Residual risk: the App can merge to `main`.** `Protect main` asks for no approving review
+  (`required_approving_review_count: 0`) and has no bypass actors, so it requires a pull request and
+  its status checks, nothing more. The App's token, with Contents and Pull requests write, can push a
+  branch, open a PR and merge it through the API once the required checks pass, its own release PR
+  included: the human merge gate holds only by convention. Recommended to the maintainer, not done by
+  this change: either add a rule restricting `update` of `main` with Repository admin as the only
+  bypass, in pull-request-only mode, or require at least one approving review
+  (`required_approving_review_count >= 1`); check either against how agent PRs are merged today, so
+  the maintainer can still merge them.
+- **Residual risk: one job, shared environment files.** The tag step runs in the same job as the
+  third-party release-please action. A compromised step can write `$GITHUB_ENV` or `$GITHUB_PATH` and
+  plant a fake `gh` or `jq` that the later tag step runs with the App's token. Another reason for the
+  recommended split into two Apps and a separate, tag-only job. In the design's favour: the App has
+  no Workflows permission, so a stolen token cannot change `.github/workflows/*`.
 - Before this change merges, a maintainer must:
   - create the App with Contents and Pull requests read and write, private (installable on this
     account only), with its webhook off, and install it on this repository only;
@@ -173,7 +204,9 @@ GitHub App's token, and the tag starts `release.yml` as before.**
   `autorelease: pending` and blocks the next release PR until it is tagged, by the next push to `main`
   or a re-run. A PR labelled `autorelease: pending` that was closed without merging, or that the App
   did not open, is skipped with a warning on every run and never tagged; a maintainer removes its label
-  to silence the warning.
+  to silence the warning. A triage user who re-applies `autorelease: pending` to an earlier release PR
+  of the App, already tagged, makes the tag step count two candidates: it fails closed and tags
+  nothing, but blocks every release until that label is removed.
 - New actions to keep updated: `googleapis/release-please-action`, `actions/create-github-app-token`.
   The latter's `app-id` input is deprecated in favour of `client-id` from v3; moving to `client-id`
   needs the App's client ID in the environment and a matching change to `check.ReleasePleaseWorkflow`.
