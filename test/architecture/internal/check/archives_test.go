@@ -71,9 +71,13 @@ const serverArchive = `  - id: shift2eu-server
 `
 
 // goreleaserChecksum ends the document: one checksums.txt covering every
-// archive of the release.
+// archive of the release, and the bundle the release publishes beside the
+// archives (issue #139), so checksums.txt covers it too.
 const goreleaserChecksum = `checksum:
   name_template: checksums.txt
+  extra_files:
+    - glob: ./api/openapi.bundled.json
+      name_template: shift2eu-server_openapi.json
 `
 
 // goreleaserArchives renders .goreleaser.yaml from its parts: the top level,
@@ -116,6 +120,13 @@ func goreleaserArchives(cli, server string) string {
 //     checksums.txt covers every archive: a missing section, another name and
 //     any other key in it (split: for one) are refused, worded with what it
 //     holds instead;
+//   - the checksum section holds the one extra file the release publishes
+//     beside the archives, api/openapi.bundled.json as
+//     shift2eu-server_openapi.json (issue #139), so checksums.txt covers it
+//     too: a section without it, another glob, another name_template and a
+//     second extra file are refused, worded with extra_files and the file the
+//     release publishes; the release: section's entry is
+//     check.GitHubRelease's (TestGitHubRelease);
 //   - an archive entry holds no key beyond id, ids, name_template, formats,
 //     format_overrides and files: the section is a closed schema, so a key
 //     the check never lists cannot change what an archive is.
@@ -332,6 +343,35 @@ func TestGoReleaserArchives(t *testing.T) {
 			goreleaser: goreleaserArchivesTop + cliArchive + serverArchive +
 				"checksum:\n  name_template: checksums.txt\n  split: true\n",
 			wantIn: "split",
+		},
+
+		// The bundle the release publishes beside the archives (issue #139):
+		// the checksum section holds the same extra file release: does, so
+		// checksums.txt covers it.
+		{
+			name: "a checksum section without the bundle's extra file",
+			goreleaser: goreleaserArchivesTop + cliArchive + serverArchive +
+				"checksum:\n  name_template: checksums.txt\n",
+			wantIn: "extra_files",
+		},
+		{
+			name: "a checksum extra file with another glob",
+			goreleaser: goreleaserArchivesTop + cliArchive + serverArchive +
+				mutate(t, goreleaserChecksum, "./api/openapi.bundled.json", "./api/openapi.json"),
+			wantIn: "openapi.bundled.json",
+		},
+		{
+			name: "a checksum extra file with another name_template",
+			goreleaser: goreleaserArchivesTop + cliArchive + serverArchive +
+				mutate(t, goreleaserChecksum, "shift2eu-server_openapi.json", "openapi.json"),
+			wantIn: "shift2eu-server_openapi.json",
+		},
+		{
+			// Two extra files: the second is one the release does not publish.
+			name: "a checksum section with two extra files",
+			goreleaser: goreleaserArchivesTop + cliArchive + serverArchive + goreleaserChecksum +
+				"    - glob: ./api/openapi.json\n      name_template: openapi.json\n",
+			wantIn: "extra_files",
 		},
 
 		// The closed schema.
