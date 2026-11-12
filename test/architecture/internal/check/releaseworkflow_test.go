@@ -13,7 +13,7 @@ import (
 )
 
 // The fixture below is .github/workflows/release.yml in parts: the top level,
-// then the eleven jobs, each with the comments and keys above its steps
+// then the twelve jobs, each with the comments and keys above its steps
 // (releaseJob.head) and its steps in order. Rendering it rebuilds the file byte
 // for byte, so a case changes one part and leaves the rest exactly as the
 // release has it, comments included: the check must tolerate a full-line
@@ -40,14 +40,15 @@ concurrency:
   group: release
   cancel-in-progress: false
 
-# The steps of all eleven jobs are a closed list that test/architecture holds
+# The steps of all twelve jobs are a closed list that test/architecture holds
 # (check.ReleaseWorkflow): add no step, run: or env: here without changing it.
 # The server-image, server-sbom and server-sign jobs publish the HTTP API's
 # image, ghcr.io/timothymamo/shift2eu-server (PRD #103), exactly as image, sbom
 # and sign publish the CLI's: jobs of their own rather than a matrix, as a
 # matrix job's outputs keep one leg's digest only, and each job keeps its own
 # least privilege. goreleaser hands the archives on, attest-archives attests
-# them, and publish alone publishes the draft release (issues #156, #163).
+# them, publish alone publishes the draft release, and verify-archives checks
+# what it published (issues #156, #163).
 jobs:
 `
 
@@ -219,6 +220,57 @@ var publishSteps = []string{
           TAG: ${{ github.ref_name }}
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: gh release edit "$TAG" --draft=false
+`,
+}
+
+// verifyArchivesJobHead is the verify-archives job up to its steps: the
+// independent check of what the published release carries (issue #163), on a
+// fresh runner after publish, with read-only access to the release and to the
+// repository's attestations, no OIDC token and no checkout.
+const verifyArchivesJobHead = `  # A fresh runner that verifies what the published release carries (issue
+  # #163): it downloads checksums.txt and the archives from the release, checks
+  # their digests and verifies each of them against the build provenance this
+  # workflow made for this tag and commit. Read-only: contents: read and
+  # attestations: read, no OIDC token and nothing it can write, and no
+  # checkout, so no repository code runs.
+  verify-archives:
+    name: Verify the published archives
+    needs: publish
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read # download the release's assets
+      attestations: read # gh attestation verify reads them through the repository's API
+    steps:
+`
+
+// verifyArchivesSteps are the verify-archives job's steps: the release's own
+// assets, the check of their digests, and the provenance of every archive and
+// of checksums.txt itself (docs/guide/verify-releases.md).
+var verifyArchivesSteps = []string{
+	`      # The release as a reader of it sees it, published by now.
+      - name: Download the published archives
+        env:
+          TAG: ${{ github.ref_name }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release download "$TAG" \
+            --pattern 'shift2eu_*' --pattern 'shift2eu-server_*' --pattern checksums.txt
+`,
+	`      # docs/guide/verify-releases.md on this release: the digests first, then
+      # the provenance of every archive and of checksums.txt itself, made by
+      # this workflow, for this tag and commit, on GitHub's runners.
+      - name: Verify the published archives
+        env:
+          TAG: ${{ github.ref_name }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          sha256sum -c checksums.txt
+          for subject in shift2eu_* shift2eu-server_* checksums.txt; do
+            gh attestation verify "$subject" --repo timothymamo/shift2eu \
+              --signer-workflow timothymamo/shift2eu/.github/workflows/release.yml \
+              --source-ref "refs/tags/$TAG" --source-digest "$GITHUB_SHA" --deny-self-hosted-runners
+          done
 `,
 }
 
@@ -874,6 +926,7 @@ func releaseWorkflowFixture() releaseFixture {
 			{key: "server-sbom", head: serverSbomJobHead, steps: serverSbomSteps},
 			{key: "server-sign", head: serverSignJobHead, steps: serverSignSteps},
 			{key: "verify", head: verifyJobHead, steps: verifySteps},
+			{key: "verify-archives", head: verifyArchivesJobHead, steps: verifyArchivesSteps},
 		},
 	}
 }
@@ -1601,6 +1654,66 @@ func TestReleaseWorkflow(t *testing.T) {
 		{name: "a shell on the tag rule step", workflow: in("verify", "      - name: The tags follow the release rule\n", "      - name: The tags follow the release rule\n        shell: bash\n"), wantIn: `key "shell"`},
 		{name: "the tag rule without the guard on an empty highest", workflow: steps("verify", inVerifyStep(t, "name: The tags follow the release rule", "          if [ -z \"$highest\" ]; then\n            echo \"no release tag is merged into main, so X.Y and latest cannot be checked\" >&2\n            exit 1\n          fi\n", "")), wantIn: "want the tag rule: run is"},
 		{name: "the tag rule reading the highest release's latest with its error silenced", workflow: steps("verify", inVerifyStep(t, "name: The tags follow the release rule", `                  latest_digest="$(digest_or_absent "$image:latest")"`+"\n", `                  latest_digest="$(digest_or_absent "$image:latest" 2> /dev/null)"`+"\n")), wantIn: "want the tag rule: run is"},
+
+		// The attestation of the archives (issue #163): a job of its own attests
+		// every archive and checksums.txt with GitHub build provenance, made by
+		// this workflow on the tag, holding an OIDC token and the repository's
+		// attestations to write and read-only access beside them: no contents:
+		// write, so nothing in it can publish or replace the release. What it
+		// attests is the whole release, so an archive family or checksums.txt
+		// left out is refused, and so is a step other than GitHub's own
+		// provenance action.
+		{name: "no attest-archives job", workflow: release.withoutJob(t, "attest-archives"), wantIn: `no "attest-archives"`},
+		{name: "the attest-archives job on another runner", workflow: in("attest-archives", "    runs-on: ubuntu-latest\n", "    runs-on: ubuntu-24.04\n"), wantIn: "runs-on"},
+		{name: "the attest-archives job without needs", workflow: in("attest-archives", "    needs: goreleaser\n", ""), wantIn: `no "needs"`},
+		{name: "the attest-archives job not needing goreleaser", workflow: in("attest-archives", "    needs: goreleaser\n", "    needs: test\n"), wantIn: "needs"},
+		{name: "contents: write for the attest-archives job", workflow: in("attest-archives", "      contents: read # download the archives' workflow artifact\n", "      contents: write # download the archives' workflow artifact\n"), wantIn: "contents"},
+		{name: "no contents: read for the attest-archives job", workflow: in("attest-archives", "      contents: read # download the archives' workflow artifact\n", ""), wantIn: "contents"},
+		{name: "packages: read for the attest-archives job", workflow: in("attest-archives", "      id-token: write # the OIDC token the provenance is signed with\n", "      id-token: write # the OIDC token the provenance is signed with\n      packages: read # pull the images\n"), wantIn: "packages"},
+		{name: "no id-token: write for the attest-archives job", workflow: in("attest-archives", "      id-token: write # the OIDC token the provenance is signed with\n", ""), wantIn: "id-token"},
+		{name: "attestations: read for the attest-archives job", workflow: in("attest-archives", "      attestations: write # store the provenance in the repository\n", "      attestations: read # store the provenance in the repository\n"), wantIn: "attestations"},
+		{name: "an extra step in the attest-archives job", workflow: steps("attest-archives", beforeStep(t, attestArchivesSteps, "      - name: Check the archives against checksums.txt", "run: ./scripts/prepare.sh")), wantIn: "holds 4 steps, want exactly 3"},
+		{name: "a missing step in the attest-archives job", workflow: steps("attest-archives", withoutStep(t, attestArchivesSteps, "name: Check the archives against checksums.txt")), wantIn: "holds 2 steps, want exactly 3"},
+		{name: "the archives not downloaded", workflow: in("attest-archives", "actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333", "actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9"), wantIn: "download-artifact"},
+		{name: "the archives downloaded under another name", workflow: in("attest-archives", "          name: archives\n", "          name: dist\n"), wantIn: "name"},
+		{name: "the archives not checked against checksums.txt", workflow: in("attest-archives", "        run: sha256sum -c checksums.txt\n", "        run: sha256sum checksums.txt\n"), wantIn: "sha256sum -c checksums.txt"},
+		{name: "the attest action pinned by tag", workflow: in("attest-archives", "actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8", "actions/attest-build-provenance@v4"), wantIn: "attest-build-provenance@v4"},
+		{name: "another action in place of the provenance attestation", workflow: steps("attest-archives", slices.Replace(slices.Clone(attestArchivesSteps), 2, 3, "      - uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2\n")), wantIn: "attest-build-provenance"},
+		{name: "checksums.txt not attested", workflow: in("attest-archives", "            shift2eu-server_*\n            checksums.txt\n", "            shift2eu-server_*\n"), wantIn: "subject-path"},
+		{name: "the server's archives not attested", workflow: in("attest-archives", "            shift2eu_*\n            shift2eu-server_*\n", "            shift2eu_*\n"), wantIn: "subject-path"},
+		{name: "the archives attested by digest instead", workflow: in("attest-archives", "          subject-path: |\n            shift2eu_*\n            shift2eu-server_*\n            checksums.txt\n", "          subject-digest: sha256:0000000000000000000000000000000000000000000000000000000000000000\n"), wantIn: `no "subject-path"`},
+		{name: "the archives not handed on by goreleaser", workflow: steps("goreleaser", withoutStep(t, goreleaserSteps, "actions/upload-artifact@")), wantIn: "holds 3 steps, want exactly 4"},
+
+		// The independent check of the published archives (issue #163), beside
+		// the image verify job: a fresh runner after publish, read-only to the
+		// release and to the repository's attestations, which downloads the
+		// release's own assets, checks their digests, and runs gh attestation
+		// verify on every archive and on checksums.txt itself with the release's
+		// workflow, its tag and commit, and GitHub's runners only.
+		{name: "no verify-archives job", workflow: release.withoutJob(t, "verify-archives"), wantIn: `no "verify-archives"`},
+		{name: "the verify-archives job on a self-hosted runner", workflow: in("verify-archives", "    runs-on: ubuntu-latest\n", "    runs-on: self-hosted\n"), wantIn: "runs-on"},
+		{name: "the verify-archives job without needs", workflow: in("verify-archives", "    needs: publish\n", ""), wantIn: `no "needs"`},
+		{name: "the verify-archives job not needing the publish job", workflow: in("verify-archives", "    needs: publish\n", "    needs: attest-archives\n"), wantIn: "needs"},
+		{name: "the verify-archives job needing the attestation job too", workflow: in("verify-archives", "    needs: publish\n", "    needs: [attest-archives, publish]\n"), wantIn: "needs"},
+		{name: "contents: write for the verify-archives job", workflow: in("verify-archives", "      contents: read # download the release's assets\n", "      contents: write # download the release's assets\n"), wantIn: "contents"},
+		{name: "no contents: read for the verify-archives job", workflow: in("verify-archives", "      contents: read # download the release's assets\n", ""), wantIn: "contents"},
+		{name: "attestations: write for the verify-archives job", workflow: in("verify-archives", "      attestations: read # gh attestation verify reads them through the repository's API\n", "      attestations: write # gh attestation verify reads them through the repository's API\n"), wantIn: "attestations"},
+		{name: "id-token: write for the verify-archives job", workflow: in("verify-archives", "      attestations: read # gh attestation verify reads them through the repository's API\n", "      attestations: read # gh attestation verify reads them through the repository's API\n      id-token: write # sign\n"), wantIn: "id-token"},
+		{name: "packages: read for the verify-archives job", workflow: in("verify-archives", "      attestations: read # gh attestation verify reads them through the repository's API\n", "      attestations: read # gh attestation verify reads them through the repository's API\n      packages: read # pull the images\n"), wantIn: "packages"},
+		{name: "an extra step in the verify-archives job", workflow: steps("verify-archives", beforeStep(t, verifyArchivesSteps, "      - name: Download the published archives", "run: ./scripts/prepare.sh")), wantIn: "holds 3 steps, want exactly 2"},
+		{name: "a checkout in the verify-archives job", workflow: steps("verify-archives", beforeStep(t, verifyArchivesSteps, "      - name: Download the published archives", "uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1")), wantIn: "holds 3 steps, want exactly 2"},
+		{name: "a missing step in the verify-archives job", workflow: steps("verify-archives", withoutStep(t, verifyArchivesSteps, "name: Verify the published archives")), wantIn: "holds 1 steps, want exactly 2"},
+		{name: "the published archives not downloaded", workflow: in("verify-archives", `gh release download "$TAG"`, `gh release view "$TAG"`), wantIn: `gh release download \"$TAG\"`},
+		{name: "the verification without set -euo pipefail", workflow: in("verify-archives", "        run: |\n          set -euo pipefail\n", "        run: |\n"), wantIn: `want exactly "set -euo pipefail`},
+		{name: "the digests not checked", workflow: in("verify-archives", "          sha256sum -c checksums.txt\n", ""), wantIn: "sha256sum -c checksums.txt"},
+		{name: "a verification of another repository", workflow: in("verify-archives", "--repo timothymamo/shift2eu", "--repo example/shift2eu"), wantIn: "--repo timothymamo/shift2eu"},
+		{name: "the verification without the signer workflow", workflow: in("verify-archives", "--signer-workflow timothymamo/shift2eu/.github/workflows/release.yml", "--signer-workflow example/repo/.github/workflows/other.yml"), wantIn: "--signer-workflow timothymamo/shift2eu/.github/workflows/release.yml"},
+		{name: "the verification without the source ref", workflow: in("verify-archives", `--source-ref "refs/tags/$TAG"`, `--source-ref "refs/heads/main"`), wantIn: `--source-ref \"refs/tags/$TAG\"`},
+		{name: "the verification without the source digest", workflow: in("verify-archives", `--source-digest "$GITHUB_SHA"`, `--source-digest "$TAG"`), wantIn: `--source-digest \"$GITHUB_SHA\"`},
+		{name: "self-hosted runners not denied", workflow: in("verify-archives", "--deny-self-hosted-runners", "--no-deny"), wantIn: "--deny-self-hosted-runners"},
+		{name: "the verification without gh attestation verify", workflow: in("verify-archives", `gh attestation verify "$subject"`, `cosign verify "$subject"`), wantIn: `gh attestation verify \"$subject\"`},
+		{name: "one archive family not verified", workflow: in("verify-archives", "for subject in shift2eu_* shift2eu-server_* checksums.txt; do", "for subject in shift2eu_*; do"), wantIn: "shift2eu_* shift2eu-server_* checksums.txt"},
+		{name: "checksums.txt not verified", workflow: in("verify-archives", "for subject in shift2eu_* shift2eu-server_* checksums.txt; do", "for subject in shift2eu_* shift2eu-server_*; do"), wantIn: "shift2eu_* shift2eu-server_* checksums.txt"},
 
 		{name: "an empty document", workflow: "", wantIn: "release workflow"},
 	}
