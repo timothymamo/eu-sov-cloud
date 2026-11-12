@@ -15,11 +15,18 @@ import "testing"
 // green. The rule contract-suites-are-pure is therefore a strict allow list of
 // what the two suites import today, each entry ending in $.
 //
-// refused.go in each suite imports net, os, os/exec, syscall and unsafe, each with
-// a want naming no rule, so extending the rule or adding a sibling rule with the
-// same entries keeps the probe true as long as the import is refused. allowed.go
-// imports every package the allow list names, with no want comment, so an entry
-// lost in the rewrite fails here.
+// refused.go in each suite imports os and os/exec, and the source suite's also
+// net, syscall and unsafe, each with a want naming no rule, so extending the rule
+// or adding a sibling rule with the same entries keeps the probe true as long as
+// the import is refused. The two allowed.go files import the packages the rule
+// must keep allowing, each with no want comment, so an entry lost in the rewrite
+// fails here. They mirror what the real internal/adapter/source/sourcetest and
+// internal/adapter/target/targettest import, package for package, because the
+// rule is what holds those two suites: an entry the suites no longer import, or
+// an import they make and the rule does not allow, keeps the probe honest only
+// as long as this copy of their imports follows them. The suite's own imports are
+// read from the module by TestReleaseTargetDependencies, which is the other half
+// of the pair.
 //
 // make lint runs this probe with SHIFT2EU_LINT_PROBES=require on the host, and
 // every entry of CI's lint-target matrix runs the step that sets it.

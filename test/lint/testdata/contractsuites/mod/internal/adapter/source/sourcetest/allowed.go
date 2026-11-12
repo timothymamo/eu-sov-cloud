@@ -14,7 +14,6 @@ import (
 	_ "errors"
 	_ "fmt"
 	_ "slices"
-	_ "strings"
 	_ "testing"
 
 	_ "github.com/timothymamo/shift2eu/internal/app/analysis"
