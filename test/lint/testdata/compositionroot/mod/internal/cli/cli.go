@@ -21,16 +21,17 @@ package cli
 
 import "os"
 
-// Environment reads, writes and dumps the environment and locates the
-// directories the environment names, which the CLI's group refuses.
+// Environment reads and dumps the environment and locates the directories the
+// environment names, which the CLI's group refuses. The writes — os.Setenv,
+// os.Unsetenv, os.Clearenv and os.Chdir — are no call of this group: the group
+// tests-no-process-state refuses them in every file of the module but the two
+// harnesses under test/ (issue #153), so one group owns them and no line is
+// reported twice.
 func Environment() {
 	_ = os.Environ()                              // want "cli-no-env-or-process: "
 	_ = os.Getenv("SHIFT2EU_TOKEN")               // want "cli-no-env-or-process: "
 	_, _ = os.LookupEnv("SHIFT2EU_TOKEN")         // want "cli-no-env-or-process: "
 	_ = os.ExpandEnv("$SHIFT2EU_TOKEN")           // want "cli-no-env-or-process: "
-	_ = os.Setenv("SHIFT2EU_TOKEN", "example")    // want "cli-no-env-or-process: "
-	_ = os.Unsetenv("SHIFT2EU_TOKEN")             // want "cli-no-env-or-process: "
-	os.Clearenv()                                 // want "cli-no-env-or-process: "
 	_, _ = os.StartProcess("/bin/true", nil, nil) // want "cli-no-env-or-process: "
 	_, _ = os.UserHomeDir()                       // want "cli-no-env-or-process: "
 	_, _ = os.UserConfigDir()                     // want "cli-no-env-or-process: "

@@ -12,14 +12,16 @@ import "os"
 
 // environment holds one call for each way a helper could reach the environment
 // or hand a child a process. Nothing here runs: the probe lints the file.
+//
+// The writes — os.Setenv, os.Unsetenv, os.Clearenv and os.Chdir — are no call of
+// this group: the group tests-no-process-state refuses them in every file of the
+// module but the two harnesses under test/ (issue #153), so one group owns them
+// and no line is reported twice.
 func environment() {
 	_ = os.Getenv("SHIFT2EU_TOKEN")               // want "testutil-no-env: "
 	_, _ = os.LookupEnv("SHIFT2EU_TOKEN")         // want "testutil-no-env: "
 	_ = os.ExpandEnv("$SHIFT2EU_TOKEN")           // want "testutil-no-env: "
 	_ = os.Environ()                              // want "testutil-no-env: "
-	_ = os.Setenv("SHIFT2EU_TOKEN", "example")    // want "testutil-no-env: "
-	_ = os.Unsetenv("SHIFT2EU_TOKEN")             // want "testutil-no-env: "
-	os.Clearenv()                                 // want "testutil-no-env: "
 	_, _ = os.StartProcess("/bin/true", nil, nil) // want "testutil-no-env: "
 
 	// The four lookups that locate a directory from the environment ($HOME,

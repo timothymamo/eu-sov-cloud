@@ -63,3 +63,41 @@ func viaTB(tb testing.TB) {
 	tb.Chdir("example")                    // want "tests-no-process-state: "
 	tb.TempDir()
 }
+
+// wrapper embeds a *testing.T, so wrapper.Setenv is testing.T.Setenv promoted.
+// forbidigo renders the call on the type the selector is made on, not on the
+// type the method is declared on (analysis_test.wrapper.Setenv), so a pattern
+// that names package testing and the four receivers alone misses this way round
+// it (issue #153, the audit's finding L-1). The receiver-agnostic entry refuses
+// it, and both lines carry a want.
+type wrapper struct{ *testing.T }
+
+// viaEmbedded holds the calls a test makes through a struct that embeds a
+// *testing.T.
+func viaEmbedded(t *testing.T) {
+	w := wrapper{t}
+	w.Setenv("SHIFT2EU_TOKEN", "example") // want "tests-no-process-state: "
+	w.Chdir("example")                    // want "tests-no-process-state: "
+	w.TempDir()
+}
+
+// viaLiteralInterface holds the call a test makes through an interface literal.
+// forbidigo's analyze-types matching resolves the method on no named type, so it
+// renders nothing for this call: no want comment can be met, and test/lint's
+// processStateSelectorFindings refuses it on the source instead (issue #153, the
+// audit's finding L-1). A group that suddenly refuses it fails the probe's
+// strictness, which reports every issue the probe does not expect.
+func viaLiteralInterface(t *testing.T) {
+	var s interface{ Setenv(k, v string) } = t
+	s.Setenv("SHIFT2EU_TOKEN", "example")
+}
+
+// setenver is the constraint of viaConstraint: a type parameter whose method set
+// holds Setenv, which is no named type either.
+type setenver interface{ Setenv(k, v string) }
+
+// viaConstraint holds the call a test makes through a type parameter, which
+// forbidigo cannot see for the same reason.
+func viaConstraint[T setenver](t T) {
+	t.Setenv("SHIFT2EU_TOKEN", "example")
+}

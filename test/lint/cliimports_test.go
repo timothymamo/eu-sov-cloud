@@ -16,12 +16,15 @@ import (
 // may not: the environment is where credentials live.
 //
 // The group refuses every way to read a named variable (os.Getenv, os.LookupEnv,
-// os.ExpandEnv), to dump the whole environment (os.Environ), to write one
-// (os.Setenv, os.Unsetenv, os.Clearenv) and to start a process
-// (os.StartProcess), and the four lookups that locate a directory from an
-// unnamed variable (os.UserHomeDir, os.UserConfigDir, os.UserCacheDir,
+// os.ExpandEnv), to dump the whole environment (os.Environ) and to start a
+// process (os.StartProcess), and the four lookups that locate a directory from
+// an unnamed variable (os.UserHomeDir, os.UserConfigDir, os.UserCacheDir,
 // os.TempDir): a CLI that builds the path to ~/.config/dot-agent-deck/daemon.env
-// or ~/.aws/credentials names no variable while it reads one. It refuses the
+// or ~/.aws/credentials names no variable while it reads one. The writes of one
+// (os.Setenv, os.Unsetenv, os.Clearenv) and os.Chdir are the group
+// tests-no-process-state's since issue #153, which refuses them in every file of
+// the module but the two harnesses under test/, so one group owns them and no
+// line is reported twice. It refuses the
 // syscall calls the composition roots' groups refuse as well (syscall.Getenv,
 // GetEnvironmentVariable, Environ, Exec, ForkExec, StartProcess, the windows
 // entry points, the raw system calls and syscall.SYS_*), which reach the same
@@ -50,9 +53,6 @@ var cliNoEnvOrProcessRefused = []rootName{
 	{"os", "os.LookupEnv"},
 	{"os", "os.ExpandEnv"},
 	{"os", "os.Environ"},
-	{"os", "os.Setenv"},
-	{"os", "os.Unsetenv"},
-	{"os", "os.Clearenv"},
 	{"os", "os.StartProcess"},
 	{"os", "os.UserHomeDir"},
 	{"os", "os.UserConfigDir"},
@@ -114,6 +114,9 @@ var cliNoEnvOrProcessAllowed = []rootName{
 	{"os", "os.Stdout"},
 	{"os", "os.Stderr"},
 	{"os", "os.Getpid"},
+	{"os", "os.Setenv"},
+	{"os", "os.Unsetenv"},
+	{"os", "os.Clearenv"},
 	{"os", "os.Getenvs"},
 	{"os", "os.LookupEnvs"},
 	{"os", "os.ExpandEnvs"},

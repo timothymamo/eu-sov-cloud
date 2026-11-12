@@ -12,10 +12,12 @@ import (
 // of the helpers' hands, and the depguard rule testutil-imports allows os, which
 // the golden files are read and written with, so no import rule can say it.
 //
-// The group refuses os.Getenv, os.LookupEnv, os.ExpandEnv, os.Environ,
-// os.Setenv, os.Unsetenv, os.Clearenv and os.StartProcess: every read of a named
-// variable, the whole environment, every write of one, and the process start that
-// takes an environment. It refuses os.UserHomeDir, os.UserConfigDir,
+// The group refuses os.Getenv, os.LookupEnv, os.ExpandEnv, os.Environ and
+// os.StartProcess: every read of a named variable, the whole environment, and the
+// process start that takes an environment. The writes of a variable —
+// os.Setenv, os.Unsetenv and os.Clearenv — are the group
+// tests-no-process-state's since issue #153, which refuses them in every file of
+// the module but the two harnesses under test/. It refuses os.UserHomeDir, os.UserConfigDir,
 // os.UserCacheDir and os.TempDir as well (issue #144's review, finding S1): each
 // locates a directory from an unnamed variable, so a helper that builds the path
 // to ~/.config/dot-agent-deck/daemon.env or ~/.aws/credentials and reads it never
@@ -32,9 +34,6 @@ var testutilNoEnvRefused = []rootName{
 	{"os", "os.LookupEnv"},
 	{"os", "os.ExpandEnv"},
 	{"os", "os.Environ"},
-	{"os", "os.Setenv"},
-	{"os", "os.Unsetenv"},
-	{"os", "os.Clearenv"},
 	{"os", "os.StartProcess"},
 	{"os", "os.UserHomeDir"},
 	{"os", "os.UserConfigDir"},
@@ -45,8 +44,10 @@ var testutilNoEnvRefused = []rootName{
 // testutilNoEnvAllowed are names no testutil-no-env entry may refuse: what the
 // helpers really do, which is why os is allowed at all (the golden files are
 // read, written and made room for), the process names that are no call on a
-// variable, the names that only extend a refused one (os.Getenvs, os.LookupEnvs,
-// os.ExpandEnvs, os.Setenvs, os.StartProcesses, os.UserHomeDirs,
+// variable, os.Setenv, os.Unsetenv and os.Clearenv, whose group is
+// tests-no-process-state since issue #153 (one group owns the writes, so no line
+// is reported twice), the names that only extend a refused one (os.Getenvs,
+// os.LookupEnvs, os.ExpandEnvs, os.Setenvs, os.StartProcesses, os.UserHomeDirs,
 // os.UserConfigDirs, os.UserCacheDirs, os.TempDirs) and catch a pattern that lost
 // its $, and a package named os elsewhere, which is no helper of this module's.
 var testutilNoEnvAllowed = []rootName{
@@ -56,6 +57,9 @@ var testutilNoEnvAllowed = []rootName{
 	{"os", "os.Exit"},
 	{"os", "os.Getpid"},
 	{"os", "os.Getpagesize"},
+	{"os", "os.Setenv"},
+	{"os", "os.Unsetenv"},
+	{"os", "os.Clearenv"},
 	{"os", "os.Getenvs"},
 	{"os", "os.LookupEnvs"},
 	{"os", "os.ExpandEnvs"},

@@ -105,13 +105,13 @@ func TestForbidigoExclusionsDropOneGroup(t *testing.T) {
 			{"path-except": `^internal/httpapi/.*_test\.go$`, "text": groupText(httpapiTestsNoEnvOrProcessTag)},
 		},
 		// Every test that belongs to this project (issue #153): one rule, for
-		// every path outside the application layer, the helpers, the driving
-		// adapters and the composition roots. The test binaries of test/lint and
-		// test/architecture are deliberately not here: they set the go command's
-		// own variables (GOCACHE, GOFLAGS, HOME) to run it in a known
-		// environment.
+		// the two test binaries that deliberately set the go command's own
+		// variables (GOCACHE, GOFLAGS, HOME) to run it in a known environment.
+		// The group holds for every other path, the adapters' and the domain's
+		// tests and the e2e ones included, so a future source adapter test that
+		// sets AWS_PROFILE is refused rather than left to review.
 		testsNoProcessStateTag: {
-			{"path-except": `^(?:internal/(?:app|testutil|cli|httpapi)|cmd/shift2eu(?:-server)?)/`, "text": groupText(testsNoProcessStateTag)},
+			{"path": `^test/(?:lint|architecture)/`, "text": groupText(testsNoProcessStateTag)},
 		},
 	}
 	if diff := cmp.Diff(want, got); diff != "" {
