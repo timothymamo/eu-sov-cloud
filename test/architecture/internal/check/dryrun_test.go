@@ -459,7 +459,8 @@ func TestDryRunMirrorsRelease(t *testing.T) {
 		// release published. A pull request has no published image to verify, so
 		// the dry run mirrors the part that needs none of it: the container run of
 		// each image, with the release's flags and the release's command, on the
-		// image it built itself.
+		// image it built itself - the CLI's run on the dry run's CLI image, the
+		// server's on its server image, never one on the other's.
 		{
 			name:    "a dry run that runs the CLI image without --network none",
 			ci:      mutate(t, ciDryRun, `docker run --rm --read-only --network none "$IMAGE" version`, `docker run --rm --read-only "$IMAGE" version`),
@@ -509,6 +510,26 @@ func TestDryRunMirrorsRelease(t *testing.T) {
 			ci:      ciDryRun,
 			release: mutate(t, releaseDryRun, `docker run --rm --read-only --network none "$IMAGE" version`, `true`),
 			wantIn:  "runs no container run",
+		},
+		{
+			// The two images are not interchangeable: the server's run mirrored on
+			// the CLI image is no dry run of the server's run at all (review S2).
+			name:     "a dry run that runs the server image's --help on the CLI image",
+			ci:       ciDryRun,
+			ciServer: mutate(t, ciDryRunServer, `docker run --rm --read-only --network none "$SERVER_IMAGE" --help > /dev/null`, `docker run --rm --read-only --network none "$IMAGE" --help > /dev/null`),
+			release:  releaseDryRun,
+			wantIn:   "the dry run must run the image as release.yml's verify job runs it",
+		},
+		{
+			// A docker run line the release continues onto a second line is
+			// refused rather than compared: this check reads one line, so it
+			// would compare the flags before the continuation alone, and in
+			// ci.yml's image job a line ending so does exist, so the first line
+			// alone can match a run that drops everything after it.
+			name:    "a release whose verify job continues its docker run line",
+			ci:      ciDryRun,
+			release: mutate(t, releaseDryRun, `docker run --rm --read-only --network none "$IMAGE" version | tee version.txt`, "docker run --rm --read-only --network none \\\n            \"$IMAGE\" version | tee version.txt"),
+			wantIn:  "continues its docker run line onto another line",
 		},
 		{
 			name:    "a release whose verify job names one image alone",
