@@ -294,7 +294,13 @@ func decodePackages(r io.Reader) ([]Package, error) {
 //     not hold. Every covering rule applies, not only the one with the longest
 //     directory, as depguard holds a file to every rule whose globs match it;
 //     each refusing rule earns its own message, naming the rule. A rule that
-//     holds test files holds the imports of the package's _test.go files too.
+//     holds test files holds the imports of the package's _test.go files too;
+//   - be held by at least one rule that holds its own imports, not by rules
+//     for its test files alone (TestsOnly, issue #144), or no rule would hold
+//     its production imports. This check is skipped when any rule excludes
+//     the package, deliberately: an excluded package is one a rule's files:
+//     list takes out on purpose, so, as for the other checks below, its
+//     being held by no rule is not reported.
 //
 // A package under a directory a rule excludes is not held by that rule: it is
 // checked against the rules that do hold it, and when none does, it is still
@@ -366,6 +372,8 @@ func Packages(root, module string, rules []Rule, pkgs []Package) []string {
 				c.imports(rule)
 			}
 
+			// Skipped for an excluded package, as its being outside every
+			// rule is (see the doc comment).
 			if !excluded && !slices.ContainsFunc(covering, func(r Rule) bool { return !r.TestsOnly }) {
 				c.report("is held by rules for its test files alone, so no rule of %s the check reads holds its own imports", module)
 			}
