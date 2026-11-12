@@ -7,7 +7,10 @@
 # README.md and Markdown pages under docs/ (no path segment may start with a dot, so no ., .. or hidden
 # file): any other entry fails the run, so a stray file under docs/ never ships unnoticed. Every entry
 # must be a regular file or a directory: a symbolic link, hard link or device fails the run too. Every built platform has one archive of each, and checksums.txt lists and
-# matches every archive. check.GoReleaserArchives pins the configuration itself.
+# matches every archive. It then mirrors release.yml's hand-over of the archives to attest-archives
+# (issues #156 and #163): the files its patterns pick must pass sha256sum -c checksums.txt, and the
+# subjects they attest must be exactly the archives and checksums.txt. check.GoReleaserArchives pins
+# the configuration itself, and check.GitHubRelease its draft release.
 #
 # GoReleaser writes into a temporary directory, removed on exit, so the caller's dist/ is left alone.
 #
@@ -125,6 +128,25 @@ for archive in "${cli[@]}" "${server[@]}"; do
     problem "checksums.txt does not list $(basename "${archive}")"
 done
 (cd "${dist}" && sha256sum --quiet -c checksums.txt) || problem "checksums.txt does not match the archives"
+
+# The release's hand-over of the archives (issues #156 and #163), on this snapshot: release.yml's
+# goreleaser job uploads the files its patterns match, dist/shift2eu_*, dist/shift2eu-server_* and
+# dist/checksums.txt, as the workflow artifact archives; attest-archives downloads it, runs
+# sha256sum -c checksums.txt in it and attests every file the same patterns match, directories
+# descended into, as actions/upload-artifact and actions/attest-build-provenance both expand them.
+# The artifact must pass sha256sum -c, so checksums.txt may list nothing the patterns leave out, and the
+# subjects must be exactly the archives checksums.txt lists and checksums.txt itself: an archive left
+# unattested, or a file attested that the release never ships, fails here and not in a release.
+artifact="${work}/artifact"
+mkdir "${artifact}"
+(cd "${dist}" && cp -R shift2eu_* shift2eu-server_* checksums.txt "${artifact}/")
+(cd "${artifact}" && sha256sum --quiet -c checksums.txt) ||
+  problem "checksums.txt does not pass sha256sum -c in the archives artifact release.yml hands to attest-archives"
+subjects="$(cd "${artifact}" && find shift2eu_* shift2eu-server_* checksums.txt -type f | LC_ALL=C sort)"
+want="$({ echo checksums.txt; awk '{ print $2 }' "${dist}/checksums.txt"; } | LC_ALL=C sort)"
+if [ "${subjects}" != "${want}" ]; then
+  problem "attest-archives would attest these files:"$'\n'"${subjects}"$'\n'"want exactly checksums.txt and the archives it lists:"$'\n'"${want}"
+fi
 
 if [ "${fail}" != 0 ]; then
   exit 1

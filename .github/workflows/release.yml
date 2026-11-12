@@ -17,13 +17,15 @@ concurrency:
   group: release
   cancel-in-progress: false
 
-# The steps of all nine jobs are a closed list that test/architecture holds
+# The steps of all twelve jobs are a closed list that test/architecture holds
 # (check.ReleaseWorkflow): add no step, run: or env: here without changing it.
 # The server-image, server-sbom and server-sign jobs publish the HTTP API's
 # image, ghcr.io/timothymamo/shift2eu-server (PRD #103), exactly as image, sbom
 # and sign publish the CLI's: jobs of their own rather than a matrix, as a
 # matrix job's outputs keep one leg's digest only, and each job keeps its own
-# least privilege.
+# least privilege. goreleaser hands the archives on, attest-archives attests
+# them, publish alone publishes the draft release, and verify-archives checks
+# what it published (issues #156, #163).
 jobs:
   test:
     name: Test
@@ -81,6 +83,69 @@ jobs:
           args: release --clean
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      # The archives and their checksums leave the job as a workflow
+      # artifact, for the attest job to attest on a runner of its own (issue
+      # #163). GoReleaser's own dist/ is never handed on: what is attested is
+      # what this run wrote.
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: archives
+          path: |
+            dist/shift2eu_*
+            dist/shift2eu-server_*
+            dist/checksums.txt
+          if-no-files-found: error
+          retention-days: 1
+
+  # Attests every archive and checksums.txt with GitHub build provenance, from
+  # this workflow on the tag (issue #163), before the release is published: an
+  # immutable release locks its assets when it is published, so nothing may be
+  # added to it afterwards. Least privilege: an OIDC token to sign with, the
+  # repository's attestations to write, and read-only access to the repository.
+  attest-archives:
+    name: Attest the archives
+    needs: goreleaser
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write # the OIDC token the provenance is signed with
+      attestations: write # store the provenance in the repository
+      contents: read # download the archives' workflow artifact
+    steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: archives
+      # What is attested is what GoReleaser wrote: a file changed on the way
+      # through the workflow artifact fails here, before anything is signed.
+      - name: Check the archives against checksums.txt
+        run: sha256sum -c checksums.txt
+      # One attestation covers every archive and checksums.txt itself, so a
+      # release whose archives were replaced fails verification (issue #163).
+      - name: Attest the archives
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-path: |
+            shift2eu_*
+            shift2eu-server_*
+            checksums.txt
+
+  # The release is published last (issue #156): GoReleaser uploads every asset
+  # to a draft, so nothing can be added to or replaced in the release once it is
+  # public, and this job alone publishes it, after the archives are attested.
+  # contents: write and nothing else: nothing in it can sign, push or attest.
+  publish:
+    name: Publish the release
+    needs: [test, goreleaser, attest-archives]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # publish the draft release
+    steps:
+      # No step of this job reads the release before publishing it: what the
+      # release holds was attested before it was published.
+      - name: Publish the draft release
+        env:
+          TAG: ${{ github.ref_name }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh release edit "$TAG" --draft=false
 
   # Builds and pushes the container image to GHCR (ADR 0015), after the GitHub
   # release: a failed GoReleaser publishes no image. It can push, nothing more:
@@ -583,3 +648,41 @@ jobs:
           }
           check ghcr.io/timothymamo/shift2eu "$CLI_BUILT"
           check ghcr.io/timothymamo/shift2eu-server "$SERVER_BUILT"
+
+  # A fresh runner that verifies what the published release carries (issue
+  # #163): it downloads checksums.txt and the archives from the release, checks
+  # their digests and verifies each of them against the build provenance this
+  # workflow made for this tag and commit. Read-only: contents: read and
+  # attestations: read, no OIDC token and nothing it can write, and no
+  # checkout, so no repository code runs.
+  verify-archives:
+    name: Verify the published archives
+    needs: publish
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read # download the release's assets
+      attestations: read # gh attestation verify reads them through the repository's API
+    steps:
+      # The release as a reader of it sees it, published by now.
+      - name: Download the published archives
+        env:
+          TAG: ${{ github.ref_name }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release download "$TAG" \
+            --pattern 'shift2eu_*' --pattern 'shift2eu-server_*' --pattern checksums.txt
+      # docs/guide/verify-releases.md on this release: the digests first, then
+      # the provenance of every archive and of checksums.txt itself, made by
+      # this workflow, for this tag and commit, on GitHub's runners.
+      - name: Verify the published archives
+        env:
+          TAG: ${{ github.ref_name }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          sha256sum -c checksums.txt
+          for subject in shift2eu_* shift2eu-server_* checksums.txt; do
+            gh attestation verify "$subject" --repo timothymamo/shift2eu \
+              --signer-workflow timothymamo/shift2eu/.github/workflows/release.yml \
+              --source-ref "refs/tags/$TAG" --source-digest "$GITHUB_SHA" --deny-self-hosted-runners
+          done

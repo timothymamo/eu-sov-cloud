@@ -30,6 +30,7 @@ var (
 	cosignInstallerAction  = regexp.MustCompile(`^sigstore/cosign-installer` + actionPin)
 	downloadArtifactAction = regexp.MustCompile(`^actions/download-artifact` + actionPin)
 	attestAction           = regexp.MustCompile(`^actions/attest` + actionPin)
+	provenanceAction       = regexp.MustCompile(`^actions/attest-build-provenance` + actionPin)
 
 	// exactRelease matches one exact release of a tool: goreleaser, cosign,
 	// syft.
@@ -161,7 +162,9 @@ var (
 	}
 
 	// goreleaserSteps are the goreleaser job's steps: no repository code runs
-	// before goreleaser, which is asked for exactly release --clean.
+	// before goreleaser, which is asked for exactly release --clean, and the
+	// archives and checksums.txt leave the job as a short-lived workflow
+	// artifact for the attest-archives job (issue #163).
 	goreleaserSteps = []releaseStep{
 		fullCheckoutStep,
 		setupGoStep,
@@ -174,8 +177,80 @@ var (
 			},
 			env: []string{"GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}"},
 		},
+		{
+			what: "actions/upload-artifact (the archives)", uses: uploadArtifactAction,
+			with: map[string]*regexp.Regexp{
+				"name":              exactly(archivesArtifact),
+				"path":              exactly("dist/" + strings.Join(archiveSubjects, "\ndist/")),
+				"if-no-files-found": exactly("error"),
+				"retention-days":    exactly("1"),
+			},
+		},
 	}
 )
+
+// The release's archives and checksums.txt: the workflow artifact that hands
+// them from the goreleaser job to the attest-archives job, and the patterns
+// of the files that job attests, which verify-archives downloads from the
+// published release and verifies (issue #163).
+const archivesArtifact = "archives"
+
+var archiveSubjects = []string{"shift2eu_*", "shift2eu-server_*", "checksums.txt"}
+
+// attestArchivesSteps are the attest-archives job's steps: GitHub's own
+// download of the archives' workflow artifact, the check of the archives
+// against checksums.txt, and one build provenance attestation of every
+// archive and of checksums.txt itself, by path, so each file is a subject.
+var attestArchivesSteps = []releaseStep{
+	{
+		what: "actions/download-artifact (the archives)", uses: downloadArtifactAction,
+		with: map[string]*regexp.Regexp{"name": exactly(archivesArtifact)},
+	},
+	{what: "the check against checksums.txt", name: "Check the archives against checksums.txt", run: "sha256sum -c checksums.txt"},
+	{
+		what: "actions/attest-build-provenance (the archives)", name: "Attest the archives", uses: provenanceAction,
+		with: map[string]*regexp.Regexp{"subject-path": exactly(strings.Join(archiveSubjects, "\n"))},
+	},
+}
+
+// ghEnv is the env: of a gh step: the tag, and the job's own token for gh.
+var ghEnv = []string{tagEnv, "GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}"}
+
+// publishSteps are the publish job's steps: the one command that publishes
+// the draft release GoReleaser uploaded to (issue #156).
+var publishSteps = []releaseStep{{
+	what: "the publication of the draft release", name: "Publish the draft release",
+	env: ghEnv,
+	run: `gh release edit "$TAG" --draft=false`,
+}}
+
+// verifyArchivesSteps are the verify-archives job's steps: the published
+// release's own archives and checksums.txt, their digests, and the build
+// provenance of each, made by the release workflow for this tag and this
+// commit on GitHub's runners (docs/guide/verify-releases.md, issue #163).
+var verifyArchivesSteps = []releaseStep{
+	{
+		what: "the download of the published archives", name: "Download the published archives",
+		env: ghEnv,
+		run: strings.Join([]string{
+			`gh release download "$TAG" \`,
+			`  --pattern 'shift2eu_*' --pattern 'shift2eu-server_*' --pattern checksums.txt`,
+		}, "\n"),
+	},
+	{
+		what: "the archives' verification", name: "Verify the published archives",
+		env: ghEnv,
+		run: strings.Join([]string{
+			strictShell,
+			`sha256sum -c checksums.txt`,
+			`for subject in ` + strings.Join(archiveSubjects, " ") + `; do`,
+			`  gh attestation verify "$subject" --repo ` + releaseRepo + ` \`,
+			`    --signer-workflow ` + signerWorkflow + ` \`,
+			`    --source-ref "refs/tags/$TAG" --source-digest "$GITHUB_SHA" --deny-self-hosted-runners`,
+			`done`,
+		}, "\n"),
+	},
+}
 
 // imageSteps are the image job's steps: the build arguments GoReleaser
 // stamps and whether the tag is the highest release tag on main, read from git
@@ -525,18 +600,29 @@ type releaseJob struct {
 }
 
 // releaseJobs are the release workflow's jobs, in the order a message lists
-// them: test and goreleaser, then three per image, then verify. The write
-// permissions stay split: the goreleaser job alone writes the repository's
-// contents; an image job pushes and nothing more; an sbom job, which runs
-// syft, can only read the registry; a sign job alone holds an OIDC token and
-// writes attestations; and the verify job reads the registry and the
-// attestations and writes nothing.
+// them: test, goreleaser, attest-archives and publish, then three per image,
+// then verify and verify-archives. The write permissions stay split: the
+// goreleaser job writes the repository's contents to upload to a draft
+// release, and publish alone publishes it, holding nothing else; an image job
+// pushes and nothing more; an sbom job, which runs syft, can only read the
+// registry; a sign job and attest-archives alone hold an OIDC token and write
+// attestations, attest-archives with read-only contents; and the verify jobs
+// read and write nothing.
 var releaseJobs = func() []releaseJob {
 	jobs := []releaseJob{
 		{key: "test", name: "Test", permissions: map[string]string{"contents": "read"}, steps: testSteps},
 		{
 			key: "goreleaser", name: "GoReleaser", needs: []string{"test"},
 			permissions: map[string]string{"contents": "write"}, steps: goreleaserSteps,
+		},
+		{
+			key: "attest-archives", name: "Attest the archives", needs: []string{"goreleaser"},
+			permissions: map[string]string{"id-token": "write", "attestations": "write", "contents": "read"},
+			steps:       attestArchivesSteps,
+		},
+		{
+			key: "publish", name: "Publish the release", needs: []string{"test", "goreleaser", "attest-archives"},
+			permissions: map[string]string{"contents": "write"}, steps: publishSteps,
 		},
 	}
 
@@ -560,12 +646,19 @@ var releaseJobs = func() []releaseJob {
 		)
 	}
 
-	return append(jobs, releaseJob{
-		key: verifyJob, name: verifyJobName,
-		needs:       []string{cliImage.imageJob, cliImage.signJob, serverImage.imageJob, serverImage.signJob},
-		permissions: map[string]string{"packages": "read", "attestations": "read"},
-		steps:       verifySteps,
-	})
+	return append(jobs,
+		releaseJob{
+			key: verifyJob, name: verifyJobName,
+			needs:       []string{cliImage.imageJob, cliImage.signJob, serverImage.imageJob, serverImage.signJob},
+			permissions: map[string]string{"packages": "read", "attestations": "read"},
+			steps:       verifySteps,
+		},
+		releaseJob{
+			key: "verify-archives", name: "Verify the published archives", needs: []string{"publish"},
+			permissions: map[string]string{"contents": "read", "attestations": "read"},
+			steps:       verifyArchivesSteps,
+		},
+	)
 }()
 
 // ReleaseWorkflow returns a message for everything in the release workflow
@@ -579,31 +672,45 @@ var releaseJobs = func() []releaseJob {
 //     tag and a run in progress is never cancelled half published; a waiting
 //     run may be replaced by a newer tag's and must then be re-run by hand,
 //     ADR 0015) and jobs, so no workflow-level env: or defaults:;
-//   - jobs holds exactly test, goreleaser, an image, an sbom and a sign
-//     job for each image the release publishes: image, sbom and sign for the
+//   - jobs holds exactly test, goreleaser, attest-archives, publish, an
+//     image, an sbom and a sign job for each image the release publishes: image, sbom and sign for the
 //     CLI's, ghcr.io/timothymamo/shift2eu; server-image, server-sbom and
 //     server-sign for the HTTP API's, ghcr.io/timothymamo/shift2eu-server
-//     (PRD #103), whose job names end " (shift2eu-server)"; and verify, the
-//     independent check of what the release published (issue #99). Each holds
+//     (PRD #103), whose job names end " (shift2eu-server)"; verify, the
+//     independent check of the images the release published (issue #99); and
+//     verify-archives, that of its archives (issue #163). Each holds
 //     exactly name, runs-on (ubuntu-latest), permissions and steps, and needs
-//     for all but test (goreleaser needs test; an image job [test,
+//     for all but test (goreleaser needs test; attest-archives goreleaser;
+//     publish [test, goreleaser, attest-archives]; an image job [test,
 //     goreleaser]; an sbom job its image job; a sign job [its image job, its
 //     sbom job], in that order; verify [image, sign, server-image,
-//     server-sign]), and an image job
+//     server-sign]; verify-archives publish), and an image job
 //     an outputs: of exactly its build's digest, so no job-level env:,
 //     container:, if: or other key;
 //   - the permissions are exactly contents: read for test; contents: write
-//     for goreleaser; contents: read and packages: write for an image job;
-//     packages: read for an sbom job; packages: write, id-token: write and
-//     attestations: write for a sign job; packages: read and attestations:
-//     read for verify, so no OIDC token and nothing it can write;
+//     for goreleaser and for publish; id-token: write, attestations: write
+//     and contents: read for attest-archives; contents: read and packages:
+//     write for an image job; packages: read for an sbom job; packages:
+//     write, id-token: write and attestations: write for a sign job;
+//     packages: read and attestations: read for verify, and contents: read
+//     and attestations: read for verify-archives, so no OIDC token and
+//     nothing either can write;
 //   - the test job's steps are exactly actions/checkout of the whole history,
 //     the guard that the tagged commit is on main (an exact run: script),
 //     actions/setup-go and make test; the goreleaser job's exactly
-//     actions/checkout, actions/setup-go and goreleaser/goreleaser-action,
-//     setup-go with cache: false in both jobs, goreleaser asked for exactly
-//     release --clean at an exact version, with an env: of exactly
-//     GITHUB_TOKEN from secrets.GITHUB_TOKEN;
+//     actions/checkout, actions/setup-go, goreleaser/goreleaser-action and
+//     actions/upload-artifact of the archives and checksums.txt (archives,
+//     kept one day), setup-go with cache: false in both jobs, goreleaser
+//     asked for exactly release --clean at an exact version, with an env: of
+//     exactly GITHUB_TOKEN from secrets.GITHUB_TOKEN;
+//   - the attest-archives job's steps are exactly actions/download-artifact
+//     of that artifact, sha256sum -c checksums.txt and
+//     actions/attest-build-provenance with a subject-path of every archive and
+//     checksums.txt; the publish job's exactly gh release edit "$TAG"
+//     --draft=false, which publishes the draft release GoReleaser uploaded
+//     to (.goreleaser.yaml's release.draft, check.GitHubRelease), with the tag
+//     and token through env:, the one step of the workflow that publishes it
+//     (issue #156);
 //   - an image job's steps are exactly actions/checkout, the stamp of the
 //     build arguments and of the latest decision (a run: script, with the
 //     tag through env:, counting only the release tags merged into
@@ -636,6 +743,11 @@ var releaseJobs = func() []releaseJob {
 //     the server), and the tag rule, whose highest release tag is the release
 //     tags merged into main, read by ancestry from a treeless fetch into a
 //     repository of the job's own, with no checkout;
+//   - the verify-archives job's steps are exactly gh release download of the
+//     published release's archives and checksums.txt, and, under set -euo
+//     pipefail, sha256sum -c checksums.txt and gh attestation verify of every
+//     archive and of checksums.txt with the release identity, bound to this
+//     tag and commit, on GitHub's runners only;
 //   - every step holds exactly the keys listed (name, id, uses, with, env,
 //     run), in that order of steps, each action pinned by commit, each with:
 //     key and value, env: line and run: command as listed. A run: command is
