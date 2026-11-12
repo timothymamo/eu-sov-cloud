@@ -332,13 +332,15 @@ standard-library deny entries are gone, since nothing allows those packages, and
 stays for its message. `os` stays because the CLI reads the inventory a user names and creates the
 report the user asked for. An import rule sees no call, so the forbidigo group
 `cli-no-env-or-process` refuses, under `internal/cli/` with its tests (one `path-except` exclusion
-rule), the `os` names the roots and `testutil-no-env` refuse: `os.Getenv`, `os.LookupEnv`,
-`os.ExpandEnv`, `os.Environ`, `os.Setenv`, `os.Unsetenv`, `os.Clearenv`, `os.StartProcess`, `os.UserHomeDir`, `os.UserConfigDir`,
+rule), the `os` reads the roots and `testutil-no-env` refuse: `os.Getenv`, `os.LookupEnv`,
+`os.ExpandEnv`, `os.Environ`, `os.StartProcess`, `os.UserHomeDir`, `os.UserConfigDir`,
 `os.UserCacheDir` and `os.TempDir`, with no exception, as the CLI reads no named variable. The
 CLI's tests may import `syscall` (for `syscall.Mkfifo`), so a second entry refuses the roots'
 `syscall` names there: the environment reads, the process starts, the windows entry points and DLL
 loaders, the raw system calls and the `SYS_*` numbers, in one entry whose windows names are pinned
-offline, since the probe's windows run lints `cmd/` alone.
+offline, since the probe's windows run lints `cmd/` alone. The writes (`os.Setenv`, `os.Unsetenv`,
+`os.Clearenv`) were in the first version of the group and moved to `tests-no-process-state` with
+issue #153, so no line is reported by two groups.
 
 The lax depguard rule `composition-root-tests` now also holds the `_test.go` files of `internal/cli`
 and `internal/httpapi`, and denies `os/user` besides. The first version of this amendment said that
@@ -365,24 +367,36 @@ The rules are pinned by `TestCLIImportsProbe`, `TestCLINoEnvOrProcessForbidigoPa
 allowed, no `os/exec`, `syscall`, `unsafe`, `plugin`, `runtime/cgo`, `os/signal`, `net/http/cgi` or
 `go/build`) whatever the exact entries.
 
-*Amended (issue #153):* `t.Setenv` changes the environment of the whole test binary and `t.Chdir`
-the working directory every `t.Parallel` test shares. The forbidigo group `tests-no-process-state`
-refuses both with one entry, `pattern: '^testing\.(?:T|B|F|TB)\.(?:Setenv|Chdir)$'`,
-`pkg: '^testing$'`: `analyze-types` renders the method on its declaring type, so it covers
-`*testing.T`, `*testing.B`, `*testing.F`, a helper's `testing.TB` and a method value. Its scope is five
-named areas, `internal/app`, `internal/testutil`, the driving adapters `internal/cli` and
-`internal/httpapi`, and the composition roots, through one exclusion rule,
-`path-except: ^(?:internal/(?:app|testutil|cli|httpapi)|cmd/shift2eu(?:-server)?)/`, so the roots'
-tests and their driving adapters' tests have the same limits. It is not every `_test.go` file
-because `test/lint` and `test/architecture` call `t.Setenv` on purpose, to run the go command in a
-known environment (`GOCACHE`, `GOFLAGS`, `HOME`) in test binaries of their own. `os.MkdirTemp("", ...)`,
-`os.CreateTemp("", ...)` and `t.TempDir()` read `$TMPDIR` implicitly through `os.TempDir`; this is
-accepted beside `net/http`'s proxy variables (docs/architecture.md, Known gaps), because they return
-only a fresh temporary path, never a home, config or credential path, and `t.TempDir` itself goes
-through the same read, so refusing them would leave no way to get a temporary directory. `os.TempDir`
-named directly stays refused where `testutil-no-env` and `cli-no-env-or-process` refuse it.
-`TestTestsNoProcessStateProbe`, `TestTestsNoProcessStateForbidigoPatterns` and
-`TestForbidigoExclusionsDropOneGroup` pin the group, its pattern and its scope.
+*Amended (issue #153):* `t.Setenv` and `os.Setenv` change the environment of the whole test binary
+and `t.Chdir` and `os.Chdir` the working directory every `t.Parallel` test shares. The forbidigo group
+`tests-no-process-state` refuses them with two entries. The first,
+`pattern: '^(?:[\w*()\[\]]+\.)+(?:Setenv|Chdir)$'` with no `pkg`, matches any function or method so
+named, whatever its receiver: `analyze-types` renders a call on the type the method is found on, so
+it covers `*testing.T`, `*testing.B`, `*testing.F`, a helper's `testing.TB`, a method value, `os.Setenv`,
+`os.Chdir`, a struct embedding `*testing.T` and a named interface `t` is assigned to. The group's first
+version named `testing.(T|B|F|TB)` only and missed the last two. The second entry refuses
+`os.Unsetenv` and `os.Clearenv`. forbidigo renders nothing for a call through an interface literal or
+a type parameter, so `test/lint` refuses every selector named `Setenv` or `Chdir` on the AST in the
+group's scope (`TestTestsChangeNoProcessStateByNoSelector`). A method called through
+`reflect.MethodByName`, and an `Unsetenv` or `Clearenv` method reached through an interface literal or
+a type parameter, remain gaps (docs/architecture.md, Known gaps). The group owns the writes:
+`testutil-no-env` and `cli-no-env-or-process` leave them out, so no line is reported by two groups.
+
+The group's first scope was five named areas (`internal/app`, `internal/testutil`, the driving
+adapters and the roots). It now holds everywhere but `test/lint` and `test/architecture`, through one
+exclusion rule, `path: ^test/(?:lint|architecture)/`, so the adapters', the domain's and the e2e tests
+are held too, and a source adapter's test cannot set `AWS_PROFILE`. Those two harnesses call
+`t.Setenv` on purpose, to run the go command in a known environment (`GOCACHE`, `GOFLAGS`, `HOME`) in
+test binaries of their own. `os.MkdirTemp("", ...)`, `os.CreateTemp("", ...)` and `t.TempDir()` read
+`$TMPDIR` implicitly through `os.TempDir`; this is accepted beside `net/http`'s proxy variables
+(docs/architecture.md, Known gaps), because they return only a fresh temporary path, never a home,
+config or credential path, and `t.TempDir` itself goes through the same read, so refusing them would
+leave no way to get a temporary directory. `os.TempDir` named directly stays refused where
+`testutil-no-env`, `cli-no-env-or-process` and `httpapi-tests-no-env-or-process` refuse it, though
+that is no confidentiality control: `filepath.Dir` of a temporary path recovers `$TMPDIR`, which holds
+no secret. `TestTestsNoProcessStateProbe`, `TestTestsNoProcessStateForbidigoPatterns`,
+`TestProcessStateSelectorFindings` and `TestForbidigoExclusionsDropOneGroup` pin the group, its
+patterns, the selector check and its scope.
 
 The checks are ordinary tests, so `make test`, `make check` and CI's `make cover` run them with no
 workflow change.

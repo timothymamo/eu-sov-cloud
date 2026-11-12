@@ -67,14 +67,15 @@
 // (testdata/testutilimports) holds internal/testutil, production and _test.go
 // files alike, to the strict testutil-imports rule (net/http and os/exec are
 // refused, os and path/filepath for the golden files pass) and runs forbidigo's
-// testutil-no-env group on env.go, whose environment reads and writes and
-// os.StartProcess must each be refused; TestTestutilNoEnvForbidigoPatterns
+// testutil-no-env group on env.go, whose environment reads, home, config,
+// cache and temp lookups and os.StartProcess must each be refused (the writes
+// are tests-no-process-state's since issue #153); TestTestutilNoEnvForbidigoPatterns
 // pins that group's pattern against lists of refused and allowed names.
 // TestCLIImportsProbe (testdata/cliimports) holds internal/cli to the strict
 // cli-gets-adapters-from-cmd rule (issue #152): os/exec, syscall and unsafe are
 // refused in its production files, the packages the CLI imports today pass; the
-// forbidigo group cli-no-env-or-process refuses the CLI's environment reads
-// and writes, home, config, cache and temp lookups, os.StartProcess and, for its tests,
+// forbidigo group cli-no-env-or-process refuses the CLI's environment reads,
+// home, config, cache and temp lookups, os.StartProcess and, for its tests,
 // which import syscall for syscall.Mkfifo, the roots' syscall names, on the
 // internal/cli of TestCompositionRootForbidigoProbe's module (an aliased os
 // import included), and TestCLINoEnvOrProcessForbidigoPatterns pins its
@@ -86,11 +87,18 @@
 // the strict version-is-build-metadata rule: fmt passes, os and os/exec are
 // refused.
 // TestTestsNoProcessStateProbe (testdata/testsprocessstate) runs the forbidigo
-// group tests-no-process-state (issue #153) on t.Setenv and t.Chdir through
-// *testing.T, B, F and testing.TB in the application layer, the test helpers,
-// the driving adapters and the roots, where each must be refused, while
-// t.TempDir, os.MkdirTemp and os.CreateTemp pass;
-// TestTestsNoProcessStateForbidigoPatterns pins its pattern.
+// group tests-no-process-state (issue #153) on t.Setenv, t.Chdir, os.Setenv,
+// os.Unsetenv, os.Clearenv and os.Chdir, and on a struct that embeds
+// *testing.T, in the application layer, the test helpers, the driving
+// adapters, the roots, a source adapter, the domain and the e2e tier, where
+// each must be refused, while t.TempDir, os.MkdirTemp and os.CreateTemp pass;
+// its first entry matches any Setenv or Chdir whatever the receiver.
+// TestTestsNoProcessStateForbidigoPatterns pins its patterns.
+// forbidigo renders no call through an interface literal or a type
+// parameter, so TestTestsChangeNoProcessStateByNoSelector refuses every
+// selector named Setenv or Chdir in the group's scope, every file but those of
+// test/lint and test/architecture, on the AST, and
+// TestProcessStateSelectorFindings pins that check on fixtures.
 // TestCloudReadOnlyPatterns and
 // TestCloudReadOnlyPackages check the group's allowlist patterns, read from
 // .golangci.yml, against lists of write and read names and of import paths,

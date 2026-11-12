@@ -435,20 +435,22 @@ now held as well:
   could import `os` or `os/exec` with lint green. `TestVersionImportsProbe` lints it on a probe
   module, and `test/architecture` pins it (`TestVersionRuleIsBuildMetadata`).
 - **`cli-no-env-or-process`** (forbidigo, `analyze-types`) refuses what `os` reaches beyond files:
-  `os.Getenv`, `os.LookupEnv`, `os.ExpandEnv`, `os.Environ`, `os.Setenv`, `os.Unsetenv`,
-  `os.Clearenv`, `os.StartProcess`, `os.UserHomeDir`, `os.UserConfigDir`, `os.UserCacheDir` and
-  `os.TempDir`, the roots' `os` names and `testutil-no-env`'s. The CLI's tests import `syscall` for `syscall.Mkfifo` (`output_unix_test.go`),
+  `os.Getenv`, `os.LookupEnv`, `os.ExpandEnv`, `os.Environ`, `os.StartProcess`, `os.UserHomeDir`,
+  `os.UserConfigDir`, `os.UserCacheDir` and `os.TempDir`, the roots' `os` names and
+  `testutil-no-env`'s. The CLI's tests import `syscall` for `syscall.Mkfifo` (`output_unix_test.go`),
   so a second entry refuses the roots' `syscall` names: `Getenv`, `GetEnvironmentVariable`,
   `Environ`, `Exec`, `ForkExec`, `StartProcess`, the windows `CreateProcess`, `CreateProcessAsUser`,
   `GetEnvironmentStrings` and DLL loaders, the raw `(Raw)Syscall*` calls and the `SYS_*` numbers.
   It is one entry with one msg rather than the roots' three: the windows names exist on windows
   only, the probe's windows run lints `cmd/` alone, so `TestCLINoEnvOrProcessForbidigoPatterns` pins
-  every name offline instead. The group has no exception: the CLI reads no named variable. Its one
+  every name offline instead. The writes (`os.Setenv`, `os.Unsetenv`, `os.Clearenv`, `os.Chdir`)
+  left this group in issue #153: `tests-no-process-state` owns them everywhere, so no line is
+  reported by two groups. The group has no exception: the CLI reads no named variable. Its one
   exclusion rule, `path-except: ^internal/cli/`, makes it hold for every file there, `_test.go` files
   included. `TestCompositionRootForbidigoProbe` runs it on the probe's `internal/cli`, an aliased
   `os` import included.
 - **`httpapi-tests-no-env-or-process`** (forbidigo, `analyze-types`) holds the `_test.go` files of
-  `internal/httpapi` to the same `os` reads and `syscall` names, for the same reasons. Its production files
+  `internal/httpapi` to the same `os` and `syscall` names, for the same reasons. Its production files
   need no group: `httpapi-gets-adapters-from-cmd` is a strict allow list that leaves `os` and
   `syscall` out. Its exclusion rule is `path-except: ^internal/httpapi/.*_test\.go$`.
   `TestCompositionRootForbidigoProbe` runs it on the probe's `internal/httpapi`, and
@@ -459,21 +461,33 @@ returns a path only, the one the user ran the CLI in.
 
 ### Tests change no process state
 
-`t.Setenv` changes the environment of the whole test binary, so every test in the process sees the
-variable, a credential's name among them, and `t.Chdir` changes the directory a `t.Parallel` test
-shares. The forbidigo group **`tests-no-process-state`** (issue #153, `analyze-types`) refuses both,
-with one entry: `pattern: '^testing\.(?:T|B|F|TB)\.(?:Setenv|Chdir)$'` and `pkg: '^testing$'`.
-forbidigo renders the method on the type it is declared on, `testing.T.Setenv`, `testing.B.Setenv`,
-`testing.F.Setenv` and, through the interface, `testing.TB.Setenv` (probed on the golangci-lint
-version CI pins), so the entry covers a helper that takes a `testing.TB` and a method value too.
+`t.Setenv` and `os.Setenv` change the environment of the whole test binary, so every test in the
+process sees the variable, a credential's name among them, and `t.Chdir` and `os.Chdir` change the
+directory a `t.Parallel` test shares. The forbidigo group **`tests-no-process-state`** (issue #153,
+`analyze-types`) refuses them with two entries:
 
-Its one exclusion rule, `path-except: ^(?:internal/(?:app|testutil|cli|httpapi)|cmd/shift2eu(?:-server)?)/`,
-makes it hold for five named areas: the application layer, the test helpers, the two driving
-adapters and the two composition roots. It is not every `_test.go` file because `test/lint` and
-`test/architecture` call `t.Setenv` on purpose, in test binaries of their own, to run the go command
-in a known environment (`GOCACHE`, `GOFLAGS`, `HOME`). `TestTestsNoProcessStateProbe` runs the group
-on a probe module (`test/lint/testdata/testsprocessstate`) with a line on each receiver in each area,
-and `TestTestsNoProcessStateForbidigoPatterns` pins the pattern.
+- `pattern: '^(?:[\w*()\[\]]+\.)+(?:Setenv|Chdir)$'` with no `pkg`, which matches any function or
+  method named `Setenv` or `Chdir`, whatever its receiver. forbidigo renders a method on the type it
+  is found on: `testing.T.Setenv`, `testing.TB.Setenv`, a method value, `os.Setenv`, `os.Chdir`, but
+  also `pkg.wrapper.Setenv` for a struct that embeds `*testing.T` and `pkg.iface.Setenv` for a named
+  interface `t` is assigned to (probed on the golangci-lint version CI pins). The first version of the
+  group named `testing.(T|B|F|TB)` only and missed those two.
+- `pattern: '^os\.(?:Unsetenv|Clearenv)$'` with `pkg: '^os$'`.
+
+forbidigo renders nothing for a call through an interface literal
+(`var s interface{ Setenv(k, v string) } = t`) or through a type parameter constrained by one, so
+`test/lint`'s `TestTestsChangeNoProcessStateByNoSelector` refuses every selector named `Setenv` or
+`Chdir` on the AST in the group's scope, and `TestProcessStateSelectorFindings` pins that check.
+
+The group owns the writes: `testutil-no-env` and `cli-no-env-or-process` leave `os.Setenv`,
+`os.Unsetenv` and `os.Clearenv` out, so no line is reported by two groups. Its one exclusion rule,
+`path: ^test/(?:lint|architecture)/`, drops it in those two harnesses only, which call `t.Setenv` on
+purpose, in test binaries of their own, to run the go command in a known environment (`GOCACHE`,
+`GOFLAGS`, `HOME`). Everywhere else it holds: the application layer, the test helpers, the driving
+adapters, the composition roots, and since the review of #153 the adapters', the domain's and the e2e
+tests too, so a future source adapter's test cannot set `AWS_PROFILE`. `TestTestsNoProcessStateProbe`
+runs the group on a probe module (`test/lint/testdata/testsprocessstate`) with a line on each
+receiver and dodge in each area, and `TestTestsNoProcessStateForbidigoPatterns` pins the patterns.
 
 Known gaps, which these rules do not close:
 
@@ -491,6 +505,14 @@ Known gaps, which these rules do not close:
   from building paths off the temporary directory by habit, nothing more.
 - **`os.Getwd` reads `$PWD`.** It returns the working directory only, a path the user chose, and
   stays allowed in the CLI and in tests.
+- **A method called through `reflect`.** `reflect.ValueOf(t).MethodByName("Setenv").Call(...)`
+  changes the environment past every name rule and the AST selector check; no lint rule here can
+  see a method named by a string.
+- **`Unsetenv` and `Clearenv` through an interface literal or a type parameter.** The group refuses
+  `os.Unsetenv` and `os.Clearenv` by name, not any method so named, and `test/lint`'s selector check
+  covers `Setenv` and `Chdir` only. A method named `Unsetenv` or `Clearenv` that wraps the `os` call
+  in a package outside the group's scope, called through an interface literal or a type parameter
+  (which forbidigo renders not at all), gets through.
 
 ## Domain-is-pure rule
 

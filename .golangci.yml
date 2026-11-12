@@ -270,10 +270,10 @@ linters:
         # application test is what internal/testutil can do through os (file
         # access, the golden files), fmt, time and flag, whose own imports
         # testutil-imports holds, and what testing itself offers (t.TempDir,
-        # test output, and t.Setenv/t.Chdir until #153). No import or call
-        # rule can refuse a hard-coded path, so a new file path or os, fmt,
-        # time or flag call in internal/testutil is a widening a reviewer
-        # must read. The deny list is the one
+        # test output; tests-no-process-state refuses t.Setenv and t.Chdir).
+        # No import or call rule can refuse a hard-coded path, so a new file
+        # path or os, fmt, time or flag call in internal/testutil is a
+        # widening a reviewer must read. The deny list is the one
         # app-uses-ports-not-adapters writes, shared through *app-deny: under
         # a strict list it only says why.
         #
@@ -1683,10 +1683,12 @@ linters:
         # UserHomeDir, UserConfigDir, UserCacheDir and TempDir read $HOME,
         # $XDG_CONFIG_HOME, $XDG_CACHE_HOME and $TMPDIR without naming them,
         # so a helper could build the path to a credentials file. The group
-        # refuses those calls. Scope: every file under
+        # refuses those calls. The writes (Setenv, Unsetenv, Clearenv, Chdir)
+        # are tests-no-process-state's since issue #153, which holds here too,
+        # so no line is reported by two groups. Scope: every file under
         # internal/testutil/, _test.go files included; its exclusion rule
         # drops it everywhere else.
-        - pattern: '^os\.(?:Getenv|LookupEnv|ExpandEnv|Environ|Setenv|Unsetenv|Clearenv|StartProcess|UserHomeDir|UserConfigDir|UserCacheDir|TempDir)$'
+        - pattern: '^os\.(?:Getenv|LookupEnv|ExpandEnv|Environ|StartProcess|UserHomeDir|UserConfigDir|UserCacheDir|TempDir)$'
           pkg: '^os$'
           msg: 'testutil-no-env: a test helper reads no environment variable, locates no home, config, cache or temp directory and starts no process, where credentials live; take what it needs as a parameter (CLAUDE.md rule 3)'
         # Group cli-no-env-or-process (issue #152): the CLI's code reads and
@@ -1699,7 +1701,9 @@ linters:
         # os, which the CLI reads the inventory a user names and creates the
         # report with, and os also reaches the environment, where credentials
         # live (CLAUDE.md rule 3). The os entry mirrors the roots' and
-        # testutil-no-env's names, reads and writes. In production files syscall, unsafe
+        # testutil-no-env's reads; the writes (Setenv, Unsetenv, Clearenv,
+        # Chdir) are tests-no-process-state's, which holds here too, so no
+        # line is reported by two groups. In production files syscall, unsafe
         # and os/exec are refused at the import by the CLI's strict allow
         # list; its tests may import syscall, for syscall.Mkfifo
         # (output_unix_test.go), so the syscall entry holds the roots' names
@@ -1713,7 +1717,7 @@ linters:
         # variable today, so the group has no exception. Scope: every file
         # under internal/cli/, _test.go files included; its exclusion rule
         # drops it everywhere else.
-        - pattern: '^os\.(?:Getenv|LookupEnv|ExpandEnv|Environ|Setenv|Unsetenv|Clearenv|StartProcess|UserHomeDir|UserConfigDir|UserCacheDir|TempDir)$'
+        - pattern: '^os\.(?:Getenv|LookupEnv|ExpandEnv|Environ|StartProcess|UserHomeDir|UserConfigDir|UserCacheDir|TempDir)$'
           pkg: '^os$'
           msg: 'cli-no-env-or-process: the CLI reads, writes and hands over no environment variable, locates no home, config, cache or temp directory and starts no process, where credentials live; the composition root passes what it needs as a flag value (CLAUDE.md rule 3)'
         - pattern: '^syscall\.(?:Getenv|GetEnvironmentVariable|Environ|Exec|ForkExec|StartProcess|CreateProcess|CreateProcessAsUser|GetEnvironmentStrings|LoadDLL|MustLoadDLL|NewLazyDLL|LoadLibrary|GetProcAddress|(?:(?:Raw)?Syscall(?:6|9|12|15|18|N)?|SYS_\w+))$'
@@ -1727,9 +1731,9 @@ linters:
         # tests are compiled into the same package and run in the same process
         # as the code a root hands the work to, so they get the roots' call
         # limits, with the same names and for the same reasons as
-        # cli-no-env-or-process (one syscall entry, pinned offline), the
-        # writes aside; depguard's composition-root-tests keeps unsafe,
-        # os/exec and os/user out. Scope: the _test.go files
+        # cli-no-env-or-process (one syscall entry, pinned offline). The
+        # writes are tests-no-process-state's; depguard's composition-root-tests
+        # keeps unsafe, os/exec and os/user out. Scope: the _test.go files
         # under internal/httpapi/; its exclusion rule drops it everywhere else.
         - pattern: '^os\.(?:Getenv|LookupEnv|ExpandEnv|Environ|StartProcess|UserHomeDir|UserConfigDir|UserCacheDir|TempDir)$'
           pkg: '^os$'
@@ -1737,32 +1741,46 @@ linters:
         - pattern: '^syscall\.(?:Getenv|GetEnvironmentVariable|Environ|Exec|ForkExec|StartProcess|CreateProcess|CreateProcessAsUser|GetEnvironmentStrings|LoadDLL|MustLoadDLL|NewLazyDLL|LoadLibrary|GetProcAddress|(?:(?:Raw)?Syscall(?:6|9|12|15|18|N)?|SYS_\w+))$'
           pkg: '^syscall$'
           msg: 'httpapi-tests-no-env-or-process: a test of the HTTP API starts or replaces no process, makes a raw system call or reads the environment; pass the value to the code under test (CLAUDE.md rule 3)'
-        # Group tests-no-process-state (issue #153): t.Setenv and t.Chdir.
-        # t.Setenv changes the environment of the whole test binary, so every
+        # Group tests-no-process-state (issue #153): a test changes no
+        # environment variable and no working directory. t.Setenv and
+        # os.Setenv change the environment of the whole test binary, so every
         # test in the process sees the variable, a credential's name among
-        # them (CLAUDE.md rule 3), and t.Chdir changes the directory a
-        # t.Parallel test shares. A test passes the value it wants to the
-        # code under test, through a fake, a parameter, a flag or the
-        # request. analyze-types renders the call on the type the method is
-        # declared on: testing.T.Setenv, testing.B.Setenv, testing.F.Setenv
-        # and, through the interface, testing.TB.Setenv (probed on the
-        # golangci-lint version CI pins), so one entry covers the four
-        # receivers and a method value.
+        # them (CLAUDE.md rule 3), and t.Chdir and os.Chdir change the
+        # directory a t.Parallel test shares. A test passes the value it wants
+        # to the code under test, through a fake, a parameter, a flag or the
+        # request.
         #
-        # Scope: every file under internal/app, internal/testutil,
-        # internal/cli, internal/httpapi, cmd/shift2eu and
-        # cmd/shift2eu-server, through one path-except exclusion rule; the
-        # call exists only in tests and in helpers that take a testing.TB.
-        # It does not hold for every _test.go file: test/lint and
-        # test/architecture call t.Setenv on purpose, to run the go command
-        # in a known environment (GOCACHE, GOFLAGS, HOME) in a test binary of
-        # their own. t.TempDir, os.MkdirTemp("", ...) and
+        # The first entry has no pkg and matches any method or function named
+        # Setenv or Chdir, whatever its receiver. analyze-types renders a call
+        # on the type the method is found on: testing.T.Setenv,
+        # testing.TB.Setenv, a method value, os.Setenv and os.Chdir, but also
+        # pkg.wrapper.Setenv for a struct that embeds *testing.T and
+        # pkg.iface.Setenv for a named interface t is assigned to (probed on
+        # the golangci-lint version CI pins). A testing-only entry missed the
+        # last two. forbidigo renders nothing for a call through an interface
+        # literal or a type parameter, so test/lint refuses every selector
+        # named Setenv or Chdir in the group's scope on the AST
+        # (TestTestsChangeNoProcessStateByNoSelector). The second entry
+        # refuses os.Unsetenv and os.Clearenv; reached through an interface
+        # literal or a type parameter they stay a gap, as does a method
+        # called through reflect (docs/architecture.md, Known gaps). This
+        # group owns the writes: testutil-no-env and cli-no-env-or-process
+        # leave them out, so no line is reported twice.
+        #
+        # Scope: every file of the module but test/lint and test/architecture,
+        # through one path exclusion rule: the adapters', domain's and e2e
+        # tests are held too, so a source adapter's test cannot set
+        # AWS_PROFILE. Those two harnesses call t.Setenv on purpose, to run
+        # the go command in a known environment (GOCACHE, GOFLAGS, HOME) in a
+        # test binary of their own. t.TempDir, os.MkdirTemp("", ...) and
         # os.CreateTemp("", ...) stay allowed: they read $TMPDIR implicitly
         # and return a fresh temporary path, never a home, config or
         # credential path (docs/architecture.md, Known gaps).
-        - pattern: '^testing\.(?:T|B|F|TB)\.(?:Setenv|Chdir)$'
-          pkg: '^testing$'
+        - pattern: '^(?:[\w*()\[\]]+\.)+(?:Setenv|Chdir)$'
           msg: 'tests-no-process-state: a test changes no environment variable and no working directory, which every test of the process shares; pass the value to the code under test through a fake or a parameter (CLAUDE.md rule 3)'
+        - pattern: '^os\.(?:Unsetenv|Clearenv)$'
+          pkg: '^os$'
+          msg: 'tests-no-process-state: a test changes no environment variable of the process, which every test in it shares; pass the value to the code under test through a fake or a parameter (CLAUDE.md rule 3)'
     gosec:
       excludes:
         - G104 # unchecked errors are already reported by errcheck
@@ -1862,11 +1880,10 @@ linters:
         linters:
           - forbidigo
         text: 'because "httpapi-tests-no-env-or-process: [^"]*"$'
-      # tests-no-process-state: the group holds for every file under the
-      # application layer, the test helpers, the driving adapters and the
-      # composition roots, and nowhere else: test/lint and test/architecture
-      # set the go command's own variables on purpose.
-      - path-except: ^(?:internal/(?:app|testutil|cli|httpapi)|cmd/shift2eu(?:-server)?)/
+      # tests-no-process-state: the group holds for every file but those of
+      # test/lint and test/architecture, which set the go command's own
+      # variables on purpose.
+      - path: ^test/(?:lint|architecture)/
         linters:
           - forbidigo
         text: 'because "tests-no-process-state: [^"]*"$'
