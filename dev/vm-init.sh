@@ -73,7 +73,7 @@ set_json() {
 }
 
 # 1. theme
-if set_json "${HOME}/.claude/settings.json" '.theme = $theme' --arg theme "${theme}"; then
+if set_json "${HOME}/.claude/settings.json" ".theme = \$theme" --arg theme "${theme}"; then
   say "theme: set Claude Code's theme to ${theme}"
 else
   say "theme: already ${theme}"
@@ -81,9 +81,9 @@ fi
 
 # 2. claude: the flags manual first runs in the two directories leave behind.
 if set_json "${HOME}/.claude.json" \
-  '.hasCompletedOnboarding = true
-   | .projects[$workspace].hasTrustDialogAccepted = true
-   | .projects[$main].hasTrustDialogAccepted = true' \
+  ".hasCompletedOnboarding = true
+   | .projects[\$workspace].hasTrustDialogAccepted = true
+   | .projects[\$main].hasTrustDialogAccepted = true" \
   --arg workspace "${workspace}" --arg main "${main_checkout}"; then
   say "claude: marked onboarding done and trusted ${workspace} and ${main_checkout}"
 else
