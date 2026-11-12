@@ -39,6 +39,33 @@ the tagged commit is on `main`: always tag a commit of `main`.
 7. Watch the run (`gh run watch`), then report the release URL (`gh release view vX.Y.Z --json url`).
    If a pending run was cancelled, re-run it with `gh run rerun <id>`. On failure, report the failed
    step's log and stop; never delete or move a pushed tag.
+   Report the result of the run's `verify` job too, the independent check of both published images
+   on a fresh GitHub-hosted runner (issue #99, ADR 0015). Find it by its name, "Verify the published
+   images", which `check.ReleaseWorkflow` pins:
+   `gh run view <id> --json jobs --jq '.jobs[] | select(.name == "Verify the published images") | .conclusion'`.
+   It must be `success`. When a higher release tag merged into `main` has no published image, `verify`
+   skips the `latest` check and passes with a notice instead (ADR 0015). Read it from the job's
+   annotations, never by searching the job's log for `::notice::`: the log echoes the step's script,
+   which holds that literal line, so such a search matches on every run. A job's id is its check-run
+   id, so list the job's notices with
+   `gh api repos/timothymamo/shift2eu/check-runs/<verify job id>/annotations --jq '.[] | select(.annotation_level == "notice") | .message'`
+   (the job id is
+   `gh run view <id> --json jobs --jq '.jobs[] | select(.name == "Verify the published images") | .databaseId'`).
+   Empty output means `verify` raised no notice. A notice must be acted on, not only reported.
+   For each `<image>:<higher tag> is not published yet` it names, check that the higher tag has a
+   release run queued or in progress:
+   `gh run list --workflow release.yml --branch <higher tag> --json status,conclusion,databaseId`.
+   If it has one, report the notice and that run. If it has none, or only a failed or cancelled one,
+   report the higher tag as stray or unpublished, with that output, and stop: while it stays
+   unpublished, `verify` checks `latest` for no older release and the image jobs' stamp holds `latest`
+   back. Removing the tag or re-running its release is the maintainer's decision; never delete or
+   move a pushed tag yourself, and do not re-run its release unasked. `verify` runs after the
+   images are published, so it detects a bad release, it does not prevent one. A failed `verify` job is
+   a failed release: report it with the failed step's log (`gh run view <id> --log-failed`) and stop. Do
+   not re-run it to get past the failure, and do not count the VM check below as a substitute for it.
+   In the report, give the maintainer the recovery ADR 0015 states, which only they carry out: mark the
+   GitHub release as bad, point `latest` (and `X.Y` if wrong) back at the last good release's digest or
+   delete the bad image tag, and fix forward with a new patch release.
 8. Check the published image yourself; do not hand this to the user. The Lima VM has cosign, a `gh`
    with `gh attestation`, `crane` and rootless `nerdctl` (ADR 0017); this is the README's "Verify the
    image" in its VM form, for the new tag. Run it from the repository root, with no registry login, and
@@ -70,6 +97,5 @@ the tagged commit is on `main`: always tag a commit of `main`.
    cannot), and run the checks after that.
 
    This is a smoke test, not the trust anchor: every agent shares the VM user, which has passwordless
-   `sudo`, so any of them could tamper with these binaries or their output. An independent check on a
-   GitHub-hosted runner, a post-publish job in `release.yml`, is the follow-up that would make it
-   authoritative (ADR 0017).
+   `sudo`, so any of them could tamper with these binaries or their output (ADR 0017). The independent
+   check is the release's `verify` job of step 7.

@@ -13,7 +13,7 @@ import (
 )
 
 // The fixture below is .github/workflows/release.yml in parts: the top level,
-// then the eight jobs, each with the comments and keys above its steps
+// then the nine jobs, each with the comments and keys above its steps
 // (releaseJob.head) and its steps in order. Rendering it rebuilds the file byte
 // for byte, so a case changes one part and leaves the rest exactly as the
 // release has it, comments included: the check must tolerate a full-line
@@ -40,7 +40,7 @@ concurrency:
   group: release
   cancel-in-progress: false
 
-# The steps of all eight jobs are a closed list that test/architecture holds
+# The steps of all nine jobs are a closed list that test/architecture holds
 # (check.ReleaseWorkflow): add no step, run: or env: here without changing it.
 # The server-image, server-sbom and server-sign jobs publish the HTTP API's
 # image, ghcr.io/timothymamo/shift2eu-server (PRD #103), exactly as image, sbom
@@ -517,6 +517,234 @@ var serverSignSteps = []string{
 `,
 }
 
+// verifyJobHead is the verify job up to its steps: the independent check of
+// what the release published (issue #99), on a fresh runner after both images
+// are built, signed and attested, with read-only access to the registry and to
+// the repository's attestations, no OIDC token and no checkout.
+const verifyJobHead = `  # The independent check of what the release published (issue #99): a fresh
+  # runner, after both images are signed and attested, with read-only access to
+  # the registry and no OIDC token, so nothing in it can sign or push. It needs
+  # the image jobs too: each verify step compares the digest the tag resolves to
+  # with the digest this run built, so a tag moved between the build and the
+  # check fails here. A tag can be moved and a digest cannot, so every check
+  # below reads a digest, never a tag.
+  verify:
+    name: Verify the published images
+    needs: [image, sign, server-image, server-sign]
+    runs-on: ubuntu-latest
+    permissions:
+      packages: read # both images and their signatures
+      attestations: read # gh attestation verify reads them through the repository's API
+    steps:
+`
+
+// verifySteps are the verify job's steps: cosign by exact release, a cosign
+// login, the README's checks of each image this run built - the tag resolving
+// to that digest, the signature for this tag and commit, the build provenance,
+// the SBOM, and the image itself - and the tag rule, whose highest release tag
+// is read from main's ancestry without a checkout.
+var verifySteps = []string{
+	`      - uses: sigstore/cosign-installer@756fe2d284c7292c4e9b62c8a28f1e5629c59532 # v4.1.3
+        with:
+          # renovate: datasource=github-releases depName=sigstore/cosign
+          cosign-release: v3.1.4
+`,
+	`      # cosign writes the registry credential where docker and buildx read it,
+      # so the checks below pull what the job may read with its own token.
+      - name: Log in to ghcr.io
+        env:
+          ACTOR: ${{ github.actor }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: printf '%s' "$GITHUB_TOKEN" | cosign login ghcr.io --username "$ACTOR" --password-stdin
+`,
+	`      # The README's "Verify the image", on the digest this run built: the tag
+      # must resolve to that digest, and that image must carry the signature
+      # this workflow made for exactly this tag and this commit, the build
+      # provenance and the SBOM, and it must run and report the version of the
+      # tag.
+      - name: Verify the CLI image
+        env:
+          TAG: ${{ github.ref_name }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          BUILT: ${{ needs.image.outputs.digest }}
+        run: |
+          set -euo pipefail
+          DIGEST="$(docker buildx imagetools inspect "ghcr.io/timothymamo/shift2eu:$TAG" --format '{{.Manifest.Digest}}')"
+          if [ "$DIGEST" != "$BUILT" ]; then
+            echo "ghcr.io/timothymamo/shift2eu:$TAG resolves to $DIGEST, not the digest this run built, $BUILT" >&2
+            exit 1
+          fi
+          IMAGE="ghcr.io/timothymamo/shift2eu@$DIGEST"
+          cosign verify "$IMAGE" \
+            --certificate-identity "https://github.com/timothymamo/shift2eu/.github/workflows/release.yml@refs/tags/$TAG" \
+            --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+            --certificate-github-workflow-trigger push \
+            --certificate-github-workflow-sha "$GITHUB_SHA"
+          gh attestation verify "oci://$IMAGE" --repo timothymamo/shift2eu \
+            --signer-workflow timothymamo/shift2eu/.github/workflows/release.yml \
+            --source-ref "refs/tags/$TAG" --source-digest "$GITHUB_SHA" --deny-self-hosted-runners
+          gh attestation verify "oci://$IMAGE" --repo timothymamo/shift2eu \
+            --signer-workflow timothymamo/shift2eu/.github/workflows/release.yml \
+            --source-ref "refs/tags/$TAG" --source-digest "$GITHUB_SHA" --deny-self-hosted-runners \
+            --predicate-type https://spdx.dev/Document/v2.3
+          docker run --rm --read-only --network none "$IMAGE" version | tee version.txt
+          grep -qF "shift2eu ${TAG#v} (" version.txt
+`,
+	`      # The HTTP API's image, checked as the CLI's is, from the digest its own
+      # image job built. It has no version subcommand, so --help exiting 0 is
+      # its smoke test.
+      - name: Verify the HTTP API's image
+        env:
+          TAG: ${{ github.ref_name }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          BUILT: ${{ needs.server-image.outputs.digest }}
+        run: |
+          set -euo pipefail
+          DIGEST="$(docker buildx imagetools inspect "ghcr.io/timothymamo/shift2eu-server:$TAG" --format '{{.Manifest.Digest}}')"
+          if [ "$DIGEST" != "$BUILT" ]; then
+            echo "ghcr.io/timothymamo/shift2eu-server:$TAG resolves to $DIGEST, not the digest this run built, $BUILT" >&2
+            exit 1
+          fi
+          IMAGE="ghcr.io/timothymamo/shift2eu-server@$DIGEST"
+          cosign verify "$IMAGE" \
+            --certificate-identity "https://github.com/timothymamo/shift2eu/.github/workflows/release.yml@refs/tags/$TAG" \
+            --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+            --certificate-github-workflow-trigger push \
+            --certificate-github-workflow-sha "$GITHUB_SHA"
+          gh attestation verify "oci://$IMAGE" --repo timothymamo/shift2eu \
+            --signer-workflow timothymamo/shift2eu/.github/workflows/release.yml \
+            --source-ref "refs/tags/$TAG" --source-digest "$GITHUB_SHA" --deny-self-hosted-runners
+          gh attestation verify "oci://$IMAGE" --repo timothymamo/shift2eu \
+            --signer-workflow timothymamo/shift2eu/.github/workflows/release.yml \
+            --source-ref "refs/tags/$TAG" --source-digest "$GITHUB_SHA" --deny-self-hosted-runners \
+            --predicate-type https://spdx.dev/Document/v2.3
+          docker run --rm --read-only --network none "$IMAGE" --help > /dev/null
+`,
+	`      # The tag rule ADR 0015 states: vX.Y.Z always, X.Y for every release,
+      # latest for the highest release tag alone, and a pre-release, which
+      # moves neither X.Y nor latest. The highest is the tag the image jobs'
+      # stamp read: the release tags merged into main. They are read by
+      # ancestry here too, from the public repository into a bare repository of
+      # this job's own, so no checkout runs and no repository code runs. Only a
+      # registry saying the tag does not exist is read as an absent tag, which
+      # the rule allows for the one tag whose own run has not published it, the
+      # highest, and a notice then says so; any other answer from the registry,
+      # a 5xx, a rate limit or a failed login, fails the job.
+      - name: The tags follow the release rule
+        env:
+          TAG: ${{ github.ref_name }}
+          CLI_BUILT: ${{ needs.image.outputs.digest }}
+          SERVER_BUILT: ${{ needs.server-image.outputs.digest }}
+        run: |
+          set -euo pipefail
+          version="${TAG#v}"
+          minor="${version%%-*}"
+          minor="${minor%.*}"
+          git init -q tags
+          git -C tags fetch -q --filter=tree:0 --no-tags https://github.com/timothymamo/shift2eu.git '+refs/heads/main:refs/remotes/origin/main' '+refs/tags/v*:refs/tags/v*'
+          highest="$(git -C tags tag -l 'v*.*.*' --merged refs/remotes/origin/main | sed -nE '/^v[0-9]+\.[0-9]+\.[0-9]+$/p' | sort -V | tail -n 1)"
+          if [ -z "$highest" ]; then
+            echo "no release tag is merged into main, so X.Y and latest cannot be checked" >&2
+            exit 1
+          fi
+          # digest_or_absent prints the digest its tag resolves to, or nothing
+          # when the registry says the tag does not exist. The digest is what
+          # the inspect writes on stdout, in stderr kept apart, so a docker
+          # warning is never read as one, and what succeeds must be exactly one
+          # sha256 line. Absence is exit status 1 with the fixed, case-sensitive
+          # "$1: not found" in stderr, which names this very reference, and
+          # nothing else is absence: any other answer, a 5xx, a rate limit, a
+          # failed login, a missing docker or a broken credential helper, is
+          # printed and fails the step, whose caller assigns the digest in a
+          # command of its own so set -e sees the failure.
+          digest_or_absent() {
+            err="$(mktemp)"
+            if out="$(docker buildx imagetools inspect "$1" --format '{{.Manifest.Digest}}' 2> "$err")"; then
+              if [[ "$out" =~ ^sha256:[0-9a-f]{64}$ ]]; then
+                printf '%s\n' "$out"
+              else
+                echo "$1 answered '$out' rather than one sha256 digest" >&2
+                rm -f "$err"
+                return 1
+              fi
+            else
+              rc=$?
+              if [ "$rc" -eq 1 ] && grep -qF -e "$1: not found" "$err"; then
+                :
+              else
+                echo "$1 could not be read, docker exited $rc:" >&2
+                cat "$err" >&2
+                rm -f "$err"
+                return 1
+              fi
+            fi
+            rm -f "$err"
+          }
+          check() {
+            image="$1"
+            digest="$2"
+            minor_digest="$(digest_or_absent "$image:$minor")"
+            case "$TAG" in
+              *-*)
+                if [ "$minor_digest" = "$digest" ]; then
+                  echo "$image:$minor is $TAG, a pre-release, and a pre-release moves neither X.Y nor latest" >&2
+                  exit 1
+                fi
+                latest_digest="$(digest_or_absent "$image:latest")"
+                if [ "$latest_digest" = "$digest" ]; then
+                  echo "$image:latest is $TAG, a pre-release, and a pre-release moves neither X.Y nor latest" >&2
+                  exit 1
+                fi
+                ;;
+              *)
+                if [ "$minor_digest" != "$digest" ]; then
+                  echo "$image:$minor is not $TAG" >&2
+                  exit 1
+                fi
+                if [ "$highest" = "$TAG" ]; then
+                  latest_digest="$(digest_or_absent "$image:latest")"
+                  if [ "$latest_digest" != "$digest" ]; then
+                    echo "$image:latest is not $TAG, the highest release tag" >&2
+                    exit 1
+                  fi
+                else
+                  highest_digest="$(digest_or_absent "$image:$highest")"
+                  if [ -z "$highest_digest" ]; then
+                    echo "::notice::$image:$highest is not published yet, so this run does not check $image:latest"
+                  else
+                    latest_digest="$(digest_or_absent "$image:latest")"
+                    if [ "$latest_digest" = "$digest" ]; then
+                      echo "$image:latest is $TAG, which is not the highest release tag, $highest" >&2
+                      exit 1
+                    fi
+                  fi
+                fi
+                ;;
+            esac
+          }
+          check ghcr.io/timothymamo/shift2eu "$CLI_BUILT"
+          check ghcr.io/timothymamo/shift2eu-server "$SERVER_BUILT"
+`,
+}
+
+// inVerifyStep returns the verify job's steps with the first old replaced by
+// new in the one step whose text holds part: the two image steps are alike, so
+// a case changes the CLI's or the HTTP API's alone.
+func inVerifyStep(t *testing.T, part, old, new string) []string {
+	t.Helper()
+
+	out := slices.Clone(verifySteps)
+
+	i := stepIndex(t, out, part)
+	if !strings.Contains(out[i], old) {
+		t.Fatalf("the verify job's step holding %q holds no %q", part, old)
+	}
+
+	out[i] = strings.Replace(out[i], old, new, 1)
+
+	return out
+}
+
 // releaseJob is one job of the release workflow fixture: its key in jobs:, the
 // comments and keys above its steps, and its steps in order.
 type releaseJob struct {
@@ -549,6 +777,7 @@ func releaseWorkflowFixture() releaseFixture {
 			{key: "server-image", head: serverImageJobHead, steps: serverImageSteps},
 			{key: "server-sbom", head: serverSbomJobHead, steps: serverSbomSteps},
 			{key: "server-sign", head: serverSignJobHead, steps: serverSignSteps},
+			{key: "verify", head: verifyJobHead, steps: verifySteps},
 		},
 	}
 }
@@ -686,14 +915,16 @@ func beforeStep(t *testing.T, steps []string, head, step string) []string {
 }
 
 // TestReleaseWorkflow pins what the release workflow may say. It is read as a
-// closed schema: the top-level keys, the eight jobs, their keys and their steps
+// closed schema: the top-level keys, the nine jobs, their keys and their steps
 // are fixed, so no step runs repository code, sets the go command's environment
 // or swaps the goreleaser document before goreleaser runs; only a commit on
-// main is released; and the publishing privileges stay split over three jobs,
-// so the image can push but not sign, the SBOM job can only read, and the sign
-// job checks nothing out and runs sigstore's and GitHub's actions alone. The
-// probes are the steps the reviews and audits of issues #40 and #72 found a
-// lexical check let through.
+// main is released; the publishing privileges stay split over three jobs, so
+// the image can push but not sign, the SBOM job can only read, and the sign
+// job checks nothing out and runs sigstore's and GitHub's actions alone; and
+// the verify job reads only the registry and the attestations, compares each
+// tag to the digest this run built, and applies the release rule to the
+// release tags merged into main. The probes are the steps the reviews and
+// audits of issues #40, #72 and #99 found a lexical check let through.
 func TestReleaseWorkflow(t *testing.T) {
 	t.Parallel()
 
@@ -1090,6 +1321,167 @@ func TestReleaseWorkflow(t *testing.T) {
 		{name: "the server provenance not pushed to the registry", workflow: in("server-sign", "          push-to-registry: true\n          create-storage-record: false # an organisation API; needs artifact-metadata: write\n", "          push-to-registry: false\n          create-storage-record: false # an organisation API; needs artifact-metadata: write\n"), wantIn: "push-to-registry"},
 		{name: "no id-token: write for the server sign job", workflow: in("server-sign", "      id-token: write # GitHub OIDC token for keyless cosign and attestation signing\n", ""), wantIn: "id-token"},
 		{name: "the server sign job checking out the repository", workflow: steps("server-sign", beforeStep(t, serverSignSteps, "      - uses: actions/download-artifact@", "uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1")), wantIn: "jobs: server-sign: steps holds 7 steps, want exactly 6"},
+
+		// The independent check of what the release published (issue #99): a job
+		// of its own, after both images are built, signed and attested, read-only
+		// to the registry and holding no OIDC token, which compares each tag to
+		// the digest this run built, verifies the signature, the provenance and
+		// the SBOM, runs the image and checks the tag rule. What it must say is a
+		// closed list too.
+		{name: "no verify job", workflow: release.withoutJob(t, "verify"), wantIn: `no "verify"`},
+		{name: "the verify job needing only the CLI's sign job", workflow: in("verify", "    needs: [image, sign, server-image, server-sign]\n", "    needs: [sign]\n"), wantIn: "needs"},
+		{name: "the verify job needing only the server's sign job", workflow: in("verify", "    needs: [image, sign, server-image, server-sign]\n", "    needs: [server-sign]\n"), wantIn: "needs"},
+		{name: "the verify job needing the sign jobs in the other order", workflow: in("verify", "    needs: [image, sign, server-image, server-sign]\n", "    needs: [image, server-sign, server-image, sign]\n"), wantIn: "needs"},
+
+		// The built digests come from the image jobs, not from the signatures:
+		// without them the job cannot tell the digest this run built from the
+		// one the tag resolves to now, and a tag moved between the build and
+		// the check would pass.
+		{name: "the verify job without the image jobs", workflow: in("verify", "    needs: [image, sign, server-image, server-sign]\n", "    needs: [sign, server-sign]\n"), wantIn: "needs"},
+		{name: "the verify job needing only the CLI's image job", workflow: in("verify", "    needs: [image, sign, server-image, server-sign]\n", "    needs: [image, sign, server-sign]\n"), wantIn: "needs"},
+		{name: "the verify job needing only the server's image job", workflow: in("verify", "    needs: [image, sign, server-image, server-sign]\n", "    needs: [sign, server-image, server-sign]\n"), wantIn: "needs"},
+		{name: "the verify job needing the tests too", workflow: in("verify", "    needs: [image, sign, server-image, server-sign]\n", "    needs: [image, sign, server-image, server-sign, test]\n"), wantIn: "needs"},
+		{name: "the verify job without needs", workflow: in("verify", "    needs: [image, sign, server-image, server-sign]\n", ""), wantIn: `no "needs"`},
+
+		// It may read the registry and the repository's attestations and nothing
+		// more: no OIDC token, so nothing in it can sign an image of its own, and
+		// no scope it omits, which a job-level permissions block sets to none.
+		{name: "the verify job on a self-hosted runner", workflow: in("verify", "    runs-on: ubuntu-latest\n", "    runs-on: self-hosted\n"), wantIn: "runs-on"},
+		{name: "the verify job without permissions", workflow: in("verify", "    permissions:\n      packages: read # both images and their signatures\n      attestations: read # gh attestation verify reads them through the repository's API\n", ""), wantIn: `no "permissions"`},
+		{name: "packages: write for the verify job", workflow: in("verify", "      packages: read # both images and their signatures\n", "      packages: write # both images and their signatures\n"), wantIn: "packages"},
+		{name: "no packages: read for the verify job", workflow: in("verify", "      packages: read # both images and their signatures\n", ""), wantIn: "packages"},
+		{name: "attestations: write for the verify job", workflow: in("verify", "      attestations: read # gh attestation verify reads them through the repository's API\n", "      attestations: write # gh attestation verify reads them through the repository's API\n"), wantIn: "attestations"},
+		{name: "no attestations: read for the verify job", workflow: in("verify", "      attestations: read # gh attestation verify reads them through the repository's API\n", ""), wantIn: "attestations"},
+		{name: "contents: read for the verify job", workflow: in("verify", "      attestations: read # gh attestation verify reads them through the repository's API\n", "      attestations: read # gh attestation verify reads them through the repository's API\n      contents: read # a checkout\n"), wantIn: "contents"},
+		{name: "id-token: write for the verify job", workflow: in("verify", "      attestations: read # gh attestation verify reads them through the repository's API\n", "      attestations: read # gh attestation verify reads them through the repository's API\n      id-token: write # sign\n"), wantIn: "id-token"},
+		{name: "id-token: none for the verify job", workflow: in("verify", "      attestations: read # gh attestation verify reads them through the repository's API\n", "      attestations: read # gh attestation verify reads them through the repository's API\n      id-token: none # nothing to sign\n"), wantIn: "id-token"},
+
+		// Its steps are a closed list: cosign by exact release, a cosign login,
+		// the checks of each image, and the tag rule, and nothing else. No
+		// checkout runs repository code, and every action is pinned by commit.
+		{name: "an extra step in the verify job", workflow: steps("verify", beforeStep(t, verifySteps, "      - name: Log in to ghcr.io", "run: ./scripts/prepare.sh")), wantIn: "holds 6 steps, want exactly 5"},
+		{name: "a checkout in the verify job", workflow: steps("verify", beforeStep(t, verifySteps, "      - name: Log in to ghcr.io", "uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1")), wantIn: "holds 6 steps, want exactly 5"},
+		{name: "a missing step in the verify job", workflow: steps("verify", withoutStep(t, verifySteps, "name: Log in to ghcr.io")), wantIn: "holds 4 steps, want exactly 5"},
+		{name: "two verify steps swapped", workflow: steps("verify", swappedSteps(t, verifySteps, "name: Verify the CLI image", "name: Verify the HTTP API's image")), wantIn: "want the CLI image's verification: name is"},
+		{name: "a cosign installer pinned by tag in the verify job", workflow: in("verify", "sigstore/cosign-installer@756fe2d284c7292c4e9b62c8a28f1e5629c59532", "sigstore/cosign-installer@v4"), wantIn: "cosign-installer@v4"},
+		{name: "a cosign release range in the verify job", workflow: in("verify", "cosign-release: v3.1.4", "cosign-release: v3"), wantIn: "cosign-release"},
+
+		// Each published image is resolved to its digest and used by digest.
+		{name: "the CLI image verified by tag, not by digest", workflow: steps("verify", inVerifyStep(t, "name: Verify the CLI image", `IMAGE="ghcr.io/timothymamo/shift2eu@$DIGEST"`, `IMAGE="ghcr.io/timothymamo/shift2eu:$TAG"`)), wantIn: "want the CLI image's verification: run is"},
+		{name: "the server image verified by tag, not by digest", workflow: steps("verify", inVerifyStep(t, "name: Verify the HTTP API's image", `IMAGE="ghcr.io/timothymamo/shift2eu-server@$DIGEST"`, `IMAGE="ghcr.io/timothymamo/shift2eu-server:$TAG"`)), wantIn: "want the HTTP API's image verification: run is"},
+		{name: "the CLI image's tag resolved from no registry", workflow: steps("verify", inVerifyStep(t, "name: Verify the CLI image", `DIGEST="$(docker buildx imagetools inspect "ghcr.io/timothymamo/shift2eu:$TAG" --format '{{.Manifest.Digest}}')"`, `DIGEST="latest"`)), wantIn: "want the CLI image's verification: run is"},
+
+		// The tag must resolve to the digest this run built (audit L1): the
+		// digest the image job pushed, that the sign job signed and attested.
+		{name: "the CLI image's tag compared to no built digest", workflow: steps("verify", inVerifyStep(t, "name: Verify the CLI image", "          if [ \"$DIGEST\" != \"$BUILT\" ]; then\n            echo \"ghcr.io/timothymamo/shift2eu:$TAG resolves to $DIGEST, not the digest this run built, $BUILT\" >&2\n            exit 1\n          fi\n", "")), wantIn: "want the CLI image's verification: run is"},
+		{name: "the server image's tag compared to no built digest", workflow: steps("verify", inVerifyStep(t, "name: Verify the HTTP API's image", "          if [ \"$DIGEST\" != \"$BUILT\" ]; then\n            echo \"ghcr.io/timothymamo/shift2eu-server:$TAG resolves to $DIGEST, not the digest this run built, $BUILT\" >&2\n            exit 1\n          fi\n", "")), wantIn: "want the HTTP API's image verification: run is"},
+		{name: "the tag rule's server digest from the CLI's image job", workflow: in("verify", "          SERVER_BUILT: ${{ needs.server-image.outputs.digest }}\n", "          SERVER_BUILT: ${{ needs.image.outputs.digest }}\n"), wantIn: "env holds"},
+		{name: "the server image's built digest from the CLI's image job", workflow: in("verify", "          BUILT: ${{ needs.server-image.outputs.digest }}\n", "          BUILT: ${{ needs.image.outputs.digest }}\n"), wantIn: "env holds"},
+		{name: "the tag rule's CLI digest from another job", workflow: in("verify", "          CLI_BUILT: ${{ needs.image.outputs.digest }}\n", "          CLI_BUILT: ${{ needs.goreleaser.outputs.digest }}\n"), wantIn: "env holds"},
+
+		// The signature: made by this workflow, for exactly this tag, on a push
+		// of it, by this commit (audit L2), with GitHub's token as the issuer.
+		{name: "the CLI image verified without the certificate identity", workflow: steps("verify", inVerifyStep(t, "name: Verify the CLI image", "            --certificate-identity \"https://github.com/timothymamo/shift2eu/.github/workflows/release.yml@refs/tags/$TAG\" \\\n", "")), wantIn: "want the CLI image's verification: run is"},
+		{name: "the CLI image's certificate identity naming another ref", workflow: steps("verify", inVerifyStep(t, "name: Verify the CLI image", "release.yml@refs/tags/$TAG", "release.yml@refs/heads/main")), wantIn: "want the CLI image's verification: run is"},
+		{name: "the CLI image verified without the OIDC issuer", workflow: steps("verify", inVerifyStep(t, "name: Verify the CLI image", "            --certificate-oidc-issuer https://token.actions.githubusercontent.com \\\n", "")), wantIn: "want the CLI image's verification: run is"},
+		{name: "the CLI image verified without the push trigger", workflow: steps("verify", inVerifyStep(t, "name: Verify the CLI image", "            --certificate-github-workflow-trigger push \\\n", "")), wantIn: "want the CLI image's verification: run is"},
+		{name: "the CLI image verified without the certificate's commit", workflow: steps("verify", inVerifyStep(t, "name: Verify the CLI image", "            --certificate-github-workflow-sha \"$GITHUB_SHA\"\n", "")), wantIn: "want the CLI image's verification: run is"},
+		{name: "the CLI image's certificate naming another commit", workflow: steps("verify", inVerifyStep(t, "name: Verify the CLI image", `--certificate-github-workflow-sha "$GITHUB_SHA"`, `--certificate-github-workflow-sha "$TAG"`)), wantIn: "want the CLI image's verification: run is"},
+		{name: "the server image verified without the certificate's commit", workflow: steps("verify", inVerifyStep(t, "name: Verify the HTTP API's image", "            --certificate-github-workflow-sha \"$GITHUB_SHA\"\n", "")), wantIn: "want the HTTP API's image verification: run is"},
+		{name: "the server image verified without the certificate identity", workflow: steps("verify", inVerifyStep(t, "name: Verify the HTTP API's image", "            --certificate-identity \"https://github.com/timothymamo/shift2eu/.github/workflows/release.yml@refs/tags/$TAG\" \\\n", "")), wantIn: "want the HTTP API's image verification: run is"},
+
+		// The provenance and the SBOM: both attested from this workflow, for this
+		// tag and this commit (audit L2), on GitHub's runners, and read through
+		// the repository's API.
+		{name: "the provenance verified without the repository", workflow: steps("verify", inVerifyStep(t, "name: Verify the CLI image", "--repo timothymamo/shift2eu", "--repo example/shift2eu")), wantIn: "want the CLI image's verification: run is"},
+		{name: "the provenance verified without the signer workflow", workflow: steps("verify", inVerifyStep(t, "name: Verify the CLI image", "            --signer-workflow timothymamo/shift2eu/.github/workflows/release.yml \\\n", "")), wantIn: "want the CLI image's verification: run is"},
+		{name: "the provenance verified without the source ref", workflow: steps("verify", inVerifyStep(t, "name: Verify the CLI image", `--source-ref "refs/tags/$TAG" --source-digest "$GITHUB_SHA" `, "")), wantIn: "want the CLI image's verification: run is"},
+		{name: "the provenance verified without the source digest", workflow: steps("verify", inVerifyStep(t, "name: Verify the CLI image", `--source-ref "refs/tags/$TAG" --source-digest "$GITHUB_SHA" --deny-self-hosted-runners`+"\n", `--source-ref "refs/tags/$TAG" --deny-self-hosted-runners`+"\n")), wantIn: "want the CLI image's verification: run is"},
+		{name: "the SBOM verified without the source digest", workflow: steps("verify", inVerifyStep(t, "name: Verify the CLI image", `--source-digest "$GITHUB_SHA" --deny-self-hosted-runners \`+"\n", `--deny-self-hosted-runners \\`+"\n")), wantIn: "want the CLI image's verification: run is"},
+		{name: "the server provenance verified without the source digest", workflow: steps("verify", inVerifyStep(t, "name: Verify the HTTP API's image", `--source-ref "refs/tags/$TAG" --source-digest "$GITHUB_SHA" --deny-self-hosted-runners`+"\n", `--source-ref "refs/tags/$TAG" --deny-self-hosted-runners`+"\n")), wantIn: "want the HTTP API's image verification: run is"},
+		{name: "the server SBOM verified without the source digest", workflow: steps("verify", inVerifyStep(t, "name: Verify the HTTP API's image", `--source-digest "$GITHUB_SHA" --deny-self-hosted-runners \`+"\n", `--deny-self-hosted-runners \\`+"\n")), wantIn: "want the HTTP API's image verification: run is"},
+		{name: "self-hosted runners not denied", workflow: steps("verify", inVerifyStep(t, "name: Verify the CLI image", "--deny-self-hosted-runners", "--no-deny")), wantIn: "want the CLI image's verification: run is"},
+		{name: "the SBOM attested under another predicate type", workflow: steps("verify", inVerifyStep(t, "name: Verify the CLI image", "https://spdx.dev/Document/v2.3", "https://spdx.dev/Document/v2.2")), wantIn: "want the CLI image's verification: run is"},
+		{name: "the SBOM not verified for the server image", workflow: steps("verify", inVerifyStep(t, "name: Verify the HTTP API's image", "--predicate-type https://spdx.dev/Document/v2.3", "--predicate-type")), wantIn: "want the HTTP API's image verification: run is"},
+
+		// The image itself: run with a read-only root filesystem and no network,
+		// the CLI's version compared to the tag's, the server's --help exiting 0.
+		{name: "the CLI image run without --network none", workflow: steps("verify", inVerifyStep(t, "name: Verify the CLI image", `--network none "$IMAGE" version`, `"$IMAGE" version`)), wantIn: "want the CLI image's verification: run is"},
+		{name: "the CLI image run without --read-only", workflow: steps("verify", inVerifyStep(t, "name: Verify the CLI image", `docker run --rm --read-only --network none "$IMAGE" version`, `docker run --rm --network none "$IMAGE" version`)), wantIn: "want the CLI image's verification: run is"},
+		{name: "the CLI image run without --rm", workflow: steps("verify", inVerifyStep(t, "name: Verify the CLI image", `docker run --rm --read-only --network none "$IMAGE" version`, `docker run --read-only --network none "$IMAGE" version`)), wantIn: "want the CLI image's verification: run is"},
+		{name: "the CLI image's version not compared to the tag's", workflow: steps("verify", inVerifyStep(t, "name: Verify the CLI image", `grep -qF "shift2eu ${TAG#v} (" version.txt`, `true`)), wantIn: "want the CLI image's verification: run is"},
+		{name: "the server image run without --network none", workflow: steps("verify", inVerifyStep(t, "name: Verify the HTTP API's image", `--network none "$IMAGE" --help`, `"$IMAGE" --help`)), wantIn: "want the HTTP API's image verification: run is"},
+		{name: "the server image run without --help", workflow: steps("verify", inVerifyStep(t, "name: Verify the HTTP API's image", `docker run --rm --read-only --network none "$IMAGE" --help > /dev/null`, `docker run --rm --read-only --network none "$IMAGE" version > /dev/null`)), wantIn: "want the HTTP API's image verification: run is"},
+
+		// The tag rule (ADR 0015): vX.Y.Z always, X.Y for every release, latest
+		// for the highest release tag alone, and a pre-release moving neither.
+		{name: "the tag rule without the latest tag", workflow: steps("verify", inVerifyStep(t, "name: The tags follow the release rule", `"$image:latest"`, `"$image:newest"`)), wantIn: "want the tag rule: run is"},
+		{name: "the tag rule without the minor tag", workflow: steps("verify", inVerifyStep(t, "name: The tags follow the release rule", `"$image:$minor"`, `"$image:$TAG"`)), wantIn: "want the tag rule: run is"},
+		{name: "the tag rule without the pre-release case", workflow: steps("verify", inVerifyStep(t, "name: The tags follow the release rule", "              *-*)\n", "              x-*)\n")), wantIn: "want the tag rule: run is"},
+		{name: "the tag rule checking one image alone", workflow: steps("verify", inVerifyStep(t, "name: The tags follow the release rule", "          check ghcr.io/timothymamo/shift2eu-server \"$SERVER_BUILT\"\n", "")), wantIn: "want the tag rule: run is"},
+
+		// The tag rule's branch for a pre-release (review B1, audit M1): a
+		// pre-release must not move X.Y or latest, but their existence is fine,
+		// so the rule compares digests rather than asking whether the tag
+		// exists. A pre-release on a minor line that has already shipped is the
+		// common case, and it must pass.
+		{name: "the pre-release rule back to a tag that merely exists", workflow: steps("verify", inVerifyStep(t, "name: The tags follow the release rule", "                if [ \"$minor_digest\" = \"$digest\" ]; then\n", "                if [ -n \"$minor_digest\" ]; then\n")), wantIn: "want the tag rule: run is"},
+		{name: "the pre-release rule without its X.Y check", workflow: steps("verify", inVerifyStep(t, "name: The tags follow the release rule", "                if [ \"$minor_digest\" = \"$digest\" ]; then\n", "                if false; then\n")), wantIn: "want the tag rule: run is"},
+		{name: "the pre-release rule without its latest check", workflow: steps("verify", inVerifyStep(t, "name: The tags follow the release rule", "                if [ \"$latest_digest\" = \"$digest\" ]; then\n", "                if false; then\n")), wantIn: "want the tag rule: run is"},
+
+		// Only absence is absence (review N1, audit N1): each of the rule's
+		// reads treats a tag the registry says does not exist as absent, which
+		// the rule allows where it allows it, and fails the step on any other
+		// answer. Every read is pinned alone, so none can go back to swallowing
+		// a 5xx, a rate limit or a failed login, and a pre-release may still
+		// leave X.Y or latest absent. Absence is the registry's own not-found
+		// for this reference alone: the fixed, case-sensitive "$1: not found"
+		// text on exit status 1, and nothing else, so MANIFEST_UNKNOWN stays a
+		// failure and never an absent tag.
+		{name: "the tag rule taking any registry error for an absent tag", workflow: steps("verify", inVerifyStep(t, "name: The tags follow the release rule", `              if [ "$rc" -eq 1 ] && grep -qF -e "$1: not found" "$err"; then`+"\n", "              if true; then\n")), wantIn: "want the tag rule: run is"},
+		{name: "the tag rule reading MANIFEST_UNKNOWN as an absent tag again", workflow: steps("verify", inVerifyStep(t, "name: The tags follow the release rule", `grep -qF -e "$1: not found" "$err"`, `grep -qF -e "$1: not found" -e 'MANIFEST_UNKNOWN' "$err"`)), wantIn: "want the tag rule: run is"},
+
+		// The digest is stdout alone, one sha256 line (audit F2, review N1):
+		// stderr of its own, so a docker warning cannot be read as the digest
+		// an equality check then compares, and nothing but one sha256 line is
+		// a digest; and absence is the registry's not-found for this very
+		// reference with exit status 1 alone (audit F1, review S2), so a
+		// missing docker, a broken credential helper, a 404 from the token
+		// endpoint or another tag's not-found all fail the step.
+		{name: "the tag rule's digest read with stderr merged into it", workflow: steps("verify", inVerifyStep(t, "name: The tags follow the release rule", `--format '{{.Manifest.Digest}}' 2> "$err")"`, `--format '{{.Manifest.Digest}}' 2>&1)"`)), wantIn: "want the tag rule: run is"},
+		{name: "the tag rule without the check that a digest is one sha256 line", workflow: steps("verify", inVerifyStep(t, "name: The tags follow the release rule", `              if [[ "$out" =~ ^sha256:[0-9a-f]{64}$ ]]; then`+"\n", "              if [ -n \"$out\" ]; then\n")), wantIn: "want the tag rule: run is"},
+		{name: "the tag rule taking any not-found for an absent tag", workflow: steps("verify", inVerifyStep(t, "name: The tags follow the release rule", `grep -qF -e "$1: not found" "$err"`, `grep -qF -e "not found" "$err"`)), wantIn: "want the tag rule: run is"},
+		{name: "the tag rule's absent-tag match ignoring case again", workflow: steps("verify", inVerifyStep(t, "name: The tags follow the release rule", `              if [ "$rc" -eq 1 ] && grep -qF -e "$1: not found" "$err"; then`+"\n", `              if [ "$rc" -eq 1 ] && grep -qiF -e "$1: not found" "$err"; then`+"\n")), wantIn: "want the tag rule: run is"},
+		{name: "the tag rule reading any failed inspect's stderr as an absent tag", workflow: steps("verify", inVerifyStep(t, "name: The tags follow the release rule", `              if [ "$rc" -eq 1 ] && grep -qF -e "$1: not found" "$err"; then`+"\n", `              if grep -qF -e "$1: not found" "$err"; then`+"\n")), wantIn: "want the tag rule: run is"},
+		{name: "the tag rule reading a pre-release's X.Y with its error silenced", workflow: steps("verify", inVerifyStep(t, "name: The tags follow the release rule", `            minor_digest="$(digest_or_absent "$image:$minor")"`+"\n", `            minor_digest="$(digest_or_absent "$image:$minor" 2> /dev/null)"`+"\n")), wantIn: "want the tag rule: run is"},
+		{name: "the tag rule reading a pre-release's latest with its error silenced", workflow: steps("verify", inVerifyStep(t, "name: The tags follow the release rule", `                latest_digest="$(digest_or_absent "$image:latest")"`+"\n", `                latest_digest="$(digest_or_absent "$image:latest" 2> /dev/null)"`+"\n")), wantIn: "want the tag rule: run is"},
+		{name: "the tag rule reading the highest with its error silenced", workflow: steps("verify", inVerifyStep(t, "name: The tags follow the release rule", `                  highest_digest="$(digest_or_absent "$image:$highest")"`+"\n", `                  highest_digest="$(digest_or_absent "$image:$highest" 2> /dev/null)"`+"\n")), wantIn: "want the tag rule: run is"},
+
+		// The highest release tag is the one the stamp decided latest from: the
+		// release tags merged into main, in the same filter, sort and pick
+		// (review M1, audit M2a). Without the ancestry filter a stray tag off
+		// main would be highest, and every later release's verify would fail.
+		{name: "the tag rule counting every tag, not only those merged into main", workflow: steps("verify", inVerifyStep(t, "name: The tags follow the release rule", "git -C tags tag -l 'v*.*.*' --merged refs/remotes/origin/main", "git -C tags tag -l 'v*.*.*'")), wantIn: "want the tag rule: run is"},
+		{name: "the tag rule counting the tags of another branch", workflow: steps("verify", inVerifyStep(t, "name: The tags follow the release rule", "--merged refs/remotes/origin/main", "--merged refs/heads/main")), wantIn: "want the tag rule: run is"},
+		{name: "the tag rule fetching no tags", workflow: steps("verify", inVerifyStep(t, "name: The tags follow the release rule", " '+refs/tags/v*:refs/tags/v*'", "")), wantIn: "want the tag rule: run is"},
+		{name: "the tag rule checking out the repository", workflow: steps("verify", inVerifyStep(t, "name: The tags follow the release rule", "          git init -q tags\n", "          git clone -q --no-tags --depth 1 https://github.com/timothymamo/shift2eu.git tags\n")), wantIn: "want the tag rule: run is"},
+
+		// The timing of the latest check (review M2, audit M2b): only a
+		// published higher tag can hold latest back, so a re-run of an older
+		// release passes once a newer one has shipped, and a newer tag whose
+		// run is still in flight is no reason to fail.
+		{name: "the tag rule without its notice for a highest tag not yet published", workflow: steps("verify", inVerifyStep(t, "name: The tags follow the release rule", `                    echo "::notice::$image:$highest is not published yet, so this run does not check $image:latest"`+"\n", "")), wantIn: "want the tag rule: run is"},
+		{name: "the tag rule without the check that latest is not this tag", workflow: steps("verify", inVerifyStep(t, "name: The tags follow the release rule", `                    if [ "$latest_digest" = "$digest" ]; then`+"\n", "                    if false; then\n")), wantIn: "want the tag rule: run is"},
+
+		// Fail closed (review S1, audit L3): every script of the job opens with
+		// set -euo pipefail, an empty highest is an error, and a registry error
+		// is not read as an absent tag.
+		{name: "the CLI image's verification without set -euo pipefail", workflow: steps("verify", inVerifyStep(t, "name: Verify the CLI image", "        run: |\n          set -euo pipefail\n", "        run: |\n")), wantIn: "want the CLI image's verification: run is"},
+		{name: "the server image's verification without set -euo pipefail", workflow: steps("verify", inVerifyStep(t, "name: Verify the HTTP API's image", "        run: |\n          set -euo pipefail\n", "        run: |\n")), wantIn: "want the HTTP API's image verification: run is"},
+		{name: "the tag rule without set -euo pipefail", workflow: steps("verify", inVerifyStep(t, "name: The tags follow the release rule", "        run: |\n          set -euo pipefail\n", "        run: |\n")), wantIn: "want the tag rule: run is"},
+		{name: "a shell on the tag rule step", workflow: in("verify", "      - name: The tags follow the release rule\n", "      - name: The tags follow the release rule\n        shell: bash\n"), wantIn: `key "shell"`},
+		{name: "the tag rule without the guard on an empty highest", workflow: steps("verify", inVerifyStep(t, "name: The tags follow the release rule", "          if [ -z \"$highest\" ]; then\n            echo \"no release tag is merged into main, so X.Y and latest cannot be checked\" >&2\n            exit 1\n          fi\n", "")), wantIn: "want the tag rule: run is"},
+		{name: "the tag rule reading the highest release's latest with its error silenced", workflow: steps("verify", inVerifyStep(t, "name: The tags follow the release rule", `                  latest_digest="$(digest_or_absent "$image:latest")"`+"\n", `                  latest_digest="$(digest_or_absent "$image:latest" 2> /dev/null)"`+"\n")), wantIn: "want the tag rule: run is"},
 
 		{name: "an empty document", workflow: "", wantIn: "release workflow"},
 	}

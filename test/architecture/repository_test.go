@@ -1134,8 +1134,8 @@ func underDir(rel, dir string) bool {
 }
 
 // TestReleaseWorkflowIsClosed pins that the release is closed to what the
-// check lists: the workflow holds exactly the eight jobs the check knows, test,
-// goreleaser, and image, sbom and sign for each of the two images (server-image,
+// check lists: the workflow holds exactly the nine jobs the check knows, test,
+// goreleaser, and image, sbom, sign and verify for the two images (server-image,
 // server-sbom and server-sign for the HTTP API's, PRD #103), with exactly their
 // steps, so goreleaser
 // runs with exactly release --clean after no repository code and with no
@@ -1210,10 +1210,12 @@ func TestWorkflowPrivilegesAreClosed(t *testing.T) {
 
 // TestCIImageJobIsTheReleaseDryRun pins the review's finding of issue #72:
 // ci.yml's image job is the dry run of release.yml's image and sbom jobs, for
-// both images (the HTTP API's from PRD #103), so a
+// both images (the HTTP API's from PRD #103), and of the container run each
+// image gets in the verify job (issue #99), so a
 // pull request fails when the release's platforms, annotations, provenance and
-// SBOM settings, tag rules, syft version, action pins or BuildKit image drift
-// from what the dry run builds and checks (check.DryRunMirrorsRelease).
+// SBOM settings, tag rules, syft version, action pins, BuildKit image or
+// container run drift from what the dry run builds and checks
+// (check.DryRunMirrorsRelease).
 func TestCIImageJobIsTheReleaseDryRun(t *testing.T) {
 	t.Parallel()
 

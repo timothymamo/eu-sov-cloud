@@ -262,11 +262,13 @@ jobs:
           case "${user%%:*}" in
             ""|root|0) echo "the image runs as root" >&2; exit 1 ;;
           esac
-      - name: Smoke test, read-only root filesystem
+      # release.yml's verify job runs the published image the same way, so the
+      # dry run runs the image it built the same way (check.DryRunMirrorsRelease).
+      - name: Smoke test, read-only root filesystem, no network
         env:
           COMMIT: ${{ steps.meta.outputs.commit }}
         run: |
-          docker run --rm --read-only "$IMAGE" version | tee version.txt
+          docker run --rm --read-only --network none "$IMAGE" version | tee version.txt
           grep -F "$COMMIT" version.txt
           docker run --rm --read-only --network none \
             -v "$PWD/test/e2e/testdata:/work:ro" \
@@ -344,6 +346,11 @@ jobs:
           case "${user%%:*}" in
             ""|root|0) echo "the server image runs as root" >&2; exit 1 ;;
           esac
+      # release.yml's verify job runs the published server image the same way:
+      # it has no version subcommand, so --help exiting 0 is the smoke test.
+      - name: The server image answers --help, read-only root filesystem, no network
+        run: |
+          docker run --rm --read-only --network none "$SERVER_IMAGE" --help > /dev/null
       # The image listens on 0.0.0.0:8080 by default (its CMD), so without a token it refuses to
       # start (exit 2, with the refusal on stderr); timeout ends the run with 124 if a regression
       # lets it start instead, so the step fails rather than hangs. With a token, on a read-only root filesystem, with
