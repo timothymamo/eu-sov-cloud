@@ -57,6 +57,7 @@ supersedes it.
 - [0018. Version the JSON report format, shared by the CLI and the HTTP API](adr/0018-version-the-json-report-format-for-the-cli-and-the-api.md)
 - [0019. Serve assessments over a versioned HTTP API from a separate binary](adr/0019-serve-assessments-over-a-versioned-http-api-from-a-separate-binary.md)
 - [0020. Rename the project to shift2eu, keep published releases and history as they are](adr/0020-rename-the-project-to-shift2eu.md)
+- [0021. Propose releases with release-please and tag them with a GitHub App](adr/0021-propose-releases-with-release-please-and-tag-with-a-github-app.md)
 
 ## Writing a page
 
