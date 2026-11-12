@@ -45,41 +45,72 @@ dot-agent-deck publishes Linux arm64 and amd64 builds and is documented to run o
    export GITHUB_TOKEN=...              # fine-grained, limited to this repository
    ```
 
-4. Create the VM and copy the credentials into it:
+4. Create the VM, copy the credentials into it and set it up:
 
    ```bash
    brew install lima          # Lima 2.0 or newer
-   make vm-up                 # create and provision the VM (several minutes the first time)
-   make vm-env                # copy the three variables into the VM
-   make vm-claude-settings    # Claude Code user settings for the agents, see Agent permissions
-   make vm-shell              # shell inside the VM, at the repository path
+   make vm-create             # several minutes the first time
    ```
 
-   The VM has 4 CPUs, 16 GiB of memory and a 40 GiB disk (`dev/lima.yaml`), enough for all six roles to
-   run `make check` at once. Leave the Mac enough free memory to run it.
+   `make vm-create` runs, in order:
 
-### Inside the VM, once
+   | Target | Does |
+   |---|---|
+   | `make vm-up` | Creates and provisions the VM, or starts it |
+   | `make vm-env` | Copies the three variables into the VM ([Credentials](#credentials)) |
+   | `make vm-claude-settings` | Claude Code user settings for the agents ([Agent permissions](#agent-permissions)) |
+   | `make vm-init` | The once-only setup below, and the checks that the credentials work |
 
-```bash
-(cd .. && claude)                           # first-run setup in the workspace, see below; then /exit
-git config --global user.name "Your Name"   # the agents commit as you
-git config --global user.email "you@example.com"
-pi auth check --provider deepseek           # prints "ready"
-gh auth status                              # logged in to github.com (GITHUB_TOKEN)
-dot-agent-deck validate                     # checks .dot-agent-deck.toml
-dot-agent-deck daemon install               # prints "the daemon is running as dot-agent-deck.service"
-exit
-```
+   Each can also be run on its own. The VM has 4 CPUs, 16 GiB of memory and a 40 GiB disk
+   (`dev/lima.yaml`), enough for all six roles to run `make check` at once. Leave the Mac enough free
+   memory to run it.
 
-- **`claude`** has to run once by hand, in the workspace directory, so the Claude Code roles the deck
-  starts in the repository or in a dispatch worktree beside it do not stop at first-run screens (trusting
-  a folder trusts everything under it). It does not ask you to log in, because the token is set. Pick a
-  theme, answer **yes** to trusting this folder, and run `/status`: it must show the OAuth token (your
-  subscription), not an API key.
-- **`dot-agent-deck daemon install`** sets the deck's daemon up as a systemd user service. Run it before
-  the first `make deck`: if the TUI has already started a daemon of its own, the service is installed but
-  not started, and you have to run `dot-agent-deck daemon stop` and
-  `systemctl --user start dot-agent-deck.service` first.
+5. Open the deck: `make deck`.
+
+### What `make vm-init` does
+
+`make vm-init` (`dev/vm-init.sh`) runs in a login shell in the VM, because only a login shell loads the
+credentials `make vm-env` wrote. It stops at the first step that fails, naming it, for example
+`vm-init: pi: no DeepSeek key; set DEEPSEEK_API_KEY for make vm-env, ...`. Fix the cause and run it
+again: it changes only what is not set up yet, so running it on a VM that is set up changes nothing.
+
+| Step | What it does |
+|---|---|
+| `theme` | Sets `theme` in Claude Code's `~/.claude/settings.json` to `CLAUDE_THEME` (default `dark`; `make vm-init CLAUDE_THEME=light`) |
+| `claude` | Marks Claude Code's onboarding done and trusts the workspace and the repository, in `~/.claude.json`, so the Claude Code roles start without first-run screens (see below) |
+| `git` | Gives the VM your git identity, so the agents commit as you: `git config user.name` and `user.email` from the Mac, or `GIT_USER_NAME=` and `GIT_USER_EMAIL=`. An identity already set in the VM is kept |
+| `claude auth` | Checks that Claude Code uses the OAuth token (your subscription), not an API key |
+| `pi` | `pi auth check --provider deepseek` |
+| `gh` | `gh auth status`: logged in to github.com (`GITHUB_TOKEN`) |
+| `deck` | `dot-agent-deck validate`: checks `.dot-agent-deck.toml` |
+| `daemon` | `dot-agent-deck daemon install`, unless `dot-agent-deck.service` is already installed |
+
+It never prints a credential: the checks show only the field they test.
+
+- **Run it while no Claude Code session runs in the VM**, as before the first `make deck`. Claude Code
+  keeps `~/.claude.json` in memory and writes it back, so a session running at the same time can undo
+  the trust flags `make vm-init` just wrote.
+
+- **Trust follows the repository root.** Claude Code looks up a folder's trust by the session's git
+  repository root, which for the repository, every dispatch worktree and every PR worktree is the main
+  checkout, so `make vm-init` trusts the main checkout as well as the workspace. Trusting the workspace
+  alone does not cover sessions in the repository.
+- **The first-run flags are Claude Code's saved state, not documented settings.** `make vm-init` writes
+  `hasCompletedOnboarding` and `projects["<directory>"].hasTrustDialogAccepted`, the flags a first manual
+  run leaves behind, and a later Claude Code version may rename them. If a Claude Code pane then stops at
+  a theme or trust screen, do the first run by hand, in the workspace and in the repository:
+
+  ```bash
+  make vm-shell
+  (cd .. && claude)   # pick a theme, answer yes to trusting this folder, /exit
+  claude              # the repository: answer yes to trusting this folder; /status must show the OAuth token, not an API key; /exit
+  exit
+  ```
+
+- **`dot-agent-deck daemon install`** sets the deck's daemon up as a systemd user service and starts it,
+  which is why `make vm-init` comes before the first `make deck`. If the TUI has already started a daemon
+  of its own, the service is installed but not started: run `dot-agent-deck daemon stop` and
+  `systemctl --user start dot-agent-deck.service` in the VM.
 - **Agent panes have colour.** systemd gives the service no `TERM`, and every agent pane inherits the
   service's environment, so a second drop-in installed by `dev/lima.yaml`
   (`~/.config/systemd/user/dot-agent-deck.service.d/terminal.conf`) sets `TERM=xterm-256color` and
@@ -106,7 +137,7 @@ make vm-up && make deck    # the TUI attaches to the daemon service
 
 Tool versions are pinned in `dev/lima.yaml` under `param:`, and Renovate opens a PR when a new version
 is released. A VM keeps the template it was created with, so after merging a version bump recreate it
-(`make vm-delete vm-up vm-env vm-claude-settings`) and repeat the once-only steps above.
+with `make vm-delete vm-create`, then `make deck`: nothing has to be typed in the VM.
 
 The same goes for the VM's size: `make vm-up` starts an existing VM with the CPUs, memory and disk it
 was created with. To resize it without recreating it, keeping its tools, login and configuration:
@@ -168,8 +199,8 @@ make vm-up
 direnv allow                                                   # direnv tracks .envrc files by path
 ```
 
-Then run `claude` once in the VM from the workspace directory and trust it, as in the once-only steps:
-the trust given to the old path does not carry over.
+Then, before `make deck`, run `make vm-init`, which trusts the new workspace and repository paths: the
+trust given to the old paths does not carry over.
 
 ## Credentials
 

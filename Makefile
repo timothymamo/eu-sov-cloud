@@ -32,6 +32,11 @@ REPO_NAME := $(notdir $(REPO_ROOT))
 # Credentials vm-env copies from your shell (e.g. direnv) into the VM, by name. Never add
 # ANTHROPIC_API_KEY: Claude Code prefers it over the subscription token and bills per call.
 VM_ENV ?= CLAUDE_CODE_OAUTH_TOKEN,DEEPSEEK_API_KEY,GITHUB_TOKEN
+# The git identity vm-init gives the VM, so the agents commit as you: the Mac's own by default.
+GIT_USER_NAME  ?= $(shell git config user.name 2>/dev/null)
+GIT_USER_EMAIL ?= $(shell git config user.email 2>/dev/null)
+# The Claude Code theme vm-init sets in the VM (dark, light, dark-daltonized, light-daltonized, ...).
+CLAUDE_THEME ?= dark
 
 .DEFAULT_GOAL := help
 
@@ -177,6 +182,22 @@ vm-env: ## Copy the VM_ENV credentials from your shell into the VM
 .PHONY: vm-claude-settings
 vm-claude-settings: ## Merge dev/claude-user-settings.json into Claude Code's user settings in the VM
 	limactl shell --workdir "$(CURDIR)" "$(LIMA_INSTANCE)" dev/claude-settings.sh "$(WORKSPACE)"
+
+# A login shell (bash -l), because only a login shell loads the credentials vm-env wrote
+# (/etc/profile.d/shift2eu.sh). Safe to run again: it changes only what is not set up yet, and the theme
+# when CLAUDE_THEME differs. Run it before make deck (docs/dev-environment.md, What make vm-init does).
+.PHONY: vm-init
+vm-init: ## Once-only VM setup after vm-env and vm-claude-settings: Claude Code first run, git identity, credential checks, daemon service
+	limactl shell --workdir "$(CURDIR)" "$(LIMA_INSTANCE)" bash -l dev/vm-init.sh \
+		"$(WORKSPACE)" "$(REPO_ROOT)" "$(GIT_USER_NAME)" "$(GIT_USER_EMAIL)" "$(CLAUDE_THEME)"
+
+# One target at a time, in order, even under make -j.
+.PHONY: vm-create
+vm-create: ## Create and set up the VM, ready for make deck: vm-up, vm-env, vm-claude-settings, vm-init
+	$(MAKE) vm-up
+	$(MAKE) vm-env
+	$(MAKE) vm-claude-settings
+	$(MAKE) vm-init
 
 .PHONY: deck
 deck: ## Open the dot-agent-deck TUI in the VM (attaches to the daemon service)
