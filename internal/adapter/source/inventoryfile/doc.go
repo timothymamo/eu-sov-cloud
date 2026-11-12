@@ -3,7 +3,17 @@
 // `eusov assess` (ADR 0006). It implements the analysis.InventorySource port and
 // passes the contract suite in sourcetest.
 //
-// The file is untrusted input. It is read only up to MaxFileSize bytes, then
+// New reads a file at a path. FromBytes reads the same format from bytes held
+// in memory, such as the inventory in the body of an HTTP API request (PRD
+// #103, ADR 0019): the same Source type, the same cap, decoder, rules and
+// sentinels; only the way the bytes arrive differs, and its errors start with
+// "inventory document" where a file's name the file. FromBytes takes ownership
+// of its bytes, without a copy. Its errors never repeat a value from the
+// document, which may come from an HTTP client: where a file's error quotes a
+// refused value, a FromBytes error names its position and field,
+// resources[1].category, and wraps the same sentinel.
+//
+// The document is untrusted input. It is read only up to MaxFileSize bytes, then
 // decoded through jsondoc, the strict JSON decoder adapters share (ADR 0009),
 // which holds the rules this format shares with the target catalog snapshots:
 // UTF-8 without a byte order mark; one JSON object with nothing after it; every
@@ -20,7 +30,7 @@
 // read; and its sentinels. The values are validated by the domain, through
 // inventory.New: an unknown category is an error, never unclassified.
 //
-// Errors are one line, name the file through text.QuotePath (which keeps the
+// Errors are one line, name the file (if any) through text.QuotePath (which keeps the
 // base name of a long path), and wrap ErrRead, ErrTooLarge, ErrDecode,
 // ErrSchemaVersion, ErrTooManyResources, the domain's own sentinel or
 // ctx.Err(). A problem in the document is placed by line and column, a
@@ -35,5 +45,6 @@
 // such as one on a stalled network file system, cannot be interrupted portably,
 // so its goroutine waits until it returns or the process exits.
 //
-// Adapter layer: reads one local file, never the network or a cloud.
+// Adapter layer: reads one local file or the bytes it is given, never the
+// network or a cloud.
 package inventoryfile

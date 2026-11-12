@@ -335,7 +335,7 @@ linters:
         # reason for a helper not named here. Every adapter that must stay
         # offline also names the helpers it imports, each ending in $, in a
         # strict rule of its own: inventory-file-reader-reads-one-file,
-        # target-snapshot-reader-parses-bytes,
+        # request-decoders-parse-bytes, target-snapshot-reader-parses-bytes,
         # embedded-snapshot-targets-stay-offline and reporters-stay-offline.
         # The live sources (aws, azure, gcp; doc.go stubs today) need the
         # network through their SDK, so they share the strict allow list
@@ -384,6 +384,97 @@ linters:
               desc: nothing imports the composition root; cmd/eusov imports the rest
             - pkg: github.com/timothymamo/eu-sov-cloud/cmd/
               desc: nothing imports the composition root; cmd/eusov imports the rest
+        # The HTTP API (ADR 0019) is a driving adapter like internal/cli: it gets
+        # its adapters from its composition root, cmd/eusov-server, through
+        # httpapi.Deps and never constructs one, so it imports only the
+        # application, the domain, the build metadata and the standard
+        # packages named here. Unlike cli-gets-adapters-from-cmd it names
+        # each standard package, ending in $, rather than allowing $gostd: so
+        # test/architecture holds the package to this list package by package
+        # for every release target (ADR 0012), and a package that reads files
+        # or the environment, starts a process or listens (os, os/exec,
+        # syscall, net$) stays out. Listening, flags, the environment and the
+        # access log belong to cmd/eusov-server. The project packages are
+        # named one by one, each ending in $, for the reason given at
+        # domain-is-pure. Add a standard package only when serving needs it.
+        #
+        # An allowed package can still hold a function that reaches further
+        # than the rule means, which an import rule cannot see: the handler
+        # must not call http.ListenAndServe, http.Get or fmt.Print*, and logs
+        # nothing. Review holds that line.
+        #
+        # The allow list already refuses every package below; these entries
+        # only say why.
+        httpapi-gets-adapters-from-cmd:
+          list-mode: strict
+          files:
+            - "**/internal/httpapi/**"
+            - "!$test"
+          allow:
+            - bytes$
+            - context$
+            - crypto/sha256$
+            - crypto/subtle$
+            - encoding/json$
+            - errors$
+            - fmt$
+            - io$
+            - maps$
+            - mime$
+            - net/http$
+            - net/url$
+            - runtime$
+            - slices$
+            - sort$
+            - strconv$
+            - strings$
+            - sync$
+            - time$
+            - unicode/utf8$
+            - github.com/timothymamo/eu-sov-cloud/internal/app/analysis$
+            - github.com/timothymamo/eu-sov-cloud/internal/domain/assessment$
+            - github.com/timothymamo/eu-sov-cloud/internal/domain/catalog$
+            - github.com/timothymamo/eu-sov-cloud/internal/domain/inventory$
+            - github.com/timothymamo/eu-sov-cloud/internal/domain/mapping$
+            - github.com/timothymamo/eu-sov-cloud/internal/domain/taxonomy$
+            - github.com/timothymamo/eu-sov-cloud/internal/domain/text$
+            - github.com/timothymamo/eu-sov-cloud/internal/version$
+          deny:
+            - pkg: github.com/timothymamo/eu-sov-cloud/internal/adapter
+              desc: the HTTP API gets its adapters through httpapi.Deps; construct them in cmd/eusov-server
+            - pkg: github.com/timothymamo/eu-sov-cloud/internal/cli
+              desc: the HTTP API and the CLI are separate driving adapters; share what both need through the application or the domain
+            - pkg: github.com/timothymamo/eu-sov-cloud/cmd
+              desc: nothing imports the composition root
+            - pkg: os
+              desc: the HTTP API reads no file and no environment; cmd/eusov-server passes what it needs through options
+            - pkg: syscall
+              desc: the HTTP API makes no system call
+            - pkg: plugin
+              desc: the HTTP API loads no code at run time
+            - pkg: unsafe
+              desc: the HTTP API needs no unsafe code
+        # Only the HTTP API's composition root, cmd/eusov-server, imports
+        # internal/httpapi (ADR 0019). cmd/eusov is covered too, on purpose:
+        # the CLI binary stays offline (PRD #103, the separate-binary
+        # decision), and TestAssessPathHasNoNetworkOrCloudSDK in test/e2e fails
+        # if it depends on net/http at all; this rule names the reason at the
+        # import. Test files elsewhere are covered too; only test/apiparity is
+        # left out, because its offline parity test wires the real adapters
+        # into both driving adapters, as a composition root would. The
+        # package's own tests are exempt with the package.
+        httpapi-imported-only-by-the-server:
+          list-mode: lax
+          files:
+            - "$all"
+            - "!**/test/apiparity/**"
+            - "!**/cmd/eusov-server/**"
+            - "!**/internal/httpapi/**"
+          deny:
+            - pkg: github.com/timothymamo/eu-sov-cloud/internal/httpapi$
+              desc: only cmd/eusov-server imports the HTTP API; cmd/eusov stays offline (ADR 0019)
+            - pkg: github.com/timothymamo/eu-sov-cloud/internal/httpapi/
+              desc: only cmd/eusov-server imports the HTTP API; cmd/eusov stays offline (ADR 0019)
         # Only the packages under internal/adapter/target import the shared
         # snapshot reader (ADR 0007): the target adapters, their contract suite
         # and the reader itself. A source adapter, a reporter, internal/config
@@ -592,6 +683,42 @@ linters:
           deny:
             - pkg: encoding/json
               desc: decode the inventory file through internal/adapter/internal/jsondoc (ADR 0009)
+        # A request decoder parses the bytes of an HTTP API request body it is
+        # given (ADR 0019): assessmentrequest decodes POST /v1/assessments. It
+        # reads no file, makes no network call, imports no net/http (the
+        # HTTP API, internal/httpapi, reads the body) and imports no adapter,
+        # internal/cli, internal/httpapi or cmd/. It may import only what is
+        # listed under allow: errors and fmt for its errors, and jsondoc, the
+        # strict decoder (ADR 0009), named with $ for the reason
+        # target-snapshot-reader-parses-bytes gives. The glob ends in /** so it
+        # covers every package under internal/adapter/request, and the files
+        # directly in each. Add a standard package only when parsing needs it,
+        # never one that does I/O. fmt$ is allowed for fmt.Errorf: a decoder
+        # must not call fmt.Print*, which an import rule cannot see, so review
+        # holds that line.
+        #
+        # It decodes only through jsondoc, never with encoding/json of its own,
+        # which matches keys ignoring case and keeps the last of a repeated
+        # key. The allow list already refuses every package below; these
+        # entries only say why.
+        request-decoders-parse-bytes:
+          list-mode: strict
+          files:
+            - "**/internal/adapter/request/**"
+            - "!$test"
+          allow:
+            - errors$
+            - fmt$
+            - github.com/timothymamo/eu-sov-cloud/internal/adapter/internal/jsondoc$
+          deny:
+            - pkg: encoding/json
+              desc: decode a request body through internal/adapter/internal/jsondoc (ADR 0009)
+            - pkg: net
+              desc: a request decoder parses the bytes it is given; internal/httpapi reads the body
+            - pkg: os
+              desc: a request decoder reads no file and no environment
+            - pkg: github.com/timothymamo/eu-sov-cloud/internal/httpapi
+              desc: an adapter never imports a driving adapter; the composition root passes Decode to it
         # A cloud source adapter reaches its cloud only through the SDK calls
         # forbidigo's cloud-read-only group checks (CLAUDE.md rule 1, ADR
         # 0014). Anything else that can call a method by a name forbidigo

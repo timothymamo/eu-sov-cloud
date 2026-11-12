@@ -71,7 +71,7 @@ func readCapped(r io.Reader) ([]byte, error) {
 	}
 
 	if len(data) > MaxFileSize {
-		return nil, fmt.Errorf("%w: more than %d bytes", ErrTooLarge, MaxFileSize)
+		return nil, errTooLarge()
 	}
 
 	return data, nil
