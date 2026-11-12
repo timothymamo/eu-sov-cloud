@@ -458,6 +458,14 @@ func TestFinalStageIsMinimalAndNonRoot(t *testing.T) {
 
 	final := finalStage(t, dockerfileInstructions(t, readRepoFile(t, dockerfileName)))
 
+	// The CLI image takes its command from the command line alone, so a CMD
+	// here would run a default command, or prepend arguments to its own, in
+	// place of what `docker run shift2eu assess ...` asks for.
+	for _, cmd := range stageCommands(final) {
+		t.Errorf("%s:%d: the final stage, the CLI image, has CMD %s: want none, so the arguments given to `docker run` reach the binary as they always have and no default command is run in their place",
+			dockerfileName, cmd.line, cmd.arguments())
+	}
+
 	assertMinimalNonRootStage(t, final, "the final stage", cliBinaryPath)
 }
 
@@ -480,6 +488,73 @@ func TestServerStageIsMinimalAndNonRoot(t *testing.T) {
 	if destination != serverBinaryPath {
 		t.Errorf("%s: the server stage copies the binary to %q, want %q, the path its ENTRYPOINT runs, so the container starts the server rather than nothing",
 			dockerfileName, destination, serverBinaryPath)
+	}
+
+	// The entrypoint alone leaves the server on its default listen address,
+	// 127.0.0.1:8080, which a container never publishes: the CMD is what puts
+	// the server behind the port the stage EXPOSEs.
+	assertServerListenCommand(t, stage, "the server stage")
+}
+
+// assertServerListenCommand holds the CMD of one image stage to the listen
+// address the image publishes (PRD #103 milestone 4, ADR 0019). Without a CMD
+// the binary keeps its default 127.0.0.1:8080, an address a container never
+// publishes, so `docker run -p 127.0.0.1:8080:8080` finds nothing listening on
+// the port and the API is unreachable. The CMD must pass --listen 0.0.0.0:8080
+// in exec form, so no shell is needed, and the port it names must be the one the
+// stage EXPOSEs, so the published port always has the server behind it. The
+// server refuses to start off loopback without a bearer token (exit 2), which is
+// the intended fail-safe: a container started without one stops rather than
+// serving unauthenticated. name names the stage in failure messages.
+func assertServerListenCommand(t *testing.T, stage []instruction, name string) {
+	t.Helper()
+
+	cmds := stageCommands(stage)
+
+	switch len(cmds) {
+	case 0:
+		t.Errorf("%s: %s has no CMD: want exactly one, CMD [\"--listen\", \"0.0.0.0:8080\"] in exec form, because without it the server keeps its default listen address, 127.0.0.1:8080, which a container does not publish, so the API is unreachable through a published port",
+			dockerfileName, name)
+
+		return
+	case 1:
+	default:
+		lines := make([]string, 0, len(cmds))
+		for _, cmd := range cmds {
+			lines = append(lines, strconv.Itoa(cmd.line))
+		}
+
+		t.Errorf("%s: %s has %d CMD instructions (lines %s): want exactly one, so no later CMD quietly replaces the one that gives the server its listen address",
+			dockerfileName, name, len(cmds), strings.Join(lines, ", "))
+
+		return
+	}
+
+	cmd := cmds[0]
+
+	var argv []string
+	if err := json.Unmarshal([]byte(cmd.arguments()), &argv); err != nil {
+		t.Fatalf("%s:%d: CMD %s is not in exec (JSON array) form, so Docker wraps it in /bin/sh, which the image does not hold: %v",
+			dockerfileName, cmd.line, cmd.arguments(), err)
+	}
+
+	want := []string{"--listen", "0.0.0.0:8080"}
+	if diff := cmp.Diff(want, argv); diff != "" {
+		t.Errorf("%s:%d: CMD mismatch (-want +got):\n%s\nwant the server started on every interface of its published port, which is what makes a published container port reach it; a bare ENTRYPOINT keeps the default 127.0.0.1:8080 and nothing outside the container can connect",
+			dockerfileName, cmd.line, diff)
+
+		return
+	}
+
+	// The port the CMD starts the server on and the one the stage publishes are
+	// the same port: a container publishes the exposed port, so a server on
+	// another one answers nothing there.
+	_, port, _ := strings.Cut(want[1], ":")
+
+	exposed := exposedPorts(t, stage, name)
+	if diff := cmp.Diff([]string{port}, exposed); diff != "" {
+		t.Errorf("%s:%d: the CMD starts the server on port %q and the stage EXPOSEs the ports %q (-CMD +EXPOSE):\n%s\nwant the same port, so the port the image publishes is the one the server listens on",
+			dockerfileName, cmd.line, port, exposed, diff)
 	}
 }
 
@@ -1064,6 +1139,48 @@ func finalStage(t *testing.T, instructions []instruction) []instruction {
 	}
 
 	return instructions[last:]
+}
+
+// stageCommands returns the CMD instructions of a stage, in file order. Docker
+// applies the last one, so more than one is reported rather than picked from.
+func stageCommands(stage []instruction) []instruction {
+	var cmds []instruction
+
+	for _, in := range stage {
+		if in.keyword() == "CMD" {
+			cmds = append(cmds, in)
+		}
+	}
+
+	return cmds
+}
+
+// exposedPorts returns the ports a stage's EXPOSE instructions publish, with any
+// /<protocol> suffix removed: EXPOSE 8080 and EXPOSE 8080/tcp both give "8080".
+// A stage that publishes none is reported, since the port its CMD starts the
+// server on is compared with them.
+func exposedPorts(t *testing.T, stage []instruction, name string) []string {
+	t.Helper()
+
+	var ports []string
+
+	for _, in := range stage {
+		if in.keyword() != "EXPOSE" {
+			continue
+		}
+
+		for _, field := range strings.Fields(in.arguments()) {
+			port, _, _ := strings.Cut(field, "/")
+			ports = append(ports, port)
+		}
+	}
+
+	if len(ports) == 0 {
+		t.Errorf("%s: %s has no EXPOSE instruction: want EXPOSE 8080, the port its CMD starts the server on",
+			dockerfileName, name)
+	}
+
+	return ports
 }
 
 // lastInstruction returns the last instruction of the given keyword, which is
