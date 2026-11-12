@@ -342,6 +342,7 @@ each pinned under `param:` and authenticated before it is installed:
 | `cosign` (v3 or later) | the image's signature | `/usr/local/bin` | SHA-256 pinned per architecture; each pin checked in CI against sigstore/cosign's keyless signature with an independently installed cosign (`vm-tools` workflow). In the VM, a self-check against its own bundle guards integrity only |
 | `gh` from its release | `gh attestation verify`, which Ubuntu's older `gh` lacks | `/usr/local/bin` | SHA-256 pinned per architecture; each pin checked in CI against gh's build attestation (`gh attestation verify`, `vm-tools` workflow) |
 | `crane` | resolving a tag to its digest without pulling the image | `/usr/local/bin` | `go install`, against the Go checksum database |
+| `shellcheck` | `make lint`'s shell script lint, and actionlint's check of the workflows' `run:` scripts ([ADR 0022](adr/0022-lint-shell-scripts-and-workflows-with-shellcheck-and-actionlint.md)) | `/usr/local/bin` | SHA-256 pinned per architecture. The release has no signature or attestation; CI's `lint-shell` job checks the same pin on every run, and `test/architecture` holds the VM's and CI's pins equal |
 
 A download that does not match its pin, or a cosign whose signature does not verify, stops provisioning
 with a message naming the file and the `param:` involved; nothing is installed and the download is
