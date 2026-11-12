@@ -84,5 +84,9 @@
 // could commit, any of which golangci-lint would read in place of
 // .golangci.yml.
 //
+// NonExecutableScripts lists every file in the git index under a directory
+// whose staged content starts with #! and whose mode is 100644, reading
+// both from the index with git ls-files -s and git cat-file --batch (issue #125).
+//
 // The package is internal to test/architecture: it is not an API of the module.
 package check
