@@ -367,6 +367,38 @@ The rules are pinned by `TestCLIImportsProbe`, `TestCLINoEnvOrProcessForbidigoPa
 allowed, no `os/exec`, `syscall`, `unsafe`, `plugin`, `runtime/cgo`, `os/signal`, `net/http/cgi` or
 `go/build`) whatever the exact entries.
 
+The named members were not the class. Both roots allow every module package through the prefix
+`github.com/timothymamo/shift2eu/`, and the next audit found more packages a root could delegate to:
+`internal/config` (a `doc.go` only) and the contract suites `sourcetest` and `targettest`, which any
+`_test.go` file may import, had no strict rule, so a probe in `internal/config` called `os.Getenv`
+and `exec.Command` with lint green; and `inventoryfile`, which `cmd/shift2eu` imports, is allowed `os`
+with no call rule. Two properties in `test/architecture` now close the class, over every package
+`go list` reports for every release target with the `e2e` and `integration` tags:
+`TestEveryModulePackageIsHeldByAStrictRule` fails for a module package under `internal/` or `cmd/`
+that no strict depguard rule holds (packages under `test/` are `_test.go`-only or under an
+`internal` directory the roots cannot import), and `TestEveryOsAllowingRuleHasAnEnvironmentGroup`
+fails for a package whose strict rule allows `os` but which no forbidigo group in scope holds to the
+nine `os` reads (`Getenv`, `LookupEnv`, `ExpandEnv`, `Environ`, `StartProcess`, `UserHomeDir`,
+`UserConfigDir`, `UserCacheDir`, `TempDir`). The composition-root skips in the per-release-target
+check no longer claim the packages a root reaches have strict rules of their own; the first property
+holds that.
+
+The properties called for four changes. `contract-suites-are-pure` holds both suites (`!$test`) to
+exactly what they import. `config-is-pure` and `target-docs-are-pure` hold `internal/config` and the
+doc-only `internal/adapter/target` to `errors$`: an empty allow list would say it better, but
+`check.AllowList` refuses a strict rule with none, and `errors$` is the smallest it reads. A future
+`os` import in `internal/config` must come with a forbidigo group for its reads, and any read of a
+named variable with an exception decided in an ADR. The forbidigo group `inventoryfile-no-env`
+refuses the nine reads under `internal/adapter/source/inventoryfile/`, tests included; and
+`composition-root-env` gains `os.UserHomeDir`, `os.UserConfigDir`, `os.UserCacheDir` and `os.TempDir`
+in an entry of its own, which the roots, alone of the packages allowed `os`, did not refuse. The
+`/proc` literal check reads the inventory-file reader too and matches `proc/` and `dev/fd/` at the
+start of a literal or after a `/`, so `fs.ReadFile(os.DirFS("/"), "proc/self/environ")` is refused.
+`TestDepguardRulesArePinned`, `TestContractSuitesArePureProbe`, `TestInventoryFileNoEnvProbe`,
+`TestInventoryFileNoEnvForbidigoPatterns`, `TestCompositionRootForbidigoProbe`,
+`TestCompositionRootForbidigoPatterns`, `TestForbidigoExclusionsDropOneGroup`,
+`TestEnvironmentPathProblems` and `TestStrictRuleCoverageHolds` pin them.
+
 *Amended (issue #153):* `t.Setenv` and `os.Setenv` change the environment of the whole test binary
 and `t.Chdir` and `os.Chdir` the working directory every `t.Parallel` test shares. The forbidigo group
 `tests-no-process-state` refuses them with two entries. The first,
@@ -445,10 +477,12 @@ workflow change.
     `composition-root` (issue #101) refuses one in `cmd/shift2eu`.
   - **I/O through functions of allowed packages** (`fmt.Print*`, `time.Now`, ...), which no import
     rule sees. Review holds that line, as the comment on `domain-is-pure` says.
-  - **The imports of layers without a checked strict rule** (the CLI, whose rule allows `$gostd`,
-    and the target and report adapters): the release-binary pass checks their sources and
-    directories, not their imports. `cmd/shift2eu` is no longer among them: its `composition-root` rule
-    is checked on its own (issue #101).
+  - **The imports of layers without a checked strict rule** (the target and report adapters): the
+    release-binary pass checks their sources and directories, not their imports. `cmd/shift2eu` is
+    no longer among them: its `composition-root` rule is checked on its own (issue #101), and the
+    CLI's rule is a strict allow list checked package by package since issue #152, when
+    `TestEveryModulePackageIsHeldByAStrictRule` began holding every module package under
+    `internal/` and `cmd/` to some strict rule.
 - The repository tests in `test/architecture` run `go list` 162 times: 96 for the layers and the
   binary (6 platforms, cgo off and on, 4 tag sets, one listing each), 48 for the composition root
   (the same 6 platforms, cgo modes and tag sets, issue #101), and 18 for the three probes (the

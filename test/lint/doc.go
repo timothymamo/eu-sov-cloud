@@ -85,7 +85,15 @@
 // TestHTTPAPITestsNoEnvOrProcessForbidigoPatterns pins it.
 // TestVersionImportsProbe (testdata/versionimports) holds internal/version to
 // the strict version-is-build-metadata rule: fmt passes, os and os/exec are
-// refused.
+// refused. TestContractSuitesArePureProbe (testdata/contractsuites) holds the
+// contract suites sourcetest and targettest to the strict
+// contract-suites-are-pure rule (issue #152): net, os, os/exec, syscall and
+// unsafe are refused, the packages they import today pass.
+// TestInventoryFileNoEnvProbe (testdata/inventoryfile) runs the forbidigo group
+// inventoryfile-no-env (issue #152) on the inventory-file reader, whose
+// environment reads, home, config, cache and temp lookups and os.StartProcess
+// must each be refused, and TestInventoryFileNoEnvForbidigoPatterns pins its
+// pattern.
 // TestTestsNoProcessStateProbe (testdata/testsprocessstate) runs the forbidigo
 // group tests-no-process-state (issue #153) on t.Setenv, t.Chdir, os.Setenv,
 // os.Unsetenv, os.Clearenv, os.Chdir, syscall.Unsetenv, syscall.Clearenv and
@@ -118,7 +126,9 @@
 // Syscall6, 9, 12, 15, 18 and N, RawSyscall, RawSyscall6) and syscall.SYS_*,
 // and any use of unsafe; composition-root-env refuses reading a named variable
 // (os.Getenv, os.LookupEnv, os.ExpandEnv, syscall.Getenv,
-// syscall.GetEnvironmentVariable). The probe lints the roots natively and for
+// syscall.GetEnvironmentVariable) and, since issue #152, locating a home,
+// config, cache or temp directory (os.UserHomeDir, os.UserConfigDir,
+// os.UserCacheDir, os.TempDir). The probe lints the roots natively and for
 // windows/amd64. Those names are defence in depth: the comprehensive guard is
 // TestCompositionRootsUseSyscallOnlyForSignals, an AST check under which the
 // roots, tests included, use package syscall for a ^SIG[A-Z0-9]+$ constant and
@@ -128,8 +138,10 @@
 // cmd/shift2eu-server/main.go to one os.LookupEnv call, with the identifier
 // tokenEnvVar, as the sole return of the func() (string, bool) token source it
 // passes to run, so run reads no other variable, and
-// TestRootsAndCLINameNoEnvironmentPath refuses a /proc/ or /dev/fd/
-// literal in the roots and both driving adapters; no group can state either.
+// TestRootsAndCLINameNoEnvironmentPath refuses a literal holding proc/ or
+// dev/fd/, at its start or after a /, in the roots, both driving adapters and
+// the inventory-file reader (proc/self/environ read through os.DirFS("/") has
+// no leading slash); no group can state either.
 // The depguard rule composition-root-tests refuses go/build, net/http/cgi,
 // os/exec, os/user, plugin, runtime/cgo, syscall/js and unsafe in the roots'
 // _test.go files, which the strict composition-root rules skip, and in the

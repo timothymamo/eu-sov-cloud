@@ -355,7 +355,11 @@ credentials live (CLAUDE.md rule 3). An import rule cannot see a call, so two fo
   list below is what holds. The `unsafe` ban is defence in depth too: `fmt` and `strconv` can print
   and parse an address without it.
 - **`composition-root-env`** refuses reading a named variable: `os.Getenv`, `os.LookupEnv`,
-  `os.ExpandEnv`, `syscall.Getenv` and, on windows, `syscall.GetEnvironmentVariable`. Its one
+  `os.ExpandEnv`, `syscall.Getenv` and, on windows, `syscall.GetEnvironmentVariable`. Since issue
+  #152 it also refuses `os.UserHomeDir`, `os.UserConfigDir`, `os.UserCacheDir` and `os.TempDir`, in
+  an entry of their own: each reads `$HOME`, `$XDG_CONFIG_HOME`, `$XDG_CACHE_HOME` or `$TMPDIR`
+  without naming it, the directories a credentials file sits under, so the roots are held to the
+  same nine `os` reads as every other package allowed `os` (below). Its one
   exception is a single `os.LookupEnv` call in `cmd/shift2eu-server/main.go`, with the argument
   `tokenEnvVar` (`SHIFT2EU_SERVER_TOKEN`), in the token source
   `func() (string, bool) { return os.LookupEnv(tokenEnvVar) }` that `main` hands to `run` (ADR 0019).
@@ -379,7 +383,8 @@ and `TestCompositionRootExclusions` pins the scope and the one exception.
 
 Four source checks in `test/lint` read the real roots, tests included, as the groups cannot state
 them; the `//go:linkname` and `/proc` checks read both driving adapters, `internal/cli` and
-`internal/httpapi`, as well (issue #152):
+`internal/httpapi`, and the inventory-file reader, `internal/adapter/source/inventoryfile`, as well
+(issue #152):
 
 - `TestCompositionRootsUseSyscallOnlyForSignals` is the comprehensive guard on `syscall`: an AST
   check under which a root uses package `syscall` only for a `^SIG[A-Z0-9]+$` constant and the type
@@ -393,8 +398,11 @@ them; the `//go:linkname` and `/proc` checks read both driving adapters, `intern
   of a `func() (string, bool)` literal passed directly to the package-level `run`, which `main.go`
   neither declares nor assigns (the forbidigo exception is a path and a msg, so a second use in that
   file, or handing `os.LookupEnv` itself to `run`, would lint clean).
-- `TestRootsAndCLINameNoEnvironmentPath` refuses a string literal holding `/proc/` or `/dev/fd/`
-  in any Go file of the roots and of the driving adapters, as `os.ReadFile("/proc/self/environ")` dumps every variable.
+- `TestRootsAndCLINameNoEnvironmentPath` refuses a string literal holding `proc/` or `dev/fd/`, at
+  its start or after a `/`, in any Go file of the roots, the driving adapters and the inventory-file
+  reader, as `os.ReadFile("/proc/self/environ")` dumps every variable. The leading slash is optional
+  since the audit of #152: `fs.ReadFile(os.DirFS("/"), "proc/self/environ")` reads the same file, and
+  a relative `proc/...` resolves to it from `/`. A name that only ends in `proc` (`myproc/...`) passes.
 
 The roots' `_test.go` files are compiled into the same package and run in the same process, but the
 strict depguard rules `composition-root` and `server-composition-root` skip them. The lax depguard
@@ -459,6 +467,54 @@ now held as well:
 `os.Getwd` stays allowed in the CLI: it reads `$PWD` (when it names the working directory) and
 returns a path only, the one the user ran the CLI in.
 
+### Every package a root reaches is held
+
+Both roots allow every module package through the prefix `github.com/timothymamo/shift2eu/`, so a
+root can hand a call it may not make to any package of the module, not only to the driving adapters.
+The audit of #152 found three such packages that no strict rule held (`internal/config`, the contract
+suites) and one allowed `os` with no call rule (`inventoryfile`). Issue #152 closes the class with two
+properties that `test/architecture` checks over every package `go list` reports for every release
+target, with the `e2e` and `integration` tags (`strictcoverage_test.go`):
+
+- **Every module package under `internal/` and `cmd/` is held by a strict depguard rule**
+  (`TestEveryModulePackageIsHeldByAStrictRule`). A new package without one fails the test, so
+  whatever a root reaches has a strict allow list. Packages under `test/` are left out: each is
+  either `_test.go`-only or under a directory named `internal` (`test/internal/...`,
+  `test/architecture/internal/...`), which Go's internal rule keeps the roots out of whatever their
+  allow lists say.
+- **Every package whose strict rule allows `os` is held by a forbidigo group refusing the nine `os`
+  reads** (`TestEveryOsAllowingRuleHasAnEnvironmentGroup`): `os.Getenv`, `os.LookupEnv`,
+  `os.ExpandEnv`, `os.Environ`, `os.StartProcess`, `os.UserHomeDir`, `os.UserConfigDir`,
+  `os.UserCacheDir` and `os.TempDir`, in an entry whose exclusion rules leave the package in scope.
+  Today those are the roots (`composition-root-env`, `composition-root-no-exec`), `internal/cli`
+  (`cli-no-env-or-process`), `internal/testutil` (`testutil-no-env`) and the inventory-file reader
+  (`inventoryfile-no-env`). A rule that gains `os$` fails the test until its package has a group.
+
+`TestStrictRuleCoverageHolds` pins the helpers both tests share. The rules the properties called for:
+
+- **`config-is-pure`** (depguard, strict) holds `internal/config`, which has only a `doc.go` today,
+  to `errors$`: the smallest allow list `check.AllowList` reads, as it refuses a strict rule with
+  none. Its `doc.go` announces flags, the environment and a file; a future `os` import comes with a
+  forbidigo group for its reads (the second property fails until it does), and any read of a named
+  variable needs an exception decided in an ADR, as `composition-root-env`'s for
+  `SHIFT2EU_SERVER_TOKEN` (ADR 0019).
+- **`target-docs-are-pure`** (depguard, strict) holds `internal/adapter/target`, a `doc.go` with no
+  code, to `errors$` as well; negated globs take out the providers, the snapshot reader and
+  `targettest`, which have rules of their own. A provider added under it is named there and in
+  `embedded-snapshot-targets-stay-offline` in the same commit.
+- **`contract-suites-are-pure`** (depguard, strict) holds `internal/adapter/source/sourcetest` and
+  `internal/adapter/target/targettest`. They are production packages that any `_test.go` file may
+  import, so a scoped test could delegate a call through them. The allow list is what they import
+  today (`context`, `errors`, `fmt`, `slices`, `testing`, `time`, `internal/app/analysis` and the
+  domain's `catalog`, `inventory`, `taxonomy` and `text`); `!$test` leaves their own tests, which run
+  in the suites' own test binaries, to the module-wide rules. `TestContractSuitesArePureProbe` lints
+  it on a probe module (`test/lint/testdata/contractsuites`).
+- **`inventoryfile-no-env`** (forbidigo, `analyze-types`) refuses the nine `os` reads under
+  `internal/adapter/source/inventoryfile/`, `_test.go` files included (one `path-except` exclusion
+  rule). `inventory-file-reader-reads-one-file` must allow `os` for `os.Open`, and `cmd/shift2eu`
+  imports the reader. The writes are `tests-no-process-state`'s. `TestInventoryFileNoEnvProbe` and
+  `TestInventoryFileNoEnvForbidigoPatterns` pin it.
+
 ### Tests change no process state
 
 `t.Setenv` and `os.Setenv` change the environment of the whole test binary, so every test in the
@@ -503,8 +559,8 @@ Known gaps, which these rules do not close:
   `$TMPDIR` through `os.TempDir` (issue #153): they return only a fresh temporary path, never a home,
   config or credential path, and `t.TempDir` goes through the same read, so refusing them would leave
   a test no way to get a temporary directory. They are accepted; `os.TempDir` named directly stays
-  refused where `testutil-no-env`, `cli-no-env-or-process` and `httpapi-tests-no-env-or-process`
-  refuse it. That refusal is no confidentiality control: `filepath.Dir` of any temporary path
+  refused where `testutil-no-env`, `cli-no-env-or-process`, `httpapi-tests-no-env-or-process`,
+  `inventoryfile-no-env` and, since issue #152, `composition-root-env` refuse it. That refusal is no confidentiality control: `filepath.Dir` of any temporary path
   recovers `$TMPDIR`. It is acceptable because `$TMPDIR` holds no secret; the refusal keeps a helper
   from building paths off the temporary directory by habit, nothing more.
 - **`os.Getwd` reads `$PWD`.** It returns the working directory only, a path the user chose, and

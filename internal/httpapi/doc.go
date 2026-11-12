@@ -6,8 +6,8 @@
 // the environment, timeouts, graceful shutdown and the access log belong to
 // the composition root, not to this package.
 //
-// The package imports the application, the domain, internal/version and a
-// named list of standard packages only, never an adapter, internal/cli or
+// The package imports the application, the domain and a named list of standard
+// packages only (and may import internal/version), never an adapter, internal/cli or
 // cmd/ (depguard rule httpapi-gets-adapters-from-cmd). Strict JSON decoding
 // lives in the adapters, because jsondoc (ADR 0009) is internal to
 // internal/adapter: Deps.DecodeRequest is assessmentrequest.Decode and

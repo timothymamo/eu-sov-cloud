@@ -126,6 +126,22 @@
 // and TestCompositionRootRulesHoldTheirProbesForEveryReleaseTarget fails a
 // fixture cmd/shift2eu-server that imports a third-party library or a stand-in
 // SDK.
+// Both roots allow every module package through that prefix, so a root can
+// hand a call it may not make to any of them. Two properties close the class
+// (issue #152), over every package go list reports for every release target
+// with the e2e and integration tags: TestEveryModulePackageIsHeldByAStrictRule
+// fails for a module package under internal/ or cmd/ that no strict depguard
+// rule holds (a package under test/ is _test.go-only or under an internal
+// directory the roots cannot import), and
+// TestEveryOsAllowingRuleHasAnEnvironmentGroup fails for a package whose strict
+// rule allows os but which no forbidigo group in scope holds to the nine os
+// reads (Getenv, LookupEnv, ExpandEnv, Environ, StartProcess, UserHomeDir,
+// UserConfigDir, UserCacheDir, TempDir). TestStrictRuleCoverageHolds pins their
+// helpers. The properties brought three strict rules: config-is-pure and
+// target-docs-are-pure hold internal/config and the doc-only
+// internal/adapter/target to errors$, the smallest allow list check.AllowList
+// reads, and contract-suites-are-pure holds sourcetest and targettest, which any
+// _test.go file may import, to what they import today.
 // The exemption trusts the import path, which is sound because nothing can
 // substitute other code for an allowed path: TestRootModuleHasNoReplace reads
 // the root go.mod with the go command's own parser (go mod edit -json) and
