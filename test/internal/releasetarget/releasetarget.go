@@ -40,8 +40,11 @@ type Target struct {
 //     archives, checksum, changelog and release. Any other key is refused: a
 //     top-level env applies to every build, gomod picks the Go binary that
 //     builds, and a key the check does not know may do either.
-//   - before may hold only hooks, and they must be exactly [go mod tidy]: a
-//     hook runs before the build and could rewrite what it compiles.
+//   - before may hold only hooks, and they must be exactly
+//     [go mod tidy -diff]: a hook runs before the build, outside its env, and
+//     could rewrite what it compiles; -diff fails when the module is not tidy
+//     and writes nothing, where plain go mod tidy would rewrite go.mod and
+//     go.sum for the -mod=readonly build to accept.
 //   - builds must hold exactly one entry. It may hold only id, main, binary,
 //     env, flags, ldflags, goos and goarch: ignore and targets (which change
 //     the platform list), tags, overrides, goamd64 and goarm64 (which change
@@ -122,7 +125,7 @@ func topLevel(lines []yamlread.Line) ([]yamlread.Line, error) {
 }
 
 // checkBefore refuses a before section that holds anything but the hook
-// go mod tidy.
+// go mod tidy -diff, which fails instead of rewriting go.mod or go.sum.
 func checkBefore(before yamlread.Entry) error {
 	block, err := yamlread.BlockValue(before, "before")
 	if err != nil {
@@ -144,8 +147,8 @@ func checkBefore(before yamlread.Entry) error {
 			return fmt.Errorf("before: %w", err)
 		}
 
-		if !slices.Equal(hooks, []string{"go mod tidy"}) {
-			return fmt.Errorf("line %d: before: hooks are %q, want exactly [go mod tidy]: a hook runs before the build and could rewrite what it compiles", e.Num, hooks)
+		if !slices.Equal(hooks, []string{"go mod tidy -diff"}) {
+			return fmt.Errorf("line %d: before: hooks are %q, want exactly [go mod tidy -diff]: a hook runs before the build, outside its env, and -diff fails instead of rewriting go.mod or go.sum", e.Num, hooks)
 		}
 	}
 
