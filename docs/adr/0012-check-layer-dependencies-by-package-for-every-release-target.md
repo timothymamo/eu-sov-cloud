@@ -66,9 +66,11 @@ release builds, with cgo off and on, and with no build tag, `e2e`, `integration`
 
 Every strict rule in `.golangci.yml` must be a layer of that check or a skip with a written reason
 (`TestEveryStrictRuleIsChecked`): `cli-gets-adapters-from-cmd` allows `$gostd`, which no package list
-can spell out, `e2e-is-black-box` holds a directory of test files only, which `go list -deps`
-does not list as a layer (`app-tests-use-fakes-not-adapters`, which holds the test files of a layer's
-packages, is checked: *Amended (issue #144)*, below), and `composition-root` is held on its own (*Amended (issue #101)*, below).
+can spell out, `e2e-is-black-box` holds the test files of `test/e2e`, which `go list -deps` does
+not list as a layer (its untagged `doc.go` is held by `test-docs-are-pure` too since issue #152;
+`app-tests-use-fakes-not-adapters`, which holds the test files of a layer's
+packages, is checked: *Amended (issue #144)*, below), and `composition-root` is held on its own
+(*Amended (issue #101)*, below).
 
 *Amended (issue #79):* the check first required every allow entry to end in `$` and every rule to
 name `!$test`, so it skipped `cloud-adapters-reach-the-cloud-through-the-sdk`, whose allow list
@@ -373,7 +375,7 @@ The named members were not the class. Both roots allow every module package thro
 `internal/config` (a `doc.go` only) and the contract suites `sourcetest` and `targettest`, which any
 `_test.go` file may import, had no strict rule, so a probe in `internal/config` called `os.Getenv`
 and `exec.Command` with lint green; and `inventoryfile`, which `cmd/shift2eu` imports, is allowed `os`
-with no call rule. Two properties in `test/architecture` now close the class, over every package
+with no call rule. Properties in `test/architecture` now close the class, over every package
 `go list` reports for every release target with the `e2e` and `integration` tags:
 `TestEveryModulePackageIsHeldByAStrictRule` fails for a non-test module package that no strict
 depguard rule holds, over `go list ./...` (first only `internal/` and `cmd/`; the round-4 audit of
@@ -384,7 +386,13 @@ as `test/internal/...` and `test/architecture/internal/...`), and `TestEveryOsAl
 fails for a package whose strict rule allows `os` but which no forbidigo group in scope holds to the
 nine `os` reads (`Getenv`, `LookupEnv`, `ExpandEnv`, `Environ`, `StartProcess`, `UserHomeDir`,
 `UserConfigDir`, `UserCacheDir`, `TempDir`; extending it to the `syscall` reads and to `$gostd` is
-follow-up issue #167). The composition-root skips in the per-release-target
+follow-up issue #167). A third, `TestNoPackageIsHeldOnlyByAGostdRule`, came from the final review
+and audit of #152 (the reviewer's B1, the auditor's L-1): `test/e2e`'s `doc.go` carries no build tag,
+so it is a production package a root can import, and `e2e-is-black-box`, the only rule that held it,
+allows `$gostd`, so an untagged file there read `os.Getenv` and started `exec.Command` with lint
+green. No package a root can import is now held only through a rule that allows `$gostd`: each is
+held by at least one strict rule that does not, or is named with its reason in `gostdOnlyExempt`,
+which is empty. The composition-root skips in the per-release-target
 check no longer claim the packages a root reaches have strict rules of their own; the first property
 holds that.
 
@@ -393,8 +401,9 @@ exactly what they import. `config-is-pure` and `target-docs-are-pure` hold `inte
 doc-only `internal/adapter/target` to `errors$`: an empty allow list would say it better, but
 `check.AllowList` refuses a strict rule with none, and `errors$` is the smallest it reads (follow-up
 issue #166 lets it accept an empty list). `test-docs-are-pure` holds the doc-only `test/apiparity`,
-`test/architecture` (minus its `internal/` tree), `test/container`, `test/devenv`, `test/docs` and
-`test/lint` to the same placeholder, their tests left out with `!$test`. A future
+`test/architecture` (minus its `internal/` tree), `test/container`, `test/devenv`, `test/docs`,
+`test/e2e` and `test/lint` to the same placeholder, their tests left out with `!$test`; the `test/e2e`
+glob sits before `!$test`, so the e2e test files stay on `e2e-is-black-box`. A future
 `os` import in `internal/config` must come with a forbidigo group for its reads, and any read of a
 named variable with an exception decided in an ADR. The forbidigo group `inventoryfile-no-env`
 refuses the nine reads under `internal/adapter/source/inventoryfile/`, tests included; and

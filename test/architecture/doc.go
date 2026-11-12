@@ -130,13 +130,17 @@
 // hand a call it may not make to any of them. Two properties close the class
 // (issue #152), over every package go list reports for every release target
 // with the e2e and integration tags: TestEveryModulePackageIsHeldByAStrictRule
-// fails for a module package under internal/ or cmd/ that no strict depguard
-// rule holds (a package under test/ is _test.go-only or under an internal
-// directory the roots cannot import), and
-// TestEveryOsAllowingRuleHasAnEnvironmentGroup fails for a package whose strict
-// rule allows os but which no forbidigo group in scope holds to the nine os
-// reads (Getenv, LookupEnv, ExpandEnv, Environ, StartProcess, UserHomeDir,
-// UserConfigDir, UserCacheDir, TempDir). TestStrictRuleCoverageHolds pins their
+// fails for a non-test module package a root can import that no strict
+// depguard rule holds (only a package under an internal directory the roots
+// cannot import is left out); TestEveryOsAllowingRuleHasAnEnvironmentGroup fails
+// for a package whose strict rule allows os but which no forbidigo group in
+// scope holds to the nine os reads (Getenv, LookupEnv, ExpandEnv, Environ,
+// StartProcess, UserHomeDir, UserConfigDir, UserCacheDir, TempDir); and
+// TestNoPackageIsHeldOnlyByAGostdRule fails for such a package whose only
+// holding strict rules allow $gostd, and so os/exec, syscall and unsafe, unless
+// gostdOnlyExempt (empty) names it with a reason. That last one found test/e2e:
+// its doc.go carries no build tag, and e2e-is-black-box allows $gostd, so
+// test-docs-are-pure holds it as well. TestStrictRuleCoverageHolds pins their
 // helpers. The properties brought three strict rules: config-is-pure and
 // target-docs-are-pure hold internal/config and the doc-only
 // internal/adapter/target to errors$, the smallest allow list check.AllowList

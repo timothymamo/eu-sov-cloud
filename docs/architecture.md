@@ -476,7 +476,7 @@ returns a path only, the one the user ran the CLI in.
 Both roots allow every module package through the prefix `github.com/timothymamo/shift2eu/`, so a
 root can hand a call it may not make to any package of the module, not only to the driving adapters.
 The audit of #152 found three such packages that no strict rule held (`internal/config`, the contract
-suites) and one allowed `os` with no call rule (`inventoryfile`). Issue #152 closes the class with two
+suites) and one allowed `os` with no call rule (`inventoryfile`). Issue #152 closes the class with three
 properties that `test/architecture` checks over every package `go list` reports for every release
 target, with the `e2e` and `integration` tags (`strictcoverage_test.go`):
 
@@ -498,12 +498,21 @@ target, with the `e2e` and `integration` tags (`strictcoverage_test.go`):
   (`inventoryfile-no-env`). A rule that gains `os$` fails the test until its package has a group.
   The property reads `os` only: extending it to the `syscall` reads (`Getenv`, `Environ`, `Exec`,
   `ForkExec`, `StartProcess`) and treating `$gostd` as allowing both is follow-up issue #167.
+- **No package a root can import is held only through a `$gostd` rule**
+  (`TestNoPackageIsHeldOnlyByAGostdRule`): a strict rule that allows `$gostd` allows `os/exec`,
+  `syscall` and `unsafe` with the rest, so every non-test module package a strict rule holds is held
+  by at least one strict rule that does not allow `$gostd`, unless it is named, with its reason, in
+  `gostdOnlyExempt`, which is empty. The final review and audit of #152 found `test/e2e` held by
+  `e2e-is-black-box` alone: its `doc.go` carries no build tag, so it is a production package a root
+  can import, and an untagged file there could read `os.Getenv` and start `exec.Command` with lint
+  green. `test-docs-are-pure` holds it now.
 
-`TestStrictRuleCoverageHolds` pins the helpers both tests share. The rules the properties called for:
+`TestStrictRuleCoverageHolds` pins the helpers the tests share. The rules the properties called for:
 
 - **`config-is-pure`** (depguard, strict) holds `internal/config`, which has only a `doc.go` today,
   to `errors$`: the smallest allow list `check.AllowList` reads, as it refuses a strict rule with
-  none (follow-up issue #166 lets it accept an empty list and drops these placeholders). Its `doc.go` announces flags, the environment and a file; a future `os` import comes with a
+  none (follow-up issue #166 lets it accept an empty list and drops these placeholders). Its
+  `doc.go` announces flags, the environment and a file; a future `os` import comes with a
   forbidigo group for its reads (the second property fails until it does), and any read of a named
   variable needs an exception decided in an ADR, as `composition-root-env`'s for
   `SHIFT2EU_SERVER_TOKEN` (ADR 0019).
@@ -524,12 +533,14 @@ target, with the `e2e` and `integration` tags (`strictcoverage_test.go`):
   imports the reader. The writes are `tests-no-process-state`'s. `TestInventoryFileNoEnvProbe` and
   `TestInventoryFileNoEnvForbidigoPatterns` pin it.
 - **`test-docs-are-pure`** (depguard, strict) holds the doc-only packages `test/apiparity`,
-  `test/architecture`, `test/container`, `test/devenv`, `test/docs` and `test/lint` to the same
-  `errors$` placeholder (issue #166). Each is a production package a root could import through the
-  module prefix. `!$test` leaves their tests out, and a negated glob takes out
+  `test/architecture`, `test/container`, `test/devenv`, `test/docs`, `test/e2e` and `test/lint` to
+  the same `errors$` placeholder (issue #166). Each is a production package a root could import
+  through the module prefix. `!$test` leaves their tests out, and a negated glob takes out
   `test/architecture/internal/...`, which Go's internal rule hides from the roots and which reads
-  `os` and `os/exec`. `test/e2e` is held by `e2e-is-black-box`. A package that starts importing
-  something names it there and in the pin in the same commit.
+  `os` and `os/exec`. `test/e2e`'s untagged `doc.go` is held here as well (the third property): its
+  glob sits before `!$test`, so the e2e test files stay on `e2e-is-black-box`, which allows `$gostd`
+  and holds the package too. A package that starts importing something names it there and in the
+  pin in the same commit.
 
 ### Tests change no process state
 
