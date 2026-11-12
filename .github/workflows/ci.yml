@@ -104,8 +104,8 @@ jobs:
         run: make build
       - name: End-to-end tests
         run: make test-e2e
-      # The GoReleaser release.yml runs, at the same commit and version, installed only: the script below
-      # runs a snapshot of the release, which builds the archives and publishes nothing.
+      # The same goreleaser version release.yml runs, installed only: the script below runs a snapshot of
+      # the release at this commit, which builds the archives and publishes nothing.
       - uses: goreleaser/goreleaser-action@a4f02ab5355a589de60d917a659ce617ed19b3de # v7.3.0
         with:
           distribution: goreleaser
