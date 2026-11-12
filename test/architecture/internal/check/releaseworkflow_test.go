@@ -13,7 +13,7 @@ import (
 )
 
 // The fixture below is .github/workflows/release.yml in parts: the top level,
-// then the five jobs, each with the comments and keys above its steps
+// then the eight jobs, each with the comments and keys above its steps
 // (releaseJob.head) and its steps in order. Rendering it rebuilds the file byte
 // for byte, so a case changes one part and leaves the rest exactly as the
 // release has it, comments included: the check must tolerate a full-line
@@ -40,8 +40,13 @@ concurrency:
   group: release
   cancel-in-progress: false
 
-# The steps of all five jobs are a closed list that test/architecture holds
+# The steps of all eight jobs are a closed list that test/architecture holds
 # (check.ReleaseWorkflow): add no step, run: or env: here without changing it.
+# The server-image, server-sbom and server-sign jobs publish the HTTP API's
+# image, ghcr.io/timothymamo/shift2eu-server (PRD #103), exactly as image, sbom
+# and sign publish the CLI's: jobs of their own rather than a matrix, as a
+# matrix job's outputs keep one leg's digest only, and each job keeps its own
+# least privilege.
 jobs:
 `
 
@@ -336,6 +341,182 @@ var signSteps = []string{
 `,
 }
 
+// serverImageJobHead is the server-image job: the image job for the HTTP API's image, built from the
+// Dockerfile's server stage, up to its steps:.
+const serverImageJobHead = `  # The image job for the HTTP API's image: the Dockerfile's server stage
+  # (--target server), with the same stamp, tags and build settings.
+  server-image:
+    name: Container image (shift2eu-server)
+    needs: [test, goreleaser]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read # check out the repository
+      packages: write # push the image to ghcr.io
+    outputs:
+      digest: ${{ steps.build.outputs.digest }}
+    steps:
+`
+
+// serverImageSteps are the server-image job's steps.
+var serverImageSteps = []string{
+	`      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+`,
+	`      # The image job's stamp, line for line.
+      - name: Build arguments, as GoReleaser stamps them
+        id: stamp
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          git rev-parse --verify --quiet refs/remotes/origin/main > /dev/null || {
+            echo "origin/main is missing from the checkout" >&2
+            exit 1
+          }
+          highest="$(git tag -l 'v*.*.*' --merged refs/remotes/origin/main | sed -nE '/^v[0-9]+\.[0-9]+\.[0-9]+$/p' | sort -V | tail -n 1)"
+          latest=false
+          if [ "$TAG" = "$highest" ]; then latest=true; fi
+          {
+            echo "version=${TAG#v}"
+            echo "commit=$(git rev-parse --short HEAD)"
+            echo "date=$(TZ=UTC git log -1 --format=%cd --date=format-local:%Y-%m-%dT%H:%M:%SZ)"
+            echo "latest=$latest"
+          } >> "$GITHUB_OUTPUT"
+`,
+	`      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+        with:
+          # renovate: datasource=docker depName=moby/buildkit versioning=semver
+          driver-opts: image=moby/buildkit:v0.34.2@sha256:c5f8862f52499773af85bc07695b2379ef08e8002352b0df2c4864c91d78dabe
+`,
+	`      - uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550 # v4.8.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+`,
+	`      - name: Image tags
+        id: tags
+        uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6.2.0
+        with:
+          images: ghcr.io/timothymamo/shift2eu-server
+          flavor: latest=${{ steps.stamp.outputs.latest }}
+          tags: |
+            type=semver,pattern={{raw}}
+            type=semver,pattern={{major}}.{{minor}},enable=${{ !contains(github.ref_name, '-') }}
+`,
+	`      - name: Build and push linux/amd64 and linux/arm64
+        id: build
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: .
+          target: server
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.tags.outputs.tags }}
+          annotations: index:org.opencontainers.image.source=https://github.com/timothymamo/shift2eu
+          provenance: false
+          sbom: false
+          build-args: |
+            VERSION=${{ steps.stamp.outputs.version }}
+            COMMIT=${{ steps.stamp.outputs.commit }}
+            DATE=${{ steps.stamp.outputs.date }}
+`,
+}
+
+// serverSbomJobHead is the server-sbom job: the sbom job for the HTTP API's image, up to its steps:.
+const serverSbomJobHead = `  # The sbom job for the HTTP API's image: read-only, by digest.
+  server-sbom:
+    name: SBOM (shift2eu-server)
+    needs: server-image
+    runs-on: ubuntu-latest
+    permissions:
+      packages: read # pull the image from ghcr.io, private until made public
+    steps:
+`
+
+// serverSbomSteps are the server-sbom job's steps.
+var serverSbomSteps = []string{
+	`      - uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550 # v4.8.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+`,
+	`      - uses: anchore/sbom-action@66cbf4bc1f1c0d2edc94016e65bc221b6bb0ad6c # v0.24.3
+        with:
+          image: registry:ghcr.io/timothymamo/shift2eu-server@${{ needs.server-image.outputs.digest }}
+          format: spdx-json
+          output-file: shift2eu-server.spdx.json
+          upload-artifact: false
+          upload-release-assets: false
+          # renovate: datasource=github-releases depName=anchore/syft
+          syft-version: v1.57.1
+`,
+	`      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: server-sbom
+          path: shift2eu-server.spdx.json
+          if-no-files-found: error
+          retention-days: 1
+`,
+}
+
+// serverSignJobHead is the server-sign job: the sign job for the HTTP API's image, up to its steps:.
+const serverSignJobHead = `  # The sign job for the HTTP API's image: the signing identity, sigstore's
+  # and GitHub's actions only, everything by digest.
+  server-sign:
+    name: Sign and attest (shift2eu-server)
+    needs: [server-image, server-sbom]
+    runs-on: ubuntu-latest
+    permissions:
+      packages: write # push the signatures and attestations to ghcr.io
+      id-token: write # GitHub OIDC token for keyless cosign and attestation signing
+      attestations: write # store the provenance and SBOM attestations in the repository
+    steps:
+`
+
+// serverSignSteps are the server-sign job's steps.
+var serverSignSteps = []string{
+	`      - uses: sigstore/cosign-installer@756fe2d284c7292c4e9b62c8a28f1e5629c59532 # v4.1.3
+        with:
+          # renovate: datasource=github-releases depName=sigstore/cosign
+          cosign-release: v3.1.4
+`,
+	`      - name: Log in to ghcr.io
+        env:
+          ACTOR: ${{ github.actor }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: printf '%s' "$GITHUB_TOKEN" | cosign login ghcr.io --username "$ACTOR" --password-stdin
+`,
+	`      - name: Sign the image
+        env:
+          DIGEST: ${{ needs.server-image.outputs.digest }}
+        run: cosign sign --yes --recursive "ghcr.io/timothymamo/shift2eu-server@${DIGEST}"
+`,
+	`      - name: Attest the build provenance
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        with:
+          subject-name: ghcr.io/timothymamo/shift2eu-server
+          subject-digest: ${{ needs.server-image.outputs.digest }}
+          push-to-registry: true
+          create-storage-record: false # an organisation API; needs artifact-metadata: write
+`,
+	`      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: server-sbom
+`,
+	`      - name: Attest the SBOM
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        with:
+          subject-name: ghcr.io/timothymamo/shift2eu-server
+          subject-digest: ${{ needs.server-image.outputs.digest }}
+          sbom-path: shift2eu-server.spdx.json
+          push-to-registry: true
+          create-storage-record: false
+`,
+}
+
 // releaseJob is one job of the release workflow fixture: its key in jobs:, the
 // comments and keys above its steps, and its steps in order.
 type releaseJob struct {
@@ -365,6 +546,9 @@ func releaseWorkflowFixture() releaseFixture {
 			{key: "image", head: imageJobHead, steps: imageSteps},
 			{key: "sbom", head: sbomJobHead, steps: sbomSteps},
 			{key: "sign", head: signJobHead, steps: signSteps},
+			{key: "server-image", head: serverImageJobHead, steps: serverImageSteps},
+			{key: "server-sbom", head: serverSbomJobHead, steps: serverSbomSteps},
+			{key: "server-sign", head: serverSignJobHead, steps: serverSignSteps},
 		},
 	}
 }
@@ -502,7 +686,7 @@ func beforeStep(t *testing.T, steps []string, head, step string) []string {
 }
 
 // TestReleaseWorkflow pins what the release workflow may say. It is read as a
-// closed schema: the top-level keys, the five jobs, their keys and their steps
+// closed schema: the top-level keys, the eight jobs, their keys and their steps
 // are fixed, so no step runs repository code, sets the go command's environment
 // or swaps the goreleaser document before goreleaser runs; only a commit on
 // main is released; and the publishing privileges stay split over three jobs,
@@ -871,6 +1055,41 @@ func TestReleaseWorkflow(t *testing.T) {
 		{name: "the provenance attested from a file", workflow: in("sign", "      - name: Attest the build provenance\n        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2\n        with:\n          subject-name: ghcr.io/timothymamo/shift2eu\n", "      - name: Attest the build provenance\n        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2\n        with:\n          subject-path: dist/shift2eu\n"), wantIn: "subject-path"},
 		{name: "an artifact downloaded under another name", workflow: in("sign", "      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2\n        with:\n          name: sbom\n", "      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2\n        with:\n          name: shift2eu-sbom\n"), wantIn: "name"},
 		{name: "another action in place of the artifact download", workflow: in("sign", "      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2\n", "      - uses: example/attest@0123456789abcdef0123456789abcdef01234567\n"), wantIn: "download-artifact"},
+
+		// The HTTP API's image (PRD #103) is published exactly as the CLI's:
+		// built from the server stage, pushed, read for its SBOM, signed and
+		// attested, each by its own digest, in jobs of its own with the same
+		// split privileges.
+		{name: "no server-image job", workflow: release.withoutJob(t, "server-image"), wantIn: `no "server-image"`},
+		{name: "no server-sbom job", workflow: release.withoutJob(t, "server-sbom"), wantIn: `no "server-sbom"`},
+		{name: "no server-sign job", workflow: release.withoutJob(t, "server-sign"), wantIn: `no "server-sign"`},
+		{name: "the server image not pushed", workflow: in("server-image", "          push: true\n", "          push: false\n"), wantIn: "jobs: server-image: steps: step 6"},
+		{name: "the server image built from the CLI's stage", workflow: in("server-image", "          target: server\n", ""), wantIn: `no "target"`},
+		{name: "the server image built from another stage", workflow: in("server-image", "          target: server\n", "          target: build\n"), wantIn: "with: target"},
+		{name: "a target on the CLI image", workflow: in("image", "          context: .\n", "          context: .\n          target: server\n"), wantIn: `key "target"`},
+		{name: "the server image tagged as the CLI", workflow: in("server-image", "          images: ghcr.io/timothymamo/shift2eu-server\n", "          images: ghcr.io/timothymamo/shift2eu\n"), wantIn: "images"},
+		{name: "the server image tagged latest always", workflow: in("server-image", "          flavor: latest=${{ steps.stamp.outputs.latest }}\n", "          flavor: latest=true\n"), wantIn: "flavor"},
+		{name: "the server image with BuildKit's provenance on", workflow: in("server-image", "          provenance: false\n", "          provenance: true\n"), wantIn: "with: provenance"},
+		{name: "the server image job without its digest output", workflow: in("server-image", "    outputs:\n      digest: ${{ steps.build.outputs.digest }}\n", ""), wantIn: `no "outputs"`},
+		{name: "id-token: write for the server image job", workflow: in("server-image", "      packages: write # push the image to ghcr.io\n", "      packages: write # push the image to ghcr.io\n      id-token: write # sign\n"), wantIn: "id-token"},
+		{name: "the server image job needing only the tests", workflow: in("server-image", "    needs: [test, goreleaser]\n", "    needs: [test]\n"), wantIn: "needs"},
+		{name: "the server SBOM read by tag", workflow: in("server-sbom", "image: registry:ghcr.io/timothymamo/shift2eu-server@${{ needs.server-image.outputs.digest }}", "image: registry:ghcr.io/timothymamo/shift2eu-server:latest"), wantIn: "with: image"},
+		{name: "the server SBOM read from the CLI's digest", workflow: in("server-sbom", "@${{ needs.server-image.outputs.digest }}", "@${{ needs.image.outputs.digest }}"), wantIn: "with: image"},
+		{name: "the server SBOM uploaded under the CLI's artifact name", workflow: in("server-sbom", "          name: server-sbom\n", "          name: sbom\n"), wantIn: "name"},
+		{name: "packages: write for the server sbom job", workflow: in("server-sbom", "      packages: read # pull the image from ghcr.io, private until made public\n", "      packages: write # pull the image from ghcr.io, private until made public\n"), wantIn: "packages"},
+		{name: "the server sign job needing only the server image", workflow: in("server-sign", "    needs: [server-image, server-sbom]\n", "    needs: [server-image]\n"), wantIn: "needs"},
+		{name: "the server sign job needing the CLI's jobs", workflow: in("server-sign", "    needs: [server-image, server-sbom]\n", "    needs: [image, sbom]\n"), wantIn: "needs"},
+		{name: "the server image not signed", workflow: steps("server-sign", withoutStep(t, serverSignSteps, "name: Sign the image")), wantIn: "jobs: server-sign: steps holds 5 steps, want exactly 6"},
+		{name: "the server image's provenance not attested", workflow: steps("server-sign", withoutStep(t, serverSignSteps, "name: Attest the build provenance")), wantIn: "jobs: server-sign: steps holds 5 steps, want exactly 6"},
+		{name: "the server image's SBOM not attested", workflow: steps("server-sign", withoutStep(t, serverSignSteps, "name: Attest the SBOM")), wantIn: "jobs: server-sign: steps holds 5 steps, want exactly 6"},
+		{name: "the server image signed by tag", workflow: in("server-sign", `run: cosign sign --yes --recursive "ghcr.io/timothymamo/shift2eu-server@${DIGEST}"`, `run: cosign sign --yes --recursive "ghcr.io/timothymamo/shift2eu-server:${DIGEST}"`), wantIn: "@${DIGEST}"},
+		{name: "the server image signed by the CLI's digest", workflow: in("server-sign", "          DIGEST: ${{ needs.server-image.outputs.digest }}\n", "          DIGEST: ${{ needs.image.outputs.digest }}\n"), wantIn: "the signature: env holds"},
+		{name: "the server image signed as the CLI", workflow: in("server-sign", `run: cosign sign --yes --recursive "ghcr.io/timothymamo/shift2eu-server@${DIGEST}"`, `run: cosign sign --yes --recursive "ghcr.io/timothymamo/shift2eu@${DIGEST}"`), wantIn: "want the signature: run is"},
+		{name: "the server provenance attested for the CLI's digest", workflow: in("server-sign", "          subject-digest: ${{ needs.server-image.outputs.digest }}\n          push-to-registry: true\n", "          subject-digest: ${{ needs.image.outputs.digest }}\n          push-to-registry: true\n"), wantIn: "subject-digest"},
+		{name: "the server SBOM attestation without the server SBOM", workflow: in("server-sign", "          sbom-path: shift2eu-server.spdx.json\n", "          sbom-path: shift2eu.spdx.json\n"), wantIn: "sbom-path"},
+		{name: "the server provenance not pushed to the registry", workflow: in("server-sign", "          push-to-registry: true\n          create-storage-record: false # an organisation API; needs artifact-metadata: write\n", "          push-to-registry: false\n          create-storage-record: false # an organisation API; needs artifact-metadata: write\n"), wantIn: "push-to-registry"},
+		{name: "no id-token: write for the server sign job", workflow: in("server-sign", "      id-token: write # GitHub OIDC token for keyless cosign and attestation signing\n", ""), wantIn: "id-token"},
+		{name: "the server sign job checking out the repository", workflow: steps("server-sign", beforeStep(t, serverSignSteps, "      - uses: actions/download-artifact@", "uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1")), wantIn: "jobs: server-sign: steps holds 7 steps, want exactly 6"},
 
 		{name: "an empty document", workflow: "", wantIn: "release workflow"},
 	}

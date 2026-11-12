@@ -1,6 +1,7 @@
 # 0015. Publish the signed container image to GHCR from release jobs of their own, with docker buildx
 
 - Status: Accepted. Amended by issue #92: a pre-release tag is a GitHub pre-release too (Tags, below).
+  Amended by PRD #103: a second image, `shift2eu-server`, is published the same way (Consequences).
 - Date: 2026-11-11
 
 ## Context
@@ -187,3 +188,16 @@ attestations, pushed to the registry beside the image.
 - New actions to keep updated: `docker/login-action`, `docker/metadata-action`,
   `sigstore/cosign-installer`, `anchore/sbom-action`, `actions/upload-artifact`,
   `actions/download-artifact`, `actions/attest`; Renovate groups them with the other actions.
+- Amended by PRD #103 (milestone 4): the release publishes a second image,
+  `ghcr.io/timothymamo/shift2eu-server`, the HTTP API of
+  [ADR 0019](0019-serve-assessments-over-a-versioned-http-api-from-a-separate-binary.md), built from the
+  `Dockerfile`'s `server` stage (`--target server`) with the same platforms, stamp, tag rules, SBOM,
+  signature and attestations. It has jobs of its own, `server-image`, `server-sbom` and `server-sign`, with
+  the same split permissions as `image`, `sbom` and `sign`, rather than a matrix over the two images: a
+  matrix job's `outputs` keep the value of one leg only, so the sign job could not read each image's
+  digest, and one job per image keeps each one's privileges and steps a closed list.
+  `check.ReleaseWorkflow` builds both images' jobs from the same step lists, so the two cannot drift, and
+  `check.DryRunMirrorsRelease` holds CI's dry run of each image to its release build. GoReleaser builds
+  `shift2eu-server` beside `shift2eu` with the same settings, and each release archive holds both
+  binaries. The GHCR package `shift2eu-server` must be made public by hand after its first push, as
+  `shift2eu`'s was.

@@ -65,15 +65,48 @@ func exactly(value string) *regexp.Regexp {
 	return regexp.MustCompile(`^` + regexp.QuoteMeta(value) + `$`)
 }
 
-// The image the release publishes; the expression of the digest the image job
-// builds and gives as its output; and the expression through which the sbom
-// and sign jobs read that output, to read, sign and attest the image by.
+// releaseImage is one container image the release publishes, by three jobs of
+// its own: one builds and pushes it, one reads its SBOM, one signs and attests
+// it. Each image is held to the same steps; only these values differ.
+type releaseImage struct {
+	// name is the image's repository in the registry.
+	name string
+	// target is the Dockerfile stage it is built from, "" for the last one.
+	target string
+	// imageJob, sbomJob and signJob are the keys of its three jobs, and
+	// suffix what their names add to the CLI image's job names.
+	imageJob, sbomJob, signJob, suffix string
+	// sbomFile is the SPDX document of the image, and sbomArtifact the name
+	// of the workflow artifact the SBOM job hands it to the sign job under.
+	sbomFile, sbomArtifact string
+}
+
+// digest is the expression through which the image's SBOM and sign jobs read
+// the digest its image job built, to read, sign and attest the image by.
+func (img releaseImage) digest() string {
+	return "${{ needs." + img.imageJob + ".outputs.digest }}"
+}
+
+// The images the release publishes: the CLI, from the Dockerfile's last stage
+// (ADR 0013, ADR 0015), and the HTTP API, from its server stage (PRD #103, ADR
+// 0019).
+var (
+	cliImage = releaseImage{
+		name: "ghcr.io/timothymamo/shift2eu", imageJob: "image", sbomJob: "sbom", signJob: "sign",
+		sbomFile: "shift2eu.spdx.json", sbomArtifact: "sbom",
+	}
+	serverImage = releaseImage{
+		name: "ghcr.io/timothymamo/shift2eu-server", target: "server",
+		imageJob: "server-image", sbomJob: "server-sbom", signJob: "server-sign", suffix: " (shift2eu-server)",
+		sbomFile: "shift2eu-server.spdx.json", sbomArtifact: "server-sbom",
+	}
+	releaseImages = []releaseImage{cliImage, serverImage}
+)
+
+// The expression of the digest an image job builds and gives as its output,
+// and the registry every job logs in to.
 const (
-	imageName     = "ghcr.io/timothymamo/shift2eu"
 	builtDigest   = "${{ steps.build.outputs.digest }}"
-	imageDigest   = "${{ needs.image.outputs.digest }}"
-	sbomFile      = "shift2eu.spdx.json"
-	sbomArtifact  = "sbom"
 	registryLogin = "ghcr.io"
 )
 
@@ -139,15 +172,17 @@ var (
 			env: []string{"GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}"},
 		},
 	}
+)
 
-	// imageSteps are the image job's steps: the build arguments GoReleaser
-	// stamps and whether the tag is the highest release tag on main, read from git
-	// with the tag passed through env:, refusing a checkout without origin/main
-	// because the run shell has no pipefail and the pipeline would otherwise
-	// leave highest empty and latest false; a build of two platforms from an empty
-	// BuildKit, pushed, without BuildKit's own provenance or SBOM, tagged
-	// latest by the stamp's decision alone. Nothing signs or attests here.
-	imageSteps = []releaseStep{
+// imageSteps are the image job's steps: the build arguments GoReleaser
+// stamps and whether the tag is the highest release tag on main, read from git
+// with the tag passed through env:, refusing a checkout without origin/main
+// because the run shell has no pipefail and the pipeline would otherwise
+// leave highest empty and latest false; a build of two platforms from an empty
+// BuildKit, pushed, without BuildKit's own provenance or SBOM, tagged
+// latest by the stamp's decision alone. Nothing signs or attests here.
+func imageSteps(img releaseImage) []releaseStep {
+	return []releaseStep{
 		fullCheckoutStep,
 		{
 			what: "the stamp of the build arguments", name: "Build arguments, as GoReleaser stamps them", id: "stamp",
@@ -176,7 +211,7 @@ var (
 		{
 			what: "docker/metadata-action", name: "Image tags", id: "tags", uses: metadataAction,
 			with: map[string]*regexp.Regexp{
-				"images": exactly(imageName),
+				"images": exactly(img.name),
 				"flavor": exactly("latest=${{ steps.stamp.outputs.latest }}"),
 				"tags": exactly(strings.Join([]string{
 					"type=semver,pattern={{raw}}",
@@ -186,35 +221,50 @@ var (
 		},
 		{
 			what: "docker/build-push-action", name: "Build and push linux/amd64 and linux/arm64", id: "build", uses: buildPushAction,
-			with: map[string]*regexp.Regexp{
-				"context":     exactly("."),
-				"platforms":   exactly("linux/amd64,linux/arm64"),
-				"push":        exactly("true"),
-				"tags":        exactly("${{ steps.tags.outputs.tags }}"),
-				"annotations": exactly("index:org.opencontainers.image.source=https://github.com/timothymamo/shift2eu"),
-				"provenance":  exactly("false"),
-				"sbom":        exactly("false"),
-				"build-args": exactly(strings.Join([]string{
-					"VERSION=${{ steps.stamp.outputs.version }}",
-					"COMMIT=${{ steps.stamp.outputs.commit }}",
-					"DATE=${{ steps.stamp.outputs.date }}",
-				}, "\n")),
-			},
+			with: buildWith(img),
 		},
 	}
+}
 
-	// sbomSteps are the sbom job's steps: a read-only login, syft on the
-	// pushed index by digest (an exact syft, uploading nothing itself), and
-	// the SPDX document handed to the sign job as a short-lived workflow
-	// artifact.
-	sbomSteps = []releaseStep{
+// buildWith is the with: of an image's build: the release's build arguments
+// and settings, and, for an image of a stage other than the last, the stage
+// as its target.
+func buildWith(img releaseImage) map[string]*regexp.Regexp {
+	with := map[string]*regexp.Regexp{
+		"context":     exactly("."),
+		"platforms":   exactly("linux/amd64,linux/arm64"),
+		"push":        exactly("true"),
+		"tags":        exactly("${{ steps.tags.outputs.tags }}"),
+		"annotations": exactly("index:org.opencontainers.image.source=https://github.com/timothymamo/shift2eu"),
+		"provenance":  exactly("false"),
+		"sbom":        exactly("false"),
+		"build-args": exactly(strings.Join([]string{
+			"VERSION=${{ steps.stamp.outputs.version }}",
+			"COMMIT=${{ steps.stamp.outputs.commit }}",
+			"DATE=${{ steps.stamp.outputs.date }}",
+		}, "\n")),
+	}
+
+	if img.target != "" {
+		with["target"] = exactly(img.target)
+	}
+
+	return with
+}
+
+// sbomSteps are the sbom job's steps: a read-only login, syft on the
+// pushed index by digest (an exact syft, uploading nothing itself), and
+// the SPDX document handed to the sign job as a short-lived workflow
+// artifact.
+func sbomSteps(img releaseImage) []releaseStep {
+	return []releaseStep{
 		loginStep,
 		{
 			what: "anchore/sbom-action", uses: sbomAction,
 			with: map[string]*regexp.Regexp{
-				"image":                 exactly("registry:" + imageName + "@" + imageDigest),
+				"image":                 exactly("registry:" + img.name + "@" + img.digest()),
 				"format":                exactly("spdx-json"),
-				"output-file":           exactly(sbomFile),
+				"output-file":           exactly(img.sbomFile),
 				"upload-artifact":       exactly("false"),
 				"upload-release-assets": exactly("false"),
 				"syft-version":          exactRelease,
@@ -223,20 +273,22 @@ var (
 		{
 			what: "actions/upload-artifact", uses: uploadArtifactAction,
 			with: map[string]*regexp.Regexp{
-				"name":              exactly(sbomArtifact),
-				"path":              exactly(sbomFile),
+				"name":              exactly(img.sbomArtifact),
+				"path":              exactly(img.sbomFile),
 				"if-no-files-found": exactly("error"),
 				"retention-days":    exactly("1"),
 			},
 		},
 	}
+}
 
-	// signSteps are the sign job's steps, sigstore's and GitHub's code alone:
-	// cosign by exact release; a cosign login fed the actor and the token
-	// through env:; a keyless, recursive signature by digest; the provenance
-	// attestation; the SBOM artifact; and its attestation, both by digest,
-	// pushed to the registry and stored in no organisation API.
-	signSteps = []releaseStep{
+// signSteps are the sign job's steps, sigstore's and GitHub's code alone:
+// cosign by exact release; a cosign login fed the actor and the token
+// through env:; a keyless, recursive signature by digest; the provenance
+// attestation; the SBOM artifact; and its attestation, both by digest,
+// pushed to the registry and stored in no organisation API.
+func signSteps(img releaseImage) []releaseStep {
+	return []releaseStep{
 		{
 			what: "sigstore/cosign-installer", uses: cosignInstallerAction,
 			with: map[string]*regexp.Regexp{"cosign-release": exactRelease},
@@ -248,34 +300,34 @@ var (
 		},
 		{
 			what: "the signature", name: "Sign the image",
-			env: []string{"DIGEST: " + imageDigest},
-			run: `cosign sign --yes --recursive "` + imageName + `@${DIGEST}"`,
+			env: []string{"DIGEST: " + img.digest()},
+			run: `cosign sign --yes --recursive "` + img.name + `@${DIGEST}"`,
 		},
 		{
 			what: "actions/attest (the build provenance)", name: "Attest the build provenance", uses: attestAction,
 			with: map[string]*regexp.Regexp{
-				"subject-name":          exactly(imageName),
-				"subject-digest":        exactly(imageDigest),
+				"subject-name":          exactly(img.name),
+				"subject-digest":        exactly(img.digest()),
 				"push-to-registry":      exactly("true"),
 				"create-storage-record": exactly("false"),
 			},
 		},
 		{
 			what: "actions/download-artifact", uses: downloadArtifactAction,
-			with: map[string]*regexp.Regexp{"name": exactly(sbomArtifact)},
+			with: map[string]*regexp.Regexp{"name": exactly(img.sbomArtifact)},
 		},
 		{
 			what: "actions/attest (the SBOM)", name: "Attest the SBOM", uses: attestAction,
 			with: map[string]*regexp.Regexp{
-				"subject-name":          exactly(imageName),
-				"subject-digest":        exactly(imageDigest),
-				"sbom-path":             exactly(sbomFile),
+				"subject-name":          exactly(img.name),
+				"subject-digest":        exactly(img.digest()),
+				"sbom-path":             exactly(img.sbomFile),
 				"push-to-registry":      exactly("true"),
 				"create-storage-record": exactly("false"),
 			},
 		},
 	}
-)
+}
 
 // releaseJob is one job of the release workflow.
 type releaseJob struct {
@@ -291,32 +343,41 @@ type releaseJob struct {
 }
 
 // releaseJobs are the release workflow's jobs, in the order a message lists
-// them. The write permissions stay split: the goreleaser job alone writes the
-// repository's contents; the image job pushes and nothing more; the sbom job,
-// which runs syft, can only read the registry; and the sign job alone holds
-// an OIDC token and writes attestations.
-var releaseJobs = []releaseJob{
-	{key: "test", name: "Test", permissions: map[string]string{"contents": "read"}, steps: testSteps},
-	{
-		key: "goreleaser", name: "GoReleaser", needs: []string{"test"},
-		permissions: map[string]string{"contents": "write"}, steps: goreleaserSteps,
-	},
-	{
-		key: "image", name: "Container image", needs: []string{"test", "goreleaser"},
-		permissions: map[string]string{"contents": "read", "packages": "write"},
-		outputs:     map[string]string{"digest": builtDigest},
-		steps:       imageSteps,
-	},
-	{
-		key: "sbom", name: "SBOM", needs: []string{"image"},
-		permissions: map[string]string{"packages": "read"}, steps: sbomSteps,
-	},
-	{
-		key: "sign", name: "Sign and attest", needs: []string{"image", "sbom"},
-		permissions: map[string]string{"packages": "write", "id-token": "write", "attestations": "write"},
-		steps:       signSteps,
-	},
-}
+// them: test and goreleaser, then three per image. The write permissions stay
+// split: the goreleaser job alone writes the repository's contents; an image
+// job pushes and nothing more; an sbom job, which runs syft, can only read the
+// registry; and a sign job alone holds an OIDC token and writes attestations.
+var releaseJobs = func() []releaseJob {
+	jobs := []releaseJob{
+		{key: "test", name: "Test", permissions: map[string]string{"contents": "read"}, steps: testSteps},
+		{
+			key: "goreleaser", name: "GoReleaser", needs: []string{"test"},
+			permissions: map[string]string{"contents": "write"}, steps: goreleaserSteps,
+		},
+	}
+
+	for _, img := range releaseImages {
+		jobs = append(jobs,
+			releaseJob{
+				key: img.imageJob, name: "Container image" + img.suffix, needs: []string{"test", "goreleaser"},
+				permissions: map[string]string{"contents": "read", "packages": "write"},
+				outputs:     map[string]string{"digest": builtDigest},
+				steps:       imageSteps(img),
+			},
+			releaseJob{
+				key: img.sbomJob, name: "SBOM" + img.suffix, needs: []string{img.imageJob},
+				permissions: map[string]string{"packages": "read"}, steps: sbomSteps(img),
+			},
+			releaseJob{
+				key: img.signJob, name: "Sign and attest" + img.suffix, needs: []string{img.imageJob, img.sbomJob},
+				permissions: map[string]string{"packages": "write", "id-token": "write", "attestations": "write"},
+				steps:       signSteps(img),
+			},
+		)
+	}
+
+	return jobs
+}()
 
 // ReleaseWorkflow returns a message for everything in the release workflow
 // document src that could make goreleaser build, or the publishing jobs
@@ -329,16 +390,20 @@ var releaseJobs = []releaseJob{
 //     tag and a run in progress is never cancelled half published; a waiting
 //     run may be replaced by a newer tag's and must then be re-run by hand,
 //     ADR 0015) and jobs, so no workflow-level env: or defaults:;
-//   - jobs holds exactly test, goreleaser, image, sbom and sign, each with
+//   - jobs holds exactly test, goreleaser, and an image, an sbom and a sign
+//     job for each image the release publishes: image, sbom and sign for the
+//     CLI's, ghcr.io/timothymamo/shift2eu; server-image, server-sbom and
+//     server-sign for the HTTP API's, ghcr.io/timothymamo/shift2eu-server
+//     (PRD #103), whose job names end " (shift2eu-server)". Each holds
 //     exactly name, runs-on (ubuntu-latest), permissions and steps, and needs
-//     for all but test (goreleaser needs test; image [test, goreleaser]; sbom
-//     image; sign [image, sbom], in that order), and image an outputs: of
-//     exactly its build's digest, so no job-level env:, container:, if: or
-//     other key;
+//     for all but test (goreleaser needs test; an image job [test,
+//     goreleaser]; an sbom job its image job; a sign job [its image job, its
+//     sbom job], in that order), and an image job an outputs: of exactly its
+//     build's digest, so no job-level env:, container:, if: or other key;
 //   - the permissions are exactly contents: read for test; contents: write
-//     for goreleaser; contents: read and packages: write for image;
-//     packages: read for sbom; packages: write, id-token: write and
-//     attestations: write for sign;
+//     for goreleaser; contents: read and packages: write for an image job;
+//     packages: read for an sbom job; packages: write, id-token: write and
+//     attestations: write for a sign job;
 //   - the test job's steps are exactly actions/checkout of the whole history,
 //     the guard that the tagged commit is on main (an exact run: script),
 //     actions/setup-go and make test; the goreleaser job's exactly
@@ -346,23 +411,27 @@ var releaseJobs = []releaseJob{
 //     setup-go with cache: false in both jobs, goreleaser asked for exactly
 //     release --clean at an exact version, with an env: of exactly
 //     GITHUB_TOKEN from secrets.GITHUB_TOKEN;
-//   - the image job's steps are exactly actions/checkout, the stamp of the
+//   - an image job's steps are exactly actions/checkout, the stamp of the
 //     build arguments and of the latest decision (a run: script, with the
 //     tag through env:, counting only the release tags merged into
 //     origin/main, and refusing a checkout without origin/main, since the
-//     run shell has no pipefail to fail the pipeline that counts them), docker/setup-buildx-action (BuildKit by exact release
-//     and index digest), docker/login-action, docker/metadata-action (latest
-//     from the stamp's output alone) and docker/build-push-action
+//     run shell has no pipefail to fail the pipeline that counts them),
+//     docker/setup-buildx-action (BuildKit by exact release and index
+//     digest), docker/login-action, docker/metadata-action (its image's name,
+//     latest from the stamp's output alone) and docker/build-push-action
 //     (linux/amd64 and linux/arm64, pushed, no cache, no BuildKit provenance
-//     or SBOM);
-//   - the sbom job's steps are exactly docker/login-action, anchore/sbom-action
-//     (the pushed index by digest, an exact syft, uploading nothing) and
-//     actions/upload-artifact of the SPDX document;
-//   - the sign job's steps are exactly sigstore/cosign-installer (an exact
+//     or SBOM; the HTTP API's with target: server, the CLI's with no target,
+//     so the Dockerfile's last stage);
+//   - an sbom job's steps are exactly docker/login-action, anchore/sbom-action
+//     (its pushed index by its image job's digest, an exact syft, uploading
+//     nothing) and actions/upload-artifact of its SPDX document
+//     (shift2eu.spdx.json as sbom, shift2eu-server.spdx.json as server-sbom);
+//   - a sign job's steps are exactly sigstore/cosign-installer (an exact
 //     release), a cosign login with the actor and token through env:, cosign
-//     sign --recursive by digest, actions/attest of the build provenance,
-//     actions/download-artifact of the SPDX document and actions/attest of the
-//     SBOM, both by digest, pushed to the registry;
+//     sign --recursive of its image by its image job's digest,
+//     actions/attest of the build provenance, actions/download-artifact of
+//     its SPDX document and actions/attest of the SBOM, both by that digest,
+//     pushed to the registry;
 //   - every step holds exactly the keys listed (name, id, uses, with, env,
 //     run), in that order of steps, each action pinned by commit, each with:
 //     key and value, env: line and run: command as listed. A run: command is
