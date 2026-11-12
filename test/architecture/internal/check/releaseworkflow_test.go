@@ -364,7 +364,7 @@ var verifyArchivesSteps = []string{
             exit 1
           fi
           sha256sum -c checksums.txt
-          for subject in shift2eu_* shift2eu-server_* checksums.txt; do
+          for subject in *; do
             gh attestation verify "$subject" --repo timothymamo/shift2eu \
               --signer-workflow timothymamo/shift2eu/.github/workflows/release.yml \
               --source-ref "refs/tags/$TAG" --source-digest "$GITHUB_SHA" --deny-self-hosted-runners
@@ -374,11 +374,14 @@ var verifyArchivesSteps = []string{
 
 // imageJobHead is the image job up to its steps: its digest output, the two
 // permissions it needs to push, and no OIDC token.
-const imageJobHead = `  # Builds and pushes the container image to GHCR (ADR 0015), after the GitHub
-  # release: a failed GoReleaser publishes no image. It can push, nothing more:
-  # no OIDC token, so nothing in it can sign. It builds from the Dockerfile with
-  # the build arguments GoReleaser stamps into the release binaries, and
-  # carries no build cache in: BuildKit starts empty on a fresh runner.
+const imageJobHead = `  # Builds and pushes the container image to GHCR (ADR 0015), after GoReleaser
+  # uploads the draft release: a failed GoReleaser publishes no image, but the
+  # image does not wait for attest-archives or publish, so if either fails it
+  # is public while the release is still a draft (ADR 0015). It can push,
+  # nothing more: no OIDC token, so nothing in it can sign. It builds from the
+  # Dockerfile with the build arguments GoReleaser stamps into the release
+  # binaries, and carries no build cache in: BuildKit starts empty on a fresh
+  # runner.
   image:
     name: Container image
     needs: [test, goreleaser]
@@ -1802,9 +1805,9 @@ func TestReleaseWorkflow(t *testing.T) {
 		// release and to the repository's attestations, which downloads every
 		// asset of the release, refuses a release that is still a draft and one
 		// that holds anything but checksums.txt and the files it lists, checks
-		// their digests, and runs gh attestation verify on every archive and on
-		// checksums.txt itself with the release's workflow, its tag and commit,
-		// and GitHub's runners only.
+		// their digests, and runs gh attestation verify on every downloaded file
+		// itself, with the release's workflow, its tag and commit, and GitHub's
+		// runners only.
 		{name: "no verify-archives job", workflow: release.withoutJob(t, "verify-archives"), wantIn: `no "verify-archives"`},
 		{name: "the verify-archives job on a self-hosted runner", workflow: in("verify-archives", "    runs-on: ubuntu-latest\n", "    runs-on: self-hosted\n"), wantIn: "runs-on"},
 		{name: "the verify-archives job without needs", workflow: in("verify-archives", "    needs: publish\n", ""), wantIn: `no "needs"`},
@@ -1834,8 +1837,11 @@ func TestReleaseWorkflow(t *testing.T) {
 		{name: "the verification without the source digest", workflow: in("verify-archives", `--source-digest "$GITHUB_SHA"`, `--source-digest "$TAG"`), wantIn: `--source-digest \"$GITHUB_SHA\"`},
 		{name: "self-hosted runners not denied", workflow: in("verify-archives", "--deny-self-hosted-runners", "--no-deny"), wantIn: "--deny-self-hosted-runners"},
 		{name: "the verification without gh attestation verify", workflow: in("verify-archives", `gh attestation verify "$subject"`, `cosign verify "$subject"`), wantIn: `gh attestation verify \"$subject\"`},
-		{name: "one archive family not verified", workflow: in("verify-archives", "for subject in shift2eu_* shift2eu-server_* checksums.txt; do", "for subject in shift2eu_*; do"), wantIn: "shift2eu_* shift2eu-server_* checksums.txt"},
-		{name: "checksums.txt not verified", workflow: in("verify-archives", "for subject in shift2eu_* shift2eu-server_* checksums.txt; do", "for subject in shift2eu_* shift2eu-server_*; do"), wantIn: "shift2eu_* shift2eu-server_* checksums.txt"},
+		// Every downloaded file is a subject: the download directory holds the
+		// release's assets alone, so no pattern of the workflow's own decides
+		// what is verified, and a list that could leave one out is refused.
+		{name: "the old glob list of subjects", workflow: in("verify-archives", "for subject in *; do", "for subject in shift2eu_* shift2eu-server_* checksums.txt; do"), wantIn: "for subject in shift2eu_* shift2eu-server_* checksums.txt"},
+		{name: "a subject list leaving checksums.txt out", workflow: in("verify-archives", "for subject in *; do", "for subject in shift2eu_* shift2eu-server_*; do"), wantIn: "for subject in shift2eu_* shift2eu-server_*; do"},
 
 		{name: "an empty document", workflow: "", wantIn: "release workflow"},
 	}
