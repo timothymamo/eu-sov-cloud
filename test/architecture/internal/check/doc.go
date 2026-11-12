@@ -77,14 +77,22 @@
 // queued or in progress, and creates the tag through the API in a step whose
 // env: is exactly that token, the repository and the release-please App's
 // slug as a constant, never an output of the release-please job, which
-// declares none, and which calls only the release PR's, the manifest's, the merge
-// commit's and the tag's API endpoints: no Release, no label, no gh release,
-// no curl. The relabel job, in the release-please environment, relabels the
-// PR the tag job tagged with the release-please App's token. Each token step
-// passes client-id, never app-id, from its own App's variable and secret;
-// no other variable or secret is read, and each token reaches its job's
-// working step alone. The workflow publishes nothing and pastes no
-// expression but github.repository into a script.
+// declares none, and which calls only the release PR's, the manifest's, the
+// merge commit's and the tag's API endpoints: no Release, no label, no gh
+// release, no curl. The guard's env: is as exact: GITHUB_TOKEN, the
+// repository and the same slug. The relabel job, in the release-please
+// environment, relabels the PR the tag job tagged with the release-please
+// App's token. Each token step passes client-id, never app-id, from its own
+// App's variable and secret; no other variable or secret is read, and each
+// token reaches its job's working step alone. The only needs expressions are
+// the tag job's two outputs, which the relabel job reads. The workflow
+// publishes nothing and pastes no expression but github.repository into a
+// script.
+// ReleaseAppIdentifiers holds the two documents that record the release Apps'
+// identifiers, the release-tag skill and ADR 0021, to each other: the same
+// release-please App ID and slug, and for the release-tag App either the
+// maintainer's placeholders or a numeric ID and a slug, neither of them the
+// release-please App's.
 // ReleasePleaseDryRun holds ci.yml to running the dry run of the guard, tag
 // and relabel steps, .github/scripts/release-please-dry-run.sh, on every pull
 // request and every push to main, in a job with no write permission and no

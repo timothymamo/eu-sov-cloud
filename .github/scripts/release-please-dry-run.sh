@@ -90,9 +90,9 @@ scenario() { FAKE_GH="${work}/scenario-$1"; mkdir "${FAKE_GH}"; : >"${FAKE_GH}/c
 respond() { printf '%s\n' "$3" >"${FAKE_GH}/$(printf '%s %s' "$1" "$2" | sha256sum | cut -c1-16)"; }
 
 # run_step runs a step's script as the workflow would and compares its exit with want (pass or fail). The
-# guard and tag steps read APP_SLUG, the release-please App's slug the workflow holds; the relabel step reads PR and TAG, the
-# tag job's outputs, from the scenario's PR and TAG (the tag step's own outputs unless a scenario sets
-# them). What a step writes to $GITHUB_OUTPUT lands in the scenario's output file.
+# guard and tag steps read APP_SLUG, the release-please App's slug the workflow holds; the relabel step
+# reads PR and TAG, the tag job's outputs, from the scenario's PR and TAG (the tag step's own outputs
+# unless a scenario sets them). What a step writes to $GITHUB_OUTPUT lands in the scenario's output file.
 run_step() {
   local name="$1" step="$2" want="$3" got=pass
   : >"${FAKE_GH}/output"

@@ -50,9 +50,6 @@ const (
 	// tagging steps hold it as a constant, never as an output of the job that
 	// runs the third-party release-please-action, which that action could set.
 	releasePleaseSlug = "shift2eu-release"
-	// releasePleaseOutputsRef is the prefix of every reference to the
-	// release-please job's outputs, which no job may read.
-	releasePleaseOutputsRef = "needs.release-please.outputs"
 	// The expressions the relabel job reads the tag job through: the PR and
 	// the tag it created.
 	taggedPR   = "${{ needs.tag.outputs.pr }}"
@@ -67,6 +64,17 @@ const (
 // before it finishes: the guard waits for no run in any of them, since a run
 // requested, waiting or pending may still start and publish.
 var releaseRunStatuses = []string{"requested", "waiting", "pending", "queued", "in_progress"}
+
+// allowedNeeds are the only needs expressions the workflow may hold outside
+// comments: the tag job's two outputs, which the relabel job reads. Every other
+// reach for a job's outputs, the release-please job's above all, which runs the
+// third-party release-please-action, is a value a job would trust.
+var allowedNeeds = []string{"needs.tag.outputs.pr", "needs.tag.outputs.tag"}
+
+// needsRef matches a needs context as a word and the property path that
+// follows it, dotted or in brackets, and captures the whole expression: bare
+// (toJSON(needs)), needs.<job>.outputs.<name> or needs['<job>'].
+var needsRef = regexp.MustCompile(`(?:^|[^A-Za-z0-9_-])(needs(?:\s*\.\s*[A-Za-z0-9_*-]+|\s*\[[^\]]*\])*)`)
 
 // guardStatusLoop matches the guard's loop over the statuses it waits for.
 var guardStatusLoop = regexp.MustCompile(`(?m)^\s*for\s+status\s+in\s+([A-Za-z_ ]+?)\s*;\s*do\s*$`)
@@ -95,10 +103,11 @@ var repoEndpoint = regexp.MustCompile(`repos/(?:\$\{GH_REPO\}|\$GH_REPO|\$\{\{\s
 // removed: the release PRs (pulls, a pull request and its files), the
 // manifest at the merge commit (contents), the merge commit's ancestry
 // (compare), and the tag (git/ref, git/refs, git/matching-refs, git/tags).
-// Nothing creates or edits a GitHub Release, and nothing labels: the release-tag
-// App's token reads pull requests only, and the relabel job relabels. The
-// issues listing is not among them either: neither App's token holds an
-// Issues permission, and GitHub answers that listing with 403 without it.
+// Nothing creates or edits a GitHub Release, and nothing labels: the
+// release-tag App's token reads pull requests only, and the relabel job
+// relabels. The issues listing is not among them either: neither App's token
+// holds an Issues permission, and GitHub answers that listing with 403
+// without it.
 var tagEndpoints = []*regexp.Regexp{
 	regexp.MustCompile(`^pulls$`),
 	regexp.MustCompile(`^pulls/[^/]+$`),
@@ -326,10 +335,12 @@ var releaseJobSpecs = []releaseJobSpec{
 //   - tag, which needs release-please, in the release-tag environment, mints
 //     the release-tag App's token, waits in a run: step with id: guard that
 //     reads release.yml's requested, waiting, pending, queued and in_progress
-//     runs with GITHUB_TOKEN and env: APP_SLUG: shift2eu-release, then creates the tag in a run: step with id: tag
-//     whose env: is exactly GH_TOKEN, the release-tag App's token, GH_REPO and
-//     APP_SLUG, the release-please App's slug shift2eu-release, whose gh api calls reach only
-//     tagEndpoints, and which outputs the PR and the tag it created;
+//     runs, and whose env: is exactly GH_TOKEN, GITHUB_TOKEN, GH_REPO and
+//     APP_SLUG: shift2eu-release, then creates the tag in a run: step with
+//     id: tag whose env: is exactly GH_TOKEN, the release-tag App's token,
+//     GH_REPO and APP_SLUG, the release-please App's slug shift2eu-release,
+//     whose gh api calls reach only tagEndpoints, and which outputs the PR and
+//     the tag it created;
 //   - relabel, which needs both and runs only when the tag job tagged a PR,
 //     in the release-please environment, mints the release-please App's
 //     token and relabels the PR in a run: step whose env: is exactly GH_TOKEN,
@@ -344,7 +355,9 @@ var releaseJobSpecs = []releaseJobSpec{
 //   - publishes nothing (no goreleaser, cosign, docker login, push or build,
 //     attest), pushes no tag with git, creates no GitHub Release and calls no
 //     host of its own (no gh release, curl or wget);
-//   - reads the release-please job's outputs nowhere (needs.release-please.outputs);
+//   - holds no needs expression outside comments but needs.tag.outputs.pr and
+//     needs.tag.outputs.tag: no job reads the release-please job's outputs,
+//     in any spelling, nor every job's at once (toJSON(needs));
 //   - pastes no expression but ${{ github.repository }} into a script.
 //
 // It reads the document with the strict line reader and refuses what it does
@@ -554,23 +567,43 @@ func (r *schemaReader) releasePleaseJobs(e yamlread.Entry) {
 
 	r.appTokenReach(reach)
 	r.credentialReach(credentials)
-	r.releasePleaseOutputsReach()
+	r.needsReach()
 }
 
-// releasePleaseOutputsReach refuses any reference to the release-please job's
-// outputs: that job runs the third-party release-please-action, so whatever it
-// outputs is not to be trusted by the tag job, which creates the release tag.
-// Comments are skipped.
-func (r *schemaReader) releasePleaseOutputsReach() {
+// needsReach refuses every needs expression outside comments but
+// allowedNeeds, quoting it: the release-please job runs the third-party
+// release-please-action, so no job trusts its outputs, in any spelling, and
+// toJSON(needs) would hand a step every output of every job before it. A
+// job's needs: key is not an expression and is skipped, as are comment lines.
+// Any other word needs, in a script's text too, is refused: the check fails
+// closed rather than tell an expression from prose.
+func (r *schemaReader) needsReach() {
 	for i, line := range r.raw {
-		if strings.HasPrefix(strings.TrimSpace(line), "#") {
+		trimmed := strings.TrimSpace(line)
+		if strings.HasPrefix(trimmed, "#") {
 			continue
 		}
 
-		if strings.Contains(line, releasePleaseOutputsRef) {
-			r.fail("line %d: %s reads %s: the release-please job runs %s, so no job trusts its outputs; the tag job holds the release-please App's slug as the constant %s", i+1, releasePleaseWorkflowName, releasePleaseOutputsRef, releasePleaseAction, releasePleaseSlug)
+		if rest, ok := strings.CutPrefix(trimmed, "needs:"); ok {
+			line = rest
+		}
+
+		for _, m := range needsRef.FindAllStringSubmatchIndex(line, -1) {
+			expr := line[m[2]:m[3]]
+			if m[3] < len(line) && isNameByte(line[m[3]]) {
+				continue // a longer word, such as needsx
+			}
+
+			if !slices.Contains(allowedNeeds, expr) {
+				r.fail("line %d: %s holds the needs expression %q; want only %s: the release-please job runs %s, so no job trusts its outputs, and the tag job holds the release-please App's slug as the constant %s", i+1, releasePleaseWorkflowName, expr, strings.Join(allowedNeeds, " and "), releasePleaseAction, releasePleaseSlug)
+			}
 		}
 	}
+}
+
+// isNameByte reports whether b may continue a name in an expression.
+func isNameByte(b byte) bool {
+	return b == '_' || b == '-' || (b >= '0' && b <= '9') || (b >= 'a' && b <= 'z') || (b >= 'A' && b <= 'Z')
 }
 
 // releasePleaseJob checks one job against its spec: its keys, environment,
@@ -1071,7 +1104,8 @@ func (r *schemaReader) releasePleaseStep(s pleaseStep, path, token string) {
 
 // guardStep checks that the guard is a run: step that reads release.yml's
 // runs in every status in releaseRunStatuses, with GITHUB_TOKEN: the
-// release-tag App's token is for the tag alone.
+// release-tag App's token is for the tag alone. Its env: is exactly GH_TOKEN,
+// GH_REPO and APP_SLUG, the release-please App's slug as a constant.
 func (r *schemaReader) guardStep(s pleaseStep, path, token string) {
 	if !s.hasRun {
 		r.fail("line %d: %s: the step with id: %s has no run:, so nothing waits for .github/workflows/release.yml", s.num, path, guardStepID)
@@ -1108,6 +1142,19 @@ func (r *schemaReader) guardStep(s pleaseStep, path, token string) {
 		r.fail("line %d: %s: the step with id: %s has no env: APP_SLUG, so it cannot tell a release PR the release-please App opened; want APP_SLUG: %s", s.num, path, guardStepID, releasePleaseSlug)
 	case slug != releasePleaseSlug:
 		r.fail("line %d: %s: the step with id: %s's APP_SLUG is %s, want %s, the release-please App's slug", s.num, path, guardStepID, slug, releasePleaseSlug)
+	}
+
+	switch repo, ok := s.env["GH_REPO"]; {
+	case !ok:
+		r.fail("line %d: %s: the step with id: %s has no env: GH_REPO; want GH_REPO: %s", s.num, path, guardStepID, repository)
+	case repo != repository:
+		r.fail("line %d: %s: the step with id: %s's GH_REPO is %s, want %s", s.num, path, guardStepID, repo, repository)
+	}
+
+	for _, key := range sortedKeys(s.env) {
+		if !slices.Contains([]string{"GH_TOKEN", "GH_REPO", "APP_SLUG"}, key) {
+			r.fail("line %d: %s: the step with id: %s's env: holds %s; want only APP_SLUG, GH_REPO, GH_TOKEN", s.num, path, guardStepID, key)
+		}
 	}
 }
 

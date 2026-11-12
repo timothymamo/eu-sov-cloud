@@ -103,9 +103,9 @@ jobs:
       # in progress, since a tag pushed at a release run that GitHub then cancels publishes nothing
       # (ADR 0015). It waits only when there is something to tag, a merged release PR the release-please
       # App opened from release-please's branch still labelled autorelease: pending, read with the tag
-      # step's own pulls query, so a push to main during a release with nothing to tag passes. The release PR stays
-      # labelled autorelease: pending, so the next push to main, or a re-run of this workflow once the
-      # release has finished, tags it. It reads with GITHUB_TOKEN, never an App's token.
+      # step's own pulls query, so a push to main during a release with nothing to tag passes. The
+      # release PR stays labelled autorelease: pending, so the next push to main, or a re-run of this
+      # workflow once the release has finished, tags it. It reads with GITHUB_TOKEN, never an App's token.
       - name: Wait for no release to be queued or in progress
         id: guard
         env:
@@ -134,9 +134,9 @@ jobs:
       # pull request, so it never labels. It lists the closed PRs into main from release-please's branch
       # through pulls, every page, never through issues, which neither App's token can read without Issues
       # read. Only one the release-please App opened (${APP_SLUG}[bot], shift2eu-release[bot], a constant
-      # of this file) and merged, labelled autorelease: pending, is a candidate: a closed unmerged one, or one by anyone
-      # else, keeps its label and is named in a warning, so a label set by hand can neither release nor
-      # block a release.
+      # of this file) and merged, labelled autorelease: pending, is a candidate: a closed unmerged one, or
+      # one by anyone else, keeps its label and is named in a warning, so a label set by hand can neither
+      # release nor block a release.
       # It fails closed: several candidates, a PR not merged into main from release-please's branch
       # release-please--branches--main--components--shift2eu (release-please 17.6.0, the version
       # release-please-action v5.0.0 bundles, with one package named shift2eu), a PR that changes anything
