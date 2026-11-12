@@ -345,18 +345,46 @@ linters:
             - github.com/timothymamo/shift2eu/internal/testutil$
         # The driving adapter gets its adapters from the composition root
         # through cli.Deps and never constructs one, so it imports only the
-        # application, the domain, the build metadata and the standard library.
-        # The application and domain packages are named one by one, each
-        # ending in $, for the reason given at domain-is-pure: a prefix entry
-        # would also admit a package under testdata or a _ directory, which
-        # make lint never visits. A new application package needs an entry.
+        # application, the domain, the build metadata and the standard
+        # packages it needs today. The rule is a strict allow list (issue
+        # #152), each entry ending in $ so it covers that package only, for
+        # the reason given at domain-is-pure: a prefix entry would also admit
+        # a package under testdata or a _ directory, which make lint never
+        # visits. Before #152 it allowed $gostd and denied a list beside it,
+        # so a composition root, which may not start a process or take a
+        # pointer apart itself, could hand the call to the CLI through a
+        # package nobody had thought to deny (unsafe among them). Now
+        # syscall, unsafe, os/exec, plugin, the network and every other
+        # package the CLI does not import today are refused because nothing
+        # here names them. os is named because the CLI reads the inventory a
+        # user names (--inventory) and creates the report the user asked for
+        # (--output); the forbidigo group cli-no-env-or-process refuses the
+        # calls of os that reach the environment or start a process. A new
+        # standard or module package needs an entry here; os/signal and
+        # syscall need a reason, as they reach signals and system calls.
+        # The adapter deny entry stays for its message: the allow list
+        # refuses an adapter already.
         cli-gets-adapters-from-cmd:
           list-mode: strict
           files:
             - "**/internal/cli/**"
             - "!$test"
           allow:
-            - $gostd
+            - bytes$
+            - context$
+            - errors$
+            - flag$
+            - fmt$
+            - io$
+            - io/fs$
+            - maps$
+            - os$
+            - path/filepath$
+            - slices$
+            - strconv$
+            - strings$
+            - unicode$
+            - unicode/utf8$
             - github.com/timothymamo/shift2eu/internal/app/analysis$
             - github.com/timothymamo/shift2eu/internal/domain/assessment$
             - github.com/timothymamo/shift2eu/internal/domain/catalog$
@@ -368,55 +396,6 @@ linters:
           deny:
             - pkg: github.com/timothymamo/shift2eu/internal/adapter
               desc: the CLI gets its adapters through cli.Deps; construct them in cmd/shift2eu
-            # The CLI reads one file and writes one report: it resolves no
-            # name, opens no connection and starts no process. depguard
-            # expands $gostd to one prefix entry per top-level directory of
-            # GOROOT/src, so its allow entry for net is no longer than a deny
-            # of net, and the deny wins for every net/... package, net/url and
-            # net/netip included. Those parse values, do no I/O and stay
-            # allowed, so each package that does I/O is denied by its own
-            # name, ending in $: net$ is net itself, and each net subpackage
-            # is listed, not only its parent.
-            - pkg: net$
-              desc: the CLI has no network access; an adapter behind a port does
-            - pkg: net/http$
-              desc: the CLI makes no HTTP calls; an adapter behind a port does
-            - pkg: net/http/cgi$
-              desc: the CLI serves no HTTP
-            - pkg: net/http/cookiejar$
-              desc: the CLI makes no HTTP calls; an adapter behind a port does
-            - pkg: net/http/fcgi$
-              desc: the CLI serves no HTTP
-            - pkg: net/http/httptest$
-              desc: the CLI makes no HTTP calls; an adapter behind a port does
-            - pkg: net/http/httptrace$
-              desc: the CLI makes no HTTP calls; an adapter behind a port does
-            - pkg: net/http/httputil$
-              desc: the CLI makes no HTTP calls; an adapter behind a port does
-            - pkg: net/http/pprof$
-              desc: the CLI serves no HTTP
-            - pkg: net/mail$
-              desc: the CLI parses no mail
-            - pkg: net/rpc$
-              desc: the CLI makes no RPC calls; an adapter behind a port does
-            - pkg: net/rpc/jsonrpc$
-              desc: the CLI makes no RPC calls; an adapter behind a port does
-            - pkg: net/smtp$
-              desc: the CLI sends no mail
-            - pkg: net/textproto$
-              desc: the CLI speaks no network protocol; an adapter behind a port does
-            - pkg: crypto/tls$
-              desc: the CLI opens no TLS connection; an adapter behind a port does
-            - pkg: os/exec$
-              desc: the CLI starts no processes
-            - pkg: os/user$
-              desc: the CLI looks up no OS users
-            # The CLI's tests create a FIFO with syscall.Mkfifo; they are left
-            # out of this rule by !$test.
-            - pkg: syscall$
-              desc: the CLI makes no raw system calls; os, io/fs and os/signal cover what it needs
-            - pkg: plugin$
-              desc: the CLI loads no code at run time; adapters are wired in cmd/shift2eu
         # The composition root constructs the adapters, hands them to the CLI
         # and does nothing else (issue #101). So its imports are a strict
         # allow list: the module's own packages and the standard packages it
@@ -1264,6 +1243,13 @@ linters:
         # rule is lax, so its deny list alone decides and no allow list has to
         # follow every pure import a test makes. syscall/js builds for js/wasm
         # only and is denied all the same.
+        #
+        # Since issue #152 the rule also holds the _test.go files of the two
+        # driving adapters, internal/cli and internal/httpapi: a root hands
+        # them the work, and their tests run in the same process as the code
+        # under test, so they get the limits the roots' tests have. The CLI's
+        # tests import syscall for syscall.Mkfifo (output_unix_test.go), which
+        # this deny list does not name.
         composition-root-tests:
           list-mode: lax
           files:
@@ -1271,6 +1257,10 @@ linters:
             - "**/cmd/shift2eu/**/*_test.go"
             - "**/cmd/shift2eu-server/*_test.go"
             - "**/cmd/shift2eu-server/**/*_test.go"
+            - "**/internal/cli/*_test.go"
+            - "**/internal/cli/**/*_test.go"
+            - "**/internal/httpapi/*_test.go"
+            - "**/internal/httpapi/**/*_test.go"
           deny:
             - pkg: go/build
               desc: a composition root's test builds no package; it runs the root's code in process
@@ -1603,11 +1593,12 @@ linters:
         # same environment, and the server's tests hand run a fake token
         # source, so none needs a real one. Elsewhere the depguard rules keep os/exec out
         # by layer; these groups only add the call-level rule depguard cannot
-        # state for the roots. The environment is not kept out elsewhere: the
-        # CLI's rule (cli-gets-adapters-from-cmd) allows $gostd, so
-        # internal/cli may import os and read a variable a root delegates to
-        # it, a known gap (docs/architecture.md). internal/httpapi's strict
-        # allow list leaves os and syscall out.
+        # state for the roots. A root cannot delegate a read to the driving
+        # adapter it hands the work to either: internal/cli's strict allow
+        # list leaves syscall, unsafe and os/exec out and the group
+        # cli-no-env-or-process refuses the calls of os that reach the
+        # environment (issue #152); internal/httpapi's strict allow list
+        # leaves os and syscall out.
         #
         # No-exec also refuses the windows entry points of syscall
         # (CreateProcess, CreateProcessAsUser, GetEnvironmentStrings, LoadDLL,
@@ -1669,6 +1660,24 @@ linters:
         - pattern: '^os\.(?:Getenv|LookupEnv|ExpandEnv|Environ|Setenv|Unsetenv|Clearenv|StartProcess|UserHomeDir|UserConfigDir|UserCacheDir|TempDir)$'
           pkg: '^os$'
           msg: 'testutil-no-env: a test helper reads no environment variable, locates no home, config, cache or temp directory and starts no process, where credentials live; take what it needs as a parameter (CLAUDE.md rule 3)'
+        # Group cli-no-env-or-process (issue #152): the CLI's code reads,
+        # writes and hands over no environment variable, locates no home,
+        # config, cache or temp directory and starts no process. A
+        # composition root may not do any of that itself (composition-root-env,
+        # composition-root-no-exec), and without this group it could hand the
+        # call to the CLI, where it would happen one call deeper with lint
+        # green. cli-gets-adapters-from-cmd must allow os, which the CLI reads
+        # the inventory a user names and creates the report with, and os also
+        # reaches the environment, where credentials live (CLAUDE.md rule 3).
+        # The entry mirrors the roots' and testutil-no-env's os names;
+        # syscall, unsafe and os/exec need no entry, as the CLI's strict allow
+        # list refuses them at the import. The CLI reads no named variable
+        # today, so the group has no exception. Scope: every file under
+        # internal/cli/, _test.go files included; its exclusion rule drops it
+        # everywhere else.
+        - pattern: '^os\.(?:Getenv|LookupEnv|ExpandEnv|Environ|Setenv|Unsetenv|Clearenv|StartProcess|UserHomeDir|UserConfigDir|UserCacheDir|TempDir)$'
+          pkg: '^os$'
+          msg: 'cli-no-env-or-process: the CLI reads, writes and hands over no environment variable, locates no home, config, cache or temp directory and starts no process, where credentials live; the composition root passes what it needs as a flag value (CLAUDE.md rule 3)'
     gosec:
       excludes:
         - G104 # unchecked errors are already reported by errcheck
@@ -1754,6 +1763,13 @@ linters:
         linters:
           - forbidigo
         text: 'because "testutil-no-env: [^"]*"$'
+      # cli-no-env-or-process: the group holds for every file under
+      # internal/cli/, _test.go files included, and nowhere else; the roots'
+      # own groups hold under cmd/.
+      - path-except: ^internal/cli/
+        linters:
+          - forbidigo
+        text: 'because "cli-no-env-or-process: [^"]*"$'
       # The one exception (ADR 0019): os.LookupEnv(tokenEnvVar), the call the
       # token source that main.go passes to run makes for
       # SHIFT2EU_SERVER_TOKEN, in cmd/shift2eu-server/main.go alone. text is

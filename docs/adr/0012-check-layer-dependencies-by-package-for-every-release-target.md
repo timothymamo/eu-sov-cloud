@@ -144,8 +144,9 @@ for a `SIG*` constant and `syscall.Signal`), `TestCompositionRootsLinkNoForeignS
 passed to `run` returns) and `TestCompositionRootsNameNoEnvironmentPath` (no `/proc/` or `/dev/fd/`
 literal in the roots). The roots' `_test.go` files, which the strict composition-root rules skip, are
 held by the lax depguard rule `composition-root-tests` (no `go/build`, `net/http/cgi`, `os/exec`,
-`plugin`, `runtime/cgo`, `syscall/js` or `unsafe`). The gap is narrowed, not closed: a root can delegate an environment read to
-`internal/cli`, which may import `os`; a `/proc` path built at run time passes the literal check; and
+`plugin`, `runtime/cgo`, `syscall/js` or `unsafe`). The gap is narrowed, not closed: a root could
+delegate an environment read to `internal/cli`, which may import `os` (closed by *Amended (issue
+#152)* below); a `/proc` path built at run time passes the literal check; and
 `net/http`'s `DefaultTransport` reads the proxy variables implicitly, which is accepted
 (docs/architecture.md, Composition-root process and environment rule, Known gaps).
 The check anchors a rule's `**/<dir>/**` and `!**/<dir>/**` at the module root, while depguard
@@ -319,6 +320,31 @@ application test is what `internal/testutil` can do through `os` (file access, t
 `testing.T.Setenv` and `testing.T.Chdir`, which application tests and `internal/testutil` can still
 call, are left to follow-up issue #153. `test/lint`'s `TestTestutilImportsProbe` pins both rules on a probe module, and
 `TestAppTestsUseFakesNotAdaptersProbe` now runs a second time for `darwin/amd64` with cgo off.
+
+*Amended (issue #152):* a composition root that may not read the environment or start a process
+could hand the call to `internal/cli`, whose rule `cli-gets-adapters-from-cmd` allowed `$gostd` and
+denied a list beside it, so it could import `os`, `syscall` without a deny entry for every name, and
+`unsafe`, which nobody had denied. The rule is now a strict allow list, closing the class rather than
+naming members: the module's packages it allowed before and exactly the standard packages
+`internal/cli` imports today (`bytes`, `context`, `errors`, `flag`, `fmt`, `io`, `io/fs`, `maps`, `os`,
+`path/filepath`, `slices`, `strconv`, `strings`, `unicode`, `unicode/utf8`), every entry exact; the
+standard-library deny entries are gone, since nothing allows those packages, and the adapter deny
+stays for its message. `os` stays because the CLI reads the inventory a user names and creates the
+report the user asked for. An import rule sees no call, so the forbidigo group
+`cli-no-env-or-process` refuses, under `internal/cli/` with its tests (one `path-except` exclusion
+rule), the `os` names the roots and `testutil-no-env` refuse: `os.Getenv`, `os.LookupEnv`,
+`os.ExpandEnv`, `os.Environ`, `os.Setenv`, `os.Unsetenv`, `os.Clearenv`, `os.StartProcess`,
+`os.UserHomeDir`, `os.UserConfigDir`, `os.UserCacheDir` and `os.TempDir`, with no exception, as the
+CLI reads no named variable. The `//go:linkname` and `/proc` literal source checks read `internal/cli`
+as well (`TestRootsAndCLILinkNoForeignSymbol`, `TestRootsAndCLINameNoEnvironmentPath`). The lax
+depguard rule `composition-root-tests` now also holds the `_test.go` files of `internal/cli` and
+`internal/httpapi`, so the driving adapters' tests have the limits the roots' tests have. The rules are
+pinned by `TestCLIImportsProbe`, `TestCLINoEnvOrProcessForbidigoPatterns`,
+`TestCompositionRootForbidigoProbe`, `TestCompositionRootTestsReachNoForeignCodeProbe`,
+`TestForbidigoExclusionsDropOneGroup`, `TestDepguardRulesArePinned` and
+`TestCLIImportRuleAllowsNoProcessOrPointer`, which holds the property (strict, no `$gostd`, `os`
+allowed, no `os/exec`, `syscall`, `unsafe`, `plugin`, `runtime/cgo`, `os/signal`, `net/http/cgi` or
+`go/build`) whatever the exact entries.
 
 The checks are ordinary tests, so `make test`, `make check` and CI's `make cover` run them with no
 workflow change.

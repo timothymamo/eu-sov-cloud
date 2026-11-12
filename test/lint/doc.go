@@ -70,6 +70,13 @@
 // testutil-no-env group on env.go, whose environment reads and writes and
 // os.StartProcess must each be refused; TestTestutilNoEnvForbidigoPatterns
 // pins that group's pattern against lists of refused and allowed names.
+// TestCLIImportsProbe (testdata/cliimports) holds internal/cli to the strict
+// cli-gets-adapters-from-cmd rule (issue #152): os/exec, syscall and unsafe are
+// refused, the packages the CLI imports today pass; the forbidigo group
+// cli-no-env-or-process refuses the CLI's environment reads and writes, home,
+// config, cache and temp lookups and os.StartProcess, on the internal/cli of
+// TestCompositionRootForbidigoProbe's module, and
+// TestCLINoEnvOrProcessForbidigoPatterns pins its pattern.
 // TestCloudReadOnlyPatterns and
 // TestCloudReadOnlyPackages check the group's allowlist patterns, read from
 // .golangci.yml, against lists of write and read names and of import paths,
@@ -91,13 +98,13 @@
 // windows/amd64. Those names are defence in depth: the comprehensive guard is
 // TestCompositionRootsUseSyscallOnlyForSignals, an AST check under which the
 // roots, tests included, use package syscall for a ^SIG[A-Z0-9]+$ constant and
-// the type syscall.Signal only, and TestCompositionRootsLinkNoForeignSymbol
-// refuses //go:linkname in them. TestCompositionRootPassesLookupEnvToRun holds
+// the type syscall.Signal only, and TestRootsAndCLILinkNoForeignSymbol
+// refuses //go:linkname in them and in internal/cli. TestCompositionRootPassesLookupEnvToRun holds
 // cmd/shift2eu-server/main.go to one os.LookupEnv call, with the identifier
 // tokenEnvVar, as the sole return of the func() (string, bool) token source it
 // passes to run, so run reads no other variable, and
-// TestCompositionRootsNameNoEnvironmentPath refuses a /proc/ or /dev/fd/
-// literal in the roots; no group can state either. The depguard rule
+// TestRootsAndCLINameNoEnvironmentPath refuses a /proc/ or /dev/fd/
+// literal in the roots and internal/cli; no group can state either. The depguard rule
 // composition-root-tests refuses go/build, net/http/cgi, os/exec, plugin,
 // runtime/cgo, syscall/js and unsafe in the roots' _test.go files, which the
 // strict composition-root rules skip; TestCompositionRootTestsReachNoForeignCodeProbe
