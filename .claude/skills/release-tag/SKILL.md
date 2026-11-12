@@ -43,8 +43,19 @@ the tagged commit is on `main`: always tag a commit of `main`.
    on a fresh GitHub-hosted runner (issue #99, ADR 0015). Find it by its name, "Verify the published
    images", which `check.ReleaseWorkflow` pins:
    `gh run view <id> --json jobs --jq '.jobs[] | select(.name == "Verify the published images") | .conclusion'`.
-   It must be `success`. A run where a newer release's images are not published yet passes the
-   `latest` check with a `::notice::` instead (ADR 0015); report the notice. `verify` runs after the
+   It must be `success`. When a higher release tag merged into `main` has no published image, `verify`
+   skips the `latest` check and passes with a notice instead (ADR 0015). Look for it in the job's log:
+   `gh run view <id> --log --job <verify job id> | grep '::notice::'` (the job id is
+   `gh run view <id> --json jobs --jq '.jobs[] | select(.name == "Verify the published images") | .databaseId'`),
+   or among the run's annotations on its summary page. A notice must be acted on, not only reported.
+   For each `<image>:<higher tag> is not published yet` it names, check that the higher tag has a
+   release run queued or in progress:
+   `gh run list --workflow release.yml --branch <higher tag> --json status,conclusion,databaseId`.
+   If it has one, report the notice and that run. If it has none, or only a failed or cancelled one,
+   report the higher tag as stray or unpublished, with that output, and stop: while it stays
+   unpublished, `verify` checks `latest` for no older release and the image jobs' stamp holds `latest`
+   back. Removing the tag or re-running its release is the maintainer's decision; never delete or
+   move a pushed tag yourself, and do not re-run its release unasked. `verify` runs after the
    images are published, so it detects a bad release, it does not prevent one. A failed `verify` job is
    a failed release: report it with the failed step's log (`gh run view <id> --log-failed`) and stop. Do
    not re-run it to get past the failure, and do not count the VM check below as a substitute for it.

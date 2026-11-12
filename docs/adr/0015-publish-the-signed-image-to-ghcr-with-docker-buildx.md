@@ -231,12 +231,24 @@ attestations, pushed to the registry beside the image.
   GitHub's "latest release", which is the most recently created release rather than the highest version,
   and not every tag on the remote, which would count a tag off `main`. No release tag merged into `main`
   is an error. When the tag is the highest, `latest` must be its digest. When a higher release's images
-  are published, `latest` must not be this digest. When a higher release tag exists but its images are
-  not published yet (its own run is still in flight), the `latest` check is skipped with a `::notice::`:
-  that window is not covered, so a release that should have moved `latest` and did not passes while the
-  newer run is in flight. A re-run of an older release's `verify` after a newer release has shipped
-  passes, since `latest` is then the newer release's. A registry error on a tag the rule requires fails
-  the job; only the reads whose absence the rule allows are silenced.
+  are published, `latest` must not be this digest. When a higher release tag merged into `main` has no
+  published image, for any reason (its own run still in flight, failed, replaced by a newer pending run
+  in the concurrency group, or never run), the `latest` check is skipped with a `::notice::` naming
+  that tag. That window is not covered: a release that wrongly moved `latest` passes while the higher
+  tag stays unpublished. It includes a stray tag pushed on a commit of `main` whose run never publishes,
+  which also freezes `latest` in the image jobs' stamp, since the stamp counts it as the highest too.
+  So the notice is acted on, not ignored: the `release-tag` skill checks that the named tag has a
+  release run queued or in progress, and otherwise reports the tag as stray or unpublished to the
+  maintainer, who decides whether to remove it or re-run its release. A re-run of an older release's
+  `verify` after a newer release has shipped passes, since `latest` is then the newer release's. Only a
+  registry answer that the tag does not exist (`not found`, `manifest unknown`) counts as an absent
+  tag, which the rule allows for `X.Y` and `latest` of a pre-release and for the higher tag above; any
+  other registry error on any read, a 5xx, a rate limit or a failed login, fails the job, so no
+  check passes on an error it took for absence.
+
+  `verify` does not check the higher tag's run itself. That would need `actions: read` on the job, a
+  wider permission for a case only someone who can already cut a release can cause (pushing a `v*`
+  tag); the `release-tag` skill checks it instead.
 
   Its permissions are `packages: read` (the images and their signatures) and `attestations: read`
   (`gh attestation verify` reads the attestations through the repository's API), nothing else: no
