@@ -77,6 +77,12 @@
 // config, cache and temp lookups and os.StartProcess, on the internal/cli of
 // TestCompositionRootForbidigoProbe's module, and
 // TestCLINoEnvOrProcessForbidigoPatterns pins its pattern.
+// TestTestsNoProcessStateProbe (testdata/testsprocessstate) runs the forbidigo
+// group tests-no-process-state (issue #153) on t.Setenv and t.Chdir through
+// *testing.T, B, F and testing.TB in the application layer, the test helpers,
+// the driving adapters and the roots, where each must be refused, while
+// t.TempDir, os.MkdirTemp and os.CreateTemp pass;
+// TestTestsNoProcessStateForbidigoPatterns pins its pattern.
 // TestCloudReadOnlyPatterns and
 // TestCloudReadOnlyPackages check the group's allowlist patterns, read from
 // .golangci.yml, against lists of write and read names and of import paths,

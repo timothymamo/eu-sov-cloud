@@ -34,7 +34,9 @@ Arrows are imports. They point inwards only:
   locating the home, config, cache or temp directory, or starting a process. These rules are a
   guardrail on imports and named calls, not a sandbox: the I/O they leave an application test is what
   `internal/testutil` can do through `os` (file access, the golden files), `fmt`, `time` and `flag`,
-  and what `testing` itself offers (`t.TempDir`, test output, and `t.Setenv`/`t.Chdir` until #153).
+  and what `testing` itself offers (`t.TempDir` and test output). The forbidigo group
+  `tests-no-process-state` (issue #153) refuses `t.Setenv` and `t.Chdir` there, and in the tests of
+  the driving adapters and the composition roots (Composition-root process and environment rule below).
   No lint rule can refuse a hard-coded path, so any new file path or `os`, `fmt`, `time` or `flag`
   call in `internal/testutil` is a widening a reviewer must read. `test/architecture`
   holds it package by package for every release target, as it holds the other strict rules
@@ -427,13 +429,35 @@ members:
 - `internal/httpapi`'s strict allow list already leaves `os` and `syscall` out; its tests, and the
   CLI's, are held by `composition-root-tests` (above).
 
+### Tests change no process state
+
+`t.Setenv` changes the environment of the whole test binary, so every test in the process sees the
+variable, a credential's name among them, and `t.Chdir` changes the directory a `t.Parallel` test
+shares. The forbidigo group **`tests-no-process-state`** (issue #153, `analyze-types`) refuses both,
+with one entry: `pattern: '^testing\.(?:T|B|F|TB)\.(?:Setenv|Chdir)$'` and `pkg: '^testing$'`.
+forbidigo renders the method on the type it is declared on, `testing.T.Setenv`, `testing.B.Setenv`,
+`testing.F.Setenv` and, through the interface, `testing.TB.Setenv` (probed on the golangci-lint
+version CI pins), so the entry covers a helper that takes a `testing.TB` and a method value too.
+
+Its one exclusion rule, `path-except: ^(?:internal/(?:app|testutil|cli|httpapi)|cmd/shift2eu(?:-server)?)/`,
+makes it hold for five named areas: the application layer, the test helpers, the two driving
+adapters and the two composition roots. It is not every `_test.go` file because `test/lint` and
+`test/architecture` call `t.Setenv` on purpose, in test binaries of their own, to run the go command
+in a known environment (`GOCACHE`, `GOFLAGS`, `HOME`). `TestTestsNoProcessStateProbe` runs the group
+on a probe module (`test/lint/testdata/testsprocessstate`) with a line on each receiver in each area,
+and `TestTestsNoProcessStateForbidigoPatterns` pins the pattern.
+
 Known gaps, which these rules do not close:
 
 - **A `/proc` path built at run time.** The source check sees a literal only; a path built at run
   time (`"/pr" + "oc"`, `filepath.Join`) gets through.
 - **Implicit reads.** `net/http`'s `DefaultTransport` reads `HTTP_PROXY`, `HTTPS_PROXY` and
   `NO_PROXY` (and their lower-case forms) itself. It reads named variables and exposes none, so this
-  is accepted.
+  is accepted. Likewise `os.MkdirTemp("", ...)`, `os.CreateTemp("", ...)` and `t.TempDir()` read
+  `$TMPDIR` through `os.TempDir` (issue #153): they return only a fresh temporary path, never a home,
+  config or credential path, and `t.TempDir` goes through the same read, so refusing them would leave
+  a test no way to get a temporary directory. They are accepted; `os.TempDir` named directly stays
+  refused where `testutil-no-env` and `cli-no-env-or-process` refuse it.
 
 ## Domain-is-pure rule
 

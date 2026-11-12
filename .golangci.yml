@@ -1678,6 +1678,32 @@ linters:
         - pattern: '^os\.(?:Getenv|LookupEnv|ExpandEnv|Environ|Setenv|Unsetenv|Clearenv|StartProcess|UserHomeDir|UserConfigDir|UserCacheDir|TempDir)$'
           pkg: '^os$'
           msg: 'cli-no-env-or-process: the CLI reads, writes and hands over no environment variable, locates no home, config, cache or temp directory and starts no process, where credentials live; the composition root passes what it needs as a flag value (CLAUDE.md rule 3)'
+        # Group tests-no-process-state (issue #153): t.Setenv and t.Chdir.
+        # t.Setenv changes the environment of the whole test binary, so every
+        # test in the process sees the variable, a credential's name among
+        # them (CLAUDE.md rule 3), and t.Chdir changes the directory a
+        # t.Parallel test shares. A test passes the value it wants to the
+        # code under test, through a fake, a parameter, a flag or the
+        # request. analyze-types renders the call on the type the method is
+        # declared on: testing.T.Setenv, testing.B.Setenv, testing.F.Setenv
+        # and, through the interface, testing.TB.Setenv (probed on the
+        # golangci-lint version CI pins), so one entry covers the four
+        # receivers and a method value.
+        #
+        # Scope: every file under internal/app, internal/testutil,
+        # internal/cli, internal/httpapi, cmd/shift2eu and
+        # cmd/shift2eu-server, through one path-except exclusion rule; the
+        # call exists only in tests and in helpers that take a testing.TB.
+        # It does not hold for every _test.go file: test/lint and
+        # test/architecture call t.Setenv on purpose, to run the go command
+        # in a known environment (GOCACHE, GOFLAGS, HOME) in a test binary of
+        # their own. t.TempDir, os.MkdirTemp("", ...) and
+        # os.CreateTemp("", ...) stay allowed: they read $TMPDIR implicitly
+        # and return a fresh temporary path, never a home, config or
+        # credential path (docs/architecture.md, Known gaps).
+        - pattern: '^testing\.(?:T|B|F|TB)\.(?:Setenv|Chdir)$'
+          pkg: '^testing$'
+          msg: 'tests-no-process-state: a test changes no environment variable and no working directory, which every test of the process shares; pass the value to the code under test through a fake or a parameter (CLAUDE.md rule 3)'
     gosec:
       excludes:
         - G104 # unchecked errors are already reported by errcheck
@@ -1770,6 +1796,14 @@ linters:
         linters:
           - forbidigo
         text: 'because "cli-no-env-or-process: [^"]*"$'
+      # tests-no-process-state: the group holds for every file under the
+      # application layer, the test helpers, the driving adapters and the
+      # composition roots, and nowhere else: test/lint and test/architecture
+      # set the go command's own variables on purpose.
+      - path-except: ^(?:internal/(?:app|testutil|cli|httpapi)|cmd/shift2eu(?:-server)?)/
+        linters:
+          - forbidigo
+        text: 'because "tests-no-process-state: [^"]*"$'
       # The one exception (ADR 0019): os.LookupEnv(tokenEnvVar), the call the
       # token source that main.go passes to run makes for
       # SHIFT2EU_SERVER_TOKEN, in cmd/shift2eu-server/main.go alone. text is

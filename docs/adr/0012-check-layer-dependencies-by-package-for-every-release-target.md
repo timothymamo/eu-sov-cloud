@@ -317,8 +317,8 @@ application test is what `internal/testutil` can do through `os` (file access, t
 `t.Output`, and `t.Setenv` and `t.Chdir`). No import or call rule can refuse
 `os.ReadFile("/proc/self/environ")` or another hard-coded path there, so any new file path or `os`,
 `fmt`, `time` or `flag` call in `internal/testutil` is a widening a reviewer must read.
-`testing.T.Setenv` and `testing.T.Chdir`, which application tests and `internal/testutil` can still
-call, are left to follow-up issue #153. `test/lint`'s `TestTestutilImportsProbe` pins both rules on a probe module, and
+`testing.T.Setenv` and `testing.T.Chdir`, which application tests and `internal/testutil` could still
+call, were left to follow-up issue #153 (*Amended (issue #153)* below). `test/lint`'s `TestTestutilImportsProbe` pins both rules on a probe module, and
 `TestAppTestsUseFakesNotAdaptersProbe` now runs a second time for `darwin/amd64` with cgo off.
 
 *Amended (issue #152):* a composition root that may not read the environment or start a process
@@ -345,6 +345,25 @@ pinned by `TestCLIImportsProbe`, `TestCLINoEnvOrProcessForbidigoPatterns`,
 `TestCLIImportRuleAllowsNoProcessOrPointer`, which holds the property (strict, no `$gostd`, `os`
 allowed, no `os/exec`, `syscall`, `unsafe`, `plugin`, `runtime/cgo`, `os/signal`, `net/http/cgi` or
 `go/build`) whatever the exact entries.
+
+*Amended (issue #153):* `t.Setenv` changes the environment of the whole test binary and `t.Chdir`
+the working directory every `t.Parallel` test shares. The forbidigo group `tests-no-process-state`
+refuses both with one entry, `pattern: '^testing\.(?:T|B|F|TB)\.(?:Setenv|Chdir)$'`,
+`pkg: '^testing$'`: `analyze-types` renders the method on its declaring type, so it covers
+`*testing.T`, `*testing.B`, `*testing.F`, a helper's `testing.TB` and a method value. Its scope is five
+named areas, `internal/app`, `internal/testutil`, the driving adapters `internal/cli` and
+`internal/httpapi`, and the composition roots, through one exclusion rule,
+`path-except: ^(?:internal/(?:app|testutil|cli|httpapi)|cmd/shift2eu(?:-server)?)/`, so the roots'
+tests and their driving adapters' tests have the same limits. It is not every `_test.go` file
+because `test/lint` and `test/architecture` call `t.Setenv` on purpose, to run the go command in a
+known environment (`GOCACHE`, `GOFLAGS`, `HOME`) in test binaries of their own. `os.MkdirTemp("", ...)`,
+`os.CreateTemp("", ...)` and `t.TempDir()` read `$TMPDIR` implicitly through `os.TempDir`; this is
+accepted beside `net/http`'s proxy variables (docs/architecture.md, Known gaps), because they return
+only a fresh temporary path, never a home, config or credential path, and `t.TempDir` itself goes
+through the same read, so refusing them would leave no way to get a temporary directory. `os.TempDir`
+named directly stays refused where `testutil-no-env` and `cli-no-env-or-process` refuse it.
+`TestTestsNoProcessStateProbe`, `TestTestsNoProcessStateForbidigoPatterns` and
+`TestForbidigoExclusionsDropOneGroup` pin the group, its pattern and its scope.
 
 The checks are ordinary tests, so `make test`, `make check` and CI's `make cover` run them with no
 workflow change.
