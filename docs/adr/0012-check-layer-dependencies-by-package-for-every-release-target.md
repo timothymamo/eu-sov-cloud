@@ -147,14 +147,14 @@ The check fails closed:
 
 - `.goreleaser.yaml` may hold only `version`, `project_name`, `before`, `builds`, `archives`,
   `checksum` and `changelog` at the top level (a top-level `env:` reaches every build, and
-  `gomod.gobinary` picks the toolchain). `before` may hold only `hooks`, exactly `[go mod tidy]`. There
-  must be exactly one build, holding only `id`, `main`, `binary`, `env`, `flags`, `ldflags`, `goos` and
-  `goarch`; `main` is `./cmd/eusov`, `env` exactly `CGO_ENABLED=0`, `GOWORK=off` and
-  `GOFLAGS=-mod=readonly`, in that order (`releasetarget.Env`; *Amended (issue #102)*, below;
-  goreleaser renders each entry, name included, as a template), `flags` only `-trimpath`, and no template in `goos`, `goarch` or
-  `flags`. No other goreleaser config file may exist and the release workflow passes goreleaser exactly
-  `release --clean`,
-  so the file the check reads is the file the release builds from.
+  `gomod.gobinary` picks the toolchain). `before` may hold only `hooks`, exactly
+  `[go mod tidy -diff]` (*Amended (issue #102)*, below). There must be exactly one build, holding
+  only `id`, `main`, `binary`, `env`, `flags`, `ldflags`, `goos` and `goarch`; `main` is
+  `./cmd/eusov`, `env` exactly `CGO_ENABLED=0`, `GOWORK=off` and `GOFLAGS=-mod=readonly`, in that
+  order (`releasetarget.Env`; *Amended (issue #102)*, below; goreleaser renders each entry, name
+  included, as a template), `flags` only `-trimpath`, and no template in `goos`, `goarch` or `flags`.
+  No other goreleaser config file may exist and the release workflow passes goreleaser exactly
+  `release --clean`, so the file the check reads is the file the release builds from.
 - No `go.work`, `go.work.sum` or `vendor` that git could commit may exist at the repository root
   (`check.StrayReleaseFiles`): none that `git ls-files --cached --others --exclude-standard` lists,
   so a tracked or force-added one, or an untracked one git does not ignore. The check lists with
@@ -200,7 +200,11 @@ refuse them as well, so the release builds what the check lists, which already r
 and `-mod=readonly`. `releasetarget.Env` returns the three entries and `releasetarget.Read` holds each
 build entry to exactly that list, so a second build (PRD #103's `cmd/eusov-server`) will share the
 rule rather than copy it. The `Dockerfile`'s `go build` sets the same three, and `test/container`
-fails when it or `.goreleaser.yaml` drops one (ADR 0013).
+fails when it or `.goreleaser.yaml` drops one (ADR 0013). The `before` hook was first exactly
+`go mod tidy`; it is now exactly `go mod tidy -diff`. A hook runs before the build and without its
+`env`, so plain `go mod tidy` would rewrite an untidy `go.mod` or `go.sum` (possibly with a newer
+module version from `GOPROXY`) and the `-mod=readonly` build would then pass against the rewritten
+files; `-diff` fails the release instead and writes nothing.
 
 The checks are ordinary tests, so `make test`, `make check` and CI's `make cover` run them with no
 workflow change.
