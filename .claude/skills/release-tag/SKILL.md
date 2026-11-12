@@ -40,10 +40,21 @@ moves or deletes a tag.
    every rule of its ruleset, so the App sits only in the one that restricts nothing but creation. Any
    other bypass actor, an App that may bypass update or deletion, or a missing rule fails the check: report
    what you found, that a maintainer must fix it (an agent must not), and stop.
+   The release App is the one whose id the workflow mints its token with: read it with
+   `gh api repos/{owner}/{repo}/environments/release-please/variables/RELEASE_APP_ID --jq .value`. The
+   `Integration` bypass actor of `Release tag creation` must have exactly that `actor_id`; if the
+   variable cannot be read, or the ids differ, report it and stop. Then check the `release-please`
+   environment, which holds the App's key: `gh api repos/{owner}/{repo}/environments/release-please`
+   must show `deployment_branch_policy.custom_branch_policies` `true` (and `protected_branches`
+   `false`), and
+   `gh api repos/{owner}/{repo}/environments/release-please/deployment-branch-policies --jq '.branch_policies[] | .type + " " + .name'`
+   must list exactly one policy, `branch main`. Anything else lets a workflow on another branch or tag
+   read the App's key: report it and stop.
 3. Find the open release PR:
    `gh pr list --state open --label "autorelease: pending" --json number,title,headRefName,url`.
-   There must be exactly one, from a `release-please--branches--main` branch. If there is none, check for
-   a merged one still waiting for its tag
+   There must be exactly one, from the branch `release-please--branches--main--components--shift2eu`
+   (exactly; ADR 0021 says why), opened by the release App (`gh pr view <n> --json author`, a
+   `[bot]` login). If there is none, check for a merged one still waiting for its tag
    (`gh pr list --state merged --label "autorelease: pending" --json number,title,mergeCommit`): if
    there is one, go to step 6 for it. Otherwise release-please found nothing to release since the last
    release (only docs, test, ci, chore, build, style or refactor commits): report that and stop.
@@ -56,19 +67,24 @@ moves or deletes a tag.
    - the version these rules give: a breaking change (`!` or `BREAKING CHANGE`) means minor while on
      `v0.x` and major from `v1`; `feat` means minor; only `fix`, `perf` or `revert` means patch;
      commits that only touch docs, tests, CI or chores need no release. The two versions must agree;
-   - the `CHANGELOG.md` entry in the diff: every `feat`, `fix`, `perf` and breaking commit since the
-     last release in it, and nothing else;
+   - the `CHANGELOG.md` entry in the diff: every `feat`, `fix`, `perf`, `revert` and breaking commit
+     since the last release in it, and nothing else;
    - that the PR changes only `CHANGELOG.md` and `.release-please-manifest.json`
-     (`gh pr diff <n> --name-only`), and that its checks pass (`gh pr checks <n>`).
+     (`gh pr diff <n> --name-only`), and that its checks pass (`gh pr checks <n>`);
+   - the head commit you reviewed: `gh pr view <n> --json headRefOid --jq .headRefOid`.
    Any disagreement goes in the report with the commits behind it, and you stop: never edit, close or
    relabel the release PR yourself. A maintainer fixes a wrong version by landing a commit with a
    `Release-As: X.Y.Z` footer, or a commit type, on `main`, which release-please picks up.
 5. State the version, the reasoning and the PR's URL in your report **and wait for explicit
    confirmation** before anything is merged: merging the release PR publishes binaries and signed
-   container images. Merge it only when explicitly told to, as the `pr-create` skill merges a PR
-   (`gh pr merge <n> --squash --delete-branch` from the repository root); usually the maintainer merges
-   it. Release one PR at a time: the tag step refuses to tag while a `release.yml` run is queued or in
-   progress, so a release PR merged during a release waits for the next run of the workflow.
+   container images. Merge it only when explicitly told to, as the `pr-create` skill merges a PR, and
+   only the commit you reviewed:
+   `gh pr merge <n> --squash --delete-branch --match-head-commit <head commit from step 4>` from the
+   repository root, which refuses to merge if the branch moved since the review; if it refuses, review
+   the PR again from step 4. Usually the maintainer merges it: tell them to confirm, before merging by
+   hand, that the PR's head commit is still the one reviewed (the SHA in your report). Release one PR at
+   a time: the guard refuses to tag while a `release.yml` run is requested, waiting, pending, queued or
+   in progress, so a release PR merged during a release waits for the next run of the workflow.
 6. Verify the tag. Find the release-please run on the merge commit
    (`gh pr view <n> --json mergeCommit --jq .mergeCommit.oid`):
    `gh run list --workflow release-please.yml --commit <merge commit> --json databaseId,status,conclusion`,
