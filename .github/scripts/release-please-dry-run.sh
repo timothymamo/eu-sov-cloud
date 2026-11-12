@@ -94,10 +94,10 @@ respond() { printf '%s\n' "$3" >"${FAKE_GH}/$(printf '%s %s' "$1" "$2" | sha256s
 # reads PR and TAG, the tag job's outputs, from the scenario's PR and TAG (the tag step's own outputs
 # unless a scenario sets them). What a step writes to $GITHUB_OUTPUT lands in the scenario's output file.
 run_step() {
-  local name="$1" step="$2" want="$3" got=pass
-  : >"${FAKE_GH}/output"
+  local name="$1" step="$2" want="$3" got=pass output="${FAKE_GH}/output"
+  : >"${output}"
   PATH="${work}/bin:${PATH}" FAKE_GH="${FAKE_GH}" GH_TOKEN=fake GH_REPO="${repo}" APP_SLUG="${slug}" \
-    PR="${PR:-}" TAG="${TAG:-}" GITHUB_OUTPUT="${FAKE_GH}/output" \
+    PR="${PR:-}" TAG="${TAG:-}" GITHUB_OUTPUT="${output}" \
     bash "${work}/${step}.sh" >"${FAKE_GH}/out" 2>&1 || got=fail
   if [ "${got}" != "${want}" ]; then
     echo "FAIL ${name}: the ${step} step's result is ${got}, want ${want}"; sed 's/^/    /' "${FAKE_GH}/out"
@@ -237,7 +237,7 @@ scenario relabelled; merged_release 0.3.0 "chore(main): release 0.3.0"
 respond GET "${pending}" "[$(merged_pr 42), $(jq -c '.labels += [{"name": "autorelease: pending"}]' <<<"${tagged_pr}")]"
 run_step "tag: an old tagged release PR labelled autorelease: pending again" tag fail; wrote_nothing "tag: an old tagged release PR labelled again"
 
-for bad in "0.3" "0.3.0-rc.1" "v0.3.0" "0.3.0 ; touch pwned" '0.3.0$(touch pwned)'; do
+for bad in "0.3" "0.3.0-rc.1" "v0.3.0" "0.3.0 ; touch pwned" "0.3.0\$(touch pwned)"; do
   scenario "version-$(printf '%s' "${bad}" | sha256sum | cut -c1-8)"; merged_release "${bad}" "chore(main): release ${bad}"
   run_step "tag: manifest version '${bad}'" tag fail; wrote_nothing "tag: manifest version '${bad}'"
 done
@@ -340,12 +340,12 @@ run_step "relabel: a PR that is not merged" relabel fail; wrote_nothing "relabel
 scenario relabel-merge-commit; PR=42 TAG=v0.3.0; pull_42 '.merge_commit_sha = null'; tag_on null lightweight
 run_step "relabel: a PR with no merge commit" relabel fail; wrote_nothing "relabel: a PR with no merge commit"
 
-for bad in "" "42; touch pwned" '42$(touch pwned)' "4 2"; do
+for bad in "" "42; touch pwned" "42\$(touch pwned)" "4 2"; do
   scenario "relabel-pr-$(printf '%s' "${bad}" | sha256sum | cut -c1-8)"; PR="${bad}" TAG=v0.3.0; pull_42; tag_on "${merge}"
   name="relabel: PR $(printf '%q' "${bad}")"
   run_step "${name}" relabel fail; wrote_nothing "${name}"
 done
-for bad in "" "v0.3" "0.3.0" "v0.3.0-rc.1" 'v0.3.0$(touch pwned)' $'v0.3.0\n::error::injected'; do
+for bad in "" "v0.3" "0.3.0" "v0.3.0-rc.1" "v0.3.0\$(touch pwned)" $'v0.3.0\n::error::injected'; do
   scenario "relabel-tag-$(printf '%s' "${bad}" | sha256sum | cut -c1-8)"; PR=42 TAG="${bad}"; pull_42; tag_on "${merge}"
   name="relabel: tag $(printf '%q' "${bad}")"
   run_step "${name}" relabel fail; wrote_nothing "${name}"
