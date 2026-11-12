@@ -27,5 +27,8 @@ description: Write an Architecture Decision Record for shift2eu under docs/adr. 
    What becomes easier, what becomes harder, what we must now do.
    ```
 
-3. Never rewrite an accepted ADR's decision. Supersede it with a new ADR and update the old one's status.
-4. Link the ADR from the PRD or PR that motivated it.
+3. Add it to the list under "Architecture decision records" in `docs/README.md`, the documentation's
+   index, as `- [NNNN. <Title>](adr/NNNN-<kebab-title>.md)`; `make check` fails on a page the index
+   does not list.
+4. Never rewrite an accepted ADR's decision. Supersede it with a new ADR and update the old one's status.
+5. Link the ADR from the PRD or PR that motivated it.
