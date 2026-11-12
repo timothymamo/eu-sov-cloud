@@ -74,13 +74,18 @@ jobs:
           format: spdx-json
           output-file: ${{ runner.temp }}/shift2eu.spdx.json
           syft-version: v1.57.1
+      # release.yml's verify job runs the published image the same way, so the
+      # dry run runs the image it built the same way, on the runner alone.
+      - name: Smoke test the CLI image, read-only root filesystem, no network
+        run: |
+          docker run --rm --read-only --network none "$IMAGE" version | tee version.txt
 `
 
-// releaseDryRun is the image and sbom jobs of .github/workflows/release.yml as
+// releaseDryRun is the image, sbom and verify jobs of .github/workflows/release.yml as
 // far as the dry run checks them: the latest decision on the release tags on
 // main, the BuildKit image by exact release and index digest, the pins, the tag
-// rules on github.ref_name, the build settings, and the SPDX SBOM with an exact
-// syft.
+// rules on github.ref_name, the build settings, the SPDX SBOM with an exact
+// syft, and the container run of each published image.
 const releaseDryRun = `name: Release
 
 on:
@@ -133,6 +138,20 @@ jobs:
           format: spdx-json
           output-file: shift2eu.spdx.json
           syft-version: v1.57.1
+  verify:
+    name: Verify the published images
+    runs-on: ubuntu-latest
+    steps:
+      - name: Verify the CLI image
+        run: |
+          DIGEST="$(docker buildx imagetools inspect "ghcr.io/timothymamo/shift2eu:$TAG" --format '{{.Manifest.Digest}}')"
+          IMAGE="ghcr.io/timothymamo/shift2eu@$DIGEST"
+          docker run --rm --read-only --network none "$IMAGE" version | tee version.txt
+      - name: Verify the HTTP API's image
+        run: |
+          DIGEST="$(docker buildx imagetools inspect "ghcr.io/timothymamo/shift2eu-server:$TAG" --format '{{.Manifest.Digest}}')"
+          IMAGE="ghcr.io/timothymamo/shift2eu-server@$DIGEST"
+          docker run --rm --read-only --network none "$IMAGE" --help > /dev/null
 `
 
 // ciDryRunServer is the rest of ci.yml's image job: the dry run of the HTTP
@@ -165,6 +184,9 @@ const ciDryRunServer = `      - name: Build the server image, linux/amd64 and li
           target: server
           platforms: linux/amd64
           load: true
+      - name: The server image answers --help, read-only root filesystem, no network
+        run: |
+          docker run --rm --read-only --network none "$SERVER_IMAGE" --help > /dev/null
 `
 
 // releaseDryRunServer is the server-image and server-sbom jobs of
@@ -432,6 +454,69 @@ func TestDryRunMirrorsRelease(t *testing.T) {
 		{name: "a drifted server build-push-action pin", ci: ciDryRun, release: releaseDryRun, releaseServer: mutate(t, releaseDryRunServer, "docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc", "docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dd"), wantIn: "docker/build-push-action runs at"},
 		{name: "a release.yml without a server-image job", ci: ciDryRun, release: releaseDryRun, releaseServer: mutate(t, releaseDryRunServer, "  server-image:\n", "  other-image:\n"), wantIn: "release.yml: no jobs: server-image"},
 		{name: "a release.yml without a server-sbom job", ci: ciDryRun, release: releaseDryRun, releaseServer: mutate(t, releaseDryRunServer, "  server-sbom:\n", "  other-sbom:\n"), wantIn: "release.yml: no jobs: server-sbom"},
+
+		// The release's verify job (issue #99) is the independent check of what a
+		// release published. A pull request has no published image to verify, so
+		// the dry run mirrors the part that needs none of it: the container run of
+		// each image, with the release's flags and the release's command, on the
+		// image it built itself.
+		{
+			name:    "a dry run that runs the CLI image without --network none",
+			ci:      mutate(t, ciDryRun, `docker run --rm --read-only --network none "$IMAGE" version`, `docker run --rm --read-only "$IMAGE" version`),
+			release: releaseDryRun,
+			wantIn:  "the dry run must run the image as release.yml's verify job runs it",
+		},
+		{
+			name:    "a dry run that runs the CLI image without --read-only",
+			ci:      mutate(t, ciDryRun, `docker run --rm --read-only --network none "$IMAGE" version`, `docker run --rm --network none "$IMAGE" version`),
+			release: releaseDryRun,
+			wantIn:  "the dry run must run the image as release.yml's verify job runs it",
+		},
+		{
+			name:    "a dry run that runs the CLI image's assess in place of version",
+			ci:      mutate(t, ciDryRun, `--network none "$IMAGE" version`, `--network none "$IMAGE" assess`),
+			release: releaseDryRun,
+			wantIn:  "the dry run must run the image as release.yml's verify job runs it",
+		},
+		{
+			name:     "a dry run that does not run the server image's --help",
+			ci:       ciDryRun,
+			ciServer: mutate(t, ciDryRunServer, "      - name: The server image answers --help, read-only root filesystem, no network\n        run: |\n          docker run --rm --read-only --network none \"$SERVER_IMAGE\" --help > /dev/null\n", ""),
+			release:  releaseDryRun,
+			wantIn:   "the dry run must run the image as release.yml's verify job runs it",
+		},
+		{
+			name:     "a dry run that runs the server image without --network none",
+			ci:       ciDryRun,
+			ciServer: mutate(t, ciDryRunServer, `docker run --rm --read-only --network none "$SERVER_IMAGE" --help`, `docker run --rm --read-only "$SERVER_IMAGE" --help`),
+			release:  releaseDryRun,
+			wantIn:   "the dry run must run the image as release.yml's verify job runs it",
+		},
+		{
+			name:    "a release whose verify job runs the CLI image without --network none",
+			ci:      ciDryRun,
+			release: mutate(t, releaseDryRun, `docker run --rm --read-only --network none "$IMAGE" version`, `docker run --rm --read-only "$IMAGE" version`),
+			wantIn:  "the dry run must run the image as release.yml's verify job runs it",
+		},
+		{
+			name:    "a release whose verify job runs the server image's version in place of --help",
+			ci:      ciDryRun,
+			release: mutate(t, releaseDryRun, `--network none "$IMAGE" --help`, `--network none "$IMAGE" version`),
+			wantIn:  "the dry run must run the image as release.yml's verify job runs it",
+		},
+		{
+			name:    "a release whose verify job runs no image",
+			ci:      ciDryRun,
+			release: mutate(t, releaseDryRun, `docker run --rm --read-only --network none "$IMAGE" version`, `true`),
+			wantIn:  "runs no container run",
+		},
+		{
+			name:    "a release whose verify job names one image alone",
+			ci:      ciDryRun,
+			release: mutate(t, releaseDryRun, "ghcr.io/timothymamo/shift2eu-server:$TAG", "ghcr.io/timothymamo/shift2eu:$TAG"),
+			wantIn:  "whose run: names ghcr.io/timothymamo/shift2eu",
+		},
+		{name: "a release.yml without a verify job", ci: ciDryRun, release: mutate(t, releaseDryRun, "  verify:\n", "  publishing:\n"), wantIn: "release.yml: no jobs: verify"},
 
 		// The jobs the two documents must hold to be compared at all.
 		{name: "a ci.yml without an image job", ci: mutate(t, ciDryRun, "jobs:\n  image:\n", "jobs:\n  images:\n"), release: releaseDryRun, wantIn: "ci.yml: no jobs: image"},
