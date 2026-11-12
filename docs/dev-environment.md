@@ -148,8 +148,9 @@ start work on an issue or PRD.
   when the entry is locked, and brings the worktree back once they have run. Do not use
   `git worktree prune`: it clears every stale entry in the repository, including those of healthy
   worktrees on a disk that is not mounted.
-  `dot-agent-deck worktree list` shows what is left. The `agent/dispatch-*` branches stay; delete them
-  with `git branch -d`.
+  `dot-agent-deck worktree list` shows what is left. The `agent/dispatch-*` branches stay. Deleting
+  local branches is left to you: an agent writes the list to a file and hands you the command to run,
+  `xargs git branch -D < <file>` (CLAUDE.md, rule 8).
 
 ### Moving an existing checkout into a workspace
 
@@ -229,7 +230,7 @@ Everything below exists to keep the agents from waiting on you (#68). Three plac
 
 - **`.claude/settings.json`, checked in.** Permission rules apply on top of the mode: an allow rule skips
   the check, and a deny rule refuses the action. The deny rules (`--no-verify`, force pushes,
-  `git branch -D`) and the allow rules that name no path (the `make` targets, `go test/build/vet`,
+  `git branch -D` and `--delete`, see CLAUDE.md rule 8) and the allow rules that name no path (the `make` targets, `go test/build/vet`,
   `golangci-lint run`, `dot-agent-deck work-done`, web search and the provider documentation sites)
   live here, so every checkout has them, including the dispatch worktrees the deck creates.
 - **`.claude/worker-settings.json`, checked in.** Loaded by the workers only. It denies

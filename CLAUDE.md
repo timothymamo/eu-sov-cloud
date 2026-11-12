@@ -98,6 +98,13 @@ make server            # ./bin/shift2eu-server only
    and workflow actions by itself; any other pinned version (such as the `param:` versions in
    `dev/lima.yaml`) needs a `# renovate: datasource=... depName=...` comment on the line above. Keep those
    comments when editing, and add one to every new pin of that kind.
+8. **Never delete a local branch.** That is the maintainer's job: `.claude/settings.json` denies
+   `git branch -D` on purpose. Never work around the deny (`git branch -d`, `git update-ref -d`, deleting
+   refs by hand). For a cleanup, write the local branches to delete, one per line, to a file in your
+   scratchpad or temporary directory, and give the maintainer its absolute path and the command
+   `xargs git branch -D < <file>` (`! xargs git branch -D < <file>` in Claude Code). Remove worktrees
+   (`git worktree remove`) and delete remote branches (`git push origin --delete <branch>`) yourself. A
+   worker hands the list to the orchestrator, which passes it on.
 
 ## Multi-agent workflow
 
