@@ -168,9 +168,12 @@ linters:
             # (issue #119; test/architecture, TestDepguardEntriesShadowNothing).
             # Every net/* package that can open a connection is named, and so
             # is crypto/tls, whose Dial opens one too, as are os/exec, os/user
-            # and os/signal: the lax app-tests-use-fakes-not-adapters rule
-            # shares this list and allows any package not named here, and the
-            # application layer's tests never touch the network. The pure net
+            # and os/signal, and syscall (which also covers syscall/js) and
+            # plugin, which reach files, sockets, processes and shared
+            # libraries without os or net: the lax
+            # app-tests-use-fakes-not-adapters rule shares this list and
+            # allows any package not named here, and the application layer's
+            # tests do no I/O. The pure net
             # subpackages, net/url and net/netip, are left out on purpose: the
             # strict app-uses-ports-not-adapters rule refuses them through its
             # allow list, with depguard's generic message, and its tests may
@@ -197,6 +200,10 @@ linters:
               desc: the application layer handles no OS signals; the driving adapter cancels the context instead
             - pkg: os$
               desc: the application layer has no OS access (files, environment); the driving adapter passes what it needs through the ports
+            - pkg: syscall
+              desc: the application layer makes no system calls (files, sockets, processes); an adapter behind a port does
+            - pkg: plugin
+              desc: the application layer loads no code at run time; the composition root wires everything it needs
         # The application layer's tests use fakes, not adapters, and keep the
         # same deny list. They are left out of the strict rule above because
         # they also need testing, go-cmp and testutil.

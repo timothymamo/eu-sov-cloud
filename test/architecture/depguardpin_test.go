@@ -98,6 +98,8 @@ var pinnedDepguardRules = []check.DepguardRule{
 			"os/user",
 			"os/signal",
 			"os$",
+			"syscall",
+			"plugin",
 		},
 	},
 	{
@@ -126,6 +128,8 @@ var pinnedDepguardRules = []check.DepguardRule{
 			"os/user",
 			"os/signal",
 			"os$",
+			"syscall",
+			"plugin",
 		},
 	},
 	{
