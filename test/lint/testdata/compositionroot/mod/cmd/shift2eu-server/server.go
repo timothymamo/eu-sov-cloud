@@ -1,6 +1,10 @@
+//go:build !windows
+
 // Package main is the second file of the server composition root, for
 // TestCompositionRootForbidigoProbe. The os.LookupEnv exception holds for
-// cmd/shift2eu-server/main.go alone, so the same reference is refused here.
+// cmd/shift2eu-server/main.go alone, so the same reference is refused here. The
+// file is for the host's platform: the windows entry points of syscall are in
+// probe_windows.go, which the probe's windows run lints.
 package main
 
 import (
@@ -21,6 +25,17 @@ func process() {
 	_, _ = exec.LookPath("true")                               // want "composition-root-no-exec: "
 	_ = os.Environ()                                           // want "composition-root-no-exec: "
 	_ = syscall.Environ()                                      // want "composition-root-no-exec: "
+}
+
+// syscalls makes the kernel call the process entry points are built on, and
+// names the number of the exec call: the composition roots may not do it this
+// way either.
+func syscalls() {
+	_, _, _ = syscall.Syscall(0, 0, 0, 0)              // want "composition-root-no-exec: "
+	_, _, _ = syscall.Syscall6(0, 0, 0, 0, 0, 0, 0)    // want "composition-root-no-exec: "
+	_, _, _ = syscall.RawSyscall(0, 0, 0, 0)           // want "composition-root-no-exec: "
+	_, _, _ = syscall.RawSyscall6(0, 0, 0, 0, 0, 0, 0) // want "composition-root-no-exec: "
+	_ = syscall.SYS_EXECVE                             // want "composition-root-no-exec: "
 }
 
 // variables reads one named variable, os.LookupEnv included: the exception is

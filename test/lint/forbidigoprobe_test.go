@@ -41,12 +41,33 @@ type forbidigoProbe struct {
 	stubs map[string]string
 	// depguard also runs depguard, for a group that an import rule backs.
 	depguard bool
+	// goos and goarch, when goos is set, are the platform golangci-lint loads
+	// the probe module for, with cgo off as the release builds it, so a file
+	// that names its package's functions for another platform type-checks. A
+	// probe that leaves goos empty loads for the host's platform with cgo on.
+	goos, goarch string
+	// packages are the go command's package patterns to lint, for a probe
+	// module whose files for another platform do not build here; nil lints
+	// ./..., every package of the probe module.
+	packages []string
+	// files, when set, keeps the probe files the run is for: a want comment in
+	// a file it does not keep is no want of this run. A probe module with a
+	// file per platform needs it, as only one platform's files build at a time.
+	files func(rel string) bool
+	// noEntryCoverage leaves the check that every entry of the probe's groups
+	// refuses a line to the caller, for a probe whose entries may refuse a line
+	// in a run of another platform only.
+	noEntryCoverage bool
 }
 
 // runForbidigoProbe runs golangci-lint, with the repository's .golangci.yml and
 // the linters the probe asks for enabled (forbidigo for its tags, depguard if it
 // asks for it), on a scratch copy of the probe's module, offline and with no
 // credentials. A forbidigo issue's msg must start with one of the probe's tags.
+// It returns the msg of every entry that refused a line, so a caller that runs
+// one probe on two platforms can check the coverage of both runs' entries
+// together (noEntryCoverage).
+//
 // A line that ends in
 //
 //	// want "<message prefix>" ["<message prefix>" ...]
@@ -57,9 +78,9 @@ type forbidigoProbe struct {
 // two entries refusing one line are told apart. Every entry of every group the
 // probe tags must refuse at least one line, so an entry that silently stops
 // matching fails the probe; a probe with no tag holds no such group and skips
-// that check. Without
-// golangci-lint on PATH it skips, unless SHIFT2EU_LINT_PROBES=require.
-func runForbidigoProbe(t *testing.T, p forbidigoProbe) {
+// that check. Without golangci-lint on PATH it skips, unless
+// SHIFT2EU_LINT_PROBES=require.
+func runForbidigoProbe(t *testing.T, p forbidigoProbe) map[string]bool {
 	t.Helper()
 
 	bin, err := exec.LookPath("golangci-lint")
@@ -128,17 +149,27 @@ func runForbidigoProbe(t *testing.T, p forbidigoProbe) {
 		t.Fatal("the probe enables no linter: set its tags for forbidigo, depguard for an import rule, or both")
 	}
 	linters := strings.Join(enabled, ",")
+	packages := p.packages
+	if len(packages) == 0 {
+		packages = []string{"./..."}
+	}
+	// cgo on, as lint loads the module (lintEnv), so a probe of a cgo file
+	// sees it; a run for another platform has cgo off, as the release builds it.
+	platform := []string{"CGO_ENABLED=1"}
+	if p.goos != "" {
+		platform = []string{"GOOS=" + p.goos, "GOARCH=" + p.goarch, "CGO_ENABLED=0"}
+	}
+	platform = append(platform, "GOFLAGS=-mod=mod", "GOWORK=off", "GOPROXY=off", "GOTOOLCHAIN=local",
+		"GOLANGCI_LINT_CACHE="+filepath.Join(scratch, "cache"))
 	// Probes run in parallel, each with a cache of its own in its scratch
 	// directory, so the lock that refuses a second run is not needed.
-	cmd := exec.CommandContext(t.Context(), bin, "run", "--enable-only="+linters, "--allow-parallel-runners",
+	cmd := exec.CommandContext(t.Context(), bin, append([]string{
+		"run", "--enable-only=" + linters, "--allow-parallel-runners",
 		"--uniq-by-line=false", "--max-issues-per-linter=0", "--max-same-issues=0",
-		"--output.json.path=stdout", "--output.text.path=", "--show-stats=false", "./...")
+		"--output.json.path=stdout", "--output.text.path=", "--show-stats=false",
+	}, packages...)...)
 	cmd.Dir = mod
-	cmd.Env = childEnv(
-		// cgo on, as lint loads the module (lintEnv), so a probe of a cgo
-		// file sees it.
-		"CGO_ENABLED=1", "GOFLAGS=-mod=mod", "GOWORK=off", "GOPROXY=off", "GOTOOLCHAIN=local",
-		"GOLANGCI_LINT_CACHE="+filepath.Join(scratch, "cache"))
+	cmd.Env = childEnv(platform...)
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
 	out, err := cmd.Output()
@@ -162,7 +193,7 @@ func runForbidigoProbe(t *testing.T, p forbidigoProbe) {
 		t.Fatalf("decode golangci-lint output: %v\n%s\n%s", err, out, stderr.String())
 	}
 
-	want := wantMessages(t, mod, func(prefix string) bool { return !strings.HasPrefix(prefix, astPrefix) })
+	want := wantMessages(t, mod, func(prefix string) bool { return !strings.HasPrefix(prefix, astPrefix) }, p.files)
 	if len(want) == 0 {
 		t.Fatal("the probe holds no want comment")
 	}
@@ -211,8 +242,8 @@ func runForbidigoProbe(t *testing.T, p forbidigoProbe) {
 			}
 		}
 	}
-	if len(p.tags) == 0 {
-		return
+	if len(p.tags) == 0 || p.noEntryCoverage {
+		return refusedBy
 	}
 	for _, e := range forbidigoEntries(t, root) {
 		if !slices.ContainsFunc(p.tags, func(tag string) bool { return strings.HasPrefix(e.msg, tag+": ") }) {
@@ -223,6 +254,7 @@ func runForbidigoProbe(t *testing.T, p forbidigoProbe) {
 				"add a line only it refuses", e.line, p.dir, e.msg)
 		}
 	}
+	return refusedBy
 }
 
 // forbidigoMsg captures the msg at the end of a forbidigo issue's text:
@@ -238,12 +270,17 @@ var (
 
 // wantMessages maps file:line, relative to dir and slash-separated, of every
 // line in a Go file under dir that ends in a want comment to the message
-// prefixes the comment names that keep reports true.
-func wantMessages(t *testing.T, dir string, keep func(prefix string) bool) map[string][]string {
+// prefixes the comment names that keep reports true. files, when not nil, keeps
+// the files the run is for: a want in a file it does not keep is no want of the
+// run, as the run does not build that file.
+func wantMessages(t *testing.T, dir string, keep func(prefix string) bool, files func(rel string) bool) map[string][]string {
 	t.Helper()
 
 	want := map[string][]string{}
 	refused, err := walkGoFiles(dir, nil, func(rel string, src []byte) error {
+		if files != nil && !files(rel) {
+			return nil
+		}
 		sc := bufio.NewScanner(bytes.NewReader(src))
 		for n := 1; sc.Scan(); n++ {
 			m := wantComment.FindStringSubmatch(sc.Text())

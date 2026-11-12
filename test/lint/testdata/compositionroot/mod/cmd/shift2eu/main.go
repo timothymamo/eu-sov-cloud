@@ -1,12 +1,16 @@
+//go:build !windows
+
 // Command shift2eu is one of the two composition roots, for
 // TestCompositionRootForbidigoProbe. Every line that ends in a want comment
 // holds a call that one of the two composition-root groups refuses, and the
 // comment names the group's tag, which starts the msg of every entry in it:
-// composition-root-no-exec for a process and the whole environment, and
-// composition-root-env for one named variable. There is a line for every
-// function the design forbids, here and in cmd/shift2eu-server, and the same
-// calls in internal/cli must pass, as the groups hold for the composition
-// roots only.
+// composition-root-no-exec for a process, a raw system call and the whole
+// environment, and composition-root-env for one named variable. There is a line
+// for every function the design forbids, here and in cmd/shift2eu-server, and
+// the same calls in internal/cli must pass, as the groups hold for the
+// composition roots only. The file is for the host's platform: the windows
+// entry points of syscall are in probe_windows.go, which the probe's windows run
+// lints.
 package main
 
 import (
@@ -30,6 +34,17 @@ func start() {
 	_, _ = exec.LookPath("true")                               // want "composition-root-no-exec: "
 	_ = os.Environ()                                           // want "composition-root-no-exec: "
 	_ = syscall.Environ()                                      // want "composition-root-no-exec: "
+}
+
+// syscalls makes the kernel call the process entry points are built on, and
+// names the number of the exec call: a composition root that may not start a
+// process may not do it this way either.
+func syscalls() {
+	_, _, _ = syscall.Syscall(0, 0, 0, 0)              // want "composition-root-no-exec: "
+	_, _, _ = syscall.Syscall6(0, 0, 0, 0, 0, 0, 0)    // want "composition-root-no-exec: "
+	_, _, _ = syscall.RawSyscall(0, 0, 0, 0)           // want "composition-root-no-exec: "
+	_, _, _ = syscall.RawSyscall6(0, 0, 0, 0, 0, 0, 0) // want "composition-root-no-exec: "
+	_ = syscall.SYS_EXECVE                             // want "composition-root-no-exec: "
 }
 
 // environment reads one named variable, which the composition-root-env group

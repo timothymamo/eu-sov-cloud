@@ -1,6 +1,7 @@
 // Package cli is neither composition root, so the two composition-root groups
 // do not hold for it: nothing below is reported, and a group that lost its
-// path-except scope is refused by the lines that start a process here.
+// path-except scope, or a raw system call entry that lost it, is refused by the
+// lines that start a process here.
 package cli
 
 import (
@@ -22,6 +23,16 @@ func Start() {
 	_, _ = exec.LookPath("true")
 	_ = os.Environ()
 	_ = syscall.Environ()
+}
+
+// Syscalls makes the kernel call itself, which a caller of the CLI may do in its
+// own process and the composition roots may not.
+func Syscalls() {
+	_, _, _ = syscall.Syscall(0, 0, 0, 0)
+	_, _, _ = syscall.Syscall6(0, 0, 0, 0, 0, 0, 0)
+	_, _, _ = syscall.RawSyscall(0, 0, 0, 0)
+	_, _, _ = syscall.RawSyscall6(0, 0, 0, 0, 0, 0, 0)
+	_ = syscall.SYS_EXECVE
 }
 
 // Environment reads one named variable, which is the CLI's caller's job.

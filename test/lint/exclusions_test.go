@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"slices"
+	"strings"
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
@@ -49,7 +50,8 @@ func TestForbidigoExclusionsDropOneGroup(t *testing.T) {
 	for _, tag := range forbidigoTags {
 		got[tag] = nil
 	}
-	for _, r := range exclusionRules(t, moduleRoot(t)) {
+	root := moduleRoot(t)
+	for _, r := range exclusionRules(t, root) {
 		if r.linters == nil {
 			t.Errorf(".golangci.yml:%d: an exclusion rule with no linters drops every linter's issues, forbidigo's included; name its linters", r.line)
 			continue
@@ -62,7 +64,7 @@ func TestForbidigoExclusionsDropOneGroup(t *testing.T) {
 			continue
 		}
 		text := r.fields["text"]
-		tag, ok := groupOfText(text)
+		tag, ok := groupOfText(t, root, text)
 		if !ok {
 			t.Errorf(".golangci.yml:%d: forbidigo exclusion text %q; want a text of a group of %q, either 'because \"<tag>: [^\"]*\"$' or that text with one entry's msg in place of [^\"]*",
 				r.line, text, slices.Concat(forbidigoTags, compositionRootTags))
@@ -89,9 +91,15 @@ func TestForbidigoExclusionsDropOneGroup(t *testing.T) {
 
 // groupOfText returns the tag whose exclusion text text is, in either form the
 // group's rules may have: groupText(tag), the group's whole form, or narrowedText
-// with the msg of one entry of the group, the single exception a group may state
-// for one function in one file (TestCompositionRootExclusions).
-func groupOfText(text string) (string, bool) {
+// with the msg of one entry of the group (narrowedTextOf), the single exception a
+// group may state for one function in one file (TestCompositionRootExclusions).
+//
+// A narrower text is no group's unless it drops exactly one entry's issue of the
+// group: a body such as .* drops every entry's, and would be classified as an
+// exception while it allows the whole group.
+func groupOfText(t *testing.T, root, text string) (string, bool) {
+	t.Helper()
+
 	tags := slices.Concat(forbidigoTags, compositionRootTags)
 	for _, tag := range tags {
 		if text == groupText(tag) {
@@ -102,7 +110,26 @@ func groupOfText(text string) (string, bool) {
 	if m == nil || !slices.Contains(tags, m[1]) {
 		return "", false
 	}
-	return m[1], true
+	narrowed, err := regexp.Compile(text)
+	if err != nil {
+		return "", false
+	}
+	matched := 0
+	for _, e := range forbidigoEntries(t, root) {
+		if !strings.HasPrefix(e.msg, m[1]+": ") {
+			continue
+		}
+		if narrowed.MatchString(issueText("name", e.msg)) {
+			matched++
+		}
+	}
+	return m[1], matched == 1
+}
+
+// narrowedTextOf returns the exclusion text that drops the issue of the entry
+// with msg alone: the group's text with msg, regex-escaped, in place of [^"]*.
+func narrowedTextOf(msg string) string {
+	return `because "` + regexp.QuoteMeta(msg) + `"$`
 }
 
 // groupText returns the exclusion text that drops every issue of the group with

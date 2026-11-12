@@ -159,7 +159,7 @@ func TestInterfaceFindingsProbe(t *testing.T) {
 	t.Parallel()
 
 	mod := filepath.Join(moduleRoot(t), "test", "lint", "testdata", "cloudreadonly", "mod")
-	want := wantMessages(t, mod, func(prefix string) bool { return strings.HasPrefix(prefix, astPrefix) })
+	want := wantMessages(t, mod, func(prefix string) bool { return strings.HasPrefix(prefix, astPrefix) }, nil)
 	if len(want) == 0 {
 		t.Fatal("the probe holds no test/lint want comment")
 	}

@@ -1,10 +1,14 @@
+//go:build !windows
+
 // Command shift2eu-server is the other composition root, for
 // TestCompositionRootForbidigoProbe. It hands os.LookupEnv to run for
 // SHIFT2EU_SERVER_TOKEN (ADR 0019), and the composition-root-env group allows
 // exactly that one function in exactly this one file: the line below carries no
 // want comment. Every other call here is refused, so the exception is that one
-// function in this file, not the whole group in it, and the exceptions are
-// pinned by TestCompositionRootEnvException.
+// function in this file, not the whole group in it, and the exclusion rules are
+// pinned by TestCompositionRootExclusions. The file is for the host's platform:
+// the windows entry points of syscall are in probe_windows.go, which the probe's
+// windows run lints.
 package main
 
 import (
@@ -25,4 +29,6 @@ func main() {
 
 	_ = os.Environ()                              // want "composition-root-no-exec: "
 	_, _ = os.StartProcess("/bin/true", nil, nil) // want "composition-root-no-exec: "
+	_, _, _ = syscall.Syscall(0, 0, 0, 0)         // want "composition-root-no-exec: "
+	_ = syscall.SYS_EXECVE                        // want "composition-root-no-exec: "
 }
