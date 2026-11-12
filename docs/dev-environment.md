@@ -142,11 +142,13 @@ with `make vm-delete vm-create`, then `make deck`: nothing has to be typed in th
 
 Lima itself runs on the Mac, so it is not pinned in the template: `dev/lima.yaml` accepts Lima 2.0 or
 newer (`minimumLimaVersion`). CI runs `limactl validate dev/lima.yaml` with the Lima pinned as
-`LIMA_VERSION` in `.github/workflows/vm-tools.yml`, installed from its release tarball checked against
-`LIMA_SHA256`, on every pull request and weekly: a template Lima refuses to create a VM from fails the
-PR, not the next `make vm-up` (only creating a VM runs Lima's checks; starting an existing one does
-not). Use that Lima version on the Mac, so you and CI agree on what a valid template is; when Renovate
-bumps it, `brew upgrade lima`. A warning counts as a refusal there: Lima only warns about an unknown
+`LIMA_VERSION` in `.github/workflows/vm-tools.yml`, installed from its release tarball once it is
+checked against lima-vm/lima's GitHub build attestation (`gh attestation verify` with the runner's own
+gh, pinned to Lima's `release.yml` and the commit its tag names) and against `LIMA_SHA256`, on every
+pull request and weekly: a template Lima refuses to create a VM from fails the PR, not the next
+`make vm-up` (only creating a VM runs Lima's checks; starting an existing one does not). Use that
+Lima version on the Mac, so you and CI agree on what a valid template is; when Renovate bumps it,
+`brew upgrade lima`. A warning counts as a refusal there: Lima only warns about an unknown
 (for example misspelt) field, and still exits 0.
 
 The same job proves the check can fail. Every template in `dev/testdata/lima-invalid/` is
