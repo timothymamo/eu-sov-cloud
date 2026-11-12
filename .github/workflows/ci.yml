@@ -343,23 +343,32 @@ jobs:
           case "${user%%:*}" in
             ""|root|0) echo "the server image runs as root" >&2; exit 1 ;;
           esac
-      # Off loopback without a token the server refuses to start (exit 2); with one, on a
-      # read-only root filesystem, it answers the health checks, refuses a request without
-      # the token and assesses one with it. The token is random and lives for this step.
+      # The image listens on 0.0.0.0:8080 by default (its CMD), so without a token it refuses to
+      # start (exit 2, with the refusal on stderr); with one, on a read-only root filesystem, with
+      # no capabilities and no privilege escalation (the README's flags), it answers the health
+      # checks, refuses a request without the token and assesses one with it. The token is random,
+      # masked in the log, lives for this step and reaches curl on stdin, never in its argv.
       - name: Smoke test the server, read-only root filesystem
         run: |
           set +e
-          docker run --rm --read-only --network none "$SERVER_IMAGE" --listen 0.0.0.0:8080
+          docker run --rm --read-only --cap-drop ALL --security-opt no-new-privileges \
+            --network none "$SERVER_IMAGE" 2> refusal.txt
           code=$?
           set -e
+          cat refusal.txt
           if [ "$code" -ne 2 ]; then
             echo "the server started off loopback without a token (exit $code)" >&2
             exit 1
           fi
+          if ! grep -q 'refusing to listen on the non-loopback address 0.0.0.0:8080 without a bearer token' refusal.txt; then
+            echo "the server exited 2 without refusing for want of a token" >&2
+            exit 1
+          fi
           SHIFT2EU_SERVER_TOKEN="$(head -c 32 /dev/urandom | od -An -tx1 | tr -d ' \n')"
+          echo "::add-mask::$SHIFT2EU_SERVER_TOKEN"
           export SHIFT2EU_SERVER_TOKEN
-          docker run -d --name shift2eu-server --read-only -p 127.0.0.1:8080:8080 \
-            -e SHIFT2EU_SERVER_TOKEN "$SERVER_IMAGE" --listen 0.0.0.0:8080
+          docker run -d --name shift2eu-server --read-only --cap-drop ALL --security-opt no-new-privileges \
+            -p 127.0.0.1:8080:8080 -e SHIFT2EU_SERVER_TOKEN "$SERVER_IMAGE"
           trap 'docker logs shift2eu-server; docker rm -f shift2eu-server > /dev/null' EXIT
           url=http://127.0.0.1:8080
           curl -fsS --retry 10 --retry-connrefused --retry-delay 1 "$url/healthz"
@@ -370,8 +379,9 @@ jobs:
             echo "a request without the token got $status, want 401" >&2
             exit 1
           fi
-          curl -fsS -X POST -H "Authorization: Bearer $SHIFT2EU_SERVER_TOKEN" \
-            -H 'Content-Type: application/json' -H 'Accept: text/markdown' \
-            --data-binary @request.json "$url/v1/assessments" > report.md
+          printf 'Authorization: Bearer %s\n' "$SHIFT2EU_SERVER_TOKEN" |
+            curl -fsS -X POST -H @- \
+              -H 'Content-Type: application/json' -H 'Accept: text/markdown' \
+              --data-binary @request.json "$url/v1/assessments" > report.md
           head -n 20 report.md
           test -s report.md

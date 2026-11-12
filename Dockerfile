@@ -66,14 +66,17 @@ LABEL org.opencontainers.image.title="shift2eu-server" \
 
 COPY --from=build /out/shift2eu-server /shift2eu-server
 
-# The server listens on 127.0.0.1:8080 by default, which a container does not publish: give it --listen,
-# and, off loopback, a bearer token of at least 32 characters from SHIFT2EU_SERVER_TOKEN or a file
-# (--token-file), never both; without one it refuses to start unless --insecure-no-auth. Run it behind a
-# reverse proxy that terminates TLS (the README's "Run the HTTP API" section):
-#   docker run --rm --read-only -p 127.0.0.1:8080:8080 -e SHIFT2EU_SERVER_TOKEN shift2eu-server --listen 0.0.0.0:8080
+# The binary listens on 127.0.0.1:8080 by default, which a container does not publish, so the CMD gives it
+# --listen 0.0.0.0:8080. Off loopback it needs a bearer token of at least 32 characters from
+# SHIFT2EU_SERVER_TOKEN or a file (--token-file), never both: without one the container refuses to start
+# (exit 2) unless --insecure-no-auth. Arguments to docker run replace the CMD, so an operator who passes
+# any must give --listen 0.0.0.0:8080 again. Run it behind a reverse proxy that terminates TLS (the
+# README's "Run the HTTP API" section):
+#   docker run --rm --read-only --cap-drop ALL --security-opt no-new-privileges -p 127.0.0.1:8080:8080 -e SHIFT2EU_SERVER_TOKEN shift2eu-server
 EXPOSE 8080
 USER nonroot:nonroot
 ENTRYPOINT ["/shift2eu-server"]
+CMD ["--listen", "0.0.0.0:8080"]
 
 # distroless static: CA certificates (for the live sources' TLS calls), tzdata, /etc/passwd with the
 # nonroot user (65532), and no shell, package manager or Go toolchain.
