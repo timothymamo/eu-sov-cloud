@@ -404,8 +404,8 @@ sudo journalctl | grep -E 'Verified OK|does not match|not signed'
 installed cosign; there must be no `does not match` or `not signed`.
 
 containerd and BuildKit run **rootless**, as the systemd user services `containerd.service` and
-`buildkit.service`, started at boot like the deck's daemon. Check them, then run the README's
-"Verify the image" commands in their VM form:
+`buildkit.service`, started at boot like the deck's daemon. Check them, then run the
+[Verify the image](guide/verify-releases.md#verify-the-image) commands in their VM form:
 
 ```bash
 systemctl --user status containerd buildkit
@@ -430,8 +430,8 @@ it reaches the Mac. No registry login or credential helper is configured: pulls 
 (`release.yml` does). Do not run `nerdctl login` in the VM.
 
 In a rootless runtime, container UID 0 is the VM user, not root. To let a container read your `0600`
-inventory, run it with `--user 0:0` rather than the README's `--user "$(id -u):$(id -g)"`, which in the
-VM is a subordinate UID.
+inventory, run it with `--user 0:0` rather than the `--user "$(id -u):$(id -g)"` of
+[Run with Docker](guide/docker.md#mounts-users-and-reports), which in the VM is a subordinate UID.
 
 ## What leaves the VM
 

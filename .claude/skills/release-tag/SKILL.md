@@ -67,9 +67,9 @@ the tagged commit is on `main`: always tag a commit of `main`.
    GitHub release as bad, point `latest` (and `X.Y` if wrong) back at the last good release's digest or
    delete the bad image tag, and fix forward with a new patch release.
 8. Check the published image yourself; do not hand this to the user. The Lima VM has cosign, a `gh`
-   with `gh attestation`, `crane` and rootless `nerdctl` (ADR 0017); this is the README's "Verify the
-   image" in its VM form, for the new tag. Run it from the repository root, with no registry login, and
-   call each tool by its absolute path: `~/.local/bin` and `~/go/bin` come first on the `PATH` and the VM
+   with `gh attestation`, `crane` and rootless `nerdctl` (ADR 0017); this is "Verify the image" in
+   `docs/guide/verify-releases.md`, in its VM form, for the new tag. Run it from the repository root,
+   with no registry login, and call each tool by its absolute path: `~/.local/bin` and `~/go/bin` come first on the `PATH` and the VM
    user can write there, while these binaries are root-owned:
 
    ```bash

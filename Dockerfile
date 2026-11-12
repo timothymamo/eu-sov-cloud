@@ -70,8 +70,8 @@ COPY --from=build /out/shift2eu-server /shift2eu-server
 # --listen 0.0.0.0:8080. Off loopback it needs a bearer token of at least 32 characters from
 # SHIFT2EU_SERVER_TOKEN or a file (--token-file), never both: without one the container refuses to start
 # (exit 2) unless --insecure-no-auth. Arguments to docker run replace the CMD, so an operator who passes
-# any must give --listen 0.0.0.0:8080 again. Run it behind a reverse proxy that terminates TLS (the
-# README's "Run the HTTP API" section):
+# any must give --listen 0.0.0.0:8080 again. Run it behind a reverse proxy that terminates TLS
+# (docs/guide/reverse-proxy.md):
 #   docker run --rm --read-only --cap-drop ALL --security-opt no-new-privileges -p 127.0.0.1:8080:8080 -e SHIFT2EU_SERVER_TOKEN shift2eu-server
 EXPOSE 8080
 USER nonroot:nonroot
@@ -94,7 +94,7 @@ LABEL org.opencontainers.image.title="shift2eu" \
 
 COPY --from=build /out/shift2eu /shift2eu
 
-# Mount the inventory here, as the README's "Run with Docker" section does (one command):
+# Mount the inventory here, as docs/guide/docker.md does (one command):
 #   docker run --rm --read-only --network none --user "$(id -u):$(id -g)" --mount type=bind,src="$PWD/inventory.json",dst=/work/inventory.json,readonly shift2eu assess --inventory inventory.json --target scaleway
 WORKDIR /work
 USER nonroot:nonroot

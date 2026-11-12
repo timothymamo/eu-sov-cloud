@@ -354,7 +354,7 @@ jobs:
       # The image listens on 0.0.0.0:8080 by default (its CMD), so without a token it refuses to
       # start (exit 2, with the refusal on stderr); timeout ends the run with 124 if a regression
       # lets it start instead, so the step fails rather than hangs. With a token, on a read-only root filesystem, with
-      # no capabilities and no privilege escalation (the README's flags), it answers the health
+      # no capabilities and no privilege escalation (the flags in docs/guide/reverse-proxy.md), it answers the health
       # checks, refuses a request without the token and assesses one with it. The token is random,
       # masked in the log, lives for this step and reaches curl on stdin, never in its argv.
       - name: Smoke test the server, read-only root filesystem

@@ -539,10 +539,11 @@ const verifyJobHead = `  # The independent check of what the release published (
 `
 
 // verifySteps are the verify job's steps: cosign by exact release, a cosign
-// login, the README's checks of each image this run built - the tag resolving
-// to that digest, the signature for this tag and commit, the build provenance,
-// the SBOM, and the image itself - and the tag rule, whose highest release tag
-// is read from main's ancestry without a checkout.
+// login, the checks of docs/guide/verify-releases.md on each image this run
+// built - the tag resolving to that digest, the signature for this tag and
+// commit, the build provenance, the SBOM, and the image itself - and the tag
+// rule, whose highest release tag is read from main's ancestry without a
+// checkout.
 var verifySteps = []string{
 	`      - uses: sigstore/cosign-installer@756fe2d284c7292c4e9b62c8a28f1e5629c59532 # v4.1.3
         with:
@@ -557,7 +558,7 @@ var verifySteps = []string{
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: printf '%s' "$GITHUB_TOKEN" | cosign login ghcr.io --username "$ACTOR" --password-stdin
 `,
-	`      # The README's "Verify the image", on the digest this run built: the tag
+	`      # docs/guide/verify-releases.md, on the digest this run built: the tag
       # must resolve to that digest, and that image must carry the signature
       # this workflow made for exactly this tag and this commit, the build
       # provenance and the SBOM, and it must run and report the version of the

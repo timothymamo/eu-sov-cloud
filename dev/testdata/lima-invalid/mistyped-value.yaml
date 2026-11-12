@@ -54,7 +54,7 @@ param:
   ghSha256Amd64: "4c806978ffce1cec70853302a56d70ac6da4f19bae7adca4e1a8ab00633dd91d"
   # renovate: datasource=github-release-attachments depName=cli/cli digestVersion=v2.103.3
   ghSha256Arm64: "ee32df2323c8847f5fac6cb6b4b69ca75828e9329a8f22f677021f7b3306ce63"
-  # cosign v3 or later reads the release's signature bundles (README, "Verify the image").
+  # cosign v3 or later reads the release's signature bundles (docs/guide/verify-releases.md).
   # renovate: datasource=github-releases depName=sigstore/cosign
   cosignVersion: "v3.1.4"
   # SHA-256 of cosign-linux-<arch>, per architecture: what authenticates cosign in provisioning, where no
@@ -68,7 +68,7 @@ param:
   # nerdctl-full: nerdctl, containerd, BuildKit, RootlessKit, runc and CNI plugins, run rootless.
   # renovate: datasource=github-releases depName=containerd/nerdctl
   nerdctlVersion: "v2.4.1"
-  # crane resolves a tag to its digest without pulling the image (README, "Verify the image").
+  # crane resolves a tag to its digest without pulling the image (docs/guide/verify-releases.md).
   # renovate: datasource=go depName=github.com/google/go-containerregistry
   craneVersion: "v0.22.1"
 

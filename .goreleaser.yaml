@@ -54,9 +54,15 @@ archives:
     format_overrides:
       - goos: windows
         formats: [zip]
+    # README.md links only to LICENSE and the pages under docs/ (test/docs
+    # holds it to that), so the archive ships docs/ beside it and the links
+    # work in an unpacked archive too (issue #149). docs/**/* matches only the
+    # files in docs/'s subdirectories, so docs/*.md takes those directly in it.
     files:
       - LICENSE
       - README.md
+      - docs/*.md
+      - docs/**/*
 
 checksum:
   name_template: checksums.txt

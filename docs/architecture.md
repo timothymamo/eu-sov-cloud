@@ -66,8 +66,8 @@ Arrows are imports. They point inwards only:
   bundles them, for readers outside the repository, is not published yet
   ([issue #139](https://github.com/timothymamo/shift2eu/issues/139)). The release ships the server
   as its own binary and its own image, `ghcr.io/timothymamo/shift2eu-server`, built from the
-  `Dockerfile`'s `server` stage and signed and attested as the CLI's is (ADR 0013, ADR 0015); the
-  README's "Run the HTTP API" section documents running it behind a reverse proxy.
+  `Dockerfile`'s `server` stage and signed and attested as the CLI's is (ADR 0013, ADR 0015);
+  [Behind a reverse proxy](guide/reverse-proxy.md) documents running it behind a reverse proxy.
 - **`cmd/shift2eu`** and **`cmd/shift2eu-server`** are the composition roots, the only places that construct
   adapters and inject them: `cmd/shift2eu` into the CLI, `cmd/shift2eu-server` into the HTTP API. `cmd/shift2eu`'s
   imports are a strict allow list (`composition-root`, issue #101): the module's own packages and the

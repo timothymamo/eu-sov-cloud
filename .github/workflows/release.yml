@@ -418,7 +418,7 @@ jobs:
           ACTOR: ${{ github.actor }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: printf '%s' "$GITHUB_TOKEN" | cosign login ghcr.io --username "$ACTOR" --password-stdin
-      # The README's "Verify the image", on the digest this run built: the tag
+      # docs/guide/verify-releases.md, on the digest this run built: the tag
       # must resolve to that digest, and that image must carry the signature
       # this workflow made for exactly this tag and this commit, the build
       # provenance and the SBOM, and it must run and report the version of the

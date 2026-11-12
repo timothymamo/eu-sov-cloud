@@ -353,12 +353,12 @@ const (
 	tagRuleStepName = "The tags follow the release rule"
 )
 
-// verifyImageStep is the verify job's step for img, the README's "Verify the
-// image" on the digest its image job built: the tag must resolve to that
-// digest, and that image must carry the signature this workflow made for
-// exactly this tag and this commit, the build provenance and the SBOM,
-// attested from this workflow for this tag and commit on GitHub's runners,
-// and run with --rm --read-only --network none and then smoke.
+// verifyImageStep is the verify job's step for img, the checks of
+// docs/guide/verify-releases.md on the digest its image job built: the tag
+// must resolve to that digest, and that image must carry the signature this
+// workflow made for exactly this tag and this commit, the build provenance and
+// the SBOM, attested from this workflow for this tag and commit on GitHub's
+// runners, and run with --rm --read-only --network none and then smoke.
 func verifyImageStep(img releaseImage, what, name string, smoke ...string) releaseStep {
 	attest := []string{
 		`gh attestation verify "oci://$IMAGE" --repo ` + releaseRepo + ` \`,
