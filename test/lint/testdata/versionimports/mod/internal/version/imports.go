@@ -12,7 +12,7 @@
 package version
 
 import (
-	"os"     // want "import 'os' is not allowed"
+	"os"      // want "import 'os' is not allowed"
 	"os/exec" // want "import 'os/exec' is not allowed"
 )
 

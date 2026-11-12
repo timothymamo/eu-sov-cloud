@@ -10,7 +10,7 @@ import (
 	"go/build"     // want "import 'go/build' is not allowed from list 'composition-root-tests'"
 	"net/http/cgi" // want "import 'net/http/cgi' is not allowed from list 'composition-root-tests'"
 	"os/exec"      // want "import 'os/exec' is not allowed from list 'composition-root-tests'"
-	"os/user" // want "import 'os/user' is not allowed from list 'composition-root-tests'"
+	"os/user"      // want "import 'os/user' is not allowed from list 'composition-root-tests'"
 	"plugin"       // want "import 'plugin' is not allowed from list 'composition-root-tests'"
 	"runtime/cgo"  // want "import 'runtime/cgo' is not allowed from list 'composition-root-tests'"
 	"testing"
