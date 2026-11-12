@@ -386,9 +386,8 @@ dispatcher creates beside it) and nothing else on your Mac:
 mkdir shift2eu-ws && cd shift2eu-ws   # the workspace the VM mounts
 git clone https://github.com/timothymamo/shift2eu.git && cd shift2eu
 brew install lima
-make vm-up        # first run provisions Go, Node.js, linters, gh, Claude Code, pi and dot-agent-deck
-make vm-env       # copy your Claude, DeepSeek and GitHub credentials into the VM
-make vm-shell     # once: `claude` first-run setup, git name and email, `dot-agent-deck daemon install`
+make vm-create    # create and provision the VM (Go, Node.js, linters, gh, Claude Code, pi, dot-agent-deck),
+                  # copy your Claude, DeepSeek and GitHub credentials in, and do the once-only setup
 make deck         # open the deck; detach and the agents keep running in the VM
 ```
 
