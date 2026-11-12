@@ -26,64 +26,68 @@ moves or deletes a tag.
    so it runs here: every git command in it is `git -C <repository root> ...`.
 2. Confirm the `v*` tag rulesets before every release; stop if they fall short (ADR 0015, ADR 0021).
    The ancestry guard in `release.yml` only catches mistakes: the run uses the tagged commit's workflow
-   file, so the rulesets are what keep anyone else from publishing a signed image. From the repository
-   root, list the rulesets with `gh api repos/{owner}/{repo}/rulesets`, then read each one with
-   `target` `tag` (`gh api repos/{owner}/{repo}/rulesets/<id>`). Take the **union of the active ones**
-   (`enforcement` `active`) whose `conditions.ref_name.include` covers `v*` tags (`refs/tags/v*`,
-   `refs/tags/v*.*.*` or `~ALL`) and that exclude no `v*` tag in `conditions.ref_name.exclude`:
+   file, so the rulesets are what keep anyone else from publishing a signed image.
+   The two Apps are compared against the identifiers recorded here and in ADR 0021 (amendment), never
+   looked up: the agents' token cannot read them (`gh api user/installations` answers 403 to a PAT or
+   `gh`'s OAuth token, `gh api apps/<slug>` answers 404 for these private Apps, and environment variables
+   answer 403). They are public identifiers, not secrets:
+
+   | App | App ID | Slug | Bot login |
+   |---|---|---|---|
+   | release-please App | `5729776` | `shift2eu-release` | `app/shift2eu-release` (`gh`), `shift2eu-release[bot]` (REST API) |
+   | release-tag App | `<RELEASE_TAG_APP_ID: set by the maintainer before merge>` | `<RELEASE_TAG_APP_SLUG: set by the maintainer before merge>` | `app/<slug>` |
+
+   **Fail closed:** if the release-tag App's ID above still reads `<RELEASE_TAG_APP_ID: ...>`, or is not
+   a number, report "the release-tag App's ID is not recorded in the release-tag skill and ADR 0021: a
+   maintainer must record it before any release" and stop.
+   From the repository root, list the rulesets with `gh api repos/{owner}/{repo}/rulesets`, then read
+   each one with `target` `tag` (`gh api repos/{owner}/{repo}/rulesets/<id>`). Take the **union of the
+   active ones** (`enforcement` `active`) whose `conditions.ref_name.include` covers `v*` tags
+   (`refs/tags/v*`, `refs/tags/v*.*.*` or `~ALL`) and that exclude no `v*` tag in
+   `conditions.ref_name.exclude`:
    - creation, update and deletion (rules `creation`, `update`, `deletion`) must each be restricted
      by at least one of them;
    - a ruleset holding `update` or `deletion` may be bypassed by maintainers only (`bypass_actors`
      of `actor_type` `RepositoryRole` with the admin role, `actor_id` 5, or `OrganizationAdmin`);
-   - a ruleset holding only `creation` may also be bypassed by the release-tag App (`actor_type`
-     `Integration`, that App's id), and by nothing else: no other App, **the release-please App
-     included**, may bypass any `v*` tag ruleset.
+   - a ruleset holding only `creation` may also be bypassed by the release-tag App, and by nothing
+     else: its `bypass_actors` of `actor_type` `Integration` must be **exactly one**, whose `actor_id`
+     is the release-tag App ID recorded above. The release-please App (`5729776`) or any other App
+     there, alone or beside the release-tag App, fails the check: while both Apps are bypass actors (the
+     maintainer's switch is not finished), the check fails as intended and no release is cut.
    The expected split is `Release tag creation` (creation; Repository admin and the release-tag App) and
    `Release tags` (update, deletion, non_fast_forward; Repository admin only): a bypass list applies to
    every rule of its ruleset, so the App sits only in the one that restricts nothing but creation. Any
    other bypass actor, an App that may bypass update or deletion, or a missing rule fails the check: report
    what you found, that a maintainer must fix it (an agent must not), and stop.
-   The two Apps are the ones whose client IDs the workflow mints its tokens with (ADR 0021): read them
-   with
-   `gh api repos/{owner}/{repo}/environments/release-tag/variables/RELEASE_TAG_APP_CLIENT_ID --jq .value`
-   and
-   `gh api repos/{owner}/{repo}/environments/release-please/variables/RELEASE_APP_CLIENT_ID --jq .value`.
-   `Release tag creation` must hold exactly one `Integration` bypass actor. Find that App's slug from its
-   `actor_id` among the installations you can see,
-   `gh api user/installations --paginate --jq '.installations[] | (.app_id | tostring) + " " + .app_slug'`,
-   check the slug against `^[a-z0-9][a-z0-9-]*$`, and then `gh api apps/<slug> --jq .client_id` must
-   equal `RELEASE_TAG_APP_CLIENT_ID`. Any other App there, the release-please App (whose client ID is
-   `RELEASE_APP_CLIENT_ID`) above all, fails the check. If a variable cannot be read, the installation is
-   not listed, the App cannot be read (it is private, so a 404 means you cannot see it), or the client
-   IDs differ, report it and stop.
    Then check both environments, `release-please` (the release-please App's key) and `release-tag` (the
    release-tag App's key): for each `<env>`, `gh api repos/{owner}/{repo}/environments/<env>` must show
    `deployment_branch_policy.custom_branch_policies` `true` (and `protected_branches` `false`), and
    `gh api repos/{owner}/{repo}/environments/<env>/deployment-branch-policies --jq '.branch_policies[] | .type + " " + .name'`
    must list exactly one policy, `branch main`. Anything else lets a workflow on another branch or tag
    read an App's key: report it and stop.
+   Last, neither App's private key nor client ID may exist at repository level, only in its
+   environment: `gh api repos/{owner}/{repo}/actions/secrets --jq '.secrets[].name'` and
+   `gh api repos/{owner}/{repo}/actions/variables --jq '.variables[].name'` must list none of
+   `RELEASE_APP_PRIVATE_KEY`, `RELEASE_TAG_APP_PRIVATE_KEY`, `RELEASE_APP_CLIENT_ID`,
+   `RELEASE_TAG_APP_CLIENT_ID`, `RELEASE_APP_ID`. The agents' token may not be allowed to list them (a
+   403): then say in the report that this is a maintainer check you could not make, and go on. If one of
+   them is listed, report it and stop.
 3. Find the open release PR:
    `gh pr list --state open --label "autorelease: pending" --json number,title,headRefName,url`.
    There must be exactly one, from the branch `release-please--branches--main--components--shift2eu`
    (exactly; ADR 0021 says why), opened by the release-please App itself, not just any bot. Read the author
-   with `gh pr view <n> --json author --jq '.author.is_bot, .author.login'`: `gh` gives an App's login
-   as `app/<slug>` (the REST API's `<slug>[bot]`), so it must print `true` and `app/<slug>`; take
-   `<slug>` by removing `app/` (or a trailing `[bot]`, if a `gh` version prints that form). The slug
-   must match `^[a-z0-9][a-z0-9-]*$` before it goes into any command; if it does not, report it and
-   stop. Then `gh api apps/<slug> --jq .client_id` must equal the `RELEASE_APP_CLIENT_ID` read in step 2,
-   and `gh api apps/<slug> --jq .id` must not be a bypass actor of any `v*` tag ruleset. The App
-   is private, so a 404 there means you cannot see it, not that it does not exist: report that and
-   stop. A human author, a login of another form, a slug that does not resolve, or a different id:
-   report it and stop. If there is no open release PR, check for a merged one still waiting for its
-   tag:
+   with `gh pr view <n> --json author --jq '.author.is_bot, .author.login'`: it must print `true` and
+   exactly `app/shift2eu-release` (`gh`'s form of the REST API's `shift2eu-release[bot]`, which a `gh`
+   version may print instead and is equally accepted). Compare the login as a whole string against
+   these two; never build a command from it. A human author, any other login, or another bot: report it
+   and stop. If there is no open release PR, check for a merged one still waiting for its tag:
    `gh pr list --state merged --label "autorelease: pending" --json number,title,author,headRefName,mergeCommit`.
    Hold it to the same checks as an open one: exactly one, its `headRefName` exactly
    `release-please--branches--main--components--shift2eu`, its author the release-please App (`is_bot`
-   `true`, login `app/<slug>`, the slug matching the pattern above, and `gh api apps/<slug> --jq .client_id`
-   equal to `RELEASE_APP_CLIENT_ID`). If it passes, go to step 6 for it; if it fails any check, or there is
-   more than one, report it and stop. If there is neither an open nor a merged one, release-please
-   found nothing to release since the last release (only docs, test, ci, chore, build, style or
-   refactor commits): report that and stop.
+   `true`, login exactly `app/shift2eu-release` or `shift2eu-release[bot]`). If it passes, go to step 6
+   for it; if it fails any check, or there is more than one, report it and stop. If there is neither an
+   open nor a merged one, release-please found nothing to release since the last release (only docs,
+   test, ci, chore, build, style or refactor commits): report that and stop.
 4. Review the release PR against this skill's rules, and report:
    - the last release tag:
      `git -C <repository root> tag -l 'v*.*.*' --merged HEAD | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | sort -V | tail -n 1`,

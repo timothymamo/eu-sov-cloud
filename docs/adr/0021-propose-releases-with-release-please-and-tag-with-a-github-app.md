@@ -142,17 +142,29 @@ pass `client-id`, since `actions/create-github-app-token` v3 deprecates `app-id`
 |---|---|---|
 | Used by | `release-please-action` only (release PR, `CHANGELOG.md`, labels, including relabelling the merged release PR) | the tag step only, in its **own job** |
 | Permissions | Contents: write, Pull requests: write | Contents: write, Pull requests: **read** (to check the merged release PR); nothing else |
-| Ruleset bypass | **none** | `Release tag creation` only (Always) |
+| Ruleset bypass | no `v*` tag ruleset (only the `release-please--branches--*` branch ruleset allows it) | `Release tag creation` only (Always) |
 | Environment | `release-please` (`main` only) | `release-tag` (`main` only) |
 | Variable | `RELEASE_APP_CLIENT_ID` | `RELEASE_TAG_APP_CLIENT_ID` |
 | Secret | `RELEASE_APP_PRIVATE_KEY` | `RELEASE_TAG_APP_PRIVATE_KEY` |
+| App ID | `5729776` | `<RELEASE_TAG_APP_ID: set by the maintainer before merge>` |
+| Slug (bot login) | `shift2eu-release` (`shift2eu-release[bot]`, `app/shift2eu-release` in `gh`) | `<RELEASE_TAG_APP_SLUG: set by the maintainer before merge>` |
+
+The App IDs and slugs are public identifiers, not secrets, and are recorded here and in the
+`release-tag` skill because the agents' token cannot look them up: `gh api user/installations` needs a
+user-to-server token of the App's own kind and answers 403 to a PAT or `gh`'s OAuth token, `gh api
+apps/<slug>` answers 404 for a private App, and environment variables answer 403. The skill compares
+the rulesets and the release PR's author against these recorded values, and stops (fails closed) while
+a placeholder is still in it.
 
 - `.github/workflows/release-please.yml` holds three jobs. **`release-please`**, in the
   `release-please` environment, mints the release-please App's token and runs release-please with it,
-  and outputs that App's slug. **`tag`** (`needs: release-please`), in the `release-tag` environment,
+  and declares no outputs. **`tag`** (`needs: release-please`), in the `release-tag` environment,
   mints the release-tag App's token, runs the guard (with `GITHUB_TOKEN`, as before) and the tag step,
-  with every fail-closed check above; the candidate's author must be `<release-please App slug>[bot]`,
-  from the first job's output. The tag step no longer relabels: its token cannot write to a pull request.
+  with every fail-closed check above; the candidate's author must be `shift2eu-release[bot]`: the guard
+  and the tag step hold the release-please App's slug as the constant `APP_SLUG: shift2eu-release`. They
+  trust no output of the `release-please` job, which runs the third-party action and could set any
+  output it liked (the decision above took the slug from the token action's `app-slug` output; that no
+  longer holds). The tag step no longer relabels: its token cannot write to a pull request.
   It writes `pr` and `tag` to its outputs, also when the tag already exists on this PR's merge commit, so
   a re-run finishes the relabelling. **`relabel`** (`needs: [release-please, tag]`, only when `pr` is
   set), in the `release-please` environment, mints the release-please App's token again, holds the PR
@@ -178,7 +190,8 @@ pass `client-id`, since `actions/create-github-app-token` v3 deprecates `app-id`
   | `relabel` | `issues/<n>/labels`, `issues/<n>/labels/<name>` | `POST`, `DELETE` | Pull requests: write |
 
 - **Rulesets.** The release-tag App is the **only** App that may bypass `Release tag creation`; the
-  release-please App is removed from it and bypasses no ruleset. The table under "Two tag rulesets"
+  release-please App is removed from it and bypasses no `v*` tag ruleset (the
+  `release-please--branches--*` branch ruleset still allows it, for its release branch). The table under "Two tag rulesets"
   becomes:
 
   | Ruleset | Target | Rules | Bypass (Always) |
@@ -186,11 +199,14 @@ pass `client-id`, since `actions/create-github-app-token` v3 deprecates `app-id`
   | `Release tag creation` | `refs/tags/v*` | creation | Repository admin, the release-tag App |
   | `Release tags` | `refs/tags/v*` | update, deletion, non_fast_forward | Repository admin |
 
-  The `release-tag` skill's ruleset check expects exactly the release-tag App (the App whose client ID
-  is `RELEASE_TAG_APP_CLIENT_ID`) as the `Integration` bypass actor of `Release tag creation`; any other
-  App there, the release-please App included, fails it.
+  The `release-tag` skill's ruleset check expects exactly one `Integration` bypass actor on
+  `Release tag creation`, the recorded release-tag App ID; the release-please App (`5729776`) or any
+  other App there fails it, and so does a second App beside the release-tag App, so no release is cut
+  while both Apps are bypass actors.
 - `check.ReleasePleaseWorkflow` pins all of this: the three jobs, their environments, `needs:`, the
-  relabel job's `if:`, their outputs and the order of their steps; `client-id`, never `app-id`; each
+  relabel job's `if:`, their outputs (none on the `release-please` job, and no
+  `needs.release-please.outputs` read anywhere), the guard's and the tag step's constant `APP_SLUG`,
+  and the order of their steps; `client-id`, never `app-id`; each
   App's variable and secret on its own token steps and nowhere else; the exact `permission-*` inputs;
   each token reaching its job's working step alone; and the tag and relabel steps' `env:` and
   endpoints. CI's dry run runs the guard, tag and relabel steps' scripts, the relabel step's refusal
@@ -200,19 +216,57 @@ pass `client-id`, since `actions/create-github-app-token` v3 deprecates `app-id`
 of the `release-please` job, no longer holds a token that can create a release tag: the risk "one App
 token, two holders, a tag anywhere" is closed for that action, and "one job, shared environment files"
 no longer applies to the tag, which runs in a job of its own that runs no third-party action. The
-release-tag App's token can still create a `v*` tag on any commit, but only the tag job holds it, and it
-can neither write to nor merge a pull request. **Still open:** the release-please App's token, with
-Contents and Pull requests write, can open a pull request and merge it into `main` once its required
-checks pass, since `Protect main` asks for no approving review. This is tracked in the bot-account
-issue (agents opening pull requests as a separate account, so that `main` can require an approval).
+release-tag App's token can still create a `v*` tag on any commit, but only the tag job holds it, that
+job runs no third-party action, and the App's key is only in the `release-tag` environment, limited to
+`main`. Its token cannot write to a pull request, but it **can merge one**: `PUT
+/repos/{owner}/{repo}/pulls/{n}/merge` needs Contents write, not Pull requests write.
 
-**Maintainer steps for this amendment:** create the release-tag App (Contents read and write, Pull
-requests read, private, webhook off, installed on this repository only); create the `release-tag`
-environment limited to `main` with `RELEASE_TAG_APP_CLIENT_ID` and `RELEASE_TAG_APP_PRIVATE_KEY`; add
-`RELEASE_APP_CLIENT_ID` (the release-please App's client ID, from its settings page; not a secret) to
-the `release-please` environment before this merges, or the token step fails; replace the
-release-please App with the release-tag App as the bypass actor of `Release tag creation`; after the
-merge, remove `RELEASE_APP_ID` from the `release-please` environment.
+**Still open:** both Apps' tokens hold Contents write, so either can merge a pull request into `main`
+once its required checks pass, since `Protect main` asks for no approving review; the release-please
+App's token can also open one. This covers releases too: a compromised `release-please-action`, with
+the release-please App's token, could open a pull request from release-please's branch that bumps
+`.release-please-manifest.json`, label it `autorelease: pending`, merge it once its checks pass, and the
+tag job would tag it, since it passes every check the tag step makes. The split stops a tag on an
+arbitrary commit; it does not stop the release of a `main` an attacker merged into. This is tracked in
+the bot-account issue (agents opening pull requests as a separate account, so that `main` can require
+an approval).
+
+**The Apps' installation permissions are the real ceiling.** The release-please App's long-lived private
+key is read in the same job as the third-party action, so it sits in that runner's memory; whoever
+holds it can mint a token with every permission the App's installation grants, whatever the
+`permission-*` inputs ask for. The installation permissions must therefore stay exactly Contents read
+and write and Pull requests read and write for the release-please App (no Workflows, Administration,
+Issues or anything else), and exactly Contents read and write and Pull requests read for the
+release-tag App. If `release-please-action` is ever reported compromised, rotate the release-please
+App's private key.
+
+**Maintainer steps for this amendment.**
+
+Before the merge, in this order:
+
+1. Create the release-tag App: installation permissions exactly Contents read and write and Pull
+   requests read, private, webhook off, installed on this repository only.
+2. Create the `release-tag` environment, limited to `main`, with the variable
+   `RELEASE_TAG_APP_CLIENT_ID` and the secret `RELEASE_TAG_APP_PRIVATE_KEY`.
+3. Add the variable `RELEASE_APP_CLIENT_ID` (the release-please App's client ID, from its settings
+   page; not a secret) to the `release-please` environment, or the token steps fail.
+4. Replace the placeholders `<RELEASE_TAG_APP_ID: ...>` and `<RELEASE_TAG_APP_SLUG: ...>` in this ADR
+   and in `.claude/skills/release-tag/SKILL.md` with the release-tag App's ID and slug, in a commit on
+   this pull request.
+5. While no merged release PR is labelled `autorelease: pending`
+   (`gh pr list --state merged --label "autorelease: pending"` lists none), add the release-tag App to
+   the bypass actors of `Release tag creation` and remove the release-please App from them. Swapping
+   after the merge would leave the tag bypass, until then, with the App whose token the third-party
+   action holds, the very risk #157 closes; swapping before only makes the old workflow fail closed
+   (its tag step cannot create the tag) until this merges.
+6. Confirm that neither App's private key nor client ID exists as a repository-level secret or
+   variable, only in its environment (the agents' token may not be able to list them, so this is a
+   maintainer check).
+
+After the merge:
+
+1. Remove the variable `RELEASE_APP_ID` from the `release-please` environment.
+2. Run the `release-tag` skill's ruleset check (its step 2).
 
 ## Alternatives considered
 
