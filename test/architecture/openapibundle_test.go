@@ -16,7 +16,7 @@ import (
 // GoReleaserArchives must refuse a document whose glob is anything else.
 //
 // Before this test the bundler's path (test/openapibundle's own constant) and
-// the release's glob (check's bundleGlob) were two copies of the same string,
+// the release's glob (check.BundleGlob) were two copies of the same string,
 // held together by convention alone: a release that published a file the
 // bundler never writes would ship a stale document, and no test noticed.
 func TestReleasePublishesTheBundledDocument(t *testing.T) {
