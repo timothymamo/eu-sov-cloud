@@ -106,6 +106,12 @@
 // prefix entries, which must end in /, to that rule and to composition-root,
 // whose one prefix entry is the module path.
 //
+// TestDevScriptsAreExecutable fails on a script under dev/, a file whose
+// staged content starts with #!, that is not 100755 in the git index (issue
+// #125): the Makefile runs those scripts directly, and the rename in #117 lost
+// dev/claude-settings.sh's executable bit without any check noticing. It reads
+// mode and content from the index, not the checkout's file system.
+//
 // The checks are tests: they run in make test, make check and CI's make cover,
 // with no workflow of their own. They need no network and no credentials.
 package architecture
