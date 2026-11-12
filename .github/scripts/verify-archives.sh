@@ -9,8 +9,9 @@
 # must be a regular file or a directory: a symbolic link, hard link or device fails the run too. Every built platform has one archive of each, and checksums.txt lists and
 # matches every archive. It then mirrors release.yml's hand-over of the archives to attest-archives
 # (issues #156 and #163): the files its patterns pick must pass sha256sum -c checksums.txt, and the
-# subjects they attest must be exactly the archives and checksums.txt. check.GoReleaserArchives pins
-# the configuration itself, and check.GitHubRelease its draft release.
+# subjects they attest must be exactly the archives and checksums.txt, which must also be exactly what
+# GoReleaser would upload to the release (artifacts.json), or release.yml's publish job would refuse the
+# draft. check.GoReleaserArchives pins the configuration itself, and check.GitHubRelease its draft release.
 #
 # GoReleaser writes into a temporary directory, removed on exit, so the caller's dist/ is left alone.
 #
@@ -148,6 +149,20 @@ subjects="$(cd "${artifact}" && find shift2eu_*.tar.gz shift2eu_*.zip shift2eu-s
 want="$({ echo checksums.txt; awk '{ print $2 }' "${dist}/checksums.txt"; } | LC_ALL=C sort)"
 if [ "${subjects}" != "${want}" ]; then
   problem "attest-archives would attest these files:"$'\n'"${subjects}"$'\n'"want exactly checksums.txt and the archives it lists:"$'\n'"${want}"
+fi
+
+# What GoReleaser would upload to the draft release, read from its own record of the run: every
+# artifact but its run metadata and the bare binaries its builds wrote (named by the binary and its
+# extension), which it never uploads. That must be exactly the attested subjects too: the publish job
+# refuses a draft holding anything checksums.txt does not list (issue #163), so a new asset (an SBOM, a
+# signature, a source archive, an extra file) fails here, before a release is left a draft. It fails
+# closed: an artifact type this does not know counts as uploaded.
+uploads="$(jq -r '.[]
+  | select(.type != "Metadata")
+  | select((.type == "Binary" and .name == (.extra.Binary + .extra.Ext)) | not)
+  | .name' "${dist}/artifacts.json" | LC_ALL=C sort)"
+if [ "${uploads}" != "${want}" ]; then
+  problem "GoReleaser would upload these files to the release:"$'\n'"${uploads}"$'\n'"want exactly checksums.txt and the archives it lists, what attest-archives attests:"$'\n'"${want}"
 fi
 
 if [ "${fail}" != 0 ]; then
