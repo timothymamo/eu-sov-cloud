@@ -237,6 +237,17 @@ func TestScanSources(t *testing.T) {
 			},
 		},
 		{
+			// A directive that silenced the tests-no-process-state group on a
+			// t.Setenv would let one test change what every test in the binary
+			// sees (issue #153); the guard is linter-wide, so it covers the
+			// group without naming it.
+			name:  "nolint directive on a test's environment write",
+			files: map[string]string{"internal/app/analysis/analysis_test.go": "package analysis_test\n\nimport \"testing\"\n\nfunc TestA(t *testing.T) { t.Setenv(\"TOKEN\", \"x\") } //nolint:forbidigo // probe\n"},
+			want: []string{
+				"internal/app/analysis/analysis_test.go:5:53: //nolint:forbidigo // probe would hide forbidigo issues; fix the design or the call instead (CLAUDE.md)",
+			},
+		},
+		{
 			name:  "bare nolint directive",
 			files: map[string]string{"a/a.go": "package a\n\nvar _ = 1 //nolint // probe\n"},
 			want: []string{
