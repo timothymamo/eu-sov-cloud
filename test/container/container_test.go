@@ -99,11 +99,19 @@ func TestEveryBaseImageIsDigestPinned(t *testing.T) {
 // linker flags and the internal/version -X flags, the same main package, and a
 // cross build from TARGETOS and TARGETARCH. The test reads the settings from
 // .goreleaser.yaml rather than pinning a copy of them here.
+//
+// Every setting is read from the one RUN instruction that runs `go build`, not
+// from the file as a whole, and the env settings from that command's
+// environment prefix: an assignment moved to another instruction, or mentioned
+// only in a comment or a flag value, does not build anything and must not
+// satisfy the check.
 func TestBuildMatchesGoReleaser(t *testing.T) {
 	t.Parallel()
 
 	settings := parseBuildSettings(t, readRepoFile(t, goreleaserName))
-	dockerfile := joinedInstructions(dockerfileInstructions(t, readRepoFile(t, dockerfileName)))
+	build := goBuildRun(t, readRepoFile(t, dockerfileName))
+	command := build.arguments()
+	buildEnv := commandEnv(command)
 
 	// The env entries are releasetarget.Env(), the list releasetarget.Read
 	// holds every build's env to (issue #102): cgo off, so nothing links a C
@@ -131,9 +139,18 @@ func TestBuildMatchesGoReleaser(t *testing.T) {
 			continue
 		}
 
-		if !strings.Contains(dockerfile, tc.setting) {
-			t.Errorf("%s: the build does not set %q, which %s sets for the release binary, so the image and the release are built differently",
-				dockerfileName, tc.setting, goreleaserName)
+		if tc.list == "env" {
+			if !slices.Contains(buildEnv, tc.setting) {
+				t.Errorf("%s:%d: the RUN instruction that runs `go build` sets the environment prefix %q, which does not name %q, so the image and the release are built differently; %s sets it for the release binary, and an assignment on another instruction, in a comment or in a flag value does not build anything",
+					dockerfileName, build.line, strings.Join(buildEnv, " "), tc.setting, goreleaserName)
+			}
+
+			continue
+		}
+
+		if !strings.Contains(command, tc.setting) {
+			t.Errorf("%s:%d: the RUN instruction that runs `go build` does not pass %q, which %s sets for the release binary, so the image and the release are built differently",
+				dockerfileName, build.line, tc.setting, goreleaserName)
 		}
 	}
 
@@ -148,24 +165,24 @@ func TestBuildMatchesGoReleaser(t *testing.T) {
 
 	for _, prefix := range prefixes {
 		flag := "-X " + prefix
-		if !strings.Contains(dockerfile, flag) {
-			t.Errorf("%s: the build does not pass the linker flag %q, which %s sets for the release binary; the image must take the value from a build arg, so only the part up to the = is compared",
-				dockerfileName, flag, goreleaserName)
+		if !strings.Contains(command, flag) {
+			t.Errorf("%s:%d: the RUN instruction that runs `go build` does not pass the linker flag %q, which %s sets for the release binary; the image must take the value from a build arg, so only the part up to the = is compared",
+				dockerfileName, build.line, flag, goreleaserName)
 		}
 	}
 
-	if !strings.Contains(dockerfile, "./cmd/eusov") {
-		t.Errorf("%s: the build does not compile ./cmd/eusov, the main package %s builds the release binary from",
-			dockerfileName, goreleaserName)
+	if !strings.Contains(command, "./cmd/eusov") {
+		t.Errorf("%s:%d: the RUN instruction that runs `go build` does not compile ./cmd/eusov, the main package %s builds the release binary from",
+			dockerfileName, build.line, goreleaserName)
 	}
 
 	for _, tc := range []struct{ env, buildArg string }{
 		{env: "GOOS", buildArg: "TARGETOS"},
 		{env: "GOARCH", buildArg: "TARGETARCH"},
 	} {
-		if !usesBuildArg(dockerfile, tc.env, tc.buildArg) {
-			t.Errorf("%s: the build does not set %s from %s (as $%s or ${%s}), so docker buildx --platform builds every platform for the builder's own",
-				dockerfileName, tc.env, tc.buildArg, tc.buildArg, tc.buildArg)
+		if !usesBuildArg(command, tc.env, tc.buildArg) {
+			t.Errorf("%s:%d: the RUN instruction that runs `go build` does not set %s from %s (as $%s or ${%s}), so docker buildx --platform builds every platform for the builder's own",
+				dockerfileName, build.line, tc.env, tc.buildArg, tc.buildArg, tc.buildArg)
 		}
 	}
 }
@@ -739,16 +756,106 @@ func lastInstruction(instructions []instruction, keyword string) (instruction, b
 	return last, found
 }
 
-// joinedInstructions returns the instructions as text, one per line, with the
-// continuations already joined: what the build settings of the Dockerfile are
-// read from.
-func joinedInstructions(instructions []instruction) string {
-	lines := make([]string, 0, len(instructions))
-	for _, in := range instructions {
-		lines = append(lines, in.text)
+// runsGoBuild reports whether a RUN instruction's command runs `go build`. The
+// fields are read in order, so `go mod download` and a mention of the string in
+// a flag value or a file name are not the build itself.
+func runsGoBuild(command string) bool {
+	fields := strings.Fields(command)
+
+	for i := 0; i+1 < len(fields); i++ {
+		if fields[i] == "go" && fields[i+1] == "build" {
+			return true
+		}
 	}
 
-	return strings.Join(lines, "\n")
+	return false
+}
+
+// goBuildRun returns the one RUN instruction that runs `go build`: the
+// instruction that builds the image's binary, and the only place a build
+// setting can take effect. It fails the test when there is no such instruction,
+// so the build settings cannot be checked, or more than one, so it is not
+// clear which build the image ships.
+func goBuildRun(t *testing.T, dockerfile string) instruction {
+	t.Helper()
+
+	var builds []instruction
+	for _, in := range dockerfileInstructions(t, dockerfile) {
+		if in.keyword() == "RUN" && runsGoBuild(in.arguments()) {
+			builds = append(builds, in)
+		}
+	}
+
+	switch len(builds) {
+	case 0:
+		t.Fatalf("%s: no RUN instruction runs `go build`, so there is no build whose settings can be matched with %s; want one RUN such as `CGO_ENABLED=0 GOWORK=off go build ./cmd/eusov`",
+			dockerfileName, goreleaserName)
+	case 1:
+		return builds[0]
+	}
+
+	lines := make([]string, 0, len(builds))
+	for _, build := range builds {
+		lines = append(lines, strconv.Itoa(build.line))
+	}
+
+	t.Fatalf("%s: %d RUN instructions run `go build` (lines %s): want exactly one, the instruction that builds the binary the image ships, so this test checks one build and not whichever came first",
+		dockerfileName, len(builds), strings.Join(lines, ", "))
+
+	return instruction{}
+}
+
+// commandEnv returns the environment assignments at the front of a RUN
+// instruction's command: the NAME=value fields after the leading --mount (or
+// other --) flags and an optional env, up to the command itself. Only these
+// assignments apply to the command; one written on another instruction, in a
+// comment or inside a flag value does not.
+func commandEnv(command string) []string {
+	fields := strings.Fields(command)
+
+	for len(fields) > 0 && strings.HasPrefix(fields[0], "--") {
+		fields = fields[1:]
+	}
+
+	if len(fields) > 0 && fields[0] == "env" {
+		fields = fields[1:]
+	}
+
+	var env []string
+	for _, field := range fields {
+		name, _, isAssignment := strings.Cut(field, "=")
+		if !isAssignment || !isEnvName(name) {
+			break
+		}
+
+		env = append(env, field)
+	}
+
+	return env
+}
+
+// isEnvName reports whether name is a shell variable name: a letter or an
+// underscore, then letters, digits and underscores. The = after such a name is
+// what tells an environment assignment at the front of a command from a flag
+// such as --mount=type=cache or -ldflags "...".
+func isEnvName(name string) bool {
+	if name == "" {
+		return false
+	}
+
+	for i, r := range name {
+		letter := r == '_' || r >= 'A' && r <= 'Z' || r >= 'a' && r <= 'z'
+		digit := r >= '0' && r <= '9'
+
+		switch {
+		case letter:
+		case i > 0 && digit:
+		default:
+			return false
+		}
+	}
+
+	return true
 }
 
 // imageTag returns the tag of a golang image reference, "1.27.4-bookworm" for
@@ -872,7 +979,7 @@ func builderStage(t *testing.T, dockerfile string) instruction {
 		}
 
 		for _, stageIn := range stageInstructions(instructions, i) {
-			if stageIn.keyword() == "RUN" && strings.Contains(stageIn.arguments(), "go build") {
+			if stageIn.keyword() == "RUN" && runsGoBuild(stageIn.arguments()) {
 				return in
 			}
 		}
