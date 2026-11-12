@@ -651,10 +651,10 @@ var verifySteps = []string{
           # when the registry says the tag does not exist. The digest is what
           # the inspect writes on stdout, in stderr kept apart, so a docker
           # warning is never read as one, and what succeeds must be exactly one
-          # sha256 line. Absence is the registry's own not-found for this
-          # reference alone: exit status 1 with "$1: not found" or
-          # MANIFEST_UNKNOWN in stderr. Any other answer, a 5xx, a rate limit,
-          # a failed login, a missing docker or a broken credential helper, is
+          # sha256 line. Absence is exit status 1 with the fixed, case-sensitive
+          # "$1: not found" in stderr, which names this very reference, and
+          # nothing else is absence: any other answer, a 5xx, a rate limit, a
+          # failed login, a missing docker or a broken credential helper, is
           # printed and fails the step, whose caller assigns the digest in a
           # command of its own so set -e sees the failure.
           digest_or_absent() {
@@ -669,7 +669,7 @@ var verifySteps = []string{
               fi
             else
               rc=$?
-              if [ "$rc" -eq 1 ] && grep -qF -e "$1: not found" -e 'MANIFEST_UNKNOWN' "$err"; then
+              if [ "$rc" -eq 1 ] && grep -qF -e "$1: not found" "$err"; then
                 :
               else
                 echo "$1 could not be read, docker exited $rc:" >&2
@@ -1434,8 +1434,12 @@ func TestReleaseWorkflow(t *testing.T) {
 		// the rule allows where it allows it, and fails the step on any other
 		// answer. Every read is pinned alone, so none can go back to swallowing
 		// a 5xx, a rate limit or a failed login, and a pre-release may still
-		// leave X.Y or latest absent.
-		{name: "the tag rule taking any registry error for an absent tag", workflow: steps("verify", inVerifyStep(t, "name: The tags follow the release rule", `              if [ "$rc" -eq 1 ] && grep -qF -e "$1: not found" -e 'MANIFEST_UNKNOWN' "$err"; then`+"\n", "              if true; then\n")), wantIn: "want the tag rule: run is"},
+		// leave X.Y or latest absent. Absence is the registry's own not-found
+		// for this reference alone: the fixed, case-sensitive "$1: not found"
+		// text on exit status 1, and nothing else, so MANIFEST_UNKNOWN stays a
+		// failure and never an absent tag.
+		{name: "the tag rule taking any registry error for an absent tag", workflow: steps("verify", inVerifyStep(t, "name: The tags follow the release rule", `              if [ "$rc" -eq 1 ] && grep -qF -e "$1: not found" "$err"; then`+"\n", "              if true; then\n")), wantIn: "want the tag rule: run is"},
+		{name: "the tag rule reading MANIFEST_UNKNOWN as an absent tag again", workflow: steps("verify", inVerifyStep(t, "name: The tags follow the release rule", `grep -qF -e "$1: not found" "$err"`, `grep -qF -e "$1: not found" -e 'MANIFEST_UNKNOWN' "$err"`)), wantIn: "want the tag rule: run is"},
 
 		// The digest is stdout alone, one sha256 line (audit F2, review N1):
 		// stderr of its own, so a docker warning cannot be read as the digest
@@ -1446,9 +1450,9 @@ func TestReleaseWorkflow(t *testing.T) {
 		// endpoint or another tag's not-found all fail the step.
 		{name: "the tag rule's digest read with stderr merged into it", workflow: steps("verify", inVerifyStep(t, "name: The tags follow the release rule", `--format '{{.Manifest.Digest}}' 2> "$err")"`, `--format '{{.Manifest.Digest}}' 2>&1)"`)), wantIn: "want the tag rule: run is"},
 		{name: "the tag rule without the check that a digest is one sha256 line", workflow: steps("verify", inVerifyStep(t, "name: The tags follow the release rule", `              if [[ "$out" =~ ^sha256:[0-9a-f]{64}$ ]]; then`+"\n", "              if [ -n \"$out\" ]; then\n")), wantIn: "want the tag rule: run is"},
-		{name: "the tag rule taking any not-found for an absent tag", workflow: steps("verify", inVerifyStep(t, "name: The tags follow the release rule", `grep -qF -e "$1: not found" -e 'MANIFEST_UNKNOWN' "$err"`, `grep -qF -e "not found" -e 'MANIFEST_UNKNOWN' "$err"`)), wantIn: "want the tag rule: run is"},
-		{name: "the tag rule's absent-tag match ignoring case again", workflow: steps("verify", inVerifyStep(t, "name: The tags follow the release rule", `              if [ "$rc" -eq 1 ] && grep -qF -e "$1: not found" -e 'MANIFEST_UNKNOWN' "$err"; then`+"\n", `              if [ "$rc" -eq 1 ] && grep -qiF -e "$1: not found" -e 'MANIFEST_UNKNOWN' "$err"; then`+"\n")), wantIn: "want the tag rule: run is"},
-		{name: "the tag rule reading any failed inspect's stderr as an absent tag", workflow: steps("verify", inVerifyStep(t, "name: The tags follow the release rule", `              if [ "$rc" -eq 1 ] && grep -qF -e "$1: not found" -e 'MANIFEST_UNKNOWN' "$err"; then`+"\n", `              if grep -qF -e "$1: not found" -e 'MANIFEST_UNKNOWN' "$err"; then`+"\n")), wantIn: "want the tag rule: run is"},
+		{name: "the tag rule taking any not-found for an absent tag", workflow: steps("verify", inVerifyStep(t, "name: The tags follow the release rule", `grep -qF -e "$1: not found" "$err"`, `grep -qF -e "not found" "$err"`)), wantIn: "want the tag rule: run is"},
+		{name: "the tag rule's absent-tag match ignoring case again", workflow: steps("verify", inVerifyStep(t, "name: The tags follow the release rule", `              if [ "$rc" -eq 1 ] && grep -qF -e "$1: not found" "$err"; then`+"\n", `              if [ "$rc" -eq 1 ] && grep -qiF -e "$1: not found" "$err"; then`+"\n")), wantIn: "want the tag rule: run is"},
+		{name: "the tag rule reading any failed inspect's stderr as an absent tag", workflow: steps("verify", inVerifyStep(t, "name: The tags follow the release rule", `              if [ "$rc" -eq 1 ] && grep -qF -e "$1: not found" "$err"; then`+"\n", `              if grep -qF -e "$1: not found" "$err"; then`+"\n")), wantIn: "want the tag rule: run is"},
 		{name: "the tag rule reading a pre-release's X.Y with its error silenced", workflow: steps("verify", inVerifyStep(t, "name: The tags follow the release rule", `            minor_digest="$(digest_or_absent "$image:$minor")"`+"\n", `            minor_digest="$(digest_or_absent "$image:$minor" 2> /dev/null)"`+"\n")), wantIn: "want the tag rule: run is"},
 		{name: "the tag rule reading a pre-release's latest with its error silenced", workflow: steps("verify", inVerifyStep(t, "name: The tags follow the release rule", `                latest_digest="$(digest_or_absent "$image:latest")"`+"\n", `                latest_digest="$(digest_or_absent "$image:latest" 2> /dev/null)"`+"\n")), wantIn: "want the tag rule: run is"},
 		{name: "the tag rule reading the highest with its error silenced", workflow: steps("verify", inVerifyStep(t, "name: The tags follow the release rule", `                  highest_digest="$(digest_or_absent "$image:$highest")"`+"\n", `                  highest_digest="$(digest_or_absent "$image:$highest" 2> /dev/null)"`+"\n")), wantIn: "want the tag rule: run is"},
