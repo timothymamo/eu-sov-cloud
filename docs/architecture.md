@@ -62,8 +62,16 @@ Arrows are imports. They point inwards only:
   adapters and inject them: `cmd/eusov` into the CLI, `cmd/eusov-server` into the HTTP API. `cmd/eusov`'s
   imports are a strict allow list (`composition-root`, issue #101): the module's own packages and the
   standard packages it needs today (`context`, `os`, `os/signal`, `syscall`), and no third-party package.
-  The rule holds `cmd/eusov` only; `cmd/eusov-server` (PRD #103 milestone 3) gets a sibling rule written
-  the same way, with its own `files:` entry.
+  The rule holds `cmd/eusov` only. `cmd/eusov-server` (PRD #103 milestone 3) is held by its sibling,
+  `server-composition-root`, written the same way: the module's own packages and the standard packages
+  the server needs (`context`, `errors`, `flag`, `fmt`, `io`, `log`, `log/slog`, `math`, `net`,
+  `net/http`, `os`, `os/signal`, `runtime`, `runtime/debug`, `slices`, `strconv`, `strings`, `sync`,
+  `syscall`, `time`), no third-party package and no cloud SDK. `test/architecture` holds it to that
+  list on every release target, and `TestServerPathHasNoCloudSDKOrProcess` (`test/e2e`) refuses a cloud
+  SDK or `os/exec` anywhere in its dependency tree. Around the handler, `cmd/eusov-server` owns what a
+  running server needs: the flags and the token (from `EUSOV_SERVER_TOKEN` or `--token-file`, never a
+  flag), the loopback rule, the `http.Server` timeouts, the `Host` allow-list, the concurrency default,
+  the readiness check, the access log and the graceful shutdown (ADR 0019).
 
 The rule is enforced by `depguard` in `.golangci.yml`, so `make lint`, which lints the host natively and
 then every GOOS/GOARCH `.goreleaser.yaml` builds with cgo off, fails on a violating import. These are all
@@ -269,7 +277,9 @@ hand-written GCP package, add an entry for it, a probe line only it refuses and 
   `syscall`, so the composition root could call `os.StartProcess`, `syscall.Exec` or
   `syscall.ForkExec`, shelling out to a cloud CLI, or `os.Environ` and `os.Getenv`, dumping the
   environment, and only review catches it (the security audit's LOW-2 on issue #101). A forbidigo
-  group scoped to `cmd/eusov` would close it; that is follow-up work outside issue #101.
+  group scoped to `cmd/eusov` would close it; that is follow-up work outside issue #101. The same
+  holds for `cmd/eusov-server` under `server-composition-root`, which allows `os` and `syscall` too;
+  `os/exec` is refused there by the allow list and, for its whole dependency tree, by `test/e2e`.
 - **Files lint never loads**: a file behind a build tag other than `integration` and `e2e`, a
   `//go:build ignore` helper, and the `testdata`, `_` and `.` directories `./...` skips. `test/lint`
   fails on such a file, and on an imported package in such a directory. A main package there, run

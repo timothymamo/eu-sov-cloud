@@ -1,7 +1,7 @@
 # 0019. Serve assessments over a versioned HTTP API from a separate binary
 
-- Status: Proposed
-- Date: 2026-11-11
+- Status: Accepted
+- Date: 2026-11-11 (accepted 2026-11-12, issue #112; milestone 3 decisions added 2026-11-12)
 
 ## Context
 
@@ -210,6 +210,65 @@ handler with no listener of its own. Milestone 3 **must** also:
 - check end to end that the built `eusov` and `eusov-server` binaries give the same bytes for the same
   inventory and targets, beside the in-process parity test.
 
+**What milestone 3 decided, in `cmd/eusov-server`.** Its imports are a strict allow list,
+`server-composition-root`, the sibling of `composition-root`: the module's own packages and the standard
+packages it needs, no third-party package, no cloud SDK, no `os/exec` and never `internal/cli`.
+
+- *Flags and environment.* `--listen` (default `127.0.0.1:8080`), `--token-file <path>`,
+  `--concurrency <n>` (0, the default, is the computed default below), `--cors-origin <origin>` and
+  `--allowed-host <host>` (both repeatable) and `--insecure-no-auth`. The token comes from
+  `EUSOV_SERVER_TOKEN` or `--token-file`, never a flag; both at once is a configuration error. A
+  variable that is set but trims to nothing, an empty or blank file, and a file that cannot be read are
+  configuration errors, never "no token"; an unset variable is no token source. White space around a
+  token is trimmed, from the file and from the variable. Every configuration error is one line,
+  `eusov-server: ...`, exit code 2, before anything listens; no error quotes the token.
+- *The loopback rule.* A `--listen` host that is `localhost` or a loopback IP address is loopback;
+  anything else (an empty host, `0.0.0.0`, `::`, any other name) is not, and without a token is refused
+  unless `--insecure-no-auth` is given. On loopback without a token and without `--allowed-host`, the
+  `Host` allow-list is `localhost:<port>` and `<bound address>:<port>`, from the bound listener, so it
+  holds the real port when `--listen` asks for port 0. A listener whose bound address is not loopback,
+  or that has no port, resolves to no host, which is a startup error, never "any host". `--allowed-host`
+  replaces the resolved list, and is validated by `WithAllowedHosts`. The handler is built once before
+  the listener opens, so an invalid option never opens a port, and again with the resolved list.
+- *Timeouts and limits.* `ReadHeaderTimeout` 10 s, `ReadTimeout` 30 s, `WithBodyReadTimeout` 30 s
+  (equal to `ReadTimeout`, as required above), `WriteTimeout` 60 s (from the end of the headers: the
+  body read, the assessment, about 0.4 s for the largest on one core, and the write),
+  `IdleTimeout` 60 s and `MaxHeaderBytes` 64 KiB (431 above it; the API reads five headers). A client
+  that stalls in its headers is closed after 10 s and holds no slot; one that stalls in its body frees
+  its slot after 30 s.
+- *Concurrency default.* `max(1, min(cpus, budget / peak))`, where `cpus` is `runtime.GOMAXPROCS(0)`
+  (which follows a container's CPU limit), `peak` is 1 GiB and `budget` is `GOMEMLIMIT` when it is set
+  (`debug.SetMemoryLimit(-1)` below `math.MaxInt64`), else 2 GiB. `BenchmarkMaximalAllComparison`
+  (`test/apiparity`) measures 1,053,936,082 bytes allocated per maximal `["all"]` request (the largest
+  inventory the reader accepts, every target) on linux/arm64, in 0.42 s; the bytes allocated bound
+  the request's live memory from above, so 1 GiB, that number rounded up, is a safe peak. With a
+  `GOMEMLIMIT` the server never admits more maximal requests than fit in it, but always one. Without
+  one it knows nothing of its memory, so it assumes a small container's 2 GiB, room for two maximal
+  requests, rather than one maximal request per CPU, which would exceed the memory of most hosts with
+  many CPUs; an operator with more memory sets `GOMEMLIMIT` (the image in milestone 4 can) or
+  `--concurrency`. The fallback is applied by the caller, not inside `defaultConcurrency`, which reads
+  `math.MaxInt64` as no bound: so the function stays non-decreasing in its limit, as its test pins.
+  Most requests are far smaller than the maximal one, so the default is conservative by design: a busy
+  server answers 503 `busy` with `Retry-After: 1` rather than running out of memory.
+- *Readiness.* `/readyz` loads every target's catalog, in key order, and answers 200 once all have
+  loaded, 503 until then; once they have, it does not load them again, as the embedded snapshots cannot
+  change while the process runs.
+- *Access log.* One line per request on stderr, once it is answered:
+  `eusov-server: access method=POST path="/v1/assessments" status=200 duration=12.3ms size=1234`. The
+  path is quoted, so a path holding a line feed cannot forge a line, and carries no query string; the
+  size is the answer's body in bytes. Nothing else of the request is logged: no header value, no query,
+  no body, no inventory value, no report. The `http.Server`'s own error log goes to stderr with the
+  same prefix; it reports connection-level problems and no request content.
+- *Startup and shutdown.* Once listening, the server prints `eusov-server: listening on <host:port>`.
+  `SIGTERM` or `SIGINT` starts the graceful shutdown: `http.Server.Shutdown` stops accepting
+  connections and waits up to 25 s, below the 30 s a container platform usually allows before
+  `SIGKILL`, for the requests in flight, then the process exits 0. Requests that outlast the deadline
+  are closed and the process exits 1. A failure to listen (an address in use) or to serve is exit
+  code 1.
+- *Build.* `make build` builds `bin/eusov-server` beside `bin/eusov`, with the same link flags
+  (`make server` builds it alone). An e2e test builds both binaries and checks that they give the same
+  bytes for the same inventory and targets, in JSON and Markdown.
+
 **What milestone 4 adds (packaging).** The `eusov-server` image, the README's deployment notes, and a
 published OpenAPI document that bundles the report's JSON Schemas: `api/openapi.json` refers to them by
 repo-relative path, which a reader outside the repository cannot follow.
@@ -263,8 +322,11 @@ repo-relative path, which a reader outside the repository cannot follow.
   `httpapi-imported-only-by-the-server`), and one the request decoders; all three are in the depguard pin
   (`test/architecture/depguardpin_test.go`). A standard package `internal/httpapi` needs is added to its
   allow list and the pin on purpose. A new test that needs the handler goes in `internal/httpapi` or
-  `test/apiparity`, or widens `httpapi-imported-only-by-the-server` on purpose. `cmd/eusov-server` will need `!**/cmd/eusov-server/**` in
-  `adapters-are-built-in-cmd` to construct adapters (milestone 3).
+  `test/apiparity`, or widens `httpapi-imported-only-by-the-server` on purpose. `cmd/eusov-server` is
+  held by `server-composition-root`, which is pinned too. It constructs adapters, so
+  `adapters-are-built-in-cmd` should exclude it as it does `cmd/eusov`; milestone 3 leaves that rule as
+  pinned, because depguard does not report that rule's deny entries today, which is a follow-up of its
+  own.
 - A change to a route, a status code or an error code updates `api/openapi.json` in the same change,
   and a breaking one is a `/v2/` route and an ADR.
 - Operators must put the server behind a proxy for TLS and users; a token alone protects it from direct
@@ -273,3 +335,7 @@ repo-relative path, which a reader outside the repository cannot follow.
   value is there. A client that wants the value reads it from its own document.
 - A slow client can hold a slot for up to the body read timeout; with N slots, N such clients make the
   API answer 503 `busy` for that long. Per-client limits belong to the proxy.
+- Without `GOMEMLIMIT` the server serves at most two assessments at once, however many CPUs it has; an
+  operator who wants more sets `GOMEMLIMIT` or `--concurrency`. The per-request peak is a measurement:
+  a change that makes a maximal request larger reruns `BenchmarkMaximalAllComparison` and revisits the
+  1 GiB in `cmd/eusov-server`.

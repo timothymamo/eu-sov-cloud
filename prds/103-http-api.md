@@ -1,7 +1,7 @@
 # PRD #103: Serve assessments over an HTTP API
 
-**Status:** Draft. The decisions marked *Proposed* are for the user to accept or change when this PRD's
-pull request is reviewed.
+**Status:** In progress (milestones 1 to 3 done). The decisions the user accepted with milestones 1 and 2
+are marked *Decided* (issue #112).
 **Issue:** #103
 
 ## Problem
@@ -72,7 +72,7 @@ use `net/http/httptest` and a server on `127.0.0.1`), unless marked *review*.
   the CLI's.
 - [x] `GET /v1/targets` lists every target with its key, display name, snapshot source URL and retrieval
   date, sorted by key.
-- [ ] `GET /healthz` answers `200` while the process runs. `GET /readyz` answers `200` once every
+- [x] `GET /healthz` answers `200` while the process runs. `GET /readyz` answers `200` once every
   target's catalog has loaded, and `503` before that.
 - [x] Errors use one JSON shape (`{"error": {"code": "...", "message": "..."}}`) and the right status:
   - `400` for a malformed body, an inventory the reader refuses, or a bad target list (the same rules
@@ -80,8 +80,11 @@ use `net/http/httptest` and a server on `127.0.0.1`), unless marked *review*.
   - `404` or `405` for an unknown path or method;
   - `413` for a body over the limit;
   - `415` for the wrong content type;
-  - `429` or `503` when the concurrency limit is reached;
-  - `500` for an internal error, with no internal detail in the message.
+  - `503` with `Retry-After: 1` when the concurrency limit is reached (*Decided*, not `429`: the limit
+    is the server's capacity, not the client's rate);
+  - `500` for an internal error, with no internal detail in the message;
+  - and, beside this list (*Decided*): `406` when nothing in `Accept` is available, and `421` for a
+    `Host` outside the allow-list.
 
   An error message never echoes request content beyond a quoted, escaped key or field name, as the
   CLI's one-line errors do.
@@ -90,37 +93,42 @@ use `net/http/httptest` and a server on `127.0.0.1`), unless marked *review*.
 
 **Limits and hardening**
 
-- [x] The request body is capped (*Proposed*: the inventory reader's existing size cap, plus a small
-  margin for the envelope), and read through the same strict decoder (`jsondoc`, ADR 0009). An unknown
-  field, a duplicate key or trailing data is a `400`.
-- [ ] The server sets read-header, read, write and idle timeouts, and a maximum header size. A slow or
+- [x] The request body is capped (*Decided*: the inventory reader's size cap plus 64 KiB for the
+  envelope), and read through the same strict decoder (`jsondoc`, ADR 0009). An unknown field, a
+  duplicate key or trailing data is a `400`. Reading one body is bounded by a 30 s body read timeout
+  (*Decided*), from the moment its concurrency slot is taken.
+- [x] The server sets read-header, read, write and idle timeouts, and a maximum header size. A slow or
   oversized client gets a timeout or a `431`/`413`, and never blocks a worker for longer than the
   timeouts. Pinned with a slow-client test.
-- [ ] Concurrent assessments are capped (*Proposed*: a flag, defaulting to the number of CPUs). A request
-  over the cap is refused at once, not queued without bound.
-- [ ] Nothing from a request (body, inventory, report, resource IDs) is written to disk or to the logs.
+- [x] Concurrent assessments are capped (*Decided*: a flag, `--concurrency`, whose default is sized
+  against memory as well as the CPUs, since one maximal `["all"]` request allocates about 1 GB: the
+  number of CPUs, but no more maximal requests than fit in `GOMEMLIMIT`, or in 2 GiB without one;
+  ADR 0019). A request over the cap is refused at once, not queued without bound.
+- [x] Nothing from a request (body, inventory, report, resource IDs) is written to disk or to the logs.
   The access log has the method, path, status, duration and size only. Pinned by a test that sends a
   marked inventory and checks that no log line holds the marker.
 - [x] Responses set `Cache-Control: no-store`, `X-Content-Type-Options: nosniff` and a JSON content type.
   CORS is off unless an allow-list of origins is configured, and then it applies only to those origins.
-- [ ] *Proposed:* when a bearer token is configured (from an environment variable or a file, never a
+- [x] *Decided:* when a bearer token is configured (from an environment variable or a file, never a
   flag), every `/v1/` request without it gets a `401`. The health endpoints stay open. The server
   refuses to listen on a non-loopback address without a token, unless the operator passes an explicit
   `--insecure-no-auth`.
-- [ ] On `SIGTERM` or `SIGINT`, the server stops accepting connections and finishes in-flight requests
+- [x] On `SIGTERM` or `SIGINT`, the server stops accepting connections and finishes in-flight requests
   within a deadline, then exits `0`.
 
 **Architecture**
 
-- [ ] The HTTP API is a driving adapter, `internal/httpapi`, beside `internal/cli`. It may import the
+- [x] The HTTP API is a driving adapter, `internal/httpapi`, beside `internal/cli`. It may import the
   application and domain layers, and the report adapters through the composition root's wiring, but never
   `internal/cli`. `cmd/eusov-server` is its composition root. depguard rules and `test/architecture` hold
   this for every release target, and the depguard pin (#84) includes the new rules.
-- [ ] `cmd/eusov` still depends on no `net` package: `TestAssessPathHasNoNetworkOrCloudSDK` is unchanged
+- [x] `cmd/eusov` still depends on no `net` package: `TestAssessPathHasNoNetworkOrCloudSDK` is unchanged
   and passes. A matching test pins that `cmd/eusov-server` depends on no cloud SDK and no `os/exec`.
-- [x] *Review:* the domain, the use cases (`analysis.Analysis`, `analysis.Comparison`), the target
-  adapters and the Markdown renderer are reused unchanged. An ADR records the separate binary, the API's
-  versioning, and the security model.
+- [x] *Review:* the use cases (`analysis.Analysis`, `analysis.Comparison`), the target adapters and the
+  Markdown renderer's output are reused unchanged. The domain changes only by the accepted refactor of
+  milestone 1 (issue #112): the tie list and the required-changes list moved into it (`Verdict.Ties`,
+  `ChangesToList`), shared by both renderers, with the Markdown output unchanged. An ADR records the
+  separate binary, the API's versioning, and the security model.
 - [ ] `make check` passes. The security-audit skill is run on milestones 2 to 4.
 
 **Packaging**
@@ -184,31 +192,50 @@ Each milestone ships as one PR, in this order.
    resolved host list as a startup error; trim the white space around a token read from a file; set
    the `Host` allow-list whenever it listens on loopback without a token; and keep request content out
    of the access log, which holds the method, path, status, duration and size only.
-3. [ ] **`eusov-server` binary.** `cmd/eusov-server` wires the adapters. It adds flags and environment
+3. [x] **`eusov-server` binary.** `cmd/eusov-server` wires the adapters. It adds flags and environment
    (listen address, token, concurrency, CORS origins), timeouts, graceful shutdown, the access log, the
    readiness check, and the loopback-without-token rule. e2e tests start the binary on `127.0.0.1` and call
    it. The offline test for `cmd/eusov` stays as it is, and a new one pins `cmd/eusov-server`'s
    dependencies. Depends on 2.
+
+   *Done:* `cmd/eusov-server` is the API's composition root, held by the strict depguard rule
+   `server-composition-root` (in the depguard pin, and held by `test/architecture` for every release
+   target). It wires the adapters `cmd/eusov` wires into `httpapi.New` and adds `--listen`,
+   `--token-file` or `EUSOV_SERVER_TOKEN` (never a flag; a configured but empty source, or both at
+   once, is a startup error, and the token is trimmed), `--concurrency`, `--cors-origin`,
+   `--allowed-host` and `--insecure-no-auth`. It refuses a non-loopback address without a token unless
+   `--insecure-no-auth` is given, and on loopback without a token answers only to `localhost` and its
+   bound address with the port. It sets `ReadHeaderTimeout` 10 s, `ReadTimeout` 30 s, a 30 s body read
+   timeout, `WriteTimeout` 60 s, `IdleTimeout` 60 s and `MaxHeaderBytes` 64 KiB. The concurrency
+   default is `max(1, min(CPUs, budget / 1 GiB))`, the budget being `GOMEMLIMIT` or, without it, 2 GiB,
+   from `BenchmarkMaximalAllComparison`'s 1.05 GB per maximal request. `/readyz` answers 200 once every
+   catalog has loaded. The access log writes one line per request to stderr with the method, the
+   quoted path, the status, the duration and the size, and nothing else. `SIGTERM` and `SIGINT` shut it
+   down gracefully within 25 s and exit 0. `make build` builds `bin/eusov-server` too. White-box tests
+   of `run` pin the token, the loopback and `Host` rules, the concurrency, the access log, stalled
+   header and body clients and the graceful shutdown; e2e tests run the built binary, compare its bytes
+   with `eusov assess` in JSON and Markdown, and pin that its dependencies hold no cloud SDK and no
+   `os/exec`. The decisions are recorded in [ADR 0019](../docs/adr/0019-serve-assessments-over-a-versioned-http-api-from-a-separate-binary.md).
 4. [ ] **Packaging and docs.** GoReleaser builds, the `eusov-server` image in the `Dockerfile`, the
    release workflow (publish, sign, attest) and its checks, and the README's deployment section. Moves this
    PRD to `prds/done/` and completes #103. Depends on 3. Security-sensitive: the release workflow changes.
 
 ## Decisions and open questions
 
-- **Proposed: a separate binary, not `eusov serve`** ([ADR 0019](../docs/adr/0019-serve-assessments-over-a-versioned-http-api-from-a-separate-binary.md)
+- **Decided: a separate binary, not `eusov serve`** ([ADR 0019](../docs/adr/0019-serve-assessments-over-a-versioned-http-api-from-a-separate-binary.md)
   records it with the API's design, versioning and security model). The CLI's guarantee, that nothing it reaches can
   open a connection, is pinned by a test, and is worth keeping for users who run it on sensitive
   inventories. A `serve` subcommand would put `net/http` in the CLI's dependencies and end that guarantee.
   A second binary in the same module reuses every package. It costs a second build target and image.
-- **Proposed: the API takes inventory documents only, never cloud credentials.** Recorded in [ADR 0019](../docs/adr/0019-serve-assessments-over-a-versioned-http-api-from-a-separate-binary.md). Live discovery from the
+- **Decided: the API takes inventory documents only, never cloud credentials.** Recorded in [ADR 0019](../docs/adr/0019-serve-assessments-over-a-versioned-http-api-from-a-separate-binary.md). Live discovery from the
   API would mean a web server holding customers' cloud credentials, the most sensitive thing this project
   could handle (CLAUDE.md rules 1 and 3). If the website needs it later, it gets its own PRD and threat
   model. Until then the website, or the user, runs discovery and uploads the inventory.
-- **Proposed: TLS and users belong to the proxy or the website's backend.** Recorded in [ADR 0019](../docs/adr/0019-serve-assessments-over-a-versioned-http-api-from-a-separate-binary.md). The server is a stateless
+- **Decided: TLS and users belong to the proxy or the website's backend.** Recorded in [ADR 0019](../docs/adr/0019-serve-assessments-over-a-versioned-http-api-from-a-separate-binary.md). The server is a stateless
   compute service: no accounts, no sessions, no storage. A shared bearer token protects it from anyone
   who reaches it directly. Users, rate limits per user, and TLS are better handled by the site's backend
   or a reverse proxy, which the docs describe. Built-in TLS can follow if a deployment needs it.
-- **Proposed: synchronous requests.** An assessment over an embedded snapshot takes milliseconds, so a
+- **Decided: synchronous requests.** An assessment over an embedded snapshot takes milliseconds, so a
   request answers directly. Async jobs, queues and webhooks are left out until something makes requests
   slow, such as live discovery.
 - **Decided: one JSON report format for the CLI and the API** ([ADR 0018](../docs/adr/0018-version-the-json-report-format-for-the-cli-and-the-api.md)).
@@ -218,7 +245,7 @@ Each milestone ships as one PR, in this order.
   removing, renaming or retyping a key, or any other change that can break a reader, is a new
   `schemaVersion` with an ADR. Unlike the inventory format (ADR 0006), where `eusov` is the strict
   reader, here `eusov` is the writer.
-- **Proposed: the API is versioned in the path (`/v1/`).** Recorded in [ADR 0019](../docs/adr/0019-serve-assessments-over-a-versioned-http-api-from-a-separate-binary.md). A breaking change is a `/v2/` route beside
+- **Decided: the API is versioned in the path (`/v1/`).** Recorded in [ADR 0019](../docs/adr/0019-serve-assessments-over-a-versioned-http-api-from-a-separate-binary.md). A breaking change is a `/v2/` route beside
   `/v1/` for a deprecation period. Additive fields are not breaking.
 - **Decided: no request content is ever stored or logged.** Inventories and reports are customer data
   (CLAUDE.md rule 2). The server keeps them only in memory for the length of the request.
