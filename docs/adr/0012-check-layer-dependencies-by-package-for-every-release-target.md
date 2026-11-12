@@ -305,8 +305,16 @@ no deny list. `check.RuleDirs` reads it as a directory holding test files, so
 sees no call, so the forbidigo group `testutil-no-env` refuses `os.Getenv`, `os.LookupEnv`,
 `os.ExpandEnv`, `os.Environ`, `os.Setenv`, `os.Unsetenv`, `os.Clearenv` and `os.StartProcess` under
 `internal/testutil/` (one `path-except` exclusion rule drops it everywhere else; CLAUDE.md rule 3).
-Golden files read and written through `internal/testutil` are therefore the only I/O an application
-test is allowed. `test/lint`'s `TestTestutilImportsProbe` pins both rules on a probe module, and
+A second review added `os.UserHomeDir`, `os.UserConfigDir`, `os.UserCacheDir` and `os.TempDir`: each
+reads `$HOME`, `$XDG_CONFIG_HOME`, `$XDG_CACHE_HOME` or `$TMPDIR` without naming it, so a helper could
+build the path to `~/.config/dot-agent-deck/daemon.env` or `~/.aws/credentials` and read it.
+
+These rules are a guardrail on imports and named calls, not a sandbox. The only I/O they leave an
+application test is file access through `os` in `internal/testutil`, which the golden files use; no
+import or call rule can refuse `os.ReadFile("/proc/self/environ")` or another hard-coded path there,
+so any new file path or `os` call in `internal/testutil` is a widening a reviewer must read.
+`testing.T.Setenv` and `testing.T.Chdir`, which application tests and `internal/testutil` can still
+call, are left to follow-up issue #153. `test/lint`'s `TestTestutilImportsProbe` pins both rules on a probe module, and
 `TestAppTestsUseFakesNotAdaptersProbe` now runs a second time for `darwin/amd64` with cgo off.
 
 The checks are ordinary tests, so `make test`, `make check` and CI's `make cover` run them with no
