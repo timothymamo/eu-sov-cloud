@@ -69,8 +69,10 @@ const envVarIdent = "tokenEnvVar"
 // os.LookupEnv elsewhere, another variable's name or a string literal, and a
 // func literal that is not the sole return of the source are each refused, and so
 // are a file that dot-imports os, which hides the argument behind a bare name,
-// and a file that declares or assigns run, so that the call main makes is no call
-// of the package's run.
+// a file that declares or assigns run, so that the call main makes is no call of
+// the package's run, a file that declares or assigns tokenEnvVar, which shadows
+// the constant the argument reads, and a file that imports os twice, which
+// reaches os.LookupEnv by two names.
 //
 // It reads the source, not the linted tree: a case is a string, so the pin is a
 // fixture (TestLookupEnvProblems).
@@ -80,20 +82,44 @@ func lookupEnvProblems(rel string, src []byte) ([]string, error) {
 	if err != nil {
 		return nil, err
 	}
-	name, at, ok := importedName(f, "os")
-	if !ok {
+	names, positions := importedNames(f, "os")
+	if len(names) == 0 {
 		return []string{fmt.Sprintf("%s: imports no package os, so nothing reads %s through os.LookupEnv for run", rel, envVarName)}, nil
-	}
-	if name == "." {
-		return []string{fmt.Sprintf("%s:%d: the file dot-imports os, which hides whether os.LookupEnv is the one call the token source makes; import it as os", rel, fset.Position(at).Line)}, nil
 	}
 
 	var problems []string
-	for _, pos := range runShadows(f) {
-		problems = append(problems, fmt.Sprintf("%s:%d: run is declared or assigned here, so the call in this file is no call of the package's run; the token source is an argument of the run cmd/shift2eu-server/run.go declares", rel, fset.Position(pos).Line))
+	if len(names) > 1 {
+		problems = append(problems, fmt.Sprintf("%s:%d: the file imports os %d times; a composition root imports it once, so the token source's one os.LookupEnv reference has one name", rel, fset.Position(positions[len(positions)-1]).Line, len(names)))
 	}
 
-	refs, calls, sources := lookupEnvRefs(f, name)
+	// named is every local name the file reaches package os by: a dot import
+	// hides os.LookupEnv behind a bare name, which no selector check can
+	// follow, and a blank import makes no reference possible, so neither is
+	// one.
+	named := make([]string, 0, len(names))
+	dotted := false
+	for i, name := range names {
+		switch name {
+		case ".":
+			dotted = true
+			problems = append(problems, fmt.Sprintf("%s:%d: the file dot-imports os, which hides whether os.LookupEnv is the one call the token source makes; import it as os", rel, fset.Position(positions[i]).Line))
+		case "_":
+		default:
+			named = append(named, name)
+		}
+	}
+	if dotted {
+		return problems, nil
+	}
+
+	for _, pos := range shadowsOf(f, "run") {
+		problems = append(problems, fmt.Sprintf("%s:%d: run is declared or assigned here, so the call in this file is no call of the package's run; the token source is an argument of the run cmd/shift2eu-server/run.go declares", rel, fset.Position(pos).Line))
+	}
+	for _, pos := range shadowsOf(f, envVarIdent) {
+		problems = append(problems, fmt.Sprintf("%s:%d: %s is declared or assigned here, so the identifier the token source passes os.LookupEnv is no longer the constant cmd/shift2eu-server/token.go declares; a composition root names that constant and declares nothing of its own", rel, fset.Position(pos).Line, envVarIdent))
+	}
+
+	refs, calls, sources := lookupEnvRefs(f, named)
 
 	switch {
 	case len(refs) == 0:
@@ -111,23 +137,26 @@ func lookupEnvProblems(rel string, src []byte) ([]string, error) {
 	return problems, nil
 }
 
-// lookupEnvRefs returns every reference to os.LookupEnv in f, the package name
-// the file imports os as; the call each reference is the function of, when it is
-// one; and the position of each reference that is the sole return expression of a
-// func literal passed directly to run (tokenSourceOfArg).
-func lookupEnvRefs(f *ast.File, pkg string) (refs []*ast.SelectorExpr, calls map[token.Pos]*ast.CallExpr, sources map[token.Pos]bool) {
+// lookupEnvRefs returns every reference to os.LookupEnv in f, through any of
+// pkgs, the local names the file gives package os; the call each reference is
+// the function of, when it is one; and the position of each reference that is
+// the sole return expression of a func literal passed directly to run
+// (tokenSourceOfArg).
+func lookupEnvRefs(f *ast.File, pkgs []string) (refs []*ast.SelectorExpr, calls map[token.Pos]*ast.CallExpr, sources map[token.Pos]bool) {
 	calls = map[token.Pos]*ast.CallExpr{}
 	sources = map[token.Pos]bool{}
 
 	ast.Inspect(f, func(n ast.Node) bool {
 		switch n := n.(type) {
 		case *ast.SelectorExpr:
-			if isName(n.X, pkg) && n.Sel.Name == "LookupEnv" {
+			if _, named := anyName(n.X, pkgs); named && n.Sel.Name == "LookupEnv" {
 				refs = append(refs, n)
 			}
 		case *ast.CallExpr:
-			if sel, ok := n.Fun.(*ast.SelectorExpr); ok && isName(sel.X, pkg) && sel.Sel.Name == "LookupEnv" {
-				calls[sel.Pos()] = n
+			if sel, ok := n.Fun.(*ast.SelectorExpr); ok {
+				if _, named := anyName(sel.X, pkgs); named && sel.Sel.Name == "LookupEnv" {
+					calls[sel.Pos()] = n
+				}
 			}
 
 			if !isName(n.Fun, "run") {
@@ -135,7 +164,7 @@ func lookupEnvRefs(f *ast.File, pkg string) (refs []*ast.SelectorExpr, calls map
 			}
 
 			for _, arg := range n.Args {
-				if source, ok := tokenSourceOfArg(arg, pkg); ok {
+				if source, ok := tokenSourceOfArg(arg, pkgs); ok {
 					sources[source] = true
 				}
 			}
@@ -153,7 +182,7 @@ func lookupEnvRefs(f *ast.File, pkg string) (refs []*ast.SelectorExpr, calls map
 // and whose one argument is the identifier tokenEnvVar. run takes the source as
 // one value with no name parameter, so the literal cannot be handed another name
 // and this is the only shape the exception covers.
-func tokenSourceOfArg(arg ast.Expr, pkg string) (token.Pos, bool) {
+func tokenSourceOfArg(arg ast.Expr, pkgs []string) (token.Pos, bool) {
 	lit, ok := arg.(*ast.FuncLit)
 	if !ok || len(lit.Body.List) != 1 {
 		return token.NoPos, false
@@ -170,7 +199,10 @@ func tokenSourceOfArg(arg ast.Expr, pkg string) (token.Pos, bool) {
 	}
 
 	sel, ok := call.Fun.(*ast.SelectorExpr)
-	if !ok || !isName(sel.X, pkg) || sel.Sel.Name != "LookupEnv" {
+	if !ok {
+		return token.NoPos, false
+	}
+	if _, named := anyName(sel.X, pkgs); !named || sel.Sel.Name != "LookupEnv" {
 		return token.NoPos, false
 	}
 
@@ -203,33 +235,47 @@ func lookupEnvRefProblem(rel string, fset *token.FileSet, ref *ast.SelectorExpr,
 	return ""
 }
 
-// runShadows returns the position of every declaration or assignment of run in f:
-// a func, a type, a var or a const named run, and an assignment to run, which
-// makes the call main makes a call of something other than the package's run.
-func runShadows(f *ast.File) []token.Pos {
+// shadowsOf returns the position of every declaration or assignment of any of
+// names in f: a func, a type, a var or a const, a short variable declaration or
+// another assignment, a parameter or a result of a function or of a func
+// literal, and a range variable. Each one makes a reference to the name in this
+// file a reference to something other than the package's declaration, so a
+// check that reads a name on the AST reads f's own, not the one the package
+// declares in another file.
+func shadowsOf(f *ast.File, names ...string) []token.Pos {
 	var positions []token.Pos
+
+	shadow := func(id *ast.Ident) {
+		if id != nil && slices.Contains(names, id.Name) {
+			positions = append(positions, id.Pos())
+		}
+	}
 
 	ast.Inspect(f, func(n ast.Node) bool {
 		switch n := n.(type) {
 		case *ast.FuncDecl:
-			if n.Name.Name == "run" {
-				positions = append(positions, n.Name.Pos())
-			}
+			shadow(n.Name)
 		case *ast.TypeSpec:
-			if n.Name.Name == "run" {
-				positions = append(positions, n.Name.Pos())
-			}
+			shadow(n.Name)
 		case *ast.ValueSpec:
 			for _, name := range n.Names {
-				if name.Name == "run" {
-					positions = append(positions, name.Pos())
-				}
+				shadow(name)
 			}
 		case *ast.AssignStmt:
 			for _, lhs := range n.Lhs {
-				if id, ok := lhs.(*ast.Ident); ok && id.Name == "run" {
-					positions = append(positions, id.Pos())
+				if id, ok := lhs.(*ast.Ident); ok {
+					shadow(id)
 				}
+			}
+		case *ast.FuncType:
+			shadowFields(n.Params, shadow)
+			shadowFields(n.Results, shadow)
+		case *ast.RangeStmt:
+			if id, ok := n.Key.(*ast.Ident); ok {
+				shadow(id)
+			}
+			if id, ok := n.Value.(*ast.Ident); ok {
+				shadow(id)
 			}
 		}
 
@@ -237,6 +283,19 @@ func runShadows(f *ast.File) []token.Pos {
 	})
 
 	return positions
+}
+
+// shadowFields passes the name of every named parameter or result of a func's
+// signature to shadow, for the signatures that declare a name no body does.
+func shadowFields(fields *ast.FieldList, shadow func(*ast.Ident)) {
+	if fields == nil {
+		return
+	}
+	for _, field := range fields.List {
+		for _, name := range field.Names {
+			shadow(name)
+		}
+	}
 }
 
 // exprText renders expr as the source writes it, without its positions, for a
@@ -250,19 +309,39 @@ func exprText(expr ast.Expr) string {
 	return buf.String()
 }
 
-// importedName returns the name f gives the package at path, the position of its
-// import and whether f imports it. A dot import is returned as ".".
-func importedName(f *ast.File, path string) (string, token.Pos, bool) {
+// importedNames returns every local name f gives the package at path, with the
+// position of each import, in source order, and nil when f imports no such
+// package. A file may import one path twice, under two names: then every name
+// is a way to reach the package, and a check that reads only the first one
+// leaves the second unchecked. A dot import is returned as ".", a blank import
+// as "_".
+func importedNames(f *ast.File, path string) (names []string, positions []token.Pos) {
 	for _, imp := range f.Imports {
 		if imp.Path.Value != strconv.Quote(path) {
 			continue
 		}
+
+		name := path
 		if imp.Name != nil {
-			return imp.Name.Name, imp.Pos(), true
+			name = imp.Name.Name
 		}
-		return path, imp.Pos(), true
+
+		names = append(names, name)
+		positions = append(positions, imp.Pos())
 	}
-	return "", token.NoPos, false
+
+	return names, positions
+}
+
+// anyName returns the name of the identifier expr, when expr is an identifier
+// and one of names, the local names a file gives one imported package.
+func anyName(expr ast.Expr, names []string) (string, bool) {
+	id, ok := expr.(*ast.Ident)
+	if !ok || !slices.Contains(names, id.Name) {
+		return "", false
+	}
+
+	return id.Name, true
 }
 
 // isName reports whether expr is the identifier name, as os.LookupEnv writes the

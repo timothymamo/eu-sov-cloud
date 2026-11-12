@@ -40,12 +40,13 @@ func syscallNameAllowed(name string) bool {
 // syscallProblems returns what is wrong with the references to package syscall
 // in src, the content of the Go file at rel, one line each: a reference that is
 // no signal constant and no syscall.Signal, a dot import, which hides the
-// refused names behind bare ones, and a blank import, which runs the package's
+// refused names behind bare ones, a blank import, which runs the package's
 // initialisation for nothing a composition root names (signal constants need a
-// named import). The package is read through the name the file imports it as,
-// so an aliased import is held to the rule as os is (lookupEnvProblems). A file
-// that imports no package syscall passes, and a string literal or a comment that
-// names a refused function is no reference.
+// named import), and a file that imports the package twice, which reaches a
+// refused name through a second one. The package is read through every name the
+// file imports it as, so an aliased import is held to the rule as os is
+// (lookupEnvProblems). A file that imports no package syscall passes, and a
+// string literal or a comment that names a refused function is no reference.
 //
 // It reads the source, not the linted tree: a case is a string, so the pin is a
 // fixture (TestSyscallProblems).
@@ -56,28 +57,47 @@ func syscallProblems(rel string, src []byte) ([]string, error) {
 		return nil, err
 	}
 
-	name, at, ok := importedName(f, "syscall")
-	if !ok {
+	names, positions := importedNames(f, "syscall")
+	if len(names) == 0 {
 		return nil, nil
 	}
 
-	switch name {
-	case ".":
-		return []string{fmt.Sprintf("%s:%d: the file dot-imports syscall, which hides every name of the package behind a bare one; import it as syscall and name only SIGTERM or SIGHUP", rel, fset.Position(at).Line)}, nil
-	case "_":
-		return []string{fmt.Sprintf("%s:%d: the file blank-imports syscall, which runs its initialisation for no signal the composition root names; import it as syscall", rel, fset.Position(at).Line)}, nil
+	var problems []string
+	if len(names) > 1 {
+		problems = append(problems, fmt.Sprintf("%s:%d: the file imports syscall %d times; a composition root imports it once, so every name it takes from the package is one reference", rel, fset.Position(positions[len(positions)-1]).Line, len(names)))
 	}
 
-	var problems []string
+	// named is every local name the file reaches package syscall by: a dot
+	// import hides its names behind bare ones and a blank import names none.
+	named := make([]string, 0, len(names))
+	dotted := false
+	for i, name := range names {
+		switch name {
+		case ".":
+			dotted = true
+			problems = append(problems, fmt.Sprintf("%s:%d: the file dot-imports syscall, which hides every name of the package behind a bare one; import it as syscall and name only SIGTERM or SIGHUP", rel, fset.Position(positions[i]).Line))
+		case "_":
+			problems = append(problems, fmt.Sprintf("%s:%d: the file blank-imports syscall, which runs its initialisation for no signal the composition root names; import it as syscall", rel, fset.Position(positions[i]).Line))
+		default:
+			named = append(named, name)
+		}
+	}
+	if dotted {
+		return problems, nil
+	}
 
 	ast.Inspect(f, func(n ast.Node) bool {
 		sel, ok := n.(*ast.SelectorExpr)
-		if !ok || !isName(sel.X, name) || syscallNameAllowed(sel.Sel.Name) {
+		if !ok || syscallNameAllowed(sel.Sel.Name) {
+			return true
+		}
+		pkg, ok := anyName(sel.X, named)
+		if !ok {
 			return true
 		}
 
 		problems = append(problems, fmt.Sprintf("%s:%d: the composition roots reference package syscall only through a signal constant (syscall.SIGTERM, syscall.SIGHUP) and the type syscall.Signal, and %s.%s is neither; a raw system call, a DLL or a process entry point is no composition root's",
-			rel, fset.Position(sel.Pos()).Line, name, sel.Sel.Name))
+			rel, fset.Position(sel.Pos()).Line, pkg, sel.Sel.Name))
 
 		return true
 	})
