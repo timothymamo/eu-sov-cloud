@@ -100,10 +100,12 @@ const releasePleaseGuardStep = `      - name: Wait for no release to be queued o
 // Its env: holds exactly the App's token, the repository, and the App's slug:
 // the step tags only a PR whose author is the App itself, ${APP_SLUG}[bot], so a
 // hand-written PR labelled autorelease: pending is never tagged. Its gh api
-// endpoints are the release PR's own (issues, pulls, issues/<n>/labels), the
+// endpoints are the release PR's own (pulls, pulls/<n>, issues/<n>/labels), the
 // merge commit's ancestry (compare), the manifest at that commit (contents) and
 // the tag (git/refs, git/ref, git/matching-refs, git/tags): nothing creates or
-// edits a Release, and no script calls a host of its own.
+// edits a Release, and no script calls a host of its own. The issues listing is
+// not one of them: the App's token holds no Issues permission, so GitHub
+// answers it with 403.
 const releasePleaseTagStep = `      - name: Tag the merged release PR
         id: tag
         env:
@@ -375,6 +377,16 @@ func TestReleasePleaseWorkflow(t *testing.T) {
 			name:     "a tagging step calling the releases endpoint",
 			workflow: mutate(t, releasePleaseWorkflow, "          label=\"autorelease: pending\"\n", "          gh api \"repos/${{ github.repository }}/releases\" --jq '.[].id'\n          label=\"autorelease: pending\"\n"),
 			wantIn:   "releases",
+		},
+		{
+			// The list of the release PRs is read through pulls, never through
+			// the issues listing: the App's token holds Contents and Pull
+			// requests write and no Issues permission, so GitHub answers
+			// repos/<r>/issues with 403 and the tag step fails at its first
+			// call. Only a PR's own labels live under issues/<n>/labels.
+			name:     "a tagging step listing the issues endpoint",
+			workflow: mutate(t, releasePleaseWorkflow, "          label=\"autorelease: pending\"\n", "          gh api \"repos/${GH_REPO}/issues?state=closed&labels=autorelease:%20pending\" --jq '.[].number'\n          label=\"autorelease: pending\"\n"),
+			wantIn:   "the API endpoint issues",
 		},
 		{
 			name:     "a tagging step calling a host of its own with curl",
