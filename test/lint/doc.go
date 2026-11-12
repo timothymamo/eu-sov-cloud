@@ -53,7 +53,8 @@
 // #119, fails. TestAppTestsUseFakesNotAdaptersProbe (testdata/apptestimports)
 // imports, in an application-layer _test.go file, the standard packages that
 // do file, network or process I/O, os and net among them and those that need
-// neither (io/ioutil, text/template, debug/elf, runtime/debug, ...), and must be
+// neither (io/ioutil, text/template, debug/elf, runtime/debug, go/parser,
+// mime/multipart, runtime/coverage, unsafe, ...), and must be
 // refused by the lax app-tests-use-fakes-not-adapters rule, while its pure
 // controls (net/url, net/netip, strings, context, testing, runtime) must not:
 // the rule allows any package its deny list does not name, so the probe pins

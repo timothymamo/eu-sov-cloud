@@ -168,8 +168,12 @@ linters:
             # and the packages that do I/O without importing os or net:
             # io/ioutil, log/syslog, text/template and html/template
             # (ParseFiles, ParseGlob), archive/zip (OpenReader), every debug/*
-            # package (elf.Open, buildinfo.ReadFile, ...), go/build, go/importer
-            # and runtime/debug (WriteHeapDump, SetCrashOutput). A standard
+            # package (elf.Open, buildinfo.ReadFile, ...), go/build, go/importer,
+            # go/parser (ParseFile, ParseDir), mime/multipart (ReadForm writes
+            # temporary files), runtime/coverage (WriteMetaDir,
+            # WriteCountersDir) and runtime/debug (WriteHeapDump,
+            # SetCrashOutput); and unsafe, whose //go:linkname would reach a
+            # denied function without importing its package. A standard
             # package that can do I/O and is added to Go must be added here;
             # test/lint, TestAppTestsUseFakesNotAdaptersProbe, pins the list
             # (issue #119). The pure packages are left out on purpose: net/url
@@ -233,6 +237,14 @@ linters:
               desc: the application layer loads no compiled Go packages from disk
             - pkg: runtime/debug
               desc: the application layer reads no build info and writes no heap dumps or crash output; internal/version holds what the build records
+            - pkg: go/parser
+              desc: the application layer parses no Go source files (ParseFile and ParseDir read them from disk)
+            - pkg: mime/multipart
+              desc: the application layer reads no multipart forms (ReadForm writes temporary files); an adapter behind a port does
+            - pkg: runtime/coverage
+              desc: the application layer writes no coverage data (WriteMetaDir and WriteCountersDir write files)
+            - pkg: unsafe
+              desc: the application layer and its tests need no unsafe code; //go:linkname would reach functions denied here
         # The application layer's tests use fakes, not adapters, and keep the
         # same deny list. They are left out of the strict rule above because
         # they also need testing, go-cmp and testutil.

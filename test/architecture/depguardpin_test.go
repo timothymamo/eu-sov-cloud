@@ -109,6 +109,10 @@ var pinnedDepguardRules = []check.DepguardRule{
 			"go/build$",
 			"go/importer",
 			"runtime/debug",
+			"go/parser",
+			"mime/multipart",
+			"runtime/coverage",
+			"unsafe",
 		},
 	},
 	{
@@ -148,6 +152,10 @@ var pinnedDepguardRules = []check.DepguardRule{
 			"go/build$",
 			"go/importer",
 			"runtime/debug",
+			"go/parser",
+			"mime/multipart",
+			"runtime/coverage",
+			"unsafe",
 		},
 	},
 	{
