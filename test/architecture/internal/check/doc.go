@@ -89,6 +89,18 @@
 // prerelease: auto, so a pre-release tag is a GitHub pre-release and never the
 // latest release (issue #92).
 //
+// GoReleaserArchives and DryRunVerifiesArchives hold the release to shipping
+// each binary in archives of its own, under one tag and version (issue #147).
+// GoReleaserArchives reads the archives: section of .goreleaser.yaml as a
+// closed schema: two entries, each with an id: equal to the one build its
+// ids: names, no two with the same id, the CLI's archive keeping its name
+// shift2eu_<version>_<os>_<arch> and the server's shift2eu-server_<version>_
+// <os>_<arch>, both tar.gz (zip on Windows) with LICENSE, README.md and docs/,
+// and one checksums.txt covering every archive. DryRunVerifiesArchives holds
+// ci.yml's test job to one step running .github/scripts/verify-archives.sh,
+// which builds a goreleaser snapshot and fails unless each archive holds
+// exactly its own binary.
+//
 // Nothing is copied: the release platforms are read from .goreleaser.yaml
 // (releasetarget.Read, in test/internal/releasetarget, which test/lint reads
 // them with too; ListPackages takes a releasetarget.Target), and the strict
