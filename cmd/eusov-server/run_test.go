@@ -1,10 +1,10 @@
 // White-box tests of the composition root: cmd/eusov-server is a main package,
 // so its tests are package main, the only way a test file reaches the package at
 // all (Go refuses an import of a main package). The seam is run, the sibling of
-// cli.Run: a test passes the flags, a fake getenv and a stderr it reads, learns
-// the bound address through the listening callback, and cancels the context to
-// shut the server down, so no test starts a process and none needs a port of its
-// own beyond 127.0.0.1:0.
+// cli.Run: a test passes the flags, a fake lookupEnv and a stderr it reads,
+// learns the bound address through the listening callback, and cancels the
+// context to shut the server down, so no test starts a process and none needs
+// a port of its own beyond 127.0.0.1:0.
 //
 // run's flags and the shape of its errors are the ones the CLI uses
 // (cmd/eusov/main.go, internal/cli): one line per startup error, prefixed
@@ -83,17 +83,24 @@ func (b *syncBuffer) String() string {
 	return b.buf.String()
 }
 
-// getenvOf returns the getenv run takes, over vars: a variable the map does
-// not hold reads as empty, which is what os.Getenv reports for an unset one.
-// The map is copied, so no test can change the environment of a run it already
-// handed over.
-func getenvOf(vars map[string]string) func(string) string {
+// lookupEnvOf returns the lookupEnv run takes, over vars: a key the map holds is
+// a variable that is set, with that value, and a key it does not hold is a
+// variable that is unset, which is what os.LookupEnv reports. The map is copied,
+// so no test can change the environment of a run it already handed over, and a
+// variable the map holds as "" is set to nothing: the server must tell that apart
+// from an unset variable, because ADR 0019 refuses a token source that is
+// configured but holds no token.
+func lookupEnvOf(vars map[string]string) func(string) (string, bool) {
 	copied := make(map[string]string, len(vars))
 	for name, value := range vars {
 		copied[name] = value
 	}
 
-	return func(name string) string { return copied[name] }
+	return func(name string) (string, bool) {
+		value, ok := copied[name]
+
+		return value, ok
+	}
 }
 
 // server is one run of run in a goroutine: the address it listens on, the
@@ -138,7 +145,7 @@ func startServer(t *testing.T, listen string, vars map[string]string, args ...st
 	argv := append([]string{"--listen", listen}, args...)
 
 	go func() {
-		code := run(ctx, argv, getenvOf(vars), s.stderr, func(addr net.Addr) { listening <- addr })
+		code := run(ctx, argv, lookupEnvOf(vars), s.stderr, func(addr net.Addr) { listening <- addr })
 
 		s.mu.Lock()
 		s.code = code
@@ -428,6 +435,14 @@ func TestServerLoopbackRule(t *testing.T) {
 		if status, body := s.get(t, "/healthz"); status != http.StatusOK {
 			t.Errorf("GET /healthz = %d, want %d; body: %q", status, http.StatusOK, body)
 		}
+
+		// The token variable is not set at all: the API answers on loopback
+		// without an Authorization header, which an unset variable must never
+		// turn into the empty-source startup error.
+		if status, body := s.get(t, "/v1/targets"); status != http.StatusOK {
+			t.Errorf("GET /v1/targets without %s set = %d, want %d; body: %q",
+				tokenEnv, status, http.StatusOK, body)
+		}
 	})
 }
 
@@ -511,7 +526,7 @@ func runOnce(t *testing.T, vars map[string]string, args ...string) runResult {
 	exited := make(chan int, 1)
 
 	go func() {
-		exited <- run(ctx, args, getenvOf(vars), &stderr, func(addr net.Addr) { listening <- addr })
+		exited <- run(ctx, args, lookupEnvOf(vars), &stderr, func(addr net.Addr) { listening <- addr })
 	}()
 
 	select {
