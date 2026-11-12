@@ -55,10 +55,10 @@ type Target struct {
 //     GOFLAGS=-mod=readonly so the build fails rather than changes go.mod or
 //     go.sum, and uses no vendor directory. No other entry is allowed:
 //     goreleaser renders each entry as a template, its name included, so no
-//     rule on names alone tells which variable an entry sets. flags may hold only -trimpath. goos
-//     and goarch must be non-empty lists of GOOS and GOARCH names, in flow
-//     ([a, b]) or block (- a) form. A template ({{) in goos, goarch or flags
-//     is refused.
+//     rule on names alone tells which variable an entry sets. flags may hold
+//     only -trimpath. goos and goarch must be non-empty lists of GOOS and
+//     GOARCH names, in flow ([a, b]) or block (- a) form. A template ({{) in
+//     goos, goarch or flags is refused.
 func Read(goreleaser []byte) ([]Target, error) {
 	lines, err := yamlread.SplitLines(goreleaser)
 	if err != nil {
