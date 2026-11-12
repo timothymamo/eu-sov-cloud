@@ -97,9 +97,6 @@
       ],
     },
   ],
-  // The broken Lima templates in dev/testdata/lima-invalid are dev/lima.yaml with one breakage each,
-  // which test/devenv pins: Renovate bumps their pins in the same PR as dev/lima.yaml's, so a bump does
-  // not leave them behind and fail that test.
   customManagers: [
     {
       // "# renovate: datasource=github-release-attachments depName=<owner/repo> digestVersion=<tag>" above
@@ -110,6 +107,9 @@
       customType: 'regex',
       managerFilePatterns: [
         '/^dev/lima\\.yaml$/',
+        // The broken Lima templates in dev/testdata/lima-invalid are dev/lima.yaml with one breakage each,
+        // which test/devenv pins: Renovate bumps their pins in the same PR as dev/lima.yaml's, so a bump does
+        // not leave them behind and fail that test.
         '/^dev/testdata/lima-invalid/[^/]+\\.yaml$/',
         '/^\\.github/workflows/vm-tools\\.yml$/',
       ],
