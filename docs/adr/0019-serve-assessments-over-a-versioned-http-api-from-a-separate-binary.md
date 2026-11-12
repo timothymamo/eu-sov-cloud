@@ -252,7 +252,12 @@ packages it needs, no third-party package, no cloud SDK, no `os/exec` and never 
   opens connections and stalls in their headers holds a file descriptor and a header buffer for 10 s
   each, without limit. 256 stays well below the 1024 open files a default process may hold and is far
   more than the handful of assessments the server runs at once; an operator behind a proxy that pools
-  connections needs fewer, one with many direct clients sets more. Per-client limits stay the proxy's.
+  connections needs fewer, one with many direct clients sets more. The cap is global, not per
+  client: one client that holds `--max-connections` connections locks every other client out,
+  including the `/healthz` and `/readyz` probes, which share the cap, until `ReadHeaderTimeout`
+  (10 s) or `IdleTimeout` (60 s) reclaims them. It bounds file descriptors and memory at the cost of
+  availability under a flood; per-client limits and probe isolation belong to the proxy or the
+  platform.
 - *Concurrency default.* `max(1, min(cpus, budget / peak))`, where `cpus` is `runtime.GOMAXPROCS(0)`
   (which follows a container's CPU limit), `peak` is 1 GiB and `budget` is `GOMEMLIMIT` when it is set
   (`debug.SetMemoryLimit(-1)` below `math.MaxInt64`), else 2 GiB. `BenchmarkMaximalAllComparison`
