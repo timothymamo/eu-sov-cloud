@@ -367,12 +367,34 @@ func TestGoReleaserArchives(t *testing.T) {
 	}
 }
 
+// ciGoreleaserInstall is the step of .github/workflows/ci.yml's test job that
+// installs the GoReleaser the release runs: the same action commit, the same
+// distribution and the same version as release.yml's goreleaser step, installed
+// only, so the snapshot that builds the archives in the dry run is the
+// GoReleaser that publishes them (issue #147).
+const ciGoreleaserInstall = `      # The GoReleaser release.yml runs, at the same commit and version, installed only: the script below
+      # runs a snapshot of the release, which builds the archives and publishes nothing.
+      - uses: goreleaser/goreleaser-action@a4f02ab5355a589de60d917a659ce617ed19b3de # v7.3.0
+        with:
+          distribution: goreleaser
+          version: "v2.20.1" # exact pin, as release.yml's; Renovate updates it (github-actions manager)
+          install-only: true
+`
+
+// ciArchiveStep is the step of .github/workflows/ci.yml's test job that runs
+// the archive check's script.
+const ciArchiveStep = `      # The release's archives, built by a snapshot run of its GoReleaser
+      # configuration: each holds exactly its own binary (issue #147).
+      - name: Each archive holds its own binary
+        run: .github/scripts/verify-archives.sh
+`
+
 // ciArchiveCheck is the part of .github/workflows/ci.yml that issue #147 adds:
 // the dry run of the release's archives. The test job, which runs on every pull
-// request and every push to main, runs .github/scripts/verify-archives.sh,
-// which builds the release's archives and fails unless each holds exactly its
-// own binary: the CLI's archive shift2eu and not shift2eu-server, the server's
-// shift2eu-server and not shift2eu.
+// request and every push to main, installs the release's GoReleaser and runs
+// .github/scripts/verify-archives.sh, which builds the release's archives and
+// fails unless each holds exactly its own binary: the CLI's archive shift2eu
+// and not shift2eu-server, the server's shift2eu-server and not shift2eu.
 const ciArchiveCheck = `name: CI
 
 on:
@@ -394,16 +416,12 @@ jobs:
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: go.mod
-      # The release's archives, built by a snapshot run of its GoReleaser
-      # configuration: each holds exactly its own binary (issue #147).
-      - name: Each archive holds its own binary
-        run: .github/scripts/verify-archives.sh
-`
+` + ciGoreleaserInstall + ciArchiveStep
 
 // TestDryRunVerifiesArchives pins the other half of issue #147: the CI dry run
 // verifies what the release publishes, as ci.yml's image job does for the
-// images. check.DryRunVerifiesArchives reads ci.yml and returns one message
-// unless the test job, jobs: test, holds exactly one step named
+// images. check.DryRunVerifiesArchives reads ci.yml and release.yml and returns
+// one message unless the test job, jobs: test, holds exactly one step named
 //
 //	Each archive holds its own binary
 //
@@ -416,12 +434,29 @@ jobs:
 // snapshot and fails unless each archive holds exactly its own binary, is what
 // runs on every pull request and every push to main. A message names the job
 // (jobs: test) or the script path it wants, and the step name.
+//
+// The dry run also installs the GoReleaser the release runs, so that a Renovate
+// pull request bumping one workflow cannot let CI check the archives with a
+// different GoReleaser than the one that publishes them (issue #147): the test
+// job holds exactly one goreleaser/goreleaser-action step, before the archive
+// check's step, whose uses: (the full commit), with: distribution: and with:
+// version: are release.yml's goreleaser step's, and whose with: install-only:
+// is true (the release publishes, the dry run only builds). A message names the
+// field that differs (uses, distribution, version, install-only), or the step
+// that is missing, repeated or misplaced; a step after the archive check is
+// worded with before.
 func TestDryRunVerifiesArchives(t *testing.T) {
 	t.Parallel()
+
+	release := releaseWorkflowFixture()
+	releaseWorkflow := release.render()
 
 	tests := []struct {
 		name string
 		ci   string
+		// release is release.yml the case compares ci against; "" means
+		// releaseWorkflow, unchanged.
+		release string
 		// wantIn is a part of the message the check must return; "" means
 		// none at all.
 		wantIn string
@@ -471,13 +506,74 @@ func TestDryRunVerifiesArchives(t *testing.T) {
 			ci:     mutate(t, ciArchiveCheck, "  test:\n", "  lint:\n"),
 			wantIn: "jobs: test",
 		},
+
+		// The dry run installs the GoReleaser the release runs: the same
+		// action commit, distribution and version, installed only.
+		{
+			name:   "no goreleaser-action step in the test job",
+			ci:     mutate(t, ciArchiveCheck, ciGoreleaserInstall, ""),
+			wantIn: "goreleaser/goreleaser-action",
+		},
+		{
+			// The snapshot would not find the action installed at all.
+			name:   "the goreleaser-action step after the archive check",
+			ci:     mutate(t, ciArchiveCheck, ciGoreleaserInstall+ciArchiveStep, ciArchiveStep+ciGoreleaserInstall),
+			wantIn: "before",
+		},
+		{
+			// A Renovate pull request bumping ci.yml alone.
+			name:   "a goreleaser-action commit that is not the release's",
+			ci:     mutate(t, ciArchiveCheck, "@a4f02ab5355a589de60d917a659ce617ed19b3de", "@1111111111111111111111111111111111111111"),
+			wantIn: "uses",
+		},
+		{
+			name:   "a goreleaser version that is not the release's",
+			ci:     mutate(t, ciArchiveCheck, `version: "v2.20.1"`, `version: "v2.20.2"`),
+			wantIn: "version",
+		},
+		{
+			name:   "a goreleaser distribution that is not the release's",
+			ci:     mutate(t, ciArchiveCheck, "distribution: goreleaser", "distribution: goreleaser-pro"),
+			wantIn: "distribution",
+		},
+		{
+			// Renovate bumping release.yml's version instead: the drift is
+			// the same, whichever workflow moved.
+			name:    "a release version that is not the dry run's",
+			ci:      ciArchiveCheck,
+			release: release.inJob(t, "goreleaser", `version: "v2.20.1"`, `version: "v2.21.0"`),
+			wantIn:  "version",
+		},
+		{
+			// Without install-only the step runs the action's own
+			// `goreleaser release`, publishing a snapshot to nowhere.
+			name:   "a goreleaser-action step that is not install-only",
+			ci:     mutate(t, ciArchiveCheck, "          install-only: true\n", ""),
+			wantIn: "install-only",
+		},
+		{
+			name:   "an install-only that is false",
+			ci:     mutate(t, ciArchiveCheck, "          install-only: true\n", "          install-only: false\n"),
+			wantIn: "install-only",
+		},
+		{
+			// Two installs of GoReleaser: one of them may be the wrong one.
+			name:   "two goreleaser-action steps",
+			ci:     mutate(t, ciArchiveCheck, ciGoreleaserInstall, ciGoreleaserInstall+ciGoreleaserInstall),
+			wantIn: "goreleaser/goreleaser-action",
+		},
 	}
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 
-			got := check.DryRunVerifiesArchives([]byte(tc.ci))
+			releaseDoc := tc.release
+			if releaseDoc == "" {
+				releaseDoc = releaseWorkflow
+			}
+
+			got := check.DryRunVerifiesArchives([]byte(tc.ci), []byte(releaseDoc))
 			joined := strings.Join(got, "\n")
 
 			if tc.wantIn == "" {

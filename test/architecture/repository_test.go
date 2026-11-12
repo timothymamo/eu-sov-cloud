@@ -1169,8 +1169,9 @@ func TestReleaseWorkflowIsClosed(t *testing.T) {
 // the CLI's archive keeping the name it has always had and the server's its own
 // (check.GoReleaserArchives), both with the same formats and the same files and
 // one checksums.txt covering every archive; and ci.yml's test job, the dry run
-// that runs on every pull request, builds those archives and fails unless each
-// holds exactly its own binary (check.DryRunVerifiesArchives).
+// that runs on every pull request, installs the GoReleaser that release.yml
+// runs and builds those archives with it, failing unless each holds exactly its
+// own binary (check.DryRunVerifiesArchives).
 func TestReleaseArchivesHoldOneBinary(t *testing.T) {
 	t.Parallel()
 
@@ -1178,7 +1179,10 @@ func TestReleaseArchivesHoldOneBinary(t *testing.T) {
 		t.Error(message)
 	}
 
-	for _, message := range check.DryRunVerifiesArchives(readRepositoryFile(t, ".github/workflows/ci.yml")) {
+	ci := readRepositoryFile(t, ".github/workflows/ci.yml")
+	release := readRepositoryFile(t, ".github/workflows/release.yml")
+
+	for _, message := range check.DryRunVerifiesArchives(ci, release) {
 		t.Error(message)
 	}
 }
