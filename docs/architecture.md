@@ -57,8 +57,11 @@ Arrows are imports. They point inwards only:
   value, so no value from a request is ever echoed in an API error. Only `cmd/shift2eu-server` imports it,
   and of the tests only the parity test in `test/apiparity` (`httpapi-imported-only-by-the-server`);
   `cmd/shift2eu` never does, so the CLI stays offline. `api/openapi.json` (OpenAPI 3.1) describes the API
-  and refers to the JSON report's schemas rather than copying them; milestone 4 bundles them into the
-  published document.
+  and refers to the JSON report's schemas by relative path rather than copying them; a document that
+  bundles them, for readers outside the repository, is not published yet. The release ships the server
+  as its own binary and its own image, `ghcr.io/timothymamo/shift2eu-server`, built from the
+  `Dockerfile`'s `server` stage and signed and attested as the CLI's is (ADR 0013, ADR 0015); the
+  README's "Run the HTTP API" section documents running it behind a reverse proxy.
 - **`cmd/shift2eu`** and **`cmd/shift2eu-server`** are the composition roots, the only places that construct
   adapters and inject them: `cmd/shift2eu` into the CLI, `cmd/shift2eu-server` into the HTTP API. `cmd/shift2eu`'s
   imports are a strict allow list (`composition-root`, issue #101): the module's own packages and the
@@ -94,7 +97,7 @@ the ways code could be hidden from it, and what refuses each:
   request decoders, the HTTP API and the targets that embed a snapshot) package by package, for every platform `.goreleaser.yaml` builds. It
   reads those directories from `.golangci.yml`, lists them with `go list` and holds each package to the
   allow list of every rule that covers it, and it holds every package of the module in the release
-  binary to Go sources in their own directory, so assembly, cgo, line directives and symlinked
+  binaries, `shift2eu` and `shift2eu-server`, to Go sources in their own directory, so assembly, cgo, line directives and symlinked
   directories cannot get past the file-name-based rules
   ([ADR 0012](adr/0012-check-layer-dependencies-by-package-for-every-release-target.md)).
 - An edit to the rules themselves. A merge conflict resolution once dropped the whole
