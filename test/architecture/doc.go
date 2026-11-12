@@ -32,7 +32,7 @@
 // jsondoc$ allow entry, and no check noticed. Adding, removing or changing a
 // rule now means updating pinnedDepguardRules in the same commit, on purpose,
 // where review sees it. TestDepguardPinCatchesMutations proves the pin
-// notices, with 633 mutations of the real file: for every rule it deletes the
+// notices, with 736 mutations of the real file: for every rule it deletes the
 // rule and each of its files, allow and deny entries (every deny entry, a
 // shared list's too), drops the trailing $ of each exact allow entry, adds an
 // allow entry os and a negated files glob, and rewrites, deletes or adds the
@@ -40,6 +40,16 @@
 // reader refuses counts as caught only for the one mutation expected to break
 // it: deleting app-uses-ports-not-adapters, which removes the &app-deny anchor
 // a later alias reads.
+//
+// TestDepguardEntriesShadowNothing fails on an allow or deny entry without $
+// that is a strict prefix of another entry of the same list: depguard compares
+// an import only with the entry that sorts nearest before it, so the shorter
+// entry decides nothing under the longer one (issue #119, where
+// adapters-are-built-in-cmd reported nothing). TestShadowedEntries pins its
+// helper. TestAdaptersBuiltInCmdNamesEveryAdapterSubtree fails on a directory
+// under internal/adapter that adapters-are-built-in-cmd does not name by a deny
+// entry of its own, or a file placed there directly, so a new adapter subtree
+// cannot escape the rule.
 //
 // TestGolangciSettingsHideNoIssue covers what the pin does not: whether the
 // rules run and what lint reports (issue #81). It fails, naming the setting, on
