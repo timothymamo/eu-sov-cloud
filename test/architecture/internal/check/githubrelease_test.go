@@ -9,9 +9,11 @@ import (
 )
 
 // TestGitHubRelease pins how the GitHub release is published: release holds
-// exactly prerelease: auto, so a tag with a pre-release suffix (v0.1.0-rc.2)
-// is a GitHub pre-release and never the latest release (issue #92), and every
-// other document is refused.
+// exactly draft: true and prerelease: auto. Every asset GoReleaser uploads goes
+// to a draft release, which locks its assets when it is published (issue #156,
+// ADR 0015), so a job of release.yml publishes it last; and a tag with a
+// pre-release suffix (v0.1.0-rc.2) is a GitHub pre-release and never the latest
+// release (issue #92). Every other document is refused.
 func TestGitHubRelease(t *testing.T) {
 	t.Parallel()
 
@@ -24,24 +26,52 @@ func TestGitHubRelease(t *testing.T) {
 		wantErr    bool
 	}{
 		{
-			name:       "prerelease auto is accepted",
-			goreleaser: buildFlow + "\nrelease:\n  prerelease: auto\n",
+			name:       "draft and prerelease auto are accepted",
+			goreleaser: buildFlow + "\nrelease:\n  draft: true\n  prerelease: auto\n",
 		},
 		{
 			name:       "a quoted auto is accepted",
-			goreleaser: buildFlow + "\nrelease:\n  prerelease: \"auto\"\n",
+			goreleaser: buildFlow + "\nrelease:\n  draft: true\n  prerelease: \"auto\"\n",
 		},
 		{
 			name:       "the real document with its release section is accepted",
-			goreleaser: buildReal + "\nrelease:\n  prerelease: auto\n",
+			goreleaser: buildReal + "\nrelease:\n  draft: true\n  prerelease: auto\n",
 		},
 		{
 			name:       "CRLF line ends are accepted",
-			goreleaser: "version: 2\r\n\r\nrelease:\r\n  prerelease: auto\r\n",
+			goreleaser: "version: 2\r\n\r\nrelease:\r\n  draft: true\r\n  prerelease: auto\r\n",
 		},
 		{
 			name:       "a comment after the value is accepted",
-			goreleaser: buildFlow + "\nrelease:\n  prerelease: auto # rc tags\n",
+			goreleaser: buildFlow + "\nrelease:\n  draft: true\n  prerelease: auto # rc tags\n",
+		},
+		{
+			// A published release's assets cannot be replaced, so goreleaser
+			// must upload them to a draft and publish it last (issue #156). Its
+			// default publishes the release, assets and all, at once.
+			name:       "a release section without draft is refused: goreleaser's default publishes the assets it uploads",
+			goreleaser: buildFlow + "\nrelease:\n  prerelease: auto\n",
+			wantErr:    true,
+		},
+		{
+			name:       "draft false is refused",
+			goreleaser: buildFlow + "\nrelease:\n  draft: false\n  prerelease: auto\n",
+			wantErr:    true,
+		},
+		{
+			name:       "an upper-case True draft is refused",
+			goreleaser: buildFlow + "\nrelease:\n  draft: True\n  prerelease: auto\n",
+			wantErr:    true,
+		},
+		{
+			name:       "an empty draft is refused",
+			goreleaser: buildFlow + "\nrelease:\n  draft:\n  prerelease: auto\n",
+			wantErr:    true,
+		},
+		{
+			name:       "a draft from an expression is refused",
+			goreleaser: buildFlow + "\nrelease:\n  draft: '{{ .Env.DRAFT }}'\n  prerelease: auto\n",
+			wantErr:    true,
 		},
 		{
 			name:       "no release section is refused: goreleaser's default publishes every tag as a normal release",
@@ -55,7 +85,7 @@ func TestGitHubRelease(t *testing.T) {
 		},
 		{
 			name:       "a release section without prerelease is refused",
-			goreleaser: buildFlow + "\nrelease:\n  draft: false\n",
+			goreleaser: buildFlow + "\nrelease:\n  draft: true\n",
 			wantErr:    true,
 		},
 		{
@@ -92,12 +122,12 @@ func TestGitHubRelease(t *testing.T) {
 			// make_latest would override the latest decision prerelease: auto
 			// makes, putting a release candidate back on top.
 			name:       "make_latest beside prerelease is refused",
-			goreleaser: buildFlow + "\nrelease:\n  prerelease: auto\n  make_latest: true\n",
+			goreleaser: buildFlow + "\nrelease:\n  draft: true\n  prerelease: auto\n  make_latest: true\n",
 			wantErr:    true,
 		},
 		{
-			name:       "any other release key beside prerelease is refused",
-			goreleaser: buildFlow + "\nrelease:\n  prerelease: auto\n  mode: replace\n",
+			name:       "any other release key beside draft and prerelease is refused",
+			goreleaser: buildFlow + "\nrelease:\n  draft: true\n  prerelease: auto\n  mode: replace\n",
 			wantErr:    true,
 		},
 		{

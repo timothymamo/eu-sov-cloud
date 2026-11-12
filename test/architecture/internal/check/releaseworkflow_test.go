@@ -13,7 +13,7 @@ import (
 )
 
 // The fixture below is .github/workflows/release.yml in parts: the top level,
-// then the nine jobs, each with the comments and keys above its steps
+// then the eleven jobs, each with the comments and keys above its steps
 // (releaseJob.head) and its steps in order. Rendering it rebuilds the file byte
 // for byte, so a case changes one part and leaves the rest exactly as the
 // release has it, comments included: the check must tolerate a full-line
@@ -40,13 +40,14 @@ concurrency:
   group: release
   cancel-in-progress: false
 
-# The steps of all nine jobs are a closed list that test/architecture holds
+# The steps of all eleven jobs are a closed list that test/architecture holds
 # (check.ReleaseWorkflow): add no step, run: or env: here without changing it.
 # The server-image, server-sbom and server-sign jobs publish the HTTP API's
 # image, ghcr.io/timothymamo/shift2eu-server (PRD #103), exactly as image, sbom
 # and sign publish the CLI's: jobs of their own rather than a matrix, as a
 # matrix job's outputs keep one leg's digest only, and each job keeps its own
-# least privilege.
+# least privilege. goreleaser hands the archives on, attest-archives attests
+# them, and publish alone publishes the draft release (issues #156, #163).
 jobs:
 `
 
@@ -107,7 +108,9 @@ const goreleaserJobHead = `  # A job of its own, on a fresh runner: no go env fi
 `
 
 // goreleaserSteps are the goreleaser job's steps: no repository code runs
-// before goreleaser, which is asked for exactly release --clean.
+// before goreleaser, which is asked for exactly release --clean, and the
+// archives and their checksums leave the job as a workflow artifact for the
+// attest job to attest on a runner of its own (issue #163).
 var goreleaserSteps = []string{
 	`      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -126,6 +129,96 @@ var goreleaserSteps = []string{
           args: release --clean
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+`,
+	`      # The archives and their checksums leave the job as a workflow
+      # artifact, for the attest job to attest on a runner of its own (issue
+      # #163). GoReleaser's own dist/ is never handed on: what is attested is
+      # what this run wrote.
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: archives
+          path: |
+            dist/shift2eu_*
+            dist/shift2eu-server_*
+            dist/checksums.txt
+          if-no-files-found: error
+          retention-days: 1
+`,
+}
+
+// attestArchivesJobHead is the attest-archives job up to its steps: the
+// archives and checksums.txt attested with GitHub build provenance (issue
+// #163), before the release is published. It holds an OIDC token to sign with
+// and the repository's attestations to write, and reads the repository: no
+// contents: write, so nothing in it can publish or replace the release.
+const attestArchivesJobHead = `  # Attests every archive and checksums.txt with GitHub build provenance, from
+  # this workflow on the tag (issue #163), before the release is published: an
+  # immutable release locks its assets when it is published, so nothing may be
+  # added to it afterwards. Least privilege: an OIDC token to sign with, the
+  # repository's attestations to write, and read-only access to the repository.
+  attest-archives:
+    name: Attest the archives
+    needs: goreleaser
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write # the OIDC token the provenance is signed with
+      attestations: write # store the provenance in the repository
+      contents: read # download the archives' workflow artifact
+    steps:
+`
+
+// attestArchivesSteps are the attest-archives job's steps: GitHub's own
+// download of the archives' workflow artifact, the check of the archives
+// against checksums.txt, and one attestation covering every archive and
+// checksums.txt itself.
+var attestArchivesSteps = []string{
+	`      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: archives
+`,
+	`      # What is attested is what GoReleaser wrote: a file changed on the way
+      # through the workflow artifact fails here, before anything is signed.
+      - name: Check the archives against checksums.txt
+        run: sha256sum -c checksums.txt
+`,
+	`      # One attestation covers every archive and checksums.txt itself, so a
+      # release whose archives were replaced fails verification (issue #163).
+      - name: Attest the archives
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-path: |
+            shift2eu_*
+            shift2eu-server_*
+            checksums.txt
+`,
+}
+
+// publishJobHead is the publish job up to its steps: the one job that publishes
+// the release, after everything is uploaded and attested, holding contents:
+// write and nothing else (issue #156).
+const publishJobHead = `  # The release is published last (issue #156): GoReleaser uploads every asset
+  # to a draft, so nothing can be added to or replaced in the release once it is
+  # public, and this job alone publishes it, after the archives are attested.
+  # contents: write and nothing else: nothing in it can sign, push or attest.
+  publish:
+    name: Publish the release
+    needs: [test, goreleaser, attest-archives]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # publish the draft release
+    steps:
+`
+
+// publishSteps are the publish job's steps: the one command that publishes the
+// draft, with the tag and the token through env:.
+var publishSteps = []string{
+	`      # No step of this job reads the release before publishing it: what the
+      # release holds was attested before it was published.
+      - name: Publish the draft release
+        env:
+          TAG: ${{ github.ref_name }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh release edit "$TAG" --draft=false
 `,
 }
 
@@ -772,6 +865,8 @@ func releaseWorkflowFixture() releaseFixture {
 		jobs: []releaseJob{
 			{key: "test", head: testJobHead, steps: testSteps},
 			{key: "goreleaser", head: goreleaserJobHead, steps: goreleaserSteps},
+			{key: "attest-archives", head: attestArchivesJobHead, steps: attestArchivesSteps},
+			{key: "publish", head: publishJobHead, steps: publishSteps},
 			{key: "image", head: imageJobHead, steps: imageSteps},
 			{key: "sbom", head: sbomJobHead, steps: sbomSteps},
 			{key: "sign", head: signJobHead, steps: signSteps},
@@ -990,15 +1085,15 @@ func TestReleaseWorkflow(t *testing.T) {
 		},
 
 		// The probes of the review and audit, each before the goreleaser step.
-		{name: "probe: go env -w GOFLAGS", workflow: beforeGoreleaser(`run: go env -w "G""OFLAGS=-tags=sneaky"`), wantIn: "holds 4 steps"},
+		{name: "probe: go env -w GOFLAGS", workflow: beforeGoreleaser(`run: go env -w "G""OFLAGS=-tags=sneaky"`), wantIn: "holds 5 steps"},
 		{name: "probe: GOFLAGS to github.env", workflow: beforeGoreleaser(`run: echo "G""OFLAGS=-tags=x" >> "${{ github.env }}"`), wantIn: "github.env"},
-		{name: "probe: GITHUB_ENV spelled at run time", workflow: beforeGoreleaser(`run: n=GITHUB_E; n=${n}NV; echo X=1 >> "${!n}"`), wantIn: "holds 4 steps"},
-		{name: "probe: go work init", workflow: beforeGoreleaser(`run: go work init .`), wantIn: "holds 4 steps"},
-		{name: "probe: go mod vendor", workflow: beforeGoreleaser(`run: go mod vendor`), wantIn: "holds 4 steps"},
-		{name: "probe: another goreleaser document copied in", workflow: beforeGoreleaser(`run: cp build/other.yaml .goreleaser.yaml`), wantIn: "holds 4 steps"},
-		{name: "probe: an action that sets the environment", workflow: beforeGoreleaser(`uses: example/sets-env@0123456789abcdef0123456789abcdef01234567`), wantIn: "holds 4 steps"},
-		{name: "probe: a repository script", workflow: beforeGoreleaser(`run: ./scripts/prepare.sh`), wantIn: "holds 4 steps"},
-		{name: "probe: make test back in the goreleaser job", workflow: beforeGoreleaser(`run: make test`), wantIn: "holds 4 steps"},
+		{name: "probe: GITHUB_ENV spelled at run time", workflow: beforeGoreleaser(`run: n=GITHUB_E; n=${n}NV; echo X=1 >> "${!n}"`), wantIn: "holds 5 steps"},
+		{name: "probe: go work init", workflow: beforeGoreleaser(`run: go work init .`), wantIn: "holds 5 steps"},
+		{name: "probe: go mod vendor", workflow: beforeGoreleaser(`run: go mod vendor`), wantIn: "holds 5 steps"},
+		{name: "probe: another goreleaser document copied in", workflow: beforeGoreleaser(`run: cp build/other.yaml .goreleaser.yaml`), wantIn: "holds 5 steps"},
+		{name: "probe: an action that sets the environment", workflow: beforeGoreleaser(`uses: example/sets-env@0123456789abcdef0123456789abcdef01234567`), wantIn: "holds 5 steps"},
+		{name: "probe: a repository script", workflow: beforeGoreleaser(`run: ./scripts/prepare.sh`), wantIn: "holds 5 steps"},
+		{name: "probe: make test back in the goreleaser job", workflow: beforeGoreleaser(`run: make test`), wantIn: "holds 5 steps"},
 		{name: "a step added to the test job", workflow: inTestJob(`run: go env -w GOFLAGS=-x`), wantIn: "holds 5 steps, want exactly 4"},
 		{
 			name:     "a step replaced in the goreleaser job",
@@ -1090,6 +1185,29 @@ func TestReleaseWorkflow(t *testing.T) {
 		{name: "a flow-style env", workflow: in("goreleaser", "        env:\n          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}\n", "        env: {GITHUB_TOKEN: x, A: b}\n"), wantIn: "env"},
 		{name: "a repeated key", workflow: in("goreleaser", "    needs: test\n", "    needs: test\n    needs: test\n"), wantIn: "repeated"},
 		{name: "a tab", workflow: strings.Replace(releaseWorkflow, "# v7.0.1", "#\tv7.0.1", 1), wantIn: "U+0009"},
+
+		// The draft-then-publish flow (issue #156): GoReleaser uploads every
+		// asset to a draft release, which .goreleaser.yaml's release.draft asks
+		// for (check.GitHubRelease pins it), and one job of its own publishes it
+		// last, after the archives are attested, with contents: write alone, so
+		// nothing can be added to or replaced in the release once it is public
+		// and no other job publishes it (ADR 0015).
+		{name: "no publish job", workflow: release.withoutJob(t, "publish"), wantIn: `no "publish"`},
+		{name: "the publish job on another runner", workflow: in("publish", "    runs-on: ubuntu-latest\n", "    runs-on: ubuntu-24.04\n"), wantIn: "runs-on"},
+		{name: "the publish job without needs", workflow: in("publish", "    needs: [test, goreleaser, attest-archives]\n", ""), wantIn: `no "needs"`},
+		{name: "the publish job not needing the attestation job", workflow: in("publish", "    needs: [test, goreleaser, attest-archives]\n", "    needs: [test, goreleaser]\n"), wantIn: "needs"},
+		{name: "the publish job needing the attestation job first", workflow: in("publish", "    needs: [test, goreleaser, attest-archives]\n", "    needs: [attest-archives, test, goreleaser]\n"), wantIn: "needs"},
+		{name: "the publish job needing the attestation job only", workflow: in("publish", "    needs: [test, goreleaser, attest-archives]\n", "    needs: [attest-archives]\n"), wantIn: "needs"},
+		{name: "another permission for the publish job", workflow: in("publish", "      contents: write # publish the draft release\n", "      contents: write # publish the draft release\n      packages: write # push\n"), wantIn: "packages"},
+		{name: "no contents: write for the publish job", workflow: in("publish", "      contents: write # publish the draft release\n", ""), wantIn: "contents"},
+		{name: "the publish job publishing nothing", workflow: in("publish", "        run: gh release edit \"$TAG\" --draft=false\n", "        run: gh release view \"$TAG\"\n"), wantIn: `want exactly "gh release edit \"$TAG\" --draft=false"`},
+		{name: "the publish job leaving the release a draft", workflow: in("publish", "--draft=false", "--draft=true"), wantIn: `want exactly "gh release edit \"$TAG\" --draft=false"`},
+		{name: "the publish job publishing another release", workflow: in("publish", `gh release edit "$TAG" --draft=false`, `gh release edit latest --draft=false`), wantIn: `want exactly "gh release edit \"$TAG\" --draft=false"`},
+		{name: "the publish job's tag pasted into the script", workflow: in("publish", `gh release edit "$TAG" --draft=false`, `gh release edit "${{ github.ref_name }}" --draft=false`), wantIn: "holds a ${{ }} expression"},
+		{name: "the publish job without the token from env", workflow: in("publish", "          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}\n", ""), wantIn: "env holds"},
+		{name: "an extra step in the publish job", workflow: steps("publish", beforeStep(t, publishSteps, "      - name: Publish the draft release", "run: ./scripts/prepare.sh")), wantIn: "holds 2 steps, want exactly 1"},
+		{name: "the publish step in the goreleaser job", workflow: steps("goreleaser", beforeStep(t, goreleaserSteps, "      - uses: actions/upload-artifact@", "name: Publish the draft release\n        run: gh release edit \"$TAG\" --draft=false")), wantIn: "jobs: goreleaser: steps holds 5 steps, want exactly 4"},
+		{name: "the publish step in the test job", workflow: inTestJob("name: Publish the draft release\n        run: gh release edit \"$TAG\" --draft=false"), wantIn: "holds 5 steps, want exactly 4"},
 
 		// The jobs are a closed list: the image that publishes, the SBOM that
 		// reads, the sign job that signs.
