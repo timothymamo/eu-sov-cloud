@@ -14,6 +14,16 @@ import (
 // packages of the release binary from it.
 const Main = "./cmd/eusov"
 
+// Env returns the environment every build of the release must set, exactly
+// and in this order (issue #102): CGO_ENABLED=0, so the binary links no C
+// library of the build host; GOWORK=off, so a go.work file cannot put the
+// build in workspace mode and swap in other module versions; and
+// GOFLAGS=-mod=readonly, so the build fails rather than changes go.mod or
+// go.sum, and uses no vendor directory. Each call returns a fresh slice.
+func Env() []string {
+	return []string{"CGO_ENABLED=0", "GOWORK=off", "GOFLAGS=-mod=readonly"}
+}
+
 // Target is one platform the release builds.
 type Target struct {
 	GOOS   string
@@ -30,19 +40,25 @@ type Target struct {
 //     archives, checksum, changelog and release. Any other key is refused: a
 //     top-level env applies to every build, gomod picks the Go binary that
 //     builds, and a key the check does not know may do either.
-//   - before may hold only hooks, and they must be exactly [go mod tidy]: a
-//     hook runs before the build and could rewrite what it compiles.
+//   - before may hold only hooks, and they must be exactly
+//     [go mod tidy -diff]: a hook runs before the build, outside its env, and
+//     could rewrite what it compiles; -diff fails when the module is not tidy
+//     and writes nothing, where plain go mod tidy would rewrite go.mod and
+//     go.sum for the -mod=readonly build to accept.
 //   - builds must hold exactly one entry. It may hold only id, main, binary,
 //     env, flags, ldflags, goos and goarch: ignore and targets (which change
 //     the platform list), tags, overrides, goamd64 and goarm64 (which change
 //     the build tags a file is selected by) and every other key are refused.
 //     main must be ./cmd/eusov, the package the repository test lists as the
-//     release binary. env must be exactly CGO_ENABLED=0: goreleaser renders
-//     each entry as a template, its name included, so no rule on names alone
-//     tells which variable an entry sets. flags may hold only -trimpath. goos
-//     and goarch must be non-empty lists of GOOS and GOARCH names, in flow
-//     ([a, b]) or block (- a) form. A template ({{) in goos, goarch or flags
-//     is refused.
+//     release binary. env must be exactly Env(), in its order: cgo off,
+//     GOWORK=off so a go.work file cannot swap in other module versions, and
+//     GOFLAGS=-mod=readonly so the build fails rather than changes go.mod or
+//     go.sum, and uses no vendor directory. No other entry is allowed:
+//     goreleaser renders each entry as a template, its name included, so no
+//     rule on names alone tells which variable an entry sets. flags may hold
+//     only -trimpath. goos and goarch must be non-empty lists of GOOS and
+//     GOARCH names, in flow ([a, b]) or block (- a) form. A template ({{) in
+//     goos, goarch or flags is refused.
 func Read(goreleaser []byte) ([]Target, error) {
 	lines, err := yamlread.SplitLines(goreleaser)
 	if err != nil {
@@ -109,7 +125,7 @@ func topLevel(lines []yamlread.Line) ([]yamlread.Line, error) {
 }
 
 // checkBefore refuses a before section that holds anything but the hook
-// go mod tidy.
+// go mod tidy -diff, which fails instead of rewriting go.mod or go.sum.
 func checkBefore(before yamlread.Entry) error {
 	block, err := yamlread.BlockValue(before, "before")
 	if err != nil {
@@ -131,8 +147,8 @@ func checkBefore(before yamlread.Entry) error {
 			return fmt.Errorf("before: %w", err)
 		}
 
-		if !slices.Equal(hooks, []string{"go mod tidy"}) {
-			return fmt.Errorf("line %d: before: hooks are %q, want exactly [go mod tidy]: a hook runs before the build and could rewrite what it compiles", e.Num, hooks)
+		if !slices.Equal(hooks, []string{"go mod tidy -diff"}) {
+			return fmt.Errorf("line %d: before: hooks are %q, want exactly [go mod tidy -diff]: a hook runs before the build, outside its env, and -diff fails instead of rewriting go.mod or go.sum", e.Num, hooks)
 		}
 	}
 
@@ -180,8 +196,8 @@ func buildTargets(build yamlread.Item) ([]Target, error) {
 		return nil, fmt.Errorf("main is %q, want %s, the package the check lists as the release binary", mainPkg, Main)
 	}
 
-	if !slices.Equal(env, []string{"CGO_ENABLED=0"}) {
-		return nil, fmt.Errorf("env is %q, want exactly [CGO_ENABLED=0]: goreleaser renders each entry, its name included, as a template, so any other entry may set a variable the go command reads", env)
+	if want := Env(); !slices.Equal(env, want) {
+		return nil, fmt.Errorf("env is %q, want exactly %q, in that order: goreleaser renders each entry, its name included, as a template, so any other entry may set a variable the go command reads", env, want)
 	}
 
 	for _, kv := range []struct {

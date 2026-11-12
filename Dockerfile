@@ -33,7 +33,7 @@ ARG DATE=unknown
 # The same settings as the builds entry of .goreleaser.yaml.
 RUN --mount=type=cache,target=/go/pkg/mod \
     --mount=type=cache,target=/root/.cache/go-build \
-    CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} \
+    CGO_ENABLED=0 GOWORK=off GOFLAGS=-mod=readonly GOOS=${TARGETOS} GOARCH=${TARGETARCH} \
     go build -trimpath \
     -ldflags "-s -w -X github.com/timothymamo/eu-sov-cloud/internal/version.version=${VERSION} -X github.com/timothymamo/eu-sov-cloud/internal/version.commit=${COMMIT} -X github.com/timothymamo/eu-sov-cloud/internal/version.date=${DATE}" \
     -o /out/eusov ./cmd/eusov

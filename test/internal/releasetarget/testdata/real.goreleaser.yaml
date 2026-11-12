@@ -4,7 +4,7 @@ project_name: eusov
 
 before:
   hooks:
-    - go mod tidy
+    - go mod tidy -diff
 
 builds:
   - id: eusov
@@ -12,6 +12,8 @@ builds:
     binary: eusov
     env:
       - CGO_ENABLED=0
+      - GOWORK=off
+      - GOFLAGS=-mod=readonly
     flags:
       - -trimpath
     ldflags:

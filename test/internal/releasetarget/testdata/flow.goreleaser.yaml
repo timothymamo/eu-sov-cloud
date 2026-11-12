@@ -8,6 +8,8 @@ builds:
     binary: eusov
     env:
       - CGO_ENABLED=0
+      - GOWORK=off
+      - GOFLAGS=-mod=readonly
     flags:
       - -trimpath
     goos: [linux, darwin, windows]
