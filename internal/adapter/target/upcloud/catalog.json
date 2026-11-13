@@ -104,7 +104,7 @@
         { "name": "CLOUDNATIVE-64xCPU-512GB", "vcpus": 64, "memoryGiB": 512, "storageGiB": 0, "prices": [{ "amount": 1400, "currency": "EUR", "regions": [] }] },
         { "name": "CLOUDNATIVE-80xCPU-512GB", "vcpus": 80, "memoryGiB": 512, "storageGiB": 0, "prices": [{ "amount": 1800, "currency": "EUR", "regions": [] }] }
       ],
-      "storagePrices": []
+      "storagePrices": [{ "amount": 0.22, "currency": "EUR", "regions": [] }]
     },
     {
       "name": "Managed Kubernetes",

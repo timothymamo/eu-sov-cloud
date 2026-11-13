@@ -83,7 +83,7 @@ Cloud Servers | compute.vm | ipv6, snapshots | de-fra1, dk-cph1, es-mad1, fi-hel
   plan: STARTER-2xCPU-8GB | 2 vcpu | 8 GiB | 40 GiB storage | 18.00 EUR @ -
   plan: STARTER-4xCPU-16GB | 4 vcpu | 16 GiB | 50 GiB storage | 28.00 EUR @ -
   plan: STARTER-4xCPU-8GB | 4 vcpu | 8 GiB | 40 GiB storage | 20.00 EUR @ -
-  storage prices: -
+  storage price: 0.22 EUR @ -
 Managed Kubernetes | kubernetes.managed | - | de-fra1, dk-cph1, es-mad1, fi-hel1, fi-hel2, nl-ams1, pl-waw1, se-sto1
   plan: CLOUDNATIVE-12xCPU-24GB | 12 vcpu | 24 GiB | 0 GiB storage | 90.00 EUR @ -
   plan: CLOUDNATIVE-12xCPU-32GB | 12 vcpu | 32 GiB | 0 GiB storage | 145.00 EUR @ -

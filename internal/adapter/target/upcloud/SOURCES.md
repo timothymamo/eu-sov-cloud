@@ -232,9 +232,26 @@ Category `compute.vm`. Pages: <https://upcloud.com/docs/products/cloud-servers/a
   vCPU is the page's "CPU cores". Included storage is the plan's own block storage: Standard tier for
   Starter, MaxIOPS for Premium ("Starter plans use Standard storage and Premium plans use MaxIOPS®
   storage", Block Storage billing page), none for Cloud Native, whose storage is an add-on ("Cloud Native
-  and GPU plans don't include storage", same page). The offering lists no storage price, as the OVHcloud
-  *Instances* offering lists none: a volume beyond the plan is a `storage.block` resource of its own.
+  and GPU plans don't include storage", same page).
   `STARTER-1xCPU-1GB` is "restricted to 5 instances per account" (configurations page).
+- **Storage price** (pricing page, *Cloud Servers*, *Additional services*, *Block Storage* table, read
+  2026-11-13; <https://upcloud.com/pricing/>; Block Storage billing page,
+  <https://upcloud.com/docs/products/block-storage/billing/>, read 2026-11-13): `0.22` per GiB a month,
+  in every zone, the MaxIOPS "€0.220/GB/mo" of the table, in both its "Global Price" and "Helsinki
+  Price" columns. It prices the storage a server has beyond its plan's included storage. The billing page
+  says how the two combine: "If the server has multiple storage devices, the largest storage that fits
+  within the plan quota is counted as part of the plan. Any additional storage devices are billed per GB
+  per hour", at the tier's price in either case ("MaxIOPS: No cost within quota, Billed per GB per hour";
+  the same for Standard). So a server needing more than the plan includes pays the plan price plus the
+  extra GiB at the price of the tier they are on, and a Cloud Native server, which includes none, pays
+  for all of its storage that way. A server's extra devices "can be from any of the three available Block
+  Storage tiers" (<https://upcloud.com/docs/products/cloud-servers/storage/>, read 2026-11-13), and ADR
+  0024 allows one storage price per zone, so MaxIOPS stands for all, for the reasons given under *Block
+  Storage*: the tier Premium plans include, the same price in every zone, and outside the pricing change
+  of 2026-11-16. Extra storage on Standard ("€0.085/GB/mo"), the tier a Starter plan includes, is
+  estimated high. The billing page names no rule for a single device larger than the quota; if none of a
+  server's devices fits within it, the whole device is billed per GB, and the estimate, which prices only
+  the storage above the quota, is low.
 
 | Plan | Tab | CPU cores | Memory | Included storage | Page price | Stored |
 |---|---|---|---|---|---|---|
