@@ -3,8 +3,10 @@ package openapibundle_test
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"sort"
@@ -78,6 +80,67 @@ func TestBundleIsCommitted(t *testing.T) {
 	if diff := cmp.Diff(string(want), string(got)); diff != "" {
 		t.Errorf("%s is not %s bundled: run %s and commit the result (-want +got):\n%s",
 			bundled, source, updateCommand, diff)
+	}
+}
+
+// TestBundleIsRegularFile pins the auditor's finding L-1 of issue #139: the
+// release copies api/openapi.bundled.json into shift2eu-server_openapi.json and
+// attests it. A symbolic link at that path would make the copy, GoReleaser and
+// the attestation publish and attest whatever it points to, a file outside the
+// repository and outside review, so the path holds a regular file.
+func TestBundleIsRegularFile(t *testing.T) {
+	t.Parallel()
+
+	path := filepath.Join(repoRoot, filepath.FromSlash(bundled))
+
+	if err := regularFile(path); err != nil {
+		t.Fatalf("%s: %v: the release publishes and attests this file, so a symlink at its path would publish and attest its target; run %s to write it as a regular file", bundled, err, updateCommand)
+	}
+}
+
+// TestRegularFileChecksTheFileItself pins the guard TestBundleIsRegularFile
+// uses, exercised both ways: a regular file passes, and a symbolic link to one,
+// a directory and a missing path are each refused. The link is the case the
+// guard exists for, so its failure names the mode rather than the target.
+func TestRegularFileChecksTheFileItself(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+
+	file := filepath.Join(dir, "regular.json")
+	if err := os.WriteFile(file, []byte("{}\n"), 0o600); err != nil {
+		t.Fatalf("write %s: %v", file, err)
+	}
+
+	link := filepath.Join(dir, "link.json")
+	if err := os.Symlink(file, link); err != nil {
+		t.Fatalf("symlink %s: %v", link, err)
+	}
+
+	tests := []struct {
+		name string
+		path string
+		want bool
+	}{
+		{name: "regular file", path: file},
+		{name: "symbolic link to a regular file", path: link, want: true},
+		{name: "directory", path: dir, want: true},
+		{name: "missing path", path: filepath.Join(dir, "absent.json"), want: true},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			err := regularFile(tc.path)
+			if tc.want != (err != nil) {
+				t.Fatalf("regularFile(%q) error = %v, want error: %t", tc.path, err, tc.want)
+			}
+
+			if tc.want && !strings.Contains(err.Error(), "regular file") && !errors.Is(err, fs.ErrNotExist) {
+				t.Errorf("regularFile(%q) error = %v, want the mode guard's or fs.ErrNotExist", tc.path, err)
+			}
+		})
 	}
 }
 
@@ -244,6 +307,22 @@ func refs(doc any) []string {
 	walk(doc)
 
 	return found
+}
+
+// regularFile returns nil when path is a regular file and an error otherwise.
+// os.Lstat does not follow a symbolic link, so a link is refused as the link it
+// is, before anything reads or copies its target.
+func regularFile(path string) error {
+	info, err := os.Lstat(path)
+	if err != nil {
+		return err
+	}
+
+	if !info.Mode().IsRegular() {
+		return fmt.Errorf("has mode %s, want a regular file", info.Mode())
+	}
+
+	return nil
 }
 
 // resolve returns the value of doc that the JSON pointer ref names, and an
