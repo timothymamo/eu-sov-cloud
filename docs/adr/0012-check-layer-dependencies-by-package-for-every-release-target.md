@@ -385,8 +385,8 @@ call with lint green, so the property now leaves out only the packages Go's inte
 as `test/internal/...` and `test/architecture/internal/...`), and `TestEveryOsAllowingRuleHasAnEnvironmentGroup`
 fails for a package whose strict rule allows `os` but which no forbidigo group in scope holds to the
 nine `os` reads (`Getenv`, `LookupEnv`, `ExpandEnv`, `Environ`, `StartProcess`, `UserHomeDir`,
-`UserConfigDir`, `UserCacheDir`, `TempDir`; extending it to the `syscall` reads and to `$gostd` is
-follow-up issue #167). A third, `TestNoPackageIsHeldOnlyByAGostdRule`, came from the final review
+`UserConfigDir`, `UserCacheDir`, `TempDir`; issue #167 extended it to the `syscall` reads and
+reads `$gostd` as allowing both, which brought the forbidigo group `e2e-no-env` for `test/e2e`). A third, `TestNoPackageIsHeldOnlyByAGostdRule`, came from the final review
 and audit of #152 (the reviewer's B1, the auditor's L-1): `test/e2e`'s `doc.go` carries no build tag,
 so it is a production package a root can import, and `e2e-is-black-box`, the only rule that held it,
 allows `$gostd`, so an untagged file there read `os.Getenv` and started `exec.Command` with lint

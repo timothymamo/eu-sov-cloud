@@ -489,15 +489,18 @@ target, with the `e2e` and `integration` tags (`strictcoverage_test.go`):
   (`test/internal/...`, `test/architecture/internal/...`). The round that widened the property from
   `internal/` and `cmd/` (the next audit of #152 found that `test/devenv/leak.go` or a new `pkg/leak`
   stayed lint-green) added `test-docs-are-pure` for the doc-only `test/*` packages.
-- **Every package whose strict rule allows `os` is held by a forbidigo group refusing the nine `os`
-  reads** (`TestEveryOsAllowingRuleHasAnEnvironmentGroup`): `os.Getenv`, `os.LookupEnv`,
-  `os.ExpandEnv`, `os.Environ`, `os.StartProcess`, `os.UserHomeDir`, `os.UserConfigDir`,
-  `os.UserCacheDir` and `os.TempDir`, in an entry whose exclusion rules leave the package in scope.
-  Today those are the roots (`composition-root-env`, `composition-root-no-exec`), `internal/cli`
-  (`cli-no-env-or-process`), `internal/testutil` (`testutil-no-env`) and the inventory-file reader
-  (`inventoryfile-no-env`). A rule that gains `os$` fails the test until its package has a group.
-  The property reads `os` only: extending it to the `syscall` reads (`Getenv`, `Environ`, `Exec`,
-  `ForkExec`, `StartProcess`) and treating `$gostd` as allowing both is follow-up issue #167.
+- **Every package whose strict rule allows `os` or `syscall` is held by a forbidigo group refusing
+  their reads** (`TestEveryOsAllowingRuleHasAnEnvironmentGroup`): for `os` the nine `os.Getenv`,
+  `os.LookupEnv`, `os.ExpandEnv`, `os.Environ`, `os.StartProcess`, `os.UserHomeDir`,
+  `os.UserConfigDir`, `os.UserCacheDir` and `os.TempDir`; for `syscall` (issue #167)
+  `syscall.Getenv`, `Environ`, `Exec`, `ForkExec`, `StartProcess` and the raw system calls
+  (`Syscall`, `Syscall6`, `Syscall9`, `SyscallN`, `RawSyscall`, `RawSyscall6`); each in an entry
+  whose exclusion rules leave the package in scope. `$gostd` counts as allowing both. Today those
+  are the roots (`composition-root-env`, `composition-root-no-exec`, the only rules that allow
+  `syscall$`), `internal/cli` (`cli-no-env-or-process`), `internal/testutil` (`testutil-no-env`),
+  the inventory-file reader (`inventoryfile-no-env`) and `test/e2e` (`e2e-no-env`, whose
+  `e2e-is-black-box` allows `$gostd`). A rule that gains `os$`, `syscall$` or `$gostd` fails the
+  test until its package has a group.
 - **No package a root can import is held only through a `$gostd` rule**
   (`TestNoPackageIsHeldOnlyByAGostdRule`): a strict rule that allows `$gostd` allows `os/exec`,
   `syscall` and `unsafe` with the rest, so every non-test module package a strict rule holds is held
@@ -532,6 +535,12 @@ target, with the `e2e` and `integration` tags (`strictcoverage_test.go`):
   rule). `inventory-file-reader-reads-one-file` must allow `os` for `os.Open`, and `cmd/shift2eu`
   imports the reader. The writes are `tests-no-process-state`'s. `TestInventoryFileNoEnvProbe` and
   `TestInventoryFileNoEnvForbidigoPatterns` pin it.
+- **`e2e-no-env`** (forbidigo, `analyze-types`, issue #167) refuses the nine `os` reads and the
+  `syscall` reads above under `test/e2e/`, `_test.go` files included (one `path-except` exclusion
+  rule). `e2e-is-black-box` allows `$gostd`, which the first property reads as allowing `os` and
+  `syscall`; `test-docs-are-pure` holds the untagged `doc.go` to `errors$` as well, so for it the
+  group is defence in depth. The e2e tests build and run the binary with `os/exec`, which stays
+  allowed. `TestE2ENoEnvProbe` and `TestE2ENoEnvForbidigoPatterns` pin it.
 - **`test-docs-are-pure`** (depguard, strict) holds the doc-only packages `test/apiparity`,
   `test/architecture`, `test/container`, `test/devenv`, `test/docs`, `test/e2e` and `test/lint` to
   the same `errors$` placeholder (issue #166). Each is a production package a root could import

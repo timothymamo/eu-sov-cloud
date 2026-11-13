@@ -192,10 +192,19 @@ func (r strictRuleCoverage) holds(dir string) bool {
 
 // allowsOS reports whether the rule's allow list lets a package import os, as
 // .golangci.yml writes the entry: exact (os$) and as a prefix (os, which depguard
-// reads as every path starting with os) alike, so a widening is no way past the
-// property either.
+// reads as every path starting with os) alike, and the $gostd entry, which allows
+// every standard package, os among them (issue #167), so a widening is no way
+// past the property either.
 func (r strictRuleCoverage) allowsOS() bool {
-	return slices.Contains(r.allow, "os$") || slices.Contains(r.allow, "os")
+	return slices.Contains(r.allow, "os$") || slices.Contains(r.allow, "os") || r.allowsGostd()
+}
+
+// allowsSyscall reports whether the rule's allow list lets a package import
+// syscall, read as allowsOS reads os (issue #167): exact (syscall$), as a prefix
+// (syscall, which also allows syscall/js but allows syscall all the same) and the
+// $gostd entry. An entry for syscall/js alone allows no syscall.
+func (r strictRuleCoverage) allowsSyscall() bool {
+	return slices.Contains(r.allow, "syscall$") || slices.Contains(r.allow, "syscall") || r.allowsGostd()
 }
 
 // allowsGostd reports whether the rule's allow list lets a package import any
@@ -336,6 +345,49 @@ var osEnvironmentReads = []struct{ pkg, name string }{
 	{"os", "os.UserConfigDir"},
 	{"os", "os.UserCacheDir"},
 	{"os", "os.TempDir"},
+}
+
+// syscallEnvironmentReads are the syscall calls that reach the environment or
+// start a process, as osEnvironmentReads are os's (issue #167): every way to read
+// a named variable or the whole environment, every process start or replacement,
+// and the raw system calls, which can make any of those without naming it. A
+// package a strict rule allows syscall (today the composition roots, for a SIG*
+// constant and syscall.Signal) may make none of them; every name is one the
+// composition roots' forbidigo groups composition-root-no-exec and
+// composition-root-env refuse. The windows entry points those groups also refuse
+// (CreateProcess, GetEnvironmentVariable and the rest) are left out: they exist
+// on one release target only, and the unix names above are the ones every
+// syscall-allowing rule must refuse.
+var syscallEnvironmentReads = []struct{ pkg, name string }{
+	{"syscall", "syscall.Getenv"},
+	{"syscall", "syscall.Environ"},
+	{"syscall", "syscall.Exec"},
+	{"syscall", "syscall.ForkExec"},
+	{"syscall", "syscall.StartProcess"},
+	{"syscall", "syscall.Syscall"},
+	{"syscall", "syscall.Syscall6"},
+	{"syscall", "syscall.Syscall9"},
+	{"syscall", "syscall.SyscallN"},
+	{"syscall", "syscall.RawSyscall"},
+	{"syscall", "syscall.RawSyscall6"},
+}
+
+// requiredEnvironmentReads returns the reads a forbidigo group must refuse for a
+// package the strict rules in holders hold (issue #167): osEnvironmentReads when
+// any holder allows os, syscallEnvironmentReads when any allows syscall, both
+// when they do (one holder allowing $gostd among them), and none otherwise.
+func requiredEnvironmentReads(holders []strictRuleCoverage) []struct{ pkg, name string } {
+	var reads []struct{ pkg, name string }
+
+	if slices.ContainsFunc(holders, strictRuleCoverage.allowsOS) {
+		reads = append(reads, osEnvironmentReads...)
+	}
+
+	if slices.ContainsFunc(holders, strictRuleCoverage.allowsSyscall) {
+		reads = append(reads, syscallEnvironmentReads...)
+	}
+
+	return reads
 }
 
 // forbidigoPattern is one entry of linters.settings.forbidigo.forbid: its pkg
@@ -569,7 +621,11 @@ const coverageProbeFile = "strictcoverage_probe_production.go"
 // a composition root can import (modulePackageDirs) whose strict rule allows os
 // must be held by a forbidigo group that refuses every read of
 // osEnvironmentReads: a root could otherwise hand the read to a package it
-// constructs, with lint green. Before this test
+// constructs, with lint green. Since issue #167 the same holds for syscall, which
+// reads the environment and starts processes as os does: a package whose strict
+// rule allows syscall must be refused every read of syscallEnvironmentReads, and
+// one whose rule allows $gostd, every standard package, both lists
+// (requiredEnvironmentReads). Before this test
 // internal/adapter/source/inventoryfile, which cmd/shift2eu imports, had no such
 // group, and the composition roots' groups refused no directory lookup.
 //
@@ -586,7 +642,8 @@ func TestEveryOsAllowingRuleHasAnEnvironmentGroup(t *testing.T) {
 
 	for _, dir := range modulePackageDirs(t) {
 		holders := slices.DeleteFunc(slices.Clone(strict), func(r strictRuleCoverage) bool { return !r.holds(dir) })
-		if !slices.ContainsFunc(holders, strictRuleCoverage.allowsOS) {
+		required := requiredEnvironmentReads(holders)
+		if len(required) == 0 {
 			continue
 		}
 
@@ -598,7 +655,7 @@ func TestEveryOsAllowingRuleHasAnEnvironmentGroup(t *testing.T) {
 				continue
 			}
 
-			for _, read := range osEnvironmentReads {
+			for _, read := range required {
 				if slices.ContainsFunc(patterns[tag], func(p forbidigoPattern) bool {
 					return (p.pkg == nil || p.pkg.MatchString(read.pkg)) && p.re.MatchString(read.name)
 				}) {
@@ -609,14 +666,14 @@ func TestEveryOsAllowingRuleHasAnEnvironmentGroup(t *testing.T) {
 
 		var missing []string
 
-		for _, read := range osEnvironmentReads {
+		for _, read := range required {
 			if !refused[read.name] {
 				missing = append(missing, read.name)
 			}
 		}
 
 		if len(missing) != 0 {
-			t.Errorf("%s/%s: its strict rule allows os, but no forbidigo group in scope refuses %s; add a group with an entry refusing os, or widen the group that holds the package, and a linters.exclusions.rules rule that scopes it, pinned by TestForbidigoExclusionsDropOneGroup (issue #152, CLAUDE.md rule 3)",
+			t.Errorf("%s/%s: its strict rule allows os or syscall, but no forbidigo group in scope refuses %s; add a group with an entry refusing os or syscall, or widen the group that holds the package, and a linters.exclusions.rules rule that scopes it, pinned by TestForbidigoExclusionsDropOneGroup (issues #152 and #167, CLAUDE.md rule 3)",
 				modulePath, dir, strings.Join(missing, ", "))
 		}
 	}

@@ -1720,7 +1720,10 @@ linters:
         # os.UserCacheDir and os.TempDir, which read $HOME, $XDG_CONFIG_HOME,
         # $XDG_CACHE_HOME and $TMPDIR without naming them, in an entry of
         # their own, so every package allowed os is held to the same nine
-        # reads (test/architecture's TestEveryOsAllowingRuleHasAnEnvironmentGroup).
+        # reads, and since issue #167 every package allowed syscall to the
+        # syscall reads no-exec and env refuse (Getenv, Environ, Exec,
+        # ForkExec, StartProcess and the raw system calls; test/architecture's
+        # TestEveryOsAllowingRuleHasAnEnvironmentGroup).
         #
         # Scope of both: every file under cmd/shift2eu/ and
         # cmd/shift2eu-server/, _test.go files included. A test of a
@@ -1916,6 +1919,23 @@ linters:
         - pattern: '^os\.(?:Getenv|LookupEnv|ExpandEnv|Environ|StartProcess|UserHomeDir|UserConfigDir|UserCacheDir|TempDir)$'
           pkg: '^os$'
           msg: 'inventoryfile-no-env: the inventory-file reader reads no environment variable, locates no home, config, cache or temp directory and starts no process, where credentials live; cmd/shift2eu passes the file it names (CLAUDE.md rule 3)'
+        # Group e2e-no-env (issue #167): the e2e tier reads no environment
+        # variable, locates no home, config, cache or temp directory and
+        # starts no process through os or syscall; it builds and runs the
+        # binary with os/exec, which e2e-is-black-box allows. That rule
+        # allows $gostd, which test/architecture's
+        # TestEveryOsAllowingRuleHasAnEnvironmentGroup reads as allowing os
+        # and syscall both, so test/e2e is held by a group that refuses the
+        # reads of both. Its production file, doc.go, is held to errors$ by
+        # test-docs-are-pure as well, so the group is defence in depth there.
+        # Scope: every file under test/e2e/, _test.go files included; its
+        # exclusion rule drops it everywhere else.
+        - pattern: '^os\.(?:Getenv|LookupEnv|ExpandEnv|Environ|StartProcess|UserHomeDir|UserConfigDir|UserCacheDir|TempDir)$'
+          pkg: '^os$'
+          msg: 'e2e-no-env: the e2e tier reads no environment variable, locates no home, config, cache or temp directory and starts no process through os, where credentials live; it runs the binary with os/exec (CLAUDE.md rule 3)'
+        - pattern: '^syscall\.(?:Getenv|Environ|Exec|ForkExec|StartProcess|(?:Raw)?Syscall(?:6|9|12|15|18|N)?)$'
+          pkg: '^syscall$'
+          msg: 'e2e-no-env: the e2e tier reads no environment variable and makes no process start or raw system call through syscall, where credentials live; it runs the binary with os/exec (CLAUDE.md rule 3)'
     gosec:
       excludes:
         - G104 # unchecked errors are already reported by errcheck
@@ -2038,6 +2058,12 @@ linters:
         linters:
           - forbidigo
         text: 'because "inventoryfile-no-env: [^"]*"$'
+      # e2e-no-env: the group holds for every file under test/e2e/, _test.go
+      # files included, and nowhere else.
+      - path-except: ^test/e2e/
+        linters:
+          - forbidigo
+        text: 'because "e2e-no-env: [^"]*"$'
 
 formatters:
   enable:
