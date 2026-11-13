@@ -543,8 +543,9 @@ var verifyArchivesSteps = []string{
           } | sort > "$tmp/attested.txt"
           # Every file the release holds, dotfiles included: ls -1 and the
           # shell's * both skip a name that starts with ".", which would let a
-          # file hide from this check and from the loop after it.
-          ls -A | sort > "$tmp/downloaded.txt"
+          # file hide from this check and from the loop after it. find, not
+          # ls -A, so shellcheck has no SC2012 to raise (issue #177).
+          find . -mindepth 1 -maxdepth 1 -printf '%P\n' | sort > "$tmp/downloaded.txt"
           if ! cmp -s "$tmp/attested.txt" "$tmp/downloaded.txt"; then
             echo "the release of $TAG does not hold what checksums.txt lists:" >&2
             diff -u "$tmp/attested.txt" "$tmp/downloaded.txt" >&2 || true
@@ -2260,7 +2261,7 @@ func TestReleaseWorkflow(t *testing.T) {
 		// not be able to hide from the check or from the loop (reviewer N2, issue
 		// #163): the file set and the subjects are both read with the dotfiles
 		// in.
-		{name: "the file set read without the dotfiles", workflow: in("verify-archives", "          ls -A | sort > \"$tmp/downloaded.txt\"\n", "          ls -1 | sort > \"$tmp/downloaded.txt\"\n"), wantIn: "ls -A | sort"},
+		{name: "the file set read without the dotfiles", workflow: in("verify-archives", "          find . -mindepth 1 -maxdepth 1 -printf '%P\\n' | sort > \"$tmp/downloaded.txt\"\n", "          ls -1 | sort > \"$tmp/downloaded.txt\"\n"), wantIn: "find . -mindepth 1 -maxdepth 1 -printf"},
 		{name: "the subjects read without the dotfiles", workflow: in("verify-archives", "          shopt -s dotglob\n", ""), wantIn: "shopt -s dotglob"},
 
 		// GitHub's "Latest" release is checked by the job that runs after

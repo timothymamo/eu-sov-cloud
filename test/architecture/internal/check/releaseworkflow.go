@@ -406,8 +406,9 @@ var verifyArchivesSteps = []releaseStep{
 			`} | sort > "$tmp/attested.txt"`,
 			`# Every file the release holds, dotfiles included: ls -1 and the`,
 			`# shell's * both skip a name that starts with ".", which would let a`,
-			`# file hide from this check and from the loop after it.`,
-			`ls -A | sort > "$tmp/downloaded.txt"`,
+			`# file hide from this check and from the loop after it. find, not`,
+			`# ls -A, so shellcheck has no SC2012 to raise (issue #177).`,
+			`find . -mindepth 1 -maxdepth 1 -printf '%P\n' | sort > "$tmp/downloaded.txt"`,
 			`if ! cmp -s "$tmp/attested.txt" "$tmp/downloaded.txt"; then`,
 			`  echo "the release of $TAG does not hold what checksums.txt lists:" >&2`,
 			`  diff -u "$tmp/attested.txt" "$tmp/downloaded.txt" >&2 || true`,
@@ -1074,7 +1075,7 @@ var releaseJobs = func() []releaseJob {
 //   - the verify-archives job's steps are exactly gh release download, with
 //     --repo, of every asset of the published release, and, under set -euo
 //     pipefail, the check that the release is not a draft and holds exactly
-//     checksums.txt and the files it lists, dotfiles included (ls -A),
+//     checksums.txt and the files it lists, dotfiles included (find -printf %P),
 //     sha256sum -c checksums.txt, and gh attestation verify of every
 //     downloaded file, dotfiles included (shopt -s dotglob), with the
 //     release identity, bound to this tag and commit, on GitHub's runners

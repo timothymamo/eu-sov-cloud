@@ -73,9 +73,9 @@ codes and give a reason.**
   actionlint asks for, past GO-2026-5024.
 - **What shellcheck checks:** `dev/shellcheck.sh` takes the list from `git ls-files`, never from a
   hand-written list. A script is a tracked file whose name ends in `.sh`, or whose first line is a
-  shebang that runs `sh` or `bash`, directly or through `env`. That is the rule `test/lint`'s
-  `IsShellScript` states, and `TestMakeLintRunsEveryReleaseTarget` fails when the two pick different
-  files. A new script is checked without any edit.
+  shebang that runs `sh` or `bash`, directly or through `env`. That is the rule
+  `test/internal/shellcheck`'s `IsShellScript` states, and `TestMakeLintRunsEveryReleaseTarget` fails
+  when the two pick different files. A new script is checked without any edit.
 - **No rc file: `--norc`.** shellcheck otherwise reads `.shellcheckrc` from each script's directory and
   every parent, then `~/.shellcheckrc` or `$XDG_CONFIG_HOME/shellcheckrc`. Any of them can disable a
   check, so a developer's run could report less than CI's. `dev/shellcheck.sh` runs
