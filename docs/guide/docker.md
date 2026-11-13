@@ -20,6 +20,10 @@ docker run --rm --read-only --network none --user "$(id -u):$(id -g)" \
   ghcr.io/timothymamo/shift2eu:v0.2.0 assess --inventory inventory.json --target ovhcloud > report.md)
 ```
 
+The image holds the binary alone, not the sample inventories: to try it without an inventory of your
+own, mount one of the samples under `examples/`, from a release archive
+([Install](install.md#the-release-archives)) or a clone of the repository, as [Try it](try-it.md) does.
+
 ## Mounts, users and reports
 
 The image's own user is the non-root `nonroot` (uid 65532), which cannot read a file only you may read,

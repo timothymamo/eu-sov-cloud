@@ -13,8 +13,8 @@ The samples are dummy inventories of a small web shop, one per source, in the re
 [`examples/azure/inventory.json`](../../examples/azure/inventory.json). They are made up and carry only
 documentation values. This page uses the AWS one; every command works with the others too.
 
-Clone the repository for the samples and build both binaries ([Install](install.md#build-from-source)
-lists the tools):
+Clone the repository and build both binaries ([Install](install.md#build-from-source) lists the
+tools):
 
 ```bash
 git clone https://github.com/timothymamo/shift2eu.git
@@ -23,9 +23,10 @@ make build   # ./bin/shift2eu and ./bin/shift2eu-server
 ```
 
 Or download the `shift2eu` and `shift2eu-server` archives of a release for your platform
-([Install](install.md#the-release-archives)) and run their binaries in place of `./bin/shift2eu` and
-`./bin/shift2eu-server`, still from the clone, where the samples are. The commands below run from the
-clone's root.
+([Install](install.md#the-release-archives)) and unpack them into one directory. Each archive holds the
+samples too, in `examples/` beside `docs/`, so that directory works like the clone's root: run the
+binaries from it in place of `./bin/shift2eu` and `./bin/shift2eu-server` (`./shift2eu` and
+`./shift2eu-server`). The commands below run from the clone's root, or from that directory.
 
 ## Assess against one target
 
