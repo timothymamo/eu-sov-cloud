@@ -23,6 +23,7 @@ func TestCategoryValues(t *testing.T) {
 		want string
 	}{
 		{name: "compute vm", got: taxonomy.ComputeVM, want: "compute.vm"},
+		{name: "compute bare metal", got: taxonomy.ComputeBareMetal, want: "compute.baremetal"},
 		{name: "kubernetes managed", got: taxonomy.KubernetesManaged, want: "kubernetes.managed"},
 		{name: "object storage", got: taxonomy.StorageObject, want: "storage.object"},
 		{name: "block storage", got: taxonomy.StorageBlock, want: "storage.block"},
@@ -53,6 +54,7 @@ func TestParseCategory(t *testing.T) {
 		want taxonomy.Category
 	}{
 		{name: "compute vm", in: "compute.vm", want: taxonomy.ComputeVM},
+		{name: "compute bare metal", in: "compute.baremetal", want: taxonomy.ComputeBareMetal},
 		{name: "kubernetes managed", in: "kubernetes.managed", want: taxonomy.KubernetesManaged},
 		{name: "object storage", in: "storage.object", want: taxonomy.StorageObject},
 		{name: "block storage", in: "storage.block", want: taxonomy.StorageBlock},
@@ -170,6 +172,7 @@ func TestCategories(t *testing.T) {
 	t.Parallel()
 
 	want := []taxonomy.Category{
+		taxonomy.ComputeBareMetal,
 		taxonomy.ComputeVM,
 		taxonomy.DatabaseMySQL,
 		taxonomy.DatabasePostgreSQL,
