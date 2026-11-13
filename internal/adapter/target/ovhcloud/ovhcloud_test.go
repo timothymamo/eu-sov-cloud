@@ -273,10 +273,11 @@ func regionsListed(prices []catalog.Price) string {
 }
 
 // TestCatalogGolden pins the whole parsed catalog against a hand-written golden
-// file: every offering with its categories, capabilities and regions, in the
-// order and canonical form the domain gives them. It is a change detector for the
-// snapshot data and for the parsing, so a refresh of catalog.json has to update
-// this file in the same review.
+// file: the snapshot header and its default region, then every offering with its
+// categories, capabilities, regions, plans and prices, in the order and canonical
+// form the domain gives them. It is a change detector for the snapshot data and
+// for the parsing, so a refresh of catalog.json has to update this file in the
+// same review, and a price may not change unnoticed.
 func TestCatalogGolden(t *testing.T) {
 	t.Parallel()
 
@@ -302,8 +303,12 @@ func TestCatalogGolden(t *testing.T) {
 }
 
 // dump renders cat as the golden file's lines: a header with where and when the
-// data was taken, then one line per offering, sorted by name, with every list
-// comma-separated and an empty list shown as "-".
+// data was taken and the region estimates use, then one block per offering,
+// sorted by name: the offering's line, then one line per plan and one per storage
+// price. Every list is comma-separated and an empty one is shown as "-", the
+// plans and storage prices included. Lines below an offering are indented so the
+// file reads as blocks. Everything comes from slices in the domain's canonical
+// order, so the file is the same on every run.
 func dump(cat catalog.Catalog) []byte {
 	var b strings.Builder
 
@@ -312,13 +317,70 @@ func dump(cat catalog.Catalog) []byte {
 	fmt.Fprintf(&b, "target: %s\n", cat.Target())
 	fmt.Fprintf(&b, "sourceURL: %s\n", snapshot.SourceURL)
 	fmt.Fprintf(&b, "retrievedOn: %s\n", snapshot.RetrievedOn.UTC().Format(time.DateOnly))
+	fmt.Fprintf(&b, "defaultRegion: %s\n", snapshot.DefaultRegion)
 
 	for _, o := range cat.Offerings() {
 		fmt.Fprintf(&b, "%s | %s | %s | %s\n",
 			o.Name, join(o.Categories), join(o.Capabilities), join(o.Regions))
+
+		if len(o.Plans) == 0 {
+			b.WriteString("  plans: -\n")
+		}
+
+		for _, p := range o.Plans {
+			fmt.Fprintf(&b, "  plan: %s | %d vcpu | %s GiB | %d GiB storage | %s\n",
+				p.Name, p.VCPUs, gib(p.MemoryMilliGiB), p.IncludedStorageGiB, joinPrices(p.Prices))
+		}
+
+		if len(o.StoragePrices) == 0 {
+			b.WriteString("  storage prices: -\n")
+		}
+
+		for _, p := range o.StoragePrices {
+			fmt.Fprintf(&b, "  storage price: %s\n", formatPrice(p))
+		}
 	}
 
 	return []byte(b.String())
+}
+
+// joinPrices formats prices as the golden file shows them on a plan's line: each
+// price as formatPrice renders it, in the domain's order, separated by "; ", or
+// "-" when there are none.
+func joinPrices(prices []catalog.Price) string {
+	if len(prices) == 0 {
+		return "-"
+	}
+
+	rendered := make([]string, len(prices))
+	for i, p := range prices {
+		rendered[i] = formatPrice(p)
+	}
+
+	return strings.Join(rendered, "; ")
+}
+
+// formatPrice renders a monthly list price as "<amount> <currency> @ <regions>",
+// with the amount as catalog.Amount.String formats it and the regions
+// comma-separated. A price that lists no region applies to every region of its
+// offering, and the "-" says so.
+func formatPrice(p catalog.Price) string {
+	return fmt.Sprintf("%s %s @ %s", p.Amount, p.Currency, join(p.Regions))
+}
+
+// gib formats milliGiB, a memory size in thousandths of a GiB as the domain holds
+// it, as a decimal number of GiB with trailing zeros dropped from the fraction:
+// 8000 is "8", 7500 is "7.5". A plan's memory is always positive: the domain
+// refuses anything below one thousandth of a GiB.
+func gib(milliGiB int64) string {
+	whole, frac := milliGiB/1_000, milliGiB%1_000
+
+	digits := strings.TrimRight(fmt.Sprintf("%03d", frac), "0")
+	if digits == "" {
+		return fmt.Sprint(whole)
+	}
+
+	return fmt.Sprintf("%d.%s", whole, digits)
 }
 
 // join formats values as a comma-separated list, or "-" when there are none.
