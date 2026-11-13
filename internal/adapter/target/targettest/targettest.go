@@ -27,6 +27,9 @@ type Expectations struct {
 	// Categories lists the taxonomy categories the catalog must serve, each by at
 	// least one offering.
 	Categories []taxonomy.Category
+	// DefaultRegion is the region the catalog's snapshot must name as the one
+	// estimates use when the user names none. It must be one of Regions.
+	DefaultRegion string
 }
 
 // Check runs the target contract against src and returns every violation it
@@ -37,12 +40,22 @@ type Expectations struct {
 //   - catalog: Catalog returns without error;
 //   - target: the catalog's Target is want.Target;
 //   - snapshot: the catalog's snapshot has a source URL and a retrieval date;
+//   - default-region: the snapshot's default region is want.DefaultRegion
+//     (skipped when want.DefaultRegion is empty, which is already an
+//     expectations violation) and one of want.Regions (skipped when
+//     want.Regions is empty);
 //   - regions: every offering is available only in want.Regions (skipped
 //     when want.Regions is empty, which is already an expectations violation);
 //   - category: every category of want.Categories is served;
-//   - repeat: a second call returns the same catalog as the first;
+//   - repeat: a second call returns the same catalog as the first, plans,
+//     prices, storage prices and the default region included;
 //   - cancel: a call with a cancelled context returns an error wrapping
 //     context.Canceled (the violation wraps context.Canceled too).
+//
+// The contract has no check of its own that every plan is priced in EUR at an
+// amount of at least 0, or that a price applies only to its offering's regions:
+// a catalog.Catalog is built only by catalog.New, which already refuses both
+// (ADR 0024).
 //
 // An error from src is shown through text.Quote and stays in the violation's
 // chain.
@@ -100,11 +113,15 @@ func checkExpectations(want Expectations) []error {
 		errs = append(errs, errors.New("expectations: Categories is empty, want every category the catalog must serve"))
 	}
 
+	if want.DefaultRegion == "" {
+		errs = append(errs, errors.New("expectations: DefaultRegion is empty, want the region estimates use by default"))
+	}
+
 	return errs
 }
 
-// checkCatalog returns the violations of the target, snapshot, regions and
-// category checks by cat.
+// checkCatalog returns the violations of the target, snapshot, default-region,
+// regions and category checks by cat.
 func checkCatalog(cat catalog.Catalog, want Expectations) []error {
 	var errs []error
 
@@ -122,12 +139,33 @@ func checkCatalog(cat catalog.Catalog, want Expectations) []error {
 		errs = append(errs, errors.New("snapshot: RetrievedOn is zero, want the date the catalog was retrieved"))
 	}
 
+	errs = append(errs, checkDefaultRegion(snapshot.DefaultRegion, want)...)
 	errs = append(errs, checkRegions(cat, want.Regions)...)
 
 	for _, category := range want.Categories {
 		if len(cat.OfferingsFor(category)) == 0 {
 			errs = append(errs, fmt.Errorf("category: no offering serves %s", text.Quote(string(category))))
 		}
+	}
+
+	return errs
+}
+
+// checkDefaultRegion returns a default-region violation when region, the
+// catalog's default region, is not want.DefaultRegion or not one of
+// want.Regions. An empty expectation skips its half of the check: it is already
+// an expectations violation.
+func checkDefaultRegion(region string, want Expectations) []error {
+	var errs []error
+
+	if want.DefaultRegion != "" && region != want.DefaultRegion {
+		errs = append(errs, fmt.Errorf("default-region: Snapshot().DefaultRegion = %s, want %s",
+			text.Quote(region), text.Quote(want.DefaultRegion)))
+	}
+
+	if len(want.Regions) > 0 && !slices.Contains(want.Regions, region) {
+		errs = append(errs, fmt.Errorf("default-region: Snapshot().DefaultRegion = %s, want one of %s",
+			text.Quote(region), quoteAll(want.Regions)))
 	}
 
 	return errs
@@ -212,6 +250,10 @@ func diff(got, want catalog.Catalog) string {
 			gs.RetrievedOn.Format(time.RFC3339), ws.RetrievedOn.Format(time.RFC3339))
 	}
 
+	if gs.DefaultRegion != ws.DefaultRegion {
+		return fmt.Sprintf("snapshot default region %s, want %s", text.Quote(gs.DefaultRegion), text.Quote(ws.DefaultRegion))
+	}
+
 	g, w := got.Offerings(), want.Offerings()
 
 	for i := range max(len(g), len(w)) {
@@ -228,18 +270,58 @@ func diff(got, want catalog.Catalog) string {
 	return ""
 }
 
-// equalOffering reports whether a and b are the same offering, field by field.
+// equalOffering reports whether a and b are the same offering, field by field,
+// plans, prices and storage prices included.
 func equalOffering(a, b catalog.Offering) bool {
 	return a.Name == b.Name &&
 		slices.Equal(a.Categories, b.Categories) &&
 		slices.Equal(a.Capabilities, b.Capabilities) &&
-		slices.Equal(a.Regions, b.Regions)
+		slices.Equal(a.Regions, b.Regions) &&
+		slices.EqualFunc(a.Plans, b.Plans, equalPlan) &&
+		slices.EqualFunc(a.StoragePrices, b.StoragePrices, equalPrice)
+}
+
+// equalPlan reports whether a and b are the same plan, prices included.
+func equalPlan(a, b catalog.Plan) bool {
+	return a.Name == b.Name &&
+		a.VCPUs == b.VCPUs &&
+		a.MemoryMilliGiB == b.MemoryMilliGiB &&
+		a.IncludedStorageGiB == b.IncludedStorageGiB &&
+		slices.EqualFunc(a.Prices, b.Prices, equalPrice)
+}
+
+// equalPrice reports whether a and b are the same price.
+func equalPrice(a, b catalog.Price) bool {
+	return a.Amount == b.Amount && a.Currency == b.Currency && slices.Equal(a.Regions, b.Regions)
 }
 
 // describe formats o for a violation message, quoting every value.
 func describe(o catalog.Offering) string {
-	return fmt.Sprintf("{Name: %s, Categories: %s, Capabilities: %s, Regions: %s}",
-		text.Quote(o.Name), quoteAll(o.Categories), quoteAll(o.Capabilities), quoteAll(o.Regions))
+	return fmt.Sprintf("{Name: %s, Categories: %s, Capabilities: %s, Regions: %s, Plans: %s, StoragePrices: %s}",
+		text.Quote(o.Name), quoteAll(o.Categories), quoteAll(o.Capabilities), quoteAll(o.Regions),
+		describePlans(o.Plans), describePrices(o.StoragePrices))
+}
+
+// describePlans formats plans for a violation message, quoting every value.
+func describePlans(plans []catalog.Plan) string {
+	described := make([]string, len(plans))
+	for i, p := range plans {
+		described[i] = fmt.Sprintf("{Name: %s, VCPUs: %d, MemoryMilliGiB: %d, IncludedStorageGiB: %d, Prices: %s}",
+			text.Quote(p.Name), p.VCPUs, p.MemoryMilliGiB, p.IncludedStorageGiB, describePrices(p.Prices))
+	}
+
+	return fmt.Sprint(described)
+}
+
+// describePrices formats prices for a violation message, quoting every value.
+func describePrices(prices []catalog.Price) string {
+	described := make([]string, len(prices))
+	for i, p := range prices {
+		described[i] = fmt.Sprintf("{Amount: %s, Currency: %s, Regions: %s}",
+			p.Amount, text.Quote(p.Currency), quoteAll(p.Regions))
+	}
+
+	return fmt.Sprint(described)
 }
 
 // quoteAll formats values as a bracketed list, each value through text.Quote.
