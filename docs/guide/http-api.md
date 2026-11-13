@@ -23,7 +23,8 @@ the request.
 Outside the repository those relative paths do not resolve, so each release, from the first after
 `v0.3.0`, also publishes the self-contained document as the asset `shift2eu-server_openapi.json`: the
 same document with the report schemas bundled under `components.schemas` (`AssessmentReportV1`,
-`ComparisonReportV1`). The latest release's is always at
+`ComparisonReportV1`). The latest release's, that of the highest version released, as for the
+images' `latest` tag, is always at
 <https://github.com/timothymamo/shift2eu/releases/latest/download/shift2eu-server_openapi.json>, and a
 given release's at `https://github.com/timothymamo/shift2eu/releases/download/vX.Y.Z/shift2eu-server_openapi.json`.
 It is listed in the release's `checksums.txt` and carries the same GitHub build provenance as the

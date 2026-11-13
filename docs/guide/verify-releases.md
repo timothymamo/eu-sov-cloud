@@ -75,7 +75,9 @@ archive and its `checksums.txt` cannot make that attestation. The release is pub
 holds exactly `checksums.txt` and the files it lists, each with the digest it records, and the
 release published is the draft that was checked. The release workflow's `verify-archives` job then
 runs these checks on every asset of every release, on a fresh runner with read-only permissions, and
-fails the release when one fails. Check either archive, or the OpenAPI document, the same way, with `TAG` set to the release you
+fails the release when one fails. It also checks that GitHub's "Latest" release, the one
+`releases/latest/download/...` serves, is the highest version released, the release the images'
+`latest` tag names: a patch to an older line is published without becoming "Latest". Check either archive, or the OpenAPI document, the same way, with `TAG` set to the release you
 want:
 
 ```bash

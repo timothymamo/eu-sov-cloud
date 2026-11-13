@@ -176,9 +176,16 @@ moves or deletes a tag.
    again from the top of this step.
    Report the result of the run's `verify-archives` job, "Verify the published archives", the
    independent check of every published archive and `checksums.txt` against their digests and their
-   build provenance:
+   build provenance, and of GitHub's "Latest" release, which must follow the same highest-release rule
+   as the images' `latest` tag (issue #173, ADR 0015):
    `gh run view <id> --json jobs --jq '.jobs[] | select(.name == "Verify the published archives") | .conclusion'`.
-   It must be `success`; a failure is a failed release, handled as a failed `verify` below.
+   It must be `success`; a failure is a failed release, handled as a failed `verify` below. When the
+   highest release tag merged into `main` has no published release yet, it skips the "Latest" check
+   and passes with the notice `the release of <higher tag> is not published yet, ...`. Read its
+   notices from its annotations exactly as for `verify` below (its job id by the name "Verify the
+   published archives"), and act on each the same way. Confirm GitHub's "Latest" yourself too:
+   `gh api repos/timothymamo/shift2eu/releases/latest --jq '.tag_name'` must be the highest `vX.Y.Z`
+   tag merged into `main` once its release is published, never an older line's patch.
    Report the result of the run's `verify` job too, the independent check of both published images
    on a fresh GitHub-hosted runner (issue #99, ADR 0015). Find it by its name, "Verify the published
    images", which `check.ReleaseWorkflow` pins:
