@@ -3,6 +3,7 @@ package lint_test
 import (
 	"errors"
 	"fmt"
+	"io/fs"
 	"path"
 	"slices"
 	"strings"
@@ -96,18 +97,85 @@ type docPath struct {
 	symlink bool   // fs.DirEntry.Type()&fs.ModeSymlink != 0
 }
 
+// docEntries walks fsys from its root, in the lexical order of fs.WalkDir, and
+// returns the entries a check of the doc-only trees reads: every file the go
+// command's ./... pattern reaches, and beside them every symlink at any depth,
+// recorded as a link and never followed. ./... leaves out a testdata directory
+// and one whose name starts with . or _ (skipDir), and the walk leaves only
+// their files out, not the symlinks in them: an import of a path through a
+// link follows it whatever directory it sits in (issue #194). Nothing comes
+// from under the root of another module, symlinks included, though the walked
+// root itself is always read. No directory is returned, and a walk error is.
+func docEntries(fsys fs.FS) ([]docPath, error) {
+	var entries []docPath
+
+	err := fs.WalkDir(fsys, ".", func(rel string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+
+		if d.IsDir() {
+			if rel == "." {
+				return nil
+			}
+
+			_, err := fs.Stat(fsys, path.Join(rel, "go.mod"))
+			switch {
+			case err == nil:
+				return fs.SkipDir
+			case errors.Is(err, fs.ErrNotExist):
+				return nil
+			default:
+				return err
+			}
+		}
+
+		if d.Type()&fs.ModeSymlink != 0 {
+			entries = append(entries, docPath{rel: rel, symlink: true})
+
+			return nil
+		}
+
+		if !leftOutOfDotDotDot(path.Dir(rel)) {
+			entries = append(entries, docPath{rel: rel})
+		}
+
+		return nil
+	})
+	if err != nil {
+		return nil, fmt.Errorf("walk the doc-only trees: %w", err)
+	}
+
+	return entries, nil
+}
+
+// leftOutOfDotDotDot reports whether the go command's ./... pattern leaves the
+// directory dir, a slash-separated path relative to the module root, out by
+// the name of dir or of one of its ancestors: testdata, or a name starting
+// with . or _ (skipDir).
+func leftOutOfDotDotDot(dir string) bool {
+	if dir == "." {
+		return false
+	}
+
+	return slices.ContainsFunc(strings.Split(dir, "/"), func(name string) bool {
+		return name == "testdata" || strings.HasPrefix(name, ".") || strings.HasPrefix(name, "_")
+	})
+}
+
 // docSourceProblems returns the problems of entries, in their order, that lie
 // under a tree of held and under no tree of takenOut. A tree holds a path by
 // whole segments, so test/e2e2 is not under test/e2e.
 //
-// A symlink there is refused (docSymlinkLine) whatever its name, and under a
-// testdata directory too: the walk reads the link, not what it points at, yet
-// an import of its path follows it and the toolchain builds the source it finds
-// there. Any other entry is refused (docSourceLine) when it is a non-Go source
-// (nonGoSourceExtensions) under no testdata directory. A non-Go file under
-// testdata is no source of the held package: the go command leaves testdata, _
-// and . directories out of ./..., and a package there is built only when it is
-// imported by path, which this check does not cover (a follow-up to #194).
+// Every symlink in, or above, a held tree is refused (docSymlinkLine), whatever
+// its name and wherever it sits, inside testdata, _ and . directories included:
+// a symlink that is a held tree, lies under one or is an ancestor of one. The
+// walk reads the link, not what it points at, yet an import of its path follows
+// it and the toolchain builds the source it finds there. Any other entry is
+// refused (docSourceLine) when it is a non-Go source (nonGoSourceExtensions)
+// under no testdata directory: the testdata, _ and . exemption of ./... covers
+// non-Go files only. A package under testdata or _x is still built when it is
+// imported by path, which this check does not cover (the follow-up to #194).
 func docSourceProblems(entries []docPath, held, takenOut []string) []string {
 	var problems []string
 
@@ -116,14 +184,19 @@ func docSourceProblems(entries []docPath, held, takenOut []string) []string {
 			continue
 		}
 
-		i := slices.IndexFunc(held, func(dir string) bool { return underDir(e.rel, dir) })
-		if i < 0 {
+		if e.symlink {
+			i := slices.IndexFunc(held, func(dir string) bool {
+				return e.rel == dir || underDir(e.rel, dir) || underDir(dir, e.rel)
+			})
+			if i >= 0 {
+				problems = append(problems, docSymlinkLine(e.rel, held[i]))
+			}
+
 			continue
 		}
 
-		if e.symlink {
-			problems = append(problems, docSymlinkLine(e.rel, held[i]))
-
+		i := slices.IndexFunc(held, func(dir string) bool { return underDir(e.rel, dir) })
+		if i < 0 {
 			continue
 		}
 

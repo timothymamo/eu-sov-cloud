@@ -575,11 +575,13 @@ target, with the `e2e` and `integration` tags (`strictcoverage_test.go`):
   (`test/lint`, issue #194) refuses a non-Go source the Go toolchain builds beside a package
   (assembly, C, C++, Objective-C, Fortran, SWIG or a `.syso` object) in every tree the rule's
   `files:` list holds, outside `testdata` directories; it reads those trees from `.golangci.yml`.
-  A non-Go file under `testdata` is no source of the held package: the go command leaves
-  `testdata`, `_` and `.` directories out of `./...`, and a package there is built only when it
-  is imported by path, which this check does not cover (a follow-up to #194). It refuses a symlink
-  in those trees too, `testdata` included, whatever its name: the walk reads the link, not what it
-  points at, yet an import of its path follows it and the toolchain builds the source it finds there.
+  The go command leaves `testdata`, `_` and `.` directories out of `./...`, and that exemption
+  covers non-Go files only: a non-Go file there is no source of the held package. The check refuses
+  every symlink in, or above, a held tree, whatever its name and wherever it sits, inside
+  `testdata`, `_` and `.` directories included: the walk reads the link, not what it points at, yet
+  an import of its path follows it and the toolchain builds the source it finds there. A package
+  under `testdata` or `_x` is still built when it is imported by path, which this check does not
+  cover (the follow-up to #194).
 
 ### Tests change no process state
 

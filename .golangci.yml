@@ -1429,11 +1429,11 @@ linters:
         # files: list cannot say "this directory only" and test/architecture/internal/check reads
         # os and os/exec. An import list says nothing of a file that needs no import, so
         # test/lint's TestDocPackagesHoldNoNonGoSource refuses a non-Go source (assembly, C, a
-        # .syso object, ...) outside testdata, and any symlink, in every tree this files: list
-        # holds, read from it (issue #194). A non-Go file under testdata is no source of the held
-        # package: the go command leaves testdata, _ and . directories out of ./..., and a package
-        # there is built only when it is imported by path, which that check does not cover (a
-        # follow-up to #194).
+        # .syso object, ...) outside testdata in every tree this files: list holds, read from it
+        # (issue #194), and every symlink in, or above, a held tree, anywhere, testdata, _ and .
+        # directories included. The testdata, _ and . exemption of ./... covers non-Go files only.
+        # A package under testdata or _x is still built when it is imported by path, which that
+        # check does not cover (the follow-up to #194).
         test-docs-are-pure:
           list-mode: strict
           files:
