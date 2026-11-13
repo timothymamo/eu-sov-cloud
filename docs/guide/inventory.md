@@ -100,11 +100,12 @@ inventory can be committed by accident.
 
 The collected directory is the providers' raw output. The commands keep only the fields the programs
 read (`--query` for `aws` and `az`, a `--format` projection and a `jq` filter for `gcloud`), so it
-holds no environment variables, startup scripts, admin user names, SSH keys or tag and label values
-beyond the few the programs read, but it still holds full ARNs and resource IDs, which carry the
-account, project or subscription, and can hold IP addresses, tag keys and AKS node pool labels. Share only the
-reviewed inventory file, never the directory, and delete the directory once the inventory is built
-(see [Privacy](#privacy)).
+holds no environment variables, startup scripts, admin user names or SSH keys, and no tag or label
+values beyond the few the programs read, except inside an AKS cluster's node pools, which the Azure
+query keeps whole. It still holds full ARNs and resource IDs, which carry the account, project or
+subscription, and can hold IP addresses, tag keys, and an AKS node pool's labels, tags (keys and
+values), taints, subnet ID and node image version. Share only the reviewed inventory file, never the
+directory, and delete the directory once the inventory is built (see [Privacy](#privacy)).
 
 The loops below go on when one call fails, so read what they print on stderr. A failed call
 (`AccessDenied`, `AuthorizationFailed`, `PERMISSION_DENIED`) means the setting it reads is missing
@@ -532,7 +533,8 @@ az storage account list --query "[].[name, resourceGroup]" --output tsv |
 The query keeps no admin user names, SSH keys, server logins or host names. It keeps whole arrays
 where the program reads one field of each element (a virtual machine's data disks and network
 interfaces, a network interface's IP configurations with their private IP addresses, an AKS
-cluster's node pools with their labels), as Resource Graph cannot trim inside an array.
+cluster's node pools with their labels, tags (keys and values), taints, subnet IDs and node image
+versions), as Resource Graph cannot trim inside an array.
 
 Resource Graph holds most settings; Service Bus queues and topics, storage queues and a storage
 account's blob versioning are not in it, hence the three loops. Storage queues are listed through the
