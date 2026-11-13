@@ -322,7 +322,14 @@ source. Each release publishes it as `shift2eu-server_openapi.json` (GoReleaser 
 and lists it in `checksums.txt` (`checksum.extra_files`); `check.GitHubRelease` and
 `check.GoReleaserArchives` pin both entries, and ci.yml's snapshot dry run
 (`.github/scripts/verify-archives.sh`) fails unless `checksums.txt` lists it with the sha256 of the
-committed file. The asset name carries no version, so
+committed file. It is attested like the archives: GoReleaser copies neither extra file into `dist/`,
+so `release.yml`'s `goreleaser` job copies `api/openapi.bundled.json` there as
+`shift2eu-server_openapi.json` and hands it on with the archives, and `attest-archives` checks it with
+`sha256sum -c checksums.txt` and gives it GitHub build provenance (`actions/attest-build-provenance`,
+one subject beside the archives, ADR 0015). `publish` then refuses a draft whose copy differs from
+the digest `checksums.txt` records, and `verify-archives` verifies its digest and attestation on the
+published release, as for every asset. `check.ReleaseWorkflow` pins the copy, the upload and the
+subject, and the dry run makes the same copy and checks the same hand-over. The asset name carries no version, so
 `releases/latest/download/shift2eu-server_openapi.json` is a stable URL: the release already scopes
 the version (`releases/download/vX.Y.Z/...`). The `shift2eu-server_` prefix matches the server's
 archives, as the document describes that binary's API.

@@ -335,7 +335,10 @@ attestations, pushed to the registry beside the image.
   - **Archive attestations.** The `goreleaser` job hands `checksums.txt` and the archives on as a
     workflow artifact kept for seven days; `attest-archives` downloads it on a runner of its own, checks
     it with `sha256sum -c checksums.txt`, and attests every archive and `checksums.txt` with
-    `actions/attest-build-provenance`, by `subject-path`. Both the upload and the subjects name each
+    `actions/attest-build-provenance`, by `subject-path`. The bundled OpenAPI document
+    `shift2eu-server_openapi.json` (issue #139, ADR 0019) goes the same way: GoReleaser copies its
+    extra files into neither `dist/` nor the artifact, so the `goreleaser` job copies it into `dist/`
+    under that name after GoReleaser, and the upload and the subjects name it exactly. Both the upload and the subjects name each
     archive by its extension (`shift2eu_*.tar.gz`, `shift2eu_*.zip`, and the same for
     `shift2eu-server_*`): a bare `shift2eu_*` in `dist/` also matches GoReleaser's build directories and
     would attest the bare binaries beside the archives. One attestation then names each file as a

@@ -65,16 +65,17 @@ name the source repository (`org.opencontainers.image.source`) and the commit
 
 The release archives, the CLI's `shift2eu_*` and the HTTP API's `shift2eu-server_*`
 ([Install](install.md#the-release-archives)), are listed in one `checksums.txt`, published with the
-release, as is the OpenAPI document `shift2eu-server_openapi.json`, checked against it the same way with
-its name in place of the archive's. Each archive and `checksums.txt` itself carry GitHub build provenance, attested by the release
-workflow for its tag, before the release is published (issue #163). The digest check alone detects a
+release, as is the HTTP API's OpenAPI document `shift2eu-server_openapi.json`
+([Run the HTTP API](http-api.md)). Each archive, the OpenAPI document and `checksums.txt` itself carry
+GitHub build provenance, attested by the release workflow for its tag, before the release is published
+(issues #139, #163). The digest check alone detects a
 download corrupted in transit or on a mirror; the attestation adds who built the file: `release.yml`,
 run on a push of exactly that tag, from that commit, on GitHub's runners. Whoever could replace an
 archive and its `checksums.txt` cannot make that attestation. The release is published only if it
-holds exactly `checksums.txt` and the archives it lists, each with the digest it records, and the
+holds exactly `checksums.txt` and the files it lists, each with the digest it records, and the
 release published is the draft that was checked. The release workflow's `verify-archives` job then
 runs these checks on every asset of every release, on a fresh runner with read-only permissions, and
-fails the release when one fails. Check either archive the same way, with `TAG` set to the release you
+fails the release when one fails. Check either archive, or the OpenAPI document, the same way, with `TAG` set to the release you
 want:
 
 ```bash
@@ -98,7 +99,21 @@ tar -xzf "$ARCHIVE"
 leaves the copied file empty, which fails the check too (non-zero exit, no `OK`) instead of checking
 nothing. `gh attestation verify` must print `✓ Verification succeeded!` and exits non-zero otherwise.
 It works the same on macOS. `gh attestation verify checksums.txt ...`, with the same flags, verifies
-`checksums.txt` itself. On Windows, in PowerShell, for a `.zip` archive:
+`checksums.txt` itself. The OpenAPI document is checked the same way, by its name, and is not extracted:
+
+```bash
+TAG=vX.Y.Z
+DOC=shift2eu-server_openapi.json
+
+gh release download "$TAG" --repo timothymamo/shift2eu --pattern "$DOC" --pattern checksums.txt
+awk -v a="$DOC" '$2 == a' checksums.txt > "$DOC.sha256"
+sha256sum --check "$DOC.sha256"   # macOS: shasum -a 256 --check "$DOC.sha256"
+gh attestation verify "$DOC" --repo timothymamo/shift2eu \
+  --signer-workflow timothymamo/shift2eu/.github/workflows/release.yml \
+  --source-ref "refs/tags/$TAG" --deny-self-hosted-runners
+```
+
+The document is attested from the first release after `v0.3.0`, the first to publish it. On Windows, in PowerShell, for a `.zip` archive:
 
 ```powershell
 $Tag = "vX.Y.Z"

@@ -221,7 +221,10 @@ moves or deletes a tag.
    ```
 
    The two sums must be equal. A missing asset, a missing or repeated line or a different sum is a
-   failed release: report what you found and stop, as for a failed `verify` job.
+   failed release: report what you found and stop, as for a failed `verify` job. The asset's digest
+   and build provenance need no check of their own: `attest-archives` attests it with the archives,
+   and `verify-archives`, whose result is reported above, verifies every asset `checksums.txt` lists,
+   this one included.
 8. Check the published image yourself; do not hand this to the user. The Lima VM has cosign, a `gh`
    with `gh attestation`, `crane` and rootless `nerdctl` (ADR 0017); this is "Verify the image" in
    `docs/guide/verify-releases.md`, in its VM form, for the new tag. Run it from the repository root,

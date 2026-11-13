@@ -29,7 +29,7 @@ archive against `checksums.txt`, which detects a corrupted download, and against
 the release workflow attests for it, which detects a tampered release (from the first release after
 `v0.3.0`). Beside the archives, each release from the first after `v0.3.0` publishes
 `shift2eu-server_openapi.json`, the HTTP API's self-contained OpenAPI document
-([Run the HTTP API](http-api.md)), also listed in `checksums.txt`.
+([Run the HTTP API](http-api.md)), also listed in `checksums.txt` and attested like the archives.
 
 ## The images
 

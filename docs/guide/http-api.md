@@ -26,7 +26,8 @@ same document with the report schemas bundled under `components.schemas` (`Asses
 `ComparisonReportV1`). The latest release's is always at
 <https://github.com/timothymamo/shift2eu/releases/latest/download/shift2eu-server_openapi.json>, and a
 given release's at `https://github.com/timothymamo/shift2eu/releases/download/vX.Y.Z/shift2eu-server_openapi.json`.
-It is listed in the release's `checksums.txt` and verified like an archive
+It is listed in the release's `checksums.txt` and carries the same GitHub build provenance as the
+archives, so it is verified like one, by its digest and with `gh attestation verify`
 ([Verify an archive](verify-releases.md#verify-an-archive)). The repository holds the same file as
 [`api/openapi.bundled.json`](../../api/openapi.bundled.json), generated from `api/openapi.json` (`make
 openapi`) and held to it by a test; `api/openapi.json` stays the source to edit.
