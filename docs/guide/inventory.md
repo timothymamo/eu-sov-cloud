@@ -580,14 +580,14 @@ A Service Bus topic, where every subscription gets its own copy of a message, is
 subscribe, which no taxonomy category covers: each topic is listed as `unclassified` under its own
 name, so the report shows it as a blocker.
 
-Left out: virtual machines of a scale set and their OS disks (`storageProfile.osDisk`; the scale
-set stands for them), snapshots and autoscale
+Left out: virtual machines of a scale set, their OS disks (`storageProfile.osDisk`) and their data
+disks created with `deleteOption: Delete` (the scale set stands for them), snapshots and autoscale
 settings, which become capabilities of their disk or scale set, a Service Bus namespace whose queues
 or topics are listed (they stand for it; a namespace with neither stays `unclassified`), and
 everything in an AKS cluster's node resource group (`properties.nodeResourceGroup`, usually
-`MC_<group>_<cluster>_<region>`): the node pools' scale sets, load balancers, public IP addresses and
-network interfaces, which AKS manages and the cluster stands for. A managed disk in that group is a
-persistent volume that holds data, and stays.
+`MC_<group>_<cluster>_<region>`): the node pools' scale sets, load balancers, public IP addresses
+and network interfaces, which AKS manages and the cluster stands for. A managed disk in that group
+is a persistent volume that holds data, and stays.
 
 | Category | Capability | When |
 |---|---|---|

@@ -94,10 +94,15 @@ def child_types:
 | ([$queues[], $topics[] | .id | lid | sub("/(queues|topics)/.*$"; "")] | unique) as $queuenamespaces
 | ([$rows[] | select(lower_type == "microsoft.containerservice/managedclusters")
     | .properties.nodeResourceGroup // empty | ascii_downcase] | unique) as $nodegroups
-# The OS disks of a scale set's virtual machines: the scale set stands for them.
+# The OS disks of a scale set's virtual machines, and their data disks deleted with them: the
+# scale set stands for them.
 | ([$rows[] | select(lower_type == "microsoft.compute/virtualmachines")
     | select(.properties.virtualMachineScaleSet.id? != null)
-    | .properties.storageProfile.osDisk.managedDisk.id? // empty | lid] | unique) as $scalesetdisks
+    | .properties.storageProfile
+    | (.osDisk.managedDisk.id?,
+       (.dataDisks[]? | select((.deleteOption // "" | ascii_downcase) == "delete")
+         | .managedDisk.id?))
+    | values | lid] | unique) as $scalesetdisks
 | [
     # Service Bus queues. Every queue has a dead-letter subqueue.
     ($queues[]

@@ -35,15 +35,6 @@
       ]
     },
     {
-      "id": "disk-shop-web-1-os",
-      "rawType": "Microsoft.Compute/disks",
-      "category": "storage.block",
-      "region": "westeurope",
-      "capabilities": [
-        "encryption-at-rest"
-      ]
-    },
-    {
       "id": "func-shop-thumbnails",
       "rawType": "Microsoft.Web/sites",
       "category": "serverless.function",
@@ -174,6 +165,15 @@
       ]
     },
     {
+      "id": "vm-shop-web-1_OsDisk_1",
+      "rawType": "Microsoft.Compute/disks",
+      "category": "storage.block",
+      "region": "westeurope",
+      "capabilities": [
+        "encryption-at-rest"
+      ]
+    },
+    {
       "id": "vmss-shop-web",
       "rawType": "Microsoft.Compute/virtualMachineScaleSets",
       "category": "compute.vm",
@@ -181,6 +181,15 @@
       "capabilities": [
         "autoscaling",
         "zone-high-availability"
+      ]
+    },
+    {
+      "id": "vmss-shop-web_0abc_DataDisk_1",
+      "rawType": "Microsoft.Compute/disks",
+      "category": "storage.block",
+      "region": "westeurope",
+      "capabilities": [
+        "encryption-at-rest"
       ]
     }
   ]
