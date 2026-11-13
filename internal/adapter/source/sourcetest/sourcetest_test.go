@@ -155,8 +155,8 @@ func mentions(err error, keywords ...string) bool {
 // holds a newline and an ANSI escape sequence that clears the screen.
 var errHostile = errors.New("boom\n\x1b[2J")
 
-// TestCheck pins the first checks of the source contract suite: a source returns
-// the recorded inventory, the same one every time, and honours cancellation.
+// TestCheck pins the checks of the source contract suite: a source returns the
+// recorded inventory, the same one every time, and honours cancellation.
 func TestCheck(t *testing.T) {
 	t.Parallel()
 
