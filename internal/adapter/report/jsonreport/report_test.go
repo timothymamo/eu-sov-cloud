@@ -388,11 +388,11 @@ func TestReportDocumentShape(t *testing.T) {
 			{
 				id:              "i-0123456789abcdef0",
 				fit:             "direct",
-				bestOffering:    "Elastic Metal",
-				ties:            []string{"Instances"},
+				bestOffering:    "Instances",
+				ties:            []string{},
 				requiredChanges: []string{},
 				reasonCodes:     []string{"all-capabilities"},
-				reasonTexts:     []string{"Elastic Metal offers every capability the resource uses"},
+				reasonTexts:     []string{"Instances offers every capability the resource uses"},
 			},
 			{
 				id:              "misc-example",
@@ -405,13 +405,13 @@ func TestReportDocumentShape(t *testing.T) {
 			{
 				id:              "partial-example",
 				fit:             "partial",
-				bestOffering:    "Elastic Metal",
-				ties:            []string{"Instances"},
+				bestOffering:    "Instances",
+				ties:            []string{},
 				requiredChanges: []string{"node-high-availability", "snapshots"},
 				reasonCodes:     []string{"missing-capability", "missing-capability"},
 				reasonTexts: []string{
-					"Elastic Metal does not offer node-high-availability",
-					"Elastic Metal does not offer snapshots",
+					"Instances does not offer node-high-availability",
+					"Instances does not offer snapshots",
 				},
 			},
 		}

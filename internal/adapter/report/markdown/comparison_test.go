@@ -45,7 +45,7 @@ const (
 //   - fn-example and misc-example are blocked on every target, one for a category
 //     no target serves and one for being unclassified, so they are the shared
 //     blockers;
-//   - partial-example is partial on every target, with a tie on Scaleway.
+//   - partial-example is partial on every target.
 //
 // The IDs sort into the order the tables must use, which is also the order the
 // shared blockers must be listed in.
@@ -89,7 +89,11 @@ func comparisonResources() []inventory.Resource {
 
 // twoTargetResources is the inventory the two-target golden assesses: OVHcloud
 // and Scaleway both serve everything in it, so the comparison has no blocker on
-// every target and its shared-blocker section says "None.".
+// every target and its shared-blocker section says "None.". It holds db-example
+// so the Scaleway section keeps a tie note: both of that target's database
+// offerings offer every capability the resource uses, which is the kind of tie
+// ADR 0023 leaves after bare metal and virtual machines were split into separate
+// categories.
 func twoTargetResources() []inventory.Resource {
 	return []inventory.Resource{
 		{
@@ -98,6 +102,13 @@ func twoTargetResources() []inventory.Resource {
 			Category:     taxonomy.StorageObject,
 			Region:       "eu-west-1",
 			Capabilities: []taxonomy.Capability{taxonomy.ObjectVersioning},
+		},
+		{
+			ID:           "db-example",
+			RawType:      "AWS::RDS::DBInstance",
+			Category:     taxonomy.DatabasePostgreSQL,
+			Region:       "eu-west-1",
+			Capabilities: []taxonomy.Capability{taxonomy.PointInTimeRestore, taxonomy.ReadReplicas},
 		},
 		{
 			ID:           "partial-example",
@@ -177,8 +188,9 @@ func renderComparison(tb testing.TB, c assessment.Comparison, meta analysis.Repo
 // summary, resources, required changes and blockers.
 //
 // The tie note the single-target table appends is left out of the comparison
-// table, which the Scaleway section keeps, and the shared-blocker section says
-// "None." when no resource is blocked on every target.
+// table, which the Scaleway section keeps for db-example, and the
+// shared-blocker section says "None." when no resource is blocked on every
+// target.
 func TestReportComparison(t *testing.T) {
 	t.Parallel()
 

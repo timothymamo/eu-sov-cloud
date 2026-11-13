@@ -200,6 +200,9 @@ fixtures in earlier milestones share a picture of the data:
   missing (e.g. Instances and Elastic Metal for a plain VM), the best offering is the first by name, and
   the report names the tied offerings next to it ("`Elastic Metal` (tie: `Instances`)"). A
   product-preference order per category may read better in reports; revisit with the readiness score.
+  **Closed by [ADR 0023](../../docs/adr/0023-separate-bare-metal-servers-from-virtual-machines-in-the-taxonomy.md)
+  (issue #187):** bare-metal servers moved to `compute.baremetal`, so Elastic Metal no longer ties with
+  Instances; the name tie-break stays, and only ties between tiers of one product remain.
 - **Accepted: Required changes for a partial tie.** When several offerings are partial with the same
   number of missing capabilities but different ones, Required changes lists only the best offering's
   gaps, not those of the tied offerings. Accepted for now: the case is rare, and it understates the

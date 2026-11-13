@@ -220,6 +220,53 @@ func TestRegions(t *testing.T) {
 	}
 }
 
+// TestComputeCategoriesSeparateVirtualMachinesFromBareMetal pins the taxonomy split
+// issue #187 asks for: compute.vm is a virtual machine only, and a dedicated
+// physical server is compute.baremetal. Metal Instances is a bare-metal server, so
+// it must not tie with Instances for a VM workload. The category values are
+// written out as catalog.json holds them: an offering's categories are snapshot
+// data, not a reference to a Go constant.
+func TestComputeCategoriesSeparateVirtualMachinesFromBareMetal(t *testing.T) {
+	t.Parallel()
+
+	cat := catalogOf(t)
+
+	tests := []struct {
+		name     string
+		category taxonomy.Category
+		want     []string
+	}{
+		{
+			name:     "virtual machines",
+			category: taxonomy.Category("compute.vm"),
+			want:     []string{"Instances"},
+		},
+		{
+			name:     "bare metal servers",
+			category: taxonomy.Category("compute.baremetal"),
+			want:     []string{"Metal Instances"},
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			var got []string
+
+			for _, o := range cat.Offerings() {
+				if slices.Contains(o.Categories, tc.category) {
+					got = append(got, o.Name)
+				}
+			}
+
+			if diff := cmp.Diff(tc.want, got); diff != "" {
+				t.Errorf("offerings serving %s mismatch (-want +got):\n%s", text.Quote(string(tc.category)), diff)
+			}
+		})
+	}
+}
+
 // TestCatalogHonoursCancelledContext pins that a cancelled run reads nothing, and
 // that the error names the embedded OVHcloud catalog and its file on one line.
 func TestCatalogHonoursCancelledContext(t *testing.T) {

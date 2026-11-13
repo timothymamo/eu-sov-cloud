@@ -28,7 +28,7 @@
 | `shop-web-1` | `AWS::EC2::Instance` | `compute.vm` | direct | `Instances` | `Instances` offers every capability the resource uses |
 | `shop-web-1-data` | `AWS::EC2::Volume` | `storage.block` | partial | `Block Storage` | `Block Storage` does not offer `encryption-at-rest` |
 | `shop-web-2` | `AWS::EC2::Instance` | `compute.vm` | direct | `Instances` | `Instances` offers every capability the resource uses |
-| `shop-web-asg` | `AWS::AutoScaling::AutoScalingGroup` | `compute.vm` | partial | `Elastic Metal` (tie: `Instances`) | `Elastic Metal` does not offer `autoscaling`; `Elastic Metal` does not offer `zone-high-availability` |
+| `shop-web-asg` | `AWS::AutoScaling::AutoScalingGroup` | `compute.vm` | partial | `Instances` | `Instances` does not offer `autoscaling`; `Instances` does not offer `zone-high-availability` |
 | `shop.example.com` | `AWS::Route53::HostedZone` | `unclassified` | none |  | not classified |
 
 ## Required changes
@@ -38,7 +38,7 @@
 - `shop-orders`: `encryption-at-rest` (not offered by `Queues`)
 - `shop-orders-dlq`: `encryption-at-rest` (not offered by `Queues`)
 - `shop-web-1-data`: `encryption-at-rest` (not offered by `Block Storage`)
-- `shop-web-asg`: `autoscaling`, `zone-high-availability` (not offered by `Elastic Metal`)
+- `shop-web-asg`: `autoscaling`, `zone-high-availability` (not offered by `Instances`)
 
 ## Blockers
 

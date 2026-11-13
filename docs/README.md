@@ -61,6 +61,7 @@ supersedes it.
 - [0020. Rename the project to shift2eu, keep published releases and history as they are](adr/0020-rename-the-project-to-shift2eu.md)
 - [0021. Propose releases with release-please and tag them with a GitHub App](adr/0021-propose-releases-with-release-please-and-tag-with-a-github-app.md)
 - [0022. Lint shell scripts with shellcheck and workflows with actionlint](adr/0022-lint-shell-scripts-and-workflows-with-shellcheck-and-actionlint.md)
+- [0023. Separate bare-metal servers from virtual machines in the taxonomy](adr/0023-separate-bare-metal-servers-from-virtual-machines-in-the-taxonomy.md)
 
 ## Writing a page
 

@@ -193,11 +193,13 @@ func TestAssess(t *testing.T) {
 				wantCandidates:   nil,
 			},
 			{
-				name:             "one of two direct candidates",
+				// The fixture's only compute.vm offering: Elastic Metal is a
+				// bare-metal server and no VM candidate (issue #187, ADR 0023).
+				name:             "the only VM candidate",
 				id:               "i-0123456789abcdef0",
 				wantFit:          mapping.Direct,
-				wantBestOffering: "Elastic Metal",
-				wantCandidates:   []string{"Elastic Metal", "Instances"},
+				wantBestOffering: "Instances",
+				wantCandidates:   []string{"Instances"},
 			},
 			{
 				// Never dropped, never mapped.
@@ -213,8 +215,8 @@ func TestAssess(t *testing.T) {
 				name:                "missing capability",
 				id:                  "partial-example",
 				wantFit:             mapping.Partial,
-				wantBestOffering:    "Elastic Metal",
-				wantCandidates:      []string{"Elastic Metal", "Instances"},
+				wantBestOffering:    "Instances",
+				wantCandidates:      []string{"Instances"},
 				wantRequiredChanges: []taxonomy.Capability{taxonomy.Snapshots},
 			},
 		}

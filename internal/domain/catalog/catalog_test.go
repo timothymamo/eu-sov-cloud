@@ -45,9 +45,10 @@ func validOfferings() []catalog.Offering {
 			Regions:      []string{"nl-ams", "fr-par", "nl-ams", "pl-waw"},
 		},
 		{
-			// Elastic Metal is a dedicated server: compute.vm only, no block storage.
+			// Elastic Metal is a dedicated physical server: compute.baremetal
+			// only, never compute.vm, and no block storage (issue #187, ADR 0023).
 			Name:         "Elastic Metal",
-			Categories:   []taxonomy.Category{taxonomy.ComputeVM},
+			Categories:   []taxonomy.Category{taxonomy.ComputeBareMetal},
 			Capabilities: []taxonomy.Capability{taxonomy.IPv6},
 			Regions:      []string{"fr-par", "nl-ams"},
 		},
@@ -215,7 +216,8 @@ func TestOfferingsFor(t *testing.T) {
 		in   taxonomy.Category
 		want []string
 	}{
-		{name: "compute served by two offerings", in: taxonomy.ComputeVM, want: []string{"Elastic Metal", "Instances"}},
+		{name: "compute", in: taxonomy.ComputeVM, want: []string{"Instances"}},
+		{name: "bare metal", in: taxonomy.ComputeBareMetal, want: []string{"Elastic Metal"}},
 		{
 			// One offering serving several categories: PostgreSQL and MySQL.
 			name: "postgresql served by two offerings",

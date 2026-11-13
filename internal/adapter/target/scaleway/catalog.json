@@ -13,7 +13,7 @@
     },
     {
       "name": "Elastic Metal",
-      "categories": ["compute.vm"],
+      "categories": ["compute.baremetal"],
       "capabilities": ["ipv6"],
       "regions": ["fr-par", "nl-ams", "pl-waw"]
     },

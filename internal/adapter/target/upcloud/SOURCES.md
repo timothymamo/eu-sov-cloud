@@ -309,6 +309,10 @@ or three nodes, which the documentation calls a multi-node plan. Pages:
   balancer, managed MySQL, managed object storage, managed OpenSearch, managed PostgreSQL, managed Valkey,
   NAT gateway, networking, private cloud and VPN gateway. None is a function-as-a-service or a message
   queue product. So a resource of either category gets fit none on UpCloud.
+- **No `compute.baremetal` offering (issue #187, ADR 0023).** The same product list has no bare-metal
+  server: Cloud Servers and GPU Servers are virtual machines, and Private Cloud runs Cloud Servers on
+  dedicated hosts, still under a hypervisor. So a bare-metal server gets fit none on UpCloud, and Cloud
+  Servers serve `compute.vm` only.
 - **Managed Valkey is not a queue.** `llms.txt` describes it as "commonly used as a database, cache,
   streaming engine, or message broker". It is an in-memory data store, a category the taxonomy does not
   have, not a queue product with acknowledgement or a dead-letter queue, so it does not serve

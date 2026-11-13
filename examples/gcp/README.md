@@ -1,13 +1,15 @@
 # GCP sample
 
-A made-up web shop on Google Cloud in `europe-west1`, with a read replica in `europe-west4`, as an
-inventory: dummy data only, from no real project. The raw types are Cloud Asset Inventory asset
-types, as `gcloud asset search-all-resources` and `gcloud asset export` report them.
+A made-up web shop on Google Cloud in `europe-west1`, with a read replica in `europe-west4` and a
+Bare Metal Solution search server in `europe-west3`, as an inventory: dummy data only, from no real
+project. The raw types are Cloud Asset Inventory asset types, as `gcloud asset search-all-resources`
+and `gcloud asset export` report them.
 
 | ID | Raw type | Category | Capabilities |
 |---|---|---|---|
 | `shop-web-1` | `compute.googleapis.com/Instance` | `compute.vm` | `ipv6` |
 | `shop-web-mig` | `compute.googleapis.com/InstanceGroupManager` | `compute.vm` | `autoscaling`, `zone-high-availability` |
+| `shop-search-bms` | `baremetalsolution.googleapis.com/Instance` | `compute.baremetal` | |
 | `shop-web-1-data` | `compute.googleapis.com/Disk` | `storage.block` | `snapshots`, `encryption-at-rest` |
 | `shop-assets` | `storage.googleapis.com/Bucket` | `storage.object` | `object-versioning` |
 | `shop-db` | `sqladmin.googleapis.com/Instance` | `database.postgresql` | `point-in-time-restore`, `zone-high-availability`, `read-replicas` |

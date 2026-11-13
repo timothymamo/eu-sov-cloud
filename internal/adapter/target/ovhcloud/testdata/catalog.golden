@@ -18,6 +18,6 @@ Managed PostgreSQL Multi-node | database.postgresql | encryption-at-rest, node-h
 Managed PostgreSQL Multi-node 3-AZ | database.postgresql | encryption-at-rest, node-high-availability, point-in-time-restore, zone-high-availability | MIL, PAR
 Managed PostgreSQL Multi-node Advanced | database.postgresql | encryption-at-rest, node-high-availability, point-in-time-restore, read-replicas | GRA, LIM, RBX, SBG, WAW
 Managed PostgreSQL Multi-node Advanced 3-AZ | database.postgresql | encryption-at-rest, node-high-availability, point-in-time-restore, read-replicas, zone-high-availability | MIL, PAR
-Metal Instances | compute.vm | ipv6, snapshots | GRA, LIM, SBG, WAW
+Metal Instances | compute.baremetal | ipv6, snapshots | GRA, LIM, SBG, WAW
 Object Storage | storage.object | encryption-at-rest, node-high-availability, object-versioning | GRA, LIM, RBX, SBG, WAW
 Object Storage 3-AZ | storage.object | encryption-at-rest, node-high-availability, object-versioning, zone-high-availability | MIL, PAR
