@@ -171,7 +171,13 @@ moves or deletes a tag.
    archives artifact's retention), "Re-run failed jobs" (`gh run rerun <id> --failed`) re-runs
    `attest-archives` or `publish` on the same draft and archives; after that, or when the draft itself
    is wrong, a full re-run (`gh run rerun <id>`) rebuilds the draft (`replace_existing_draft`) with new
-   archives and a new attestation, and rebuilds and re-pushes the images under the same tags. Until it
+   archives and a new attestation, and rebuilds and re-pushes the images under the same tags. A
+   `--failed` re-run does not re-run the successful `latest` job, so it reuses the first attempt's
+   `latest` decision (issue #173). `publish` refuses a stale `true` when a higher release is already
+   GitHub's "Latest" (`GitHub's latest release is <tag>, higher than <this tag>: the latest decision
+   is stale, ...`) and leaves the draft; the images' `latest` tag has no such guard. So when a higher
+   release tag has been merged into `main` since the first attempt, always tell the maintainer to
+   re-run the whole run (`gh run rerun <id>`, without `--failed`), which runs `latest` again. Until it
    is published, the images of the draft release are public already (ADR 0015). Then check the release
    again from the top of this step.
    Report the result of the run's `verify-archives` job, "Verify the published archives", the

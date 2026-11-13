@@ -388,7 +388,16 @@ attestations, pushed to the registry beside the image.
     re-run after the artifact has expired) runs `goreleaser` again: `replace_existing_draft` deletes the
     draft and uploads a new one with new archives (and so new digests and a new attestation), and the
     image jobs rebuild and push the images again under the same tags; their `verify` job then checks
-    the new digests. The `release-tag` skill holds the maintainer's steps.
+    the new digests. "Re-run failed jobs" (`gh run rerun <id> --failed`) does not re-run the
+    successful `latest` job, so `publish` reuses the first attempt's `latest` decision (amended by
+    issue #173). `publish` therefore refuses a stale `true`: while `LATEST` is `true`, it reads
+    GitHub's current "Latest" (`releases/latest`, `tag_name`) before anything else, and when that is
+    another tag, higher by `sort -V`, it fails and leaves the release a draft; only the API's 404 (no
+    "Latest" yet) passes, and any other failed read fails the step. The images' `latest` tag has no
+    such guard: a partial re-run of a failed image job pushes `latest` from that stale decision. So
+    when a higher release tag has been merged into `main` since the first attempt, always re-run the
+    whole run (`gh run rerun <id>`, without `--failed`), which runs `latest` again. The `release-tag`
+    skill holds the maintainer's steps.
   - **No fake-`gh` dry run.** The scripts of `publish`'s check and `verify-archives` run only in a
     release: CI does not run them against a fake `gh`. They are pinned verbatim by `check.ReleaseWorkflow`,
     were run against a stub `gh` and sample releases when written and again in review, and fail closed
@@ -410,7 +419,8 @@ attestations, pushed to the registry beside the image.
     them agreeing: were each job to read the tags from its own checkout, a release tag merged into
     `main` between two checkouts would give the images one answer and GitHub's "Latest" another within
     the same run. `publish` keeps no checkout: it takes the decision through `env:` as `LATEST`,
-    refuses any value but exactly `true` or `false`, and publishes with
+    refuses any value but exactly `true` or `false`, refuses a stale `true` when a higher release is
+    already GitHub's "Latest" (see **Recovery**), and publishes with
     `-F draft=false -f make_latest="$LATEST"`. `make_latest` is sent as a string field (`-f`): the API
     takes the string `"true"`, `"false"` or `"legacy"`, and `-F` would send a JSON boolean. A
     pre-release is never the highest (the filter drops it) and is published as a GitHub pre-release,
@@ -436,11 +446,10 @@ attestations, pushed to the registry beside the image.
     check of the `latest` job's decision rather than a read of it, fails when there is none, and
     reads `releases/latest`'s `tag_name`. A pre-release tag must never be GitHub's "Latest", checked
     first and without any condition, so the skip below cannot let one through. When the tag is the
-    highest, GitHub's "Latest" must be the
-    tag. When the highest release tag's release is published, GitHub's "Latest" must not be the tag.
-    When the API answers 404 for the highest release tag's release (not published yet, for any reason),
-    the check is skipped with a `::notice::`, the same window and handling as `verify`'s `latest`
-    check; any other answer fails the job. Like `verify`, it detects a bad release rather than prevents
+    highest, GitHub's "Latest" must be the tag. When the highest release tag's release is published,
+    GitHub's "Latest" must not be the tag. When the API answers 404 for the highest release tag's
+    release (not published yet, for any reason), the check is skipped with a `::notice::`, the same
+    window and handling as `verify`'s `latest` check; any other answer fails the job. Like `verify`, it detects a bad release rather than prevents
     one, and a failure is handled the same way.
   - `check.ReleaseWorkflow` pins the three new jobs as it pins the others, with the attest action as
     `actions/attest-build-provenance` by commit. CI's `test` job (`.github/scripts/verify-archives.sh`)
