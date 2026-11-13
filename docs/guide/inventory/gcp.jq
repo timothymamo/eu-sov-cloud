@@ -88,9 +88,10 @@ def details(f; k): map(select(f)) | INDEX(k);
 | ($all | details((.name? // "") | test("^projects/[^/]+/subscriptions/"); .name | key)) as $subscriptions
 | ([$all[] | select(.kind? == "compute#snapshot") | .sourceDisk? // empty | key] | unique) as $snapshotted
 | ([$clusters[] | .nodePools[]?.instanceGroupUrls[]? | key] | unique) as $nodegroups
-# The boot disks of the instances a managed instance group created.
+# The disks a managed instance group's instances delete with them (autoDelete),
+# boot disks or not: the group stands for them.
 | ([$instances[] | select([.metadata.items[]?.key] | index("created-by"))
-    | .disks[]? | select(.boot == true) | .source // empty | key] | unique) as $groupdisks
+    | .disks[]? | select(.autoDelete == true) | .source // empty | key] | unique) as $groupdisks
 | [
     $all[] | select(.assetType? and ((.name? // "") | startswith("//")))
     # A GKE node or its disk: the cluster stands for it.
@@ -122,7 +123,8 @@ def details(f; k): map(select(f)) | INDEX(k);
         # (ADR 0023).
         $base + {category: "compute.baremetal"}
       elif .assetType == "compute.googleapis.com/Disk" then
-        # The boot disk of a managed instance group's instance goes with it.
+        # A disk a managed instance group's instance deletes with it goes with
+        # the instance.
         # Google Cloud encrypts all data at rest.
         select($key | IN($groupdisks[]) | not)
         | $base + {category: "storage.block", capabilities: [

@@ -94,6 +94,10 @@ def child_types:
 | ([$queues[], $topics[] | .id | lid | sub("/(queues|topics)/.*$"; "")] | unique) as $queuenamespaces
 | ([$rows[] | select(lower_type == "microsoft.containerservice/managedclusters")
     | .properties.nodeResourceGroup // empty | ascii_downcase] | unique) as $nodegroups
+# The OS disks of a scale set's virtual machines: the scale set stands for them.
+| ([$rows[] | select(lower_type == "microsoft.compute/virtualmachines")
+    | select(.properties.virtualMachineScaleSet.id? != null)
+    | .properties.storageProfile.osDisk.managedDisk.id? // empty | lid] | unique) as $scalesetdisks
 | [
     # Service Bus queues. Every queue has a dead-letter subqueue.
     ($queues[]
@@ -161,8 +165,10 @@ def child_types:
           # dedicated physical server (ADR 0023).
           $base + {category: "compute.baremetal"}
         elif $t == "microsoft.compute/disks" then
-          # Azure encrypts every managed disk at rest.
-          $base + {category: "storage.block", capabilities: [
+          # The OS disk of a scale set's virtual machine goes with it. Azure
+          # encrypts every managed disk at rest.
+          select($id | IN($scalesetdisks[]) | not)
+          | $base + {category: "storage.block", capabilities: [
             "encryption-at-rest",
             cap("snapshots"; $id | IN($snapshotted[]))
           ]}

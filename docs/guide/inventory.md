@@ -364,7 +364,7 @@ gcloud asset search-all-resources --scope="projects/$project" \
   jq '[.[] | if .labels then .labels |= with_entries(select(.key == "goog-gke-node" or .key == "goog-managed-by")) else . end]' \
   > "$out/assets.json"
 gcloud compute instances list --project="$project" \
-  --format='json(kind,selfLink,metadata.items[].key,disks[].source,disks[].boot,networkInterfaces[].stackType,networkInterfaces[].ipv6AccessConfigs[].type)' \
+  --format='json(kind,selfLink,metadata.items[].key,disks[].source,disks[].boot,disks[].autoDelete,networkInterfaces[].stackType,networkInterfaces[].ipv6AccessConfigs[].type)' \
   > "$out/compute-instances.json"
 gcloud compute instance-groups managed list --project="$project" \
   --format='json(kind,selfLink,status.autoscaler)' > "$out/compute-instance-groups.json"
@@ -383,8 +383,9 @@ gcloud pubsub subscriptions list --project="$project" \
 ```
 
 The `--format` projections keep only what the program reads: an instance's metadata keys, for
-example, but not their values, which hold startup scripts and SSH keys. Of the asset labels, `jq`
-keeps only `goog-gke-node` and `goog-managed-by`, the two the program reads.
+example, but not their values, which hold startup scripts and SSH keys, and of its disks only the
+source, whether it boots and whether it is deleted with the instance (`autoDelete`). Of the asset
+labels, `jq` keeps only `goog-gke-node` and `goog-managed-by`, the two the program reads.
 
 The Cloud Asset Inventory listing is the list of resources; the other calls add the settings the
 capabilities need. A resource the other calls do not cover still appears, as `unclassified` or
@@ -422,12 +423,13 @@ The `rawType` is the resource's Cloud Asset Inventory asset type.
 
 A Pub/Sub topic (where publishers write) and a subscription (where consumers read) are both listed,
 as both have to move. Left out: instances a managed instance group created (metadata `created-by`;
-the group stands for them) and their boot disks (`disks[].boot`), the nodes of a GKE cluster (the managed instance groups its node pools
-name in `instanceGroupUrls`, and instances and disks labelled `goog-gke-node`; the cluster stands for
-them, while a persistent volume's disk stays), the Cloud Run service behind a 2nd gen Cloud Function (label
-`goog-managed-by: cloudfunctions`; the function stands for it), and snapshots and autoscalers, which
-become capabilities of their disk or group. Any other Cloud Run service runs a container, not a
-function, and stays `unclassified`.
+the group stands for them) and the disks they delete with them (`disks[].autoDelete`, boot disk or
+not), the nodes of a GKE cluster (the managed instance groups its node pools name in
+`instanceGroupUrls`, and instances and disks labelled `goog-gke-node`; the cluster stands for them,
+while a persistent volume's disk stays), the Cloud Run service behind a 2nd gen Cloud Function
+(label `goog-managed-by: cloudfunctions`; the function stands for it), and snapshots and
+autoscalers, which become capabilities of their disk or group. Any other Cloud Run service runs a
+container, not a function, and stays `unclassified`.
 
 | Category | Capability | When |
 |---|---|---|
@@ -576,7 +578,8 @@ A Service Bus topic, where every subscription gets its own copy of a message, is
 subscribe, which no taxonomy category covers: each topic is listed as `unclassified` under its own
 name, so the report shows it as a blocker.
 
-Left out: virtual machines of a scale set (the scale set stands for them), snapshots and autoscale
+Left out: virtual machines of a scale set and their OS disks (`storageProfile.osDisk`; the scale
+set stands for them), snapshots and autoscale
 settings, which become capabilities of their disk or scale set, a Service Bus namespace whose queues
 or topics are listed (they stand for it; a namespace with neither stays `unclassified`), and
 everything in an AKS cluster's node resource group (`properties.nodeResourceGroup`, usually
