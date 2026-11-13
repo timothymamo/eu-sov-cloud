@@ -1,0 +1,67 @@
+{
+    "Reservations": [
+        {
+            "ReservationId": "r-0123456789abcdef0",
+            "OwnerId": "123456789012",
+            "Instances": [
+                {
+                    "InstanceId": "i-0123456789abcdef0",
+                    "InstanceType": "m6i.large",
+                    "Placement": {"AvailabilityZone": "eu-central-1a"},
+                    "PrivateIpAddress": "192.0.2.10",
+                    "PrivateDnsName": "ip-192-0-2-10.example.com",
+                    "State": {"Code": 16, "Name": "running"},
+                    "BlockDeviceMappings": [
+                        {"DeviceName": "/dev/xvda", "Ebs": {"VolumeId": "vol-0123456789abcdef0", "Status": "attached"}}
+                    ],
+                    "NetworkInterfaces": [
+                        {
+                            "NetworkInterfaceId": "eni-0123456789abcdef0",
+                            "PrivateIpAddress": "192.0.2.10",
+                            "Ipv6Addresses": [{"Ipv6Address": "2001:db8::10"}]
+                        }
+                    ],
+                    "Tags": [{"Key": "Name", "Value": "shop-web-1"}]
+                },
+                {
+                    "InstanceId": "i-0123456789abcdef1",
+                    "InstanceType": "t3.small",
+                    "Placement": {"AvailabilityZone": "eu-central-1b"},
+                    "PrivateIpAddress": "192.0.2.11",
+                    "State": {"Code": 80, "Name": "stopped"},
+                    "BlockDeviceMappings": [
+                        {"DeviceName": "/dev/xvda", "Ebs": {"VolumeId": "vol-0123456789abcdef1", "Status": "attached"}}
+                    ],
+                    "NetworkInterfaces": [
+                        {"NetworkInterfaceId": "eni-0123456789abcdef1", "PrivateIpAddress": "192.0.2.11", "Ipv6Addresses": []}
+                    ],
+                    "Tags": [{"Key": "Name", "Value": "shop-batch"}]
+                }
+            ]
+        },
+        {
+            "ReservationId": "r-0123456789abcdef1",
+            "OwnerId": "123456789012",
+            "Instances": [
+                {
+                    "InstanceId": "i-0123456789abcdef2",
+                    "InstanceType": "m6i.large",
+                    "Placement": {"AvailabilityZone": "eu-central-1a"},
+                    "PrivateIpAddress": "192.0.2.12",
+                    "State": {"Code": 16, "Name": "running"},
+                    "BlockDeviceMappings": [],
+                    "NetworkInterfaces": [],
+                    "Tags": [{"Key": "aws:autoscaling:groupName", "Value": "shop-web-asg"}]
+                },
+                {
+                    "InstanceId": "i-0123456789abcdef3",
+                    "InstanceType": "t3.micro",
+                    "Placement": {"AvailabilityZone": "eu-central-1c"},
+                    "State": {"Code": 48, "Name": "terminated"},
+                    "BlockDeviceMappings": [],
+                    "NetworkInterfaces": []
+                }
+            ]
+        }
+    ]
+}

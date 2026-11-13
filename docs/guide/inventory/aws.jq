@@ -1,0 +1,203 @@
+# aws.jq turns the output of the read-only aws CLI calls in docs/guide/inventory.md
+# into a shift2eu inventory file, schema version 1
+# (docs/adr/0006-json-inventory-file-format-v1.md). Run it with -n on every file
+# the guide's commands wrote, from one region or several:
+#
+#   jq -n -f docs/guide/inventory/aws.jq aws-inventory/*/*.json > inventory.json
+#
+# It recognises each input by its shape, not by its file name, and a file may hold
+# several JSON values one after the other:
+#
+#   {"Reservations": ...}          ec2 describe-instances
+#   {"Volumes": ...}               ec2 describe-volumes
+#   {"Snapshots": ...}             ec2 describe-snapshots --owner-ids self
+#   {"AutoScalingGroups": ...}     autoscaling describe-auto-scaling-groups
+#   {"Buckets": ...}               s3api list-buckets
+#   {"Bucket": ..., "Versioning"}  s3api get-bucket-versioning, wrapped by the guide
+#   {"DBInstances": ...}           rds describe-db-instances
+#   {"cluster": ...}               eks describe-cluster
+#   {"nodegroup": ...}             eks describe-nodegroup
+#   {"Functions": ...}             lambda list-functions
+#   {"Attributes": {"QueueArn"}}   sqs get-queue-attributes --attribute-names All
+#   {"Results": [...]}             configservice select-resource-config (optional)
+#
+# Resource IDs are short (an instance ID, a bucket or queue name), never an ARN,
+# which would carry the account ID. Anything it cannot classify is "unclassified"
+# with its rawType (a CloudFormation type), so it shows up as a blocker.
+
+# The CloudFormation types the service calls above cover. AWS Config lists them
+# too; those entries are dropped, so a resource is not listed twice.
+def covered_types:
+  [
+    "AWS::EC2::Instance", "AWS::EC2::Volume", "AWS::AutoScaling::AutoScalingGroup",
+    "AWS::S3::Bucket", "AWS::RDS::DBInstance", "AWS::EKS::Cluster",
+    "AWS::Lambda::Function", "AWS::SQS::Queue"
+  ];
+
+# The region of an availability zone: eu-central-1a -> eu-central-1.
+def zone_region: if . == null or . == "" then null else sub("[a-z]$"; "") end;
+
+# The region field of an ARN: arn:aws:sqs:eu-central-1:123456789012:q -> eu-central-1.
+def arn_region: if . == null then null else split(":")[3] end;
+
+# A short ID: an ARN loses its partition, service, region and account and keeps
+# the last element of its resource part.
+def short_id:
+  if startswith("arn:") then split(":")[5:] | join(":") | split("/") | last else . end;
+
+# The capability $name when the condition is true.
+def cap($name; cond): if cond then $name else empty end;
+
+# Gives every resource a distinct ID: two resources with the same short ID get
+# their rawType and region appended, and any still equal a counter.
+def unique_ids:
+  def suffix: " (" + (.rawType // "unknown") + (if .region then ", " + .region else "" end) + ")";
+  group_by(.id)
+  | map(if length == 1 then . else map(.id += suffix) end)
+  | add // []
+  | group_by(.id)
+  | map(if length == 1 then . else to_entries | map(.value.id += " #" + (.key + 1 | tostring) | .value) end)
+  | add // [];
+
+# Writes the inventory document: no empty region or capabilities, capabilities
+# sorted, identical resources (from two regions' global calls) listed once.
+def inventory($source):
+  map(
+    {id, rawType, category, region, capabilities}
+    | if .region == null or .region == "" then del(.region) else . end
+    | .capabilities = ((.capabilities // []) | unique)
+    | if .capabilities == [] then del(.capabilities) else . end
+  )
+  | unique
+  | unique_ids
+  | sort_by(.id)
+  | {schemaVersion: 1, source: $source, resources: .};
+
+[inputs | objects] as $docs
+| ([$docs[] | .Snapshots? // empty | .[] | .VolumeId] | unique) as $snapshotted
+| ([$docs[] | select(.Bucket? and has("Versioning")) | select(.Versioning.Status? == "Enabled") | .Bucket] | unique) as $versioned
+| [$docs[] | .nodegroup? // empty] as $nodegroups
+| [
+    # EC2 instances. One launched by an Auto Scaling group is left out: the group
+    # stands for it.
+    ($docs[] | .Reservations? // empty | .[].Instances[]
+      | select(.State.Name != "terminated" and .State.Name != "shutting-down")
+      | select([.Tags[]?.Key] | index("aws:autoscaling:groupName") | not)
+      | {
+          id: .InstanceId,
+          rawType: "AWS::EC2::Instance",
+          category: "compute.vm",
+          region: (.Placement.AvailabilityZone | zone_region),
+          capabilities: [
+            cap("ipv6"; any(.NetworkInterfaces[]?; (.Ipv6Addresses // []) | length > 0)),
+            cap("snapshots"; any(.BlockDeviceMappings[]?; .Ebs.VolumeId | IN($snapshotted[])))
+          ]
+        }),
+
+    # EBS volumes.
+    ($docs[] | .Volumes? // empty | .[]
+      | {
+          id: .VolumeId,
+          rawType: "AWS::EC2::Volume",
+          category: "storage.block",
+          region: (.AvailabilityZone | zone_region),
+          capabilities: [
+            cap("encryption-at-rest"; .Encrypted == true),
+            cap("snapshots"; .VolumeId | IN($snapshotted[]))
+          ]
+        }),
+
+    # Auto Scaling groups.
+    ($docs[] | .AutoScalingGroups? // empty | .[]
+      | {
+          id: .AutoScalingGroupName,
+          rawType: "AWS::AutoScaling::AutoScalingGroup",
+          category: "compute.vm",
+          region: (.AutoScalingGroupARN | arn_region),
+          capabilities: [
+            cap("autoscaling"; .MaxSize > .MinSize),
+            cap("zone-high-availability"; (.AvailabilityZones // []) | length >= 2)
+          ]
+        }),
+
+    # S3 buckets. S3 encrypts every object at rest (SSE-S3 by default since 2023).
+    ($docs[] | .Buckets? // empty | .[]
+      | {
+          id: .Name,
+          rawType: "AWS::S3::Bucket",
+          category: "storage.object",
+          region: .BucketRegion,
+          capabilities: [
+            "encryption-at-rest",
+            cap("object-versioning"; .Name | IN($versioned[]))
+          ]
+        }),
+
+    # RDS DB instances: the engine decides the category; any other engine is
+    # unclassified.
+    ($docs[] | .DBInstances? // empty | .[]
+      | (if .Engine == "postgres" or .Engine == "aurora-postgresql" then "database.postgresql"
+         elif .Engine == "mysql" or .Engine == "aurora-mysql" then "database.mysql"
+         else "unclassified" end) as $category
+      | {
+          id: .DBInstanceIdentifier,
+          rawType: "AWS::RDS::DBInstance",
+          category: $category,
+          region: (.DBInstanceArn | arn_region),
+          capabilities: (if $category == "unclassified" then [] else [
+            cap("point-in-time-restore"; (.BackupRetentionPeriod // 0) > 0),
+            cap("read-replicas"; (.ReadReplicaDBInstanceIdentifiers // []) | length > 0),
+            cap("zone-high-availability"; .MultiAZ == true),
+            cap("encryption-at-rest"; .StorageEncrypted == true)
+          ] end)
+        }),
+
+    # EKS clusters, with their managed node groups.
+    ($docs[] | .cluster? // empty
+      | .name as $name
+      | [$nodegroups[] | select(.clusterName == $name)] as $groups
+      | {
+          id: .name,
+          rawType: "AWS::EKS::Cluster",
+          category: "kubernetes.managed",
+          region: (.arn | arn_region),
+          capabilities: [
+            cap("autoscaling"; any($groups[]; .scalingConfig.maxSize > .scalingConfig.minSize)),
+            cap("node-high-availability"; ([$groups[].scalingConfig.desiredSize // 0] | add // 0) >= 2)
+          ]
+        }),
+
+    # Lambda functions.
+    ($docs[] | .Functions? // empty | .[]
+      | {
+          id: .FunctionName,
+          rawType: "AWS::Lambda::Function",
+          category: "serverless.function",
+          region: (.FunctionArn | arn_region)
+        }),
+
+    # SQS queues.
+    ($docs[] | .Attributes? // empty | select(.QueueArn?)
+      | {
+          id: (.QueueArn | short_id),
+          rawType: "AWS::SQS::Queue",
+          category: "messaging.queue",
+          region: (.QueueArn | arn_region),
+          capabilities: [
+            cap("dead-letter-queue"; has("RedrivePolicy")),
+            cap("encryption-at-rest"; .SqsManagedSseEnabled == "true" or has("KmsMasterKeyId"))
+          ]
+        }),
+
+    # Everything else AWS Config recorded: unclassified, with its type.
+    ($docs[] | .Results? // empty | .[]
+      | if type == "string" then fromjson else . end
+      | select(.resourceType | IN(covered_types[]) | not)
+      | {
+          id: ((.resourceName // .resourceId) | short_id),
+          rawType: .resourceType,
+          category: "unclassified",
+          region: (if .awsRegion == "global" then null else .awsRegion end)
+        })
+  ]
+| inventory("aws")

@@ -1,0 +1,7 @@
+{
+    "Buckets": [
+        {"Name": "shop-assets-example", "CreationDate": "2026-01-01T00:00:00+00:00", "BucketRegion": "eu-central-1"},
+        {"Name": "shop-logs-example", "CreationDate": "2026-01-01T00:00:00+00:00", "BucketRegion": "eu-west-1"}
+    ],
+    "Owner": {"ID": "0000000000000000000000000000000000000000000000000000000000000000"}
+}

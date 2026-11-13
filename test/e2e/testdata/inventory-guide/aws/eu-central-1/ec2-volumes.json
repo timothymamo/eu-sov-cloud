@@ -1,0 +1,22 @@
+{
+    "Volumes": [
+        {
+            "VolumeId": "vol-0123456789abcdef0",
+            "AvailabilityZone": "eu-central-1a",
+            "Size": 100,
+            "VolumeType": "gp3",
+            "Encrypted": true,
+            "State": "in-use",
+            "Attachments": [{"InstanceId": "i-0123456789abcdef0", "VolumeId": "vol-0123456789abcdef0", "State": "attached"}]
+        },
+        {
+            "VolumeId": "vol-0123456789abcdef1",
+            "AvailabilityZone": "eu-central-1b",
+            "Size": 20,
+            "VolumeType": "gp3",
+            "Encrypted": false,
+            "State": "in-use",
+            "Attachments": [{"InstanceId": "i-0123456789abcdef1", "VolumeId": "vol-0123456789abcdef1", "State": "attached"}]
+        }
+    ]
+}

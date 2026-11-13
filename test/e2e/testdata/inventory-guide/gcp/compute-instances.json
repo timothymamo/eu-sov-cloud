@@ -1,0 +1,30 @@
+[
+  {
+    "kind": "compute#instance",
+    "name": "shop-web-1",
+    "selfLink": "https://www.googleapis.com/compute/v1/projects/example-project/zones/europe-west1-b/instances/shop-web-1",
+    "zone": "https://www.googleapis.com/compute/v1/projects/example-project/zones/europe-west1-b",
+    "status": "RUNNING",
+    "networkInterfaces": [
+      {
+        "name": "nic0",
+        "networkIP": "192.0.2.20",
+        "stackType": "IPV4_IPV6",
+        "ipv6AccessConfigs": [{"externalIpv6": "2001:db8::20", "type": "DIRECT_IPV6"}]
+      }
+    ]
+  },
+  {
+    "kind": "compute#instance",
+    "name": "shop-web-mig-0abc",
+    "selfLink": "https://www.googleapis.com/compute/v1/projects/example-project/zones/europe-west1-c/instances/shop-web-mig-0abc",
+    "zone": "https://www.googleapis.com/compute/v1/projects/example-project/zones/europe-west1-c",
+    "status": "RUNNING",
+    "metadata": {
+      "items": [
+        {"key": "created-by", "value": "projects/123456789012/regions/europe-west1/instanceGroupManagers/shop-web-mig"}
+      ]
+    },
+    "networkInterfaces": [{"name": "nic0", "networkIP": "192.0.2.21", "stackType": "IPV4_ONLY"}]
+  }
+]

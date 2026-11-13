@@ -1,0 +1,141 @@
+{
+  "count": 9,
+  "data": [
+    {
+      "id": "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg-shop/providers/Microsoft.DBforPostgreSQL/flexibleServers/psql-shop",
+      "name": "psql-shop",
+      "type": "microsoft.dbforpostgresql/flexibleservers",
+      "kind": "",
+      "location": "westeurope",
+      "zones": null,
+      "properties": {
+        "version": "16",
+        "fullyQualifiedDomainName": "psql-shop.example.com",
+        "replicationRole": "Primary",
+        "backup": {
+          "backupRetentionDays": 7,
+          "geoRedundantBackup": "Disabled"
+        },
+        "highAvailability": {
+          "mode": "ZoneRedundant",
+          "standbyAvailabilityZone": "2"
+        }
+      }
+    },
+    {
+      "id": "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg-shop/providers/Microsoft.DBforPostgreSQL/flexibleServers/psql-shop-replica",
+      "name": "psql-shop-replica",
+      "type": "microsoft.dbforpostgresql/flexibleservers",
+      "kind": "",
+      "location": "westeurope",
+      "zones": null,
+      "properties": {
+        "version": "16",
+        "replicationRole": "AsyncReplica",
+        "sourceServerResourceId": "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg-shop/providers/Microsoft.DBforPostgreSQL/flexibleServers/psql-shop",
+        "backup": {
+          "backupRetentionDays": 7
+        },
+        "highAvailability": {
+          "mode": "Disabled"
+        }
+      }
+    },
+    {
+      "id": "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg-shop/providers/Microsoft.DBforMySQL/flexibleServers/mysql-shop-catalog",
+      "name": "mysql-shop-catalog",
+      "type": "microsoft.dbformysql/flexibleservers",
+      "kind": "",
+      "location": "westeurope",
+      "zones": null,
+      "properties": {
+        "version": "8.0.21",
+        "backup": {
+          "backupRetentionDays": 7
+        },
+        "highAvailability": {
+          "mode": "SameZone"
+        }
+      }
+    },
+    {
+      "id": "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg-shop/providers/Microsoft.ContainerService/managedClusters/aks-shop",
+      "name": "aks-shop",
+      "type": "microsoft.containerservice/managedclusters",
+      "kind": "",
+      "location": "westeurope",
+      "zones": null,
+      "properties": {
+        "kubernetesVersion": "1.31",
+        "fqdn": "aks-shop.example.com",
+        "agentPoolProfiles": [
+          {
+            "name": "system",
+            "count": 3,
+            "enableAutoScaling": true,
+            "minCount": 3,
+            "maxCount": 6,
+            "availabilityZones": [
+              "1",
+              "2",
+              "3"
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg-shop/providers/Microsoft.Web/sites/func-shop-thumbnails",
+      "name": "func-shop-thumbnails",
+      "type": "microsoft.web/sites",
+      "kind": "functionapp,linux",
+      "location": "westeurope",
+      "zones": null,
+      "properties": {
+        "defaultHostName": "func-shop-thumbnails.example.com"
+      }
+    },
+    {
+      "id": "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg-shop/providers/Microsoft.Web/sites/app-shop-storefront",
+      "name": "app-shop-storefront",
+      "type": "microsoft.web/sites",
+      "kind": "app,linux",
+      "location": "westeurope",
+      "zones": null,
+      "properties": {
+        "defaultHostName": "app-shop-storefront.example.com"
+      }
+    },
+    {
+      "id": "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg-shop/providers/Microsoft.ServiceBus/namespaces/sb-shop",
+      "name": "sb-shop",
+      "type": "microsoft.servicebus/namespaces",
+      "kind": "",
+      "location": "westeurope",
+      "zones": null,
+      "properties": {
+        "serviceBusEndpoint": "https://sb-shop.example.com:443/"
+      }
+    },
+    {
+      "id": "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg-shop/providers/Microsoft.Cdn/profiles/cdn-shop",
+      "name": "cdn-shop",
+      "type": "microsoft.cdn/profiles",
+      "kind": "",
+      "location": "global",
+      "zones": null,
+      "properties": {}
+    },
+    {
+      "id": "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg-shop/providers/Microsoft.Network/dnsZones/shop.example.com",
+      "name": "shop.example.com",
+      "type": "microsoft.network/dnszones",
+      "kind": "",
+      "location": "global",
+      "zones": null,
+      "properties": {}
+    }
+  ],
+  "skip_token": null,
+  "total_records": 19
+}

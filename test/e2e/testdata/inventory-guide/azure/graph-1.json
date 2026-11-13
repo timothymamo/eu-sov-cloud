@@ -1,0 +1,182 @@
+{
+  "count": 10,
+  "data": [
+    {
+      "id": "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg-shop/providers/Microsoft.Compute/virtualMachines/vm-shop-web-1",
+      "name": "vm-shop-web-1",
+      "type": "microsoft.compute/virtualmachines",
+      "kind": "",
+      "location": "westeurope",
+      "zones": null,
+      "properties": {
+        "vmId": "00000000-0000-0000-0000-000000000000",
+        "hardwareProfile": {
+          "vmSize": "Standard_D2s_v5"
+        },
+        "storageProfile": {
+          "osDisk": {
+            "name": "disk-shop-web-1-os",
+            "managedDisk": {
+              "id": "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg-shop/providers/Microsoft.Compute/disks/disk-shop-web-1-os"
+            }
+          },
+          "dataDisks": [
+            {
+              "lun": 0,
+              "name": "disk-shop-web-1-data",
+              "managedDisk": {
+                "id": "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg-shop/providers/Microsoft.Compute/disks/disk-shop-web-1-data"
+              }
+            }
+          ]
+        },
+        "networkProfile": {
+          "networkInterfaces": [
+            {
+              "id": "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg-shop/providers/Microsoft.Network/networkInterfaces/nic-shop-web-1"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg-shop/providers/Microsoft.Compute/virtualMachines/vmss-shop-web_0abc",
+      "name": "vmss-shop-web_0abc",
+      "type": "microsoft.compute/virtualmachines",
+      "kind": "",
+      "location": "westeurope",
+      "zones": null,
+      "properties": {
+        "virtualMachineScaleSet": {
+          "id": "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg-shop/providers/Microsoft.Compute/virtualMachineScaleSets/vmss-shop-web"
+        },
+        "networkProfile": {
+          "networkInterfaces": []
+        }
+      }
+    },
+    {
+      "id": "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg-shop/providers/Microsoft.Network/networkInterfaces/nic-shop-web-1",
+      "name": "nic-shop-web-1",
+      "type": "microsoft.network/networkinterfaces",
+      "kind": "",
+      "location": "westeurope",
+      "zones": null,
+      "properties": {
+        "ipConfigurations": [
+          {
+            "name": "ipv4",
+            "properties": {
+              "privateIPAddress": "192.0.2.50",
+              "privateIPAddressVersion": "IPv4"
+            }
+          },
+          {
+            "name": "ipv6",
+            "properties": {
+              "privateIPAddress": "2001:db8::50",
+              "privateIPAddressVersion": "IPv6"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg-shop/providers/Microsoft.Compute/virtualMachineScaleSets/vmss-shop-web",
+      "name": "vmss-shop-web",
+      "type": "microsoft.compute/virtualmachinescalesets",
+      "kind": "",
+      "location": "westeurope",
+      "zones": [
+        "1",
+        "2",
+        "3"
+      ],
+      "properties": {
+        "orchestrationMode": "Flexible"
+      }
+    },
+    {
+      "id": "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg-shop/providers/microsoft.insights/autoscalesettings/as-vmss-shop-web",
+      "name": "as-vmss-shop-web",
+      "type": "microsoft.insights/autoscalesettings",
+      "kind": "",
+      "location": "westeurope",
+      "zones": null,
+      "properties": {
+        "enabled": true,
+        "targetResourceUri": "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg-shop/providers/Microsoft.Compute/virtualMachineScaleSets/vmss-shop-web"
+      }
+    },
+    {
+      "id": "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg-shop/providers/Microsoft.Compute/disks/disk-shop-web-1-os",
+      "name": "disk-shop-web-1-os",
+      "type": "microsoft.compute/disks",
+      "kind": "",
+      "location": "westeurope",
+      "zones": [
+        "1"
+      ],
+      "properties": {
+        "diskSizeGB": 64,
+        "encryption": {
+          "type": "EncryptionAtRestWithPlatformKey"
+        }
+      }
+    },
+    {
+      "id": "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg-shop/providers/Microsoft.Compute/disks/disk-shop-web-1-data",
+      "name": "disk-shop-web-1-data",
+      "type": "microsoft.compute/disks",
+      "kind": "",
+      "location": "westeurope",
+      "zones": [
+        "1"
+      ],
+      "properties": {
+        "diskSizeGB": 256,
+        "encryption": {
+          "type": "EncryptionAtRestWithPlatformKey"
+        }
+      }
+    },
+    {
+      "id": "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg-shop/providers/Microsoft.Compute/snapshots/snap-shop-web-1-data",
+      "name": "snap-shop-web-1-data",
+      "type": "microsoft.compute/snapshots",
+      "kind": "",
+      "location": "westeurope",
+      "zones": null,
+      "properties": {
+        "creationData": {
+          "createOption": "Copy",
+          "sourceResourceId": "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg-shop/providers/Microsoft.Compute/disks/disk-shop-web-1-data"
+        }
+      }
+    },
+    {
+      "id": "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg-shop/providers/Microsoft.Storage/storageAccounts/stshopassets",
+      "name": "stshopassets",
+      "type": "microsoft.storage/storageaccounts",
+      "kind": "StorageV2",
+      "location": "westeurope",
+      "zones": null,
+      "properties": {
+        "primaryEndpoints": {
+          "blob": "https://stshopassets.blob.example.com/"
+        }
+      }
+    },
+    {
+      "id": "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg-shop/providers/Microsoft.Storage/storageAccounts/stshopfiles",
+      "name": "stshopfiles",
+      "type": "microsoft.storage/storageaccounts",
+      "kind": "FileStorage",
+      "location": "westeurope",
+      "zones": null,
+      "properties": {}
+    }
+  ],
+  "skip_token": "ew0KICAiJGlkIjogIjEiLA0KICAiTWF4Um93cyI6IDEwLA0KfQ==",
+  "total_records": 19
+}

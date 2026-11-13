@@ -1,0 +1,13 @@
+[
+  {
+    "kind": "compute#instanceGroupManager",
+    "name": "shop-web-mig",
+    "selfLink": "https://www.googleapis.com/compute/v1/projects/example-project/regions/europe-west1/instanceGroupManagers/shop-web-mig",
+    "region": "https://www.googleapis.com/compute/v1/projects/example-project/regions/europe-west1",
+    "targetSize": 2,
+    "status": {
+      "isStable": true,
+      "autoscaler": "https://www.googleapis.com/compute/v1/projects/example-project/regions/europe-west1/autoscalers/shop-web-mig-autoscaler"
+    }
+  }
+]

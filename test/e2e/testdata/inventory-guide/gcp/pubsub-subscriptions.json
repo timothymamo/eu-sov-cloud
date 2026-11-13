@@ -1,0 +1,11 @@
+[
+  {
+    "name": "projects/example-project/subscriptions/shop-orders-worker",
+    "topic": "projects/example-project/topics/shop-orders",
+    "ackDeadlineSeconds": 30,
+    "deadLetterPolicy": {
+      "deadLetterTopic": "projects/example-project/topics/shop-orders-dlq",
+      "maxDeliveryAttempts": 5
+    }
+  }
+]

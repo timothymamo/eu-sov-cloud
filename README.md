@@ -51,7 +51,8 @@ dummy sample inventories of the repository's `examples/` directory.
 Build from a clone with `make build`, or download a release for your platform
 ([Install](docs/guide/install.md)) and run its `shift2eu` in place of `./bin/shift2eu`. Then assess an
 inventory file ([ADR 0006](docs/adr/0006-json-inventory-file-format-v1.md) describes its format)
-against a target, or `all` of them:
+against a target, or `all` of them. [Build an inventory from your cloud](docs/guide/inventory.md)
+makes one from your AWS, GCP or Azure estate with the provider's read-only CLI and `jq`:
 
 ```bash
 ./bin/shift2eu assess --inventory inventory.json --target all --output comparison.md
@@ -72,6 +73,7 @@ The [documentation's index](docs/README.md) lists every page. Using `shift2eu`:
 
 - [Install](docs/guide/install.md): the release archives, the images, and building from source.
 - [Try it](docs/guide/try-it.md): a walkthrough on a sample inventory, from install to reading the report.
+- [Build an inventory from your cloud](docs/guide/inventory.md): an inventory from AWS, GCP or Azure, with read-only CLIs and `jq`.
 - [Assess an inventory](docs/guide/assess.md): the `assess` command, its reports and its exit codes.
 - [Run with Docker](docs/guide/docker.md): the image, mounts, users, reports and credentials.
 - [Verify a release](docs/guide/verify-releases.md): signatures, provenance and SBOMs, and the

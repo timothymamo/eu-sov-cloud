@@ -1,0 +1,46 @@
+{
+    "DBInstances": [
+        {
+            "DBInstanceIdentifier": "shop-db",
+            "DBInstanceArn": "arn:aws:rds:eu-central-1:123456789012:db:shop-db",
+            "Engine": "postgres",
+            "EngineVersion": "16.4",
+            "MultiAZ": true,
+            "BackupRetentionPeriod": 7,
+            "StorageEncrypted": true,
+            "ReadReplicaDBInstanceIdentifiers": ["shop-db-replica"],
+            "Endpoint": {"Address": "shop-db.example.com", "Port": 5432}
+        },
+        {
+            "DBInstanceIdentifier": "shop-db-replica",
+            "DBInstanceArn": "arn:aws:rds:eu-central-1:123456789012:db:shop-db-replica",
+            "Engine": "postgres",
+            "EngineVersion": "16.4",
+            "MultiAZ": false,
+            "BackupRetentionPeriod": 0,
+            "StorageEncrypted": true,
+            "ReadReplicaSourceDBInstanceIdentifier": "shop-db",
+            "ReadReplicaDBInstanceIdentifiers": []
+        },
+        {
+            "DBInstanceIdentifier": "shop-legacy-mysql",
+            "DBInstanceArn": "arn:aws:rds:eu-central-1:123456789012:db:shop-legacy-mysql",
+            "Engine": "mysql",
+            "EngineVersion": "8.0.39",
+            "MultiAZ": false,
+            "BackupRetentionPeriod": 1,
+            "StorageEncrypted": false,
+            "ReadReplicaDBInstanceIdentifiers": []
+        },
+        {
+            "DBInstanceIdentifier": "shop-reports-mariadb",
+            "DBInstanceArn": "arn:aws:rds:eu-central-1:123456789012:db:shop-reports-mariadb",
+            "Engine": "mariadb",
+            "EngineVersion": "10.11.9",
+            "MultiAZ": false,
+            "BackupRetentionPeriod": 7,
+            "StorageEncrypted": true,
+            "ReadReplicaDBInstanceIdentifiers": []
+        }
+    ]
+}

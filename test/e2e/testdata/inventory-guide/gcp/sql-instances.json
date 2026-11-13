@@ -1,0 +1,43 @@
+[
+  {
+    "kind": "sql#instance",
+    "name": "shop-db",
+    "project": "example-project",
+    "region": "europe-west1",
+    "databaseVersion": "POSTGRES_16",
+    "selfLink": "https://sqladmin.googleapis.com/sql/v1beta4/projects/example-project/instances/shop-db",
+    "replicaNames": ["shop-db-replica"],
+    "ipAddresses": [{"ipAddress": "192.0.2.30", "type": "PRIVATE"}],
+    "settings": {
+      "tier": "db-custom-2-7680",
+      "availabilityType": "REGIONAL",
+      "backupConfiguration": {"enabled": true, "pointInTimeRecoveryEnabled": true}
+    }
+  },
+  {
+    "kind": "sql#instance",
+    "name": "shop-catalog-mysql",
+    "project": "example-project",
+    "region": "europe-west1",
+    "databaseVersion": "MYSQL_8_0",
+    "selfLink": "https://sqladmin.googleapis.com/sql/v1beta4/projects/example-project/instances/shop-catalog-mysql",
+    "settings": {
+      "tier": "db-n1-standard-1",
+      "availabilityType": "ZONAL",
+      "backupConfiguration": {"enabled": true, "binaryLogEnabled": true}
+    }
+  },
+  {
+    "kind": "sql#instance",
+    "name": "shop-reports-sqlserver",
+    "project": "example-project",
+    "region": "europe-west1",
+    "databaseVersion": "SQLSERVER_2022_STANDARD",
+    "selfLink": "https://sqladmin.googleapis.com/sql/v1beta4/projects/example-project/instances/shop-reports-sqlserver",
+    "settings": {
+      "tier": "db-custom-2-7680",
+      "availabilityType": "ZONAL",
+      "backupConfiguration": {"enabled": true}
+    }
+  }
+]

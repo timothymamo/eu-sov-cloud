@@ -1,0 +1,11 @@
+{
+  "id": "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg-shop/providers/Microsoft.Storage/storageAccounts/stshopassets/blobServices/default",
+  "name": "default",
+  "type": "Microsoft.Storage/storageAccounts/blobServices",
+  "resourceGroup": "rg-shop",
+  "isVersioningEnabled": true,
+  "deleteRetentionPolicy": {
+    "enabled": true,
+    "days": 7
+  }
+}

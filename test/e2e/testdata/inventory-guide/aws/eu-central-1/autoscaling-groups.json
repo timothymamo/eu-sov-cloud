@@ -1,0 +1,13 @@
+{
+    "AutoScalingGroups": [
+        {
+            "AutoScalingGroupName": "shop-web-asg",
+            "AutoScalingGroupARN": "arn:aws:autoscaling:eu-central-1:123456789012:autoScalingGroup:00000000-0000-0000-0000-000000000000:autoScalingGroupName/shop-web-asg",
+            "MinSize": 2,
+            "MaxSize": 6,
+            "DesiredCapacity": 2,
+            "AvailabilityZones": ["eu-central-1a", "eu-central-1b"],
+            "Instances": [{"InstanceId": "i-0123456789abcdef2", "AvailabilityZone": "eu-central-1a"}]
+        }
+    ]
+}

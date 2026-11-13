@@ -1,0 +1,13 @@
+{
+  "Bucket": "shop-assets-example",
+  "Versioning": {
+    "Status": "Enabled",
+    "MFADelete": "Disabled"
+  }
+}
+{
+  "Bucket": "shop-logs-example",
+  "Versioning": {
+    "Status": "Suspended"
+  }
+}

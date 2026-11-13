@@ -1,0 +1,22 @@
+[
+  {
+    "id": "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg-shop/providers/Microsoft.ServiceBus/namespaces/sb-shop/queues/sb-shop-orders",
+    "name": "sb-shop-orders",
+    "type": "Microsoft.ServiceBus/Namespaces/Queues",
+    "location": "westeurope",
+    "resourceGroup": "rg-shop",
+    "maxDeliveryCount": 10,
+    "deadLetteringOnMessageExpiration": true,
+    "status": "Active"
+  },
+  {
+    "id": "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg-shop/providers/Microsoft.ServiceBus/namespaces/sb-shop/queues/sb-shop-invoices",
+    "name": "sb-shop-invoices",
+    "type": "Microsoft.ServiceBus/Namespaces/Queues",
+    "location": "westeurope",
+    "resourceGroup": "rg-shop",
+    "maxDeliveryCount": 10,
+    "deadLetteringOnMessageExpiration": false,
+    "status": "Active"
+  }
+]
