@@ -9,13 +9,8 @@
       "location": "westeurope",
       "zones": null,
       "properties": {
-        "vmId": "00000000-0000-0000-0000-000000000000",
-        "hardwareProfile": {
-          "vmSize": "Standard_D2s_v5"
-        },
         "storageProfile": {
           "osDisk": {
-            "name": "disk-shop-web-1-os",
             "managedDisk": {
               "id": "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg-shop/providers/Microsoft.Compute/disks/disk-shop-web-1-os"
             }
@@ -137,7 +132,6 @@
       "zones": null,
       "properties": {
         "creationData": {
-          "createOption": "Copy",
           "sourceResourceId": "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg-shop/providers/Microsoft.Compute/disks/disk-shop-web-1-data"
         }
       }

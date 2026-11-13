@@ -99,9 +99,10 @@ Run the commands from the directory you want the files in, such as a clone of th
 inventory can be committed by accident.
 
 The collected directory is the providers' raw output. The commands keep only the fields the programs
-read (`--query` for `aws` and `az`, a `--format` projection for `gcloud`), so it holds no environment
-variables, startup scripts or tag values, but it still holds full ARNs and resource IDs, which carry
-the account, project or subscription, and can hold IP addresses, tag keys and labels. Share only the
+read (`--query` for `aws` and `az`, a `--format` projection and a `jq` filter for `gcloud`), so it
+holds no environment variables, startup scripts, admin user names, SSH keys or tag and label values
+beyond the few the programs read, but it still holds full ARNs and resource IDs, which carry the
+account, project or subscription, and can hold IP addresses, tag keys and AKS node pool labels. Share only the
 reviewed inventory file, never the directory, and delete the directory once the inventory is built
 (see [Privacy](#privacy)).
 
@@ -256,7 +257,7 @@ The `rawType` is the resource's AWS CloudFormation type.
 
 | `rawType` | Category | Read from |
 |---|---|---|
-| `AWS::EC2::Instance`, a `*.metal` instance type (such as `m5.metal`) | `compute.baremetal` | `ec2 describe-instances` |
+| `AWS::EC2::Instance`, a `*.metal` or `*.metal-*` instance type (such as `m5.metal`, `c7i.metal-24xl`) | `compute.baremetal` | `ec2 describe-instances` |
 | `AWS::EC2::Instance`, any other instance type | `compute.vm` | `ec2 describe-instances` |
 | `AWS::AutoScaling::AutoScalingGroup` | `compute.vm` | `autoscaling describe-auto-scaling-groups` |
 | `AWS::EC2::Volume` | `storage.block` | `ec2 describe-volumes` |
@@ -273,7 +274,8 @@ The `rawType` is the resource's AWS CloudFormation type.
 Left out:
 
 - instances that are terminated or shutting down, and instances an Auto Scaling group launched (tag
-  `aws:autoscaling:groupName`): the group stands for them;
+  `aws:autoscaling:groupName`): the group stands for them. Their volumes that are deleted with them
+  (`DeleteOnTermination`), such as their root volumes, go with them;
 - the nodes of an EKS cluster, which the cluster stands for: the Auto Scaling group of a managed node
   group (`describe-nodegroup` names it), instances and Auto Scaling groups tagged `eks:cluster-name`
   or `kubernetes.io/cluster/<name>`, and a node's volumes that are deleted with it
@@ -356,10 +358,13 @@ project=example-project   # your project ID
 out=inventories/gcp
 mkdir -p "$out"
 
+# Keep only the two labels gcp.jq reads, not the values of any other label.
 gcloud asset search-all-resources --scope="projects/$project" \
-  --format='json(name,assetType,location,labels)' > "$out/assets.json"
+  --format='json(name,assetType,location,labels)' |
+  jq '[.[] | if .labels then .labels |= with_entries(select(.key == "goog-gke-node" or .key == "goog-managed-by")) else . end]' \
+  > "$out/assets.json"
 gcloud compute instances list --project="$project" \
-  --format='json(kind,selfLink,metadata.items[].key,networkInterfaces[].stackType,networkInterfaces[].ipv6AccessConfigs[].type)' \
+  --format='json(kind,selfLink,metadata.items[].key,disks[].source,disks[].boot,networkInterfaces[].stackType,networkInterfaces[].ipv6AccessConfigs[].type)' \
   > "$out/compute-instances.json"
 gcloud compute instance-groups managed list --project="$project" \
   --format='json(kind,selfLink,status.autoscaler)' > "$out/compute-instance-groups.json"
@@ -378,7 +383,8 @@ gcloud pubsub subscriptions list --project="$project" \
 ```
 
 The `--format` projections keep only what the program reads: an instance's metadata keys, for
-example, but not their values, which hold startup scripts and SSH keys.
+example, but not their values, which hold startup scripts and SSH keys. Of the asset labels, `jq`
+keeps only `goog-gke-node` and `goog-managed-by`, the two the program reads.
 
 The Cloud Asset Inventory listing is the list of resources; the other calls add the settings the
 capabilities need. A resource the other calls do not cover still appears, as `unclassified` or
@@ -416,7 +422,7 @@ The `rawType` is the resource's Cloud Asset Inventory asset type.
 
 A Pub/Sub topic (where publishers write) and a subscription (where consumers read) are both listed,
 as both have to move. Left out: instances a managed instance group created (metadata `created-by`;
-the group stands for them), the nodes of a GKE cluster (the managed instance groups its node pools
+the group stands for them) and their boot disks (`disks[].boot`), the nodes of a GKE cluster (the managed instance groups its node pools
 name in `instanceGroupUrls`, and instances and disks labelled `goog-gke-node`; the cluster stands for
 them, while a persistent volume's disk stays), the Cloud Run service behind a 2nd gen Cloud Function (label
 `goog-managed-by: cloudfunctions`; the function stands for it), and snapshots and autoscalers, which
@@ -459,13 +465,29 @@ subscription="$(az account show --query id --output tsv)"
 out=inventories/azure
 mkdir -p "$out"
 
-# Keep properties only for the types azure.jq reads them from.
+# Keep only the properties azure.jq reads, and only for the types it reads them from.
 query="Resources
-| extend properties = iff(type in~ ('microsoft.compute/virtualmachines',
-    'microsoft.network/networkinterfaces', 'microsoft.compute/snapshots',
-    'microsoft.insights/autoscalesettings', 'microsoft.dbforpostgresql/flexibleservers',
-    'microsoft.dbformysql/flexibleservers', 'microsoft.containerservice/managedclusters'),
-    properties, dynamic(null))
+| extend properties = case(
+    type =~ 'microsoft.compute/virtualmachines', bag_pack(
+      'virtualMachineScaleSet', bag_pack('id', properties.virtualMachineScaleSet.id),
+      'storageProfile', bag_pack(
+        'osDisk', bag_pack('managedDisk', bag_pack('id', properties.storageProfile.osDisk.managedDisk.id)),
+        'dataDisks', properties.storageProfile.dataDisks),
+      'networkProfile', bag_pack('networkInterfaces', properties.networkProfile.networkInterfaces)),
+    type =~ 'microsoft.network/networkinterfaces',
+      bag_pack('ipConfigurations', properties.ipConfigurations),
+    type =~ 'microsoft.compute/snapshots',
+      bag_pack('creationData', bag_pack('sourceResourceId', properties.creationData.sourceResourceId)),
+    type =~ 'microsoft.insights/autoscalesettings',
+      bag_pack('enabled', properties.enabled, 'targetResourceUri', properties.targetResourceUri),
+    type in~ ('microsoft.dbforpostgresql/flexibleservers', 'microsoft.dbformysql/flexibleservers'),
+      bag_pack('backup', bag_pack('backupRetentionDays', properties.backup.backupRetentionDays),
+        'highAvailability', bag_pack('mode', properties.highAvailability.mode),
+        'sourceServerResourceId', properties.sourceServerResourceId),
+    type =~ 'microsoft.containerservice/managedclusters',
+      bag_pack('nodeResourceGroup', properties.nodeResourceGroup,
+        'agentPoolProfiles', properties.agentPoolProfiles),
+    dynamic(null))
 | project id, name, type, kind, location, zones, properties"
 page=1
 token=""
@@ -505,6 +527,11 @@ az storage account list --query "[].[name, resourceGroup]" --output tsv |
   done > "$out/blob-services.json"
 ```
 
+The query keeps no admin user names, SSH keys, server logins or host names. It keeps whole arrays
+where the program reads one field of each element (a virtual machine's data disks and network
+interfaces, a network interface's IP configurations with their private IP addresses, an AKS
+cluster's node pools with their labels), as Resource Graph cannot trim inside an array.
+
 Resource Graph holds most settings; Service Bus queues and topics, storage queues and a storage
 account's blob versioning are not in it, hence the three loops. Storage queues are listed through the
 Resource Manager API (`az rest --method get`, a read), not the data plane, so `Reader` is enough and
@@ -531,6 +558,7 @@ Graph writes types in lower case).
 | `Microsoft.Compute/virtualMachines` | `compute.vm` |
 | `Microsoft.Compute/virtualMachineScaleSets` | `compute.vm` |
 | `Microsoft.BareMetalInfrastructure/bareMetalInstances` (BareMetal Infrastructure) | `compute.baremetal` |
+| `Microsoft.AzureLargeInstance/azureLargeInstances` (SAP HANA Large Instances) | `compute.baremetal` |
 | `Microsoft.Compute/disks` | `storage.block` |
 | `Microsoft.Storage/storageAccounts` (not kind `FileStorage`) | `storage.object` |
 | `Microsoft.Storage/storageAccounts`, kind `FileStorage` | `unclassified` |
@@ -604,7 +632,6 @@ scripts.
 
 - Share only the reviewed inventory file, never the collected directory.
 - Delete the collected directory right after the build (`rm -r inventories/<source>`).
-
 - Keep short IDs. Do not replace them with ARNs, full GCP resource names or Azure resource IDs, which
   carry the account, project or subscription ID.
 - Review the file before you share it, and rename anything that should not leave your organisation.

@@ -18,8 +18,7 @@ go.work.sum
 /inventories/
 /reports/
 *.inventory.json
-# Backstops for the paths docs/guide/inventory.md used to suggest, and for raw
-# CLI output collected outside inventories/.
+# Backstops for raw CLI output and inventories written outside inventories/.
 /inventory.json
 /inventory-*.json
 /aws-inventory/

@@ -132,8 +132,7 @@
     "assetType": "compute.googleapis.com/Instance",
     "location": "europe-west1-b",
     "labels": {
-      "goog-gke-node": "",
-      "goog-k8s-cluster-name": "shop-gke"
+      "goog-gke-node": ""
     }
   },
   {
@@ -141,8 +140,7 @@
     "assetType": "compute.googleapis.com/Disk",
     "location": "europe-west1-b",
     "labels": {
-      "goog-gke-node": "",
-      "goog-k8s-cluster-name": "shop-gke"
+      "goog-gke-node": ""
     }
   },
   {
