@@ -9,11 +9,11 @@
 # each of aws, azure and gcp, examples/<source>/README.md and examples/<source>/inventory.json, with
 # their directories, and exactly the jq programs docs/guide/inventory.md builds an inventory with (issue
 # #178): docs/guide/inventory/<source>.jq for aws, azure and gcp. Any other entry fails the run, so a
-# stray file under docs/ (a .jq file there that is not one of the three), or any file under
-# examples/ that is not a known sample (a real inventory committed as examples/<name>/inventory.json),
-# never ships unnoticed. Each archive must hold every sample and jq program too. Every entry must be a regular file or
-# a directory: a symbolic link, hard link or device fails the run too. Every built
-# platform has one archive of each, and checksums.txt lists and matches every archive. checksums.txt also
+# stray file under docs/ (a .jq file there that is not one of the three), or any file under examples/
+# that is not a known sample (a real inventory committed as examples/<name>/inventory.json), never ships
+# unnoticed. Each archive must hold every sample and jq program too. Every entry must be a regular file
+# or a directory: a symbolic link, hard link or device fails the run too. Every built platform has one
+# archive of each, and checksums.txt lists and matches every archive. checksums.txt also
 # lists, exactly once, shift2eu-server_openapi.json, the bundled OpenAPI document the release publishes
 # beside the archives (issue #139), with the sha256 of the committed api/openapi.bundled.json. GoReleaser
 # v2.20.1 copies neither checksum nor release extra files into dist/, so, as release.yml's goreleaser job
@@ -95,9 +95,9 @@ sift() {
 # check_archive archive own: the archive holds exactly one binary, own (or own.exe), at its root, and
 # otherwise only LICENSE, README.md, Markdown pages under docs/, the inventory guide's jq programs
 # (guide_programs) and the samples (with their directories, sample_dirs), each a regular file or a
-# directory. The other binary is not on that list,
-# so an archive holding it fails too. Under examples/ it may hold only the samples, and it must hold
-# every one of them: one list, so a file there that is not a known sample fails the run.
+# directory. The other binary is not on that list, so an archive holding it fails too. Under examples/
+# it may hold only the samples, and it must hold every one of them: one list, so a file there that is
+# not a known sample fails the run.
 check_archive() {
   local archive="$1" own="$2" list long special owns stray sample
   list="$(entries "${archive}")" || { problem "${archive}: cannot list its entries"; return; }
@@ -123,7 +123,8 @@ check_archive() {
     problem "${archive}: holds entries outside its allow list:"$'\n'"${stray}"
   fi
   for sample in "${samples[@]}" "${guide_programs[@]}"; do
-    grep -qxF "${sample}" <<<"${list}" || problem "${archive}: does not hold ${sample}, which every archive must ship"
+    grep -qxF "${sample}" <<<"${list}" \
+      || problem "${archive}: does not hold ${sample}, which every archive must ship"
   done
 }
 
