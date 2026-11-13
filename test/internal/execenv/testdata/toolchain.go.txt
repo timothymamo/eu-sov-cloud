@@ -1,0 +1,17 @@
+package probe
+
+import (
+	"context"
+	"os/exec"
+)
+
+func toolchain(ctx context.Context) error {
+	build := exec.Command("go", "build", "-o", "out", "./cmd/x")
+	if out, err := build.CombinedOutput(); err != nil {
+		return err
+	}
+
+	list := exec.CommandContext(ctx, "go", "list", "-deps", "./cmd/x")
+	_, err := list.Output()
+	return err
+}

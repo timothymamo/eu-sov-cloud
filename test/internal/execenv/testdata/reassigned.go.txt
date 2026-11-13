@@ -1,0 +1,11 @@
+package probe
+
+import "os/exec"
+
+func reassigned() error {
+	cmd := exec.Command("first")
+	cmd.Env = []string{"PATH=/usr/bin"}
+
+	cmd = exec.Command("second")
+	return cmd.Run()
+}

@@ -111,6 +111,26 @@
 // its patterns. TestE2EImportsProbe (testdata/e2eimports) runs depguard on the
 // e2e tier (issue #185): a non-test file importing os/exec, unsafe or os/user is
 // refused by test-docs-are-pure, and a _test.go file importing os/exec is not.
+//
+// TestE2ETestsSetExecEnv and TestTestTreeNamesNoProcEnviron close what the
+// e2e tier's two rules above cannot see (issue #195). The e2e _test.go files
+// start children, so depguard cannot keep os/exec from them, and e2e-no-env
+// refuses the one call that dumps the environment but no command built with a
+// nil Env, which inherits all of it: the agents' keys and tokens live there,
+// and the child's output can reach a t.Log call or a golden file.
+// TestE2ETestsSetExecEnv runs execenv.CheckExecEnv over every
+// test/e2e/*_test.go and fails on each command built by exec.Command or
+// exec.CommandContext whose Run, Start, Output or CombinedOutput call comes
+// before the command's Env was assigned in the same function, unless the
+// command's name is on the exemption list the test declares: the go
+// toolchain's `go build` and `go list` calls, which need that environment and
+// print none of it. TestTestTreeNamesNoProcEnviron runs
+// execenv.CheckEnvironLiterals over every Go file under test/, testdata
+// directories included, and fails on a string literal naming a
+// /proc/<something>/environ path, which reads the same environment without a
+// child at all. Both checkers and their probes are in test/internal/execenv,
+// whose probes are .go.txt files, so this scan never meets a refused literal
+// it planted itself.
 // TestTestsNoProcessStateProbe (testdata/testsprocessstate) runs the forbidigo
 // group tests-no-process-state (issue #153) on t.Setenv, t.Chdir, os.Setenv,
 // os.Unsetenv, os.Clearenv, os.Chdir, syscall.Unsetenv, syscall.Clearenv and
