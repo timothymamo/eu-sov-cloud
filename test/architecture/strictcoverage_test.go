@@ -350,26 +350,41 @@ var osEnvironmentReads = []struct{ pkg, name string }{
 // syscallEnvironmentReads are the syscall calls that reach the environment or
 // start a process, as osEnvironmentReads are os's (issue #167): every way to read
 // a named variable or the whole environment, every process start or replacement,
-// and the raw system calls, which can make any of those without naming it. A
-// package a strict rule allows syscall (today the composition roots, for a SIG*
-// constant and syscall.Signal) may make none of them; every name is one the
+// every library load whose code would run, and the raw system calls, which can
+// make any of those without naming it. A package a strict rule allows syscall
+// (today the composition roots, for a SIG* constant and syscall.Signal, and
+// test/e2e through $gostd) may make none of them; every name is one the
 // composition roots' forbidigo groups composition-root-no-exec and
-// composition-root-env refuse. The windows entry points those groups also refuse
-// (CreateProcess, GetEnvironmentVariable and the rest) are left out: they exist
-// on one release target only, and the unix names above are the ones every
-// syscall-allowing rule must refuse.
+// composition-root-env refuse. The names are matched as strings against the
+// groups' patterns, so a name that exists on one release target only (the
+// windows CreateProcess, the linux AllThreadsSyscall) costs nothing on the
+// others, and make lint lints every release target.
 var syscallEnvironmentReads = []struct{ pkg, name string }{
 	{"syscall", "syscall.Getenv"},
+	{"syscall", "syscall.GetEnvironmentVariable"},
+	{"syscall", "syscall.GetEnvironmentStrings"},
 	{"syscall", "syscall.Environ"},
 	{"syscall", "syscall.Exec"},
 	{"syscall", "syscall.ForkExec"},
 	{"syscall", "syscall.StartProcess"},
+	{"syscall", "syscall.CreateProcess"},
+	{"syscall", "syscall.CreateProcessAsUser"},
+	{"syscall", "syscall.LoadDLL"},
+	{"syscall", "syscall.MustLoadDLL"},
+	{"syscall", "syscall.NewLazyDLL"},
+	{"syscall", "syscall.LoadLibrary"},
+	{"syscall", "syscall.GetProcAddress"},
 	{"syscall", "syscall.Syscall"},
 	{"syscall", "syscall.Syscall6"},
 	{"syscall", "syscall.Syscall9"},
+	{"syscall", "syscall.Syscall12"},
+	{"syscall", "syscall.Syscall15"},
+	{"syscall", "syscall.Syscall18"},
 	{"syscall", "syscall.SyscallN"},
 	{"syscall", "syscall.RawSyscall"},
 	{"syscall", "syscall.RawSyscall6"},
+	{"syscall", "syscall.AllThreadsSyscall"},
+	{"syscall", "syscall.AllThreadsSyscall6"},
 }
 
 // requiredEnvironmentReads returns the reads a forbidigo group must refuse for a
