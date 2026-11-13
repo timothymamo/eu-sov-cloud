@@ -170,8 +170,9 @@ def child_types:
           # dedicated physical server (ADR 0023).
           $base + {category: "compute.baremetal"}
         elif $t == "microsoft.compute/disks" then
-          # The OS disk of a scale set's virtual machine goes with it. Azure
-          # encrypts every managed disk at rest.
+          # The OS disk of a scale set's virtual machine, and a data disk it
+          # deletes with it, go with it. Azure encrypts every managed disk at
+          # rest.
           select($id | IN($scalesetdisks[]) | not)
           | $base + {category: "storage.block", capabilities: [
             "encryption-at-rest",
