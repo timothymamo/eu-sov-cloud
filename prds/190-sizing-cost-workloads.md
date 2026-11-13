@@ -184,7 +184,8 @@ Each milestone ships as one PR, in dependency order. Milestones 3, 4 and 5 can r
    change.
 2. [ ] **Catalog plans and prices.** Domain: plans and prices on `catalog.Offering`, validated by
    `catalog.New`, and the target's default region for estimates. The snapshot format version that adds
-   them, with the shared reader, the targettest contract suite and an ADR. The existing snapshots move
+   them, with the shared reader, the targettest contract suite and an ADR
+   ([0024](../docs/adr/0024-add-plans-prices-and-a-default-region-in-target-snapshot-format-v2.md)). The existing snapshots move
    to the new version with no plans yet.
 3. [ ] **OVHcloud plans and prices** (monthly) and its default region, in its snapshot and
    `SOURCES.md`. Depends on 2.
