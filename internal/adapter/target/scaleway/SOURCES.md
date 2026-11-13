@@ -133,6 +133,10 @@ are the per-product pages linked from <https://www.scaleway.com/en/pricing/>:
   standby, the "HA node") costs the main node's price plus one additional node's. The HA offering's plan
   price is that pair's price × 730, divided by its two nodes, so that the count of 2 an inventory gives
   for an HA database comes back to the pair's price exactly: no plan's half needed rounding.
+  That per-node price is right only when the inventory gives **count 2** for an HA pair; an HA database
+  recorded as one resource with count 1 is priced at half the pair. A **Standalone** instance with
+  count 2 (a primary and a Read Replica) is priced as two main nodes, while Scaleway charges one main
+  node and one additional node, so that estimate is high (by the management fee).
 - **Database storage.** The page states its storage prices once per table, per GB and month: "Block
   Storage 5K: €0.0993/GB/month. Block Storage 15k: €0.1489/GB/month." Its data gives the hourly prices
   behind them (€0.000136 and €0.000204 per GB and hour). No page read says whether an HA instance's
@@ -329,6 +333,11 @@ Category `compute.vm` (virtual machines; Elastic Metal is `compute.baremetal`). 
   including `it-mil-1`, so one price with an empty `regions` list. The rows give storage only as Block
   Storage, priced apart (*Block Storage*), so no plan includes storage. The last column is the
   `fr-par-3` price, not recorded.
+- **Storage price:** an Instance's root and data volumes are *Block Storage* volumes, billed separately
+  from the Instance. The snapshot records the *Block Storage* price for them (*Storage* price page, the
+  "Block Storage 5K" row, €0.000130/GB per hour, × 730 = `0.0949` per GiB a month, read 2026-11-13; see
+  *Block Storage*). The page's data gives that price in every zone of the four regions, the regions of
+  this offering, so one price with an empty `regions` list.
 
 | Plan | vCPU | Memory | EUR/hour | EUR/month (× 730) | Price regions | `fr-par-3` EUR/hour, not recorded |
 |---|---|---|---|---|---|---|
@@ -384,6 +393,11 @@ control-plane type is chosen when the cluster is created (FAQ).
   no page read lists them, but the *Instances* price page's data offers a "Kapsule" machine image for every
   PLAY2, PRO2 and POP2 type, in the same zones as the type itself. Prices and regions are those of
   *Instances*: PLAY2 and PRO2 in Paris, Amsterdam and Warsaw, POP2 in every region.
+- **Storage price:** a Kapsule node's root volume and the cluster's persistent volumes are *Block
+  Storage* volumes, billed separately from the node, as for *Instances*. The snapshot records the *Block
+  Storage* price, `0.0949` per GiB a month (the "Block Storage 5K" row, €0.000130/GB per hour × 730, read
+  2026-11-13; see *Block Storage*), the same in every zone of the four regions of this offering, so one
+  price with an empty `regions` list.
 
 | Plan | vCPU | Memory | EUR/hour | EUR/month (× 730) | Price regions |
 |---|---|---|---|---|---|
@@ -445,6 +459,10 @@ Dedicated control plane, Dedicated 4, 8 or 16, which share the same availability
   €0.11, Dedicated-8 €0.18 and Dedicated-16 €0.35 an hour (*Containers* price page), × 730 = €80.30,
   €131.40 and €255.50 a month. It is not recorded, so an estimate for this offering is low by that fee
   (*Left out on purpose*).
+- **Storage price:** as for *Kubernetes Kapsule*: node and persistent volumes are *Block Storage*
+  volumes, billed separately, at `0.0949` per GiB a month (the "Block Storage 5K" row, read 2026-11-13;
+  see *Block Storage*), the same in every zone of the three regions of this offering, so one price with
+  an empty `regions` list.
 
 | Plan | vCPU | Memory | EUR/hour | EUR/month (× 730) | Price regions |
 |---|---|---|---|---|---|
@@ -563,7 +581,8 @@ Its `encryption-at-rest`, `read-replicas` and
   node could be another node from the same type, a Read Replica or a HA node."). The pair costs the
   "Main node" price plus the "Additional nodes" price. The plan's price is **per node**: the pair's price
   × 730 ÷ 2, so that an estimate for the two nodes (count 2, ADR 0025) is the pair's price exactly. No
-  half needed rounding.
+  half needed rounding. The price is right only when the inventory gives count 2 for the HA pair: an HA
+  database recorded as one resource with count 1 is priced at half the pair, and its estimate is low.
 
 | Plan | vCPU | Memory | Main node EUR/hour | Additional (HA) node EUR/hour | Pair EUR/hour | Pair × 730 | Per node: pair × 730 ÷ 2 | Price regions |
 |---|---|---|---|---|---|---|---|---|
@@ -715,8 +734,9 @@ Prices and plans left out (PRD #190 milestone 4, read 2026-11-13):
   30 calendar days". ADR 0024's format has no per-cluster price: a plan is multiplied by the node count.
   An estimate for *Kubernetes Kapsule Dedicated* therefore prices its nodes only and is low by that fee.
   The page's data prices Dedicated-4 and Dedicated-8 in `it-mil` too; the offering's regions are not
-  changed by this milestone (*Kubernetes Kapsule Dedicated*, Milan), and that data is a source to weigh
-  when its regions are next checked.
+  changed by this milestone (*Kubernetes Kapsule Dedicated*, Milan). **Flagged for the next region
+  re-verification:** that data is a source to weigh when this offering's regions are next checked, and
+  may justify adding `it-mil`.
 - **The `fr-par-3` zone prices** of PRO2 and POP2 Instances and Kubernetes nodes, about 1.5 times the
   other zones' (*Instances*): zones are not modelled, and a region has one price per plan (*Prices*).
 - **Instance and node ranges not recorded:** BASIC2, BASIC3, STANDARD2 and STANDARD3 (General Purpose,
@@ -735,7 +755,9 @@ Prices and plans left out (PRD #190 milestone 4, read 2026-11-13):
 - **Database storage for the HA standby:** not added; see *Prices*, *Database storage*.
 - **Block Storage snapshots** (€0.000049/GB/hour) and **Block Storage 15K** (*Block Storage*): one
   storage price per region, the 5K class.
-- **Instance storage:** *Instances* has no storage price. Its plans include none, and a volume is a
-  *Block Storage* volume, which the snapshot prices there.
+- **Instance storage:** no plan of *Instances*, *Kubernetes Kapsule* or *Kubernetes Kapsule Dedicated*
+  includes storage. Their root and data volumes are *Block Storage* volumes billed separately, so each
+  of those offerings records the *Block Storage* 5K price as its storage price (`0.0949`). Block Storage
+  15K, and the higher price of a node volume placed on it, are left out, as for *Block Storage*.
 - **Usage-priced offerings:** Queues and Serverless Functions are priced by use (PRD #190) and have no
   plans or storage prices.
