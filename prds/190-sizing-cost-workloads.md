@@ -188,7 +188,7 @@ Each milestone ships as one PR, in dependency order. Milestones 3, 4 and 5 can r
    them, with the shared reader, the targettest contract suite and an ADR
    ([0024](../docs/adr/0024-add-plans-prices-and-a-default-region-in-target-snapshot-format-v2.md)). The existing snapshots move
    to the new version with no plans yet.
-3. [ ] **OVHcloud plans and prices** (monthly) and its default region, in its snapshot and
+3. [x] **OVHcloud plans and prices** (monthly) and its default region, in its snapshot and
    `SOURCES.md`. Depends on 2.
 4. [ ] **Scaleway plans and prices** (monthly) and its default region, in its snapshot and
    `SOURCES.md`. Depends on 2.
