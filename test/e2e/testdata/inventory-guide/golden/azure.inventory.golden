@@ -1,0 +1,151 @@
+{
+  "schemaVersion": 1,
+  "source": "azure",
+  "resources": [
+    {
+      "id": "aks-shop",
+      "rawType": "Microsoft.ContainerService/managedClusters",
+      "category": "kubernetes.managed",
+      "region": "westeurope",
+      "capabilities": [
+        "autoscaling",
+        "node-high-availability",
+        "zone-high-availability"
+      ]
+    },
+    {
+      "id": "app-shop-storefront",
+      "rawType": "Microsoft.Web/sites",
+      "category": "unclassified",
+      "region": "westeurope"
+    },
+    {
+      "id": "cdn-shop",
+      "rawType": "Microsoft.Cdn/profiles",
+      "category": "unclassified"
+    },
+    {
+      "id": "disk-shop-web-1-data",
+      "rawType": "Microsoft.Compute/disks",
+      "category": "storage.block",
+      "region": "westeurope",
+      "capabilities": [
+        "encryption-at-rest",
+        "snapshots"
+      ]
+    },
+    {
+      "id": "disk-shop-web-1-os",
+      "rawType": "Microsoft.Compute/disks",
+      "category": "storage.block",
+      "region": "westeurope",
+      "capabilities": [
+        "encryption-at-rest"
+      ]
+    },
+    {
+      "id": "func-shop-thumbnails",
+      "rawType": "Microsoft.Web/sites",
+      "category": "serverless.function",
+      "region": "westeurope"
+    },
+    {
+      "id": "mysql-shop-catalog",
+      "rawType": "Microsoft.DBforMySQL/flexibleServers",
+      "category": "database.mysql",
+      "region": "westeurope",
+      "capabilities": [
+        "encryption-at-rest",
+        "node-high-availability",
+        "point-in-time-restore"
+      ]
+    },
+    {
+      "id": "nic-shop-web-1",
+      "rawType": "Microsoft.Network/networkInterfaces",
+      "category": "unclassified",
+      "region": "westeurope"
+    },
+    {
+      "id": "psql-shop",
+      "rawType": "Microsoft.DBforPostgreSQL/flexibleServers",
+      "category": "database.postgresql",
+      "region": "westeurope",
+      "capabilities": [
+        "encryption-at-rest",
+        "point-in-time-restore",
+        "read-replicas",
+        "zone-high-availability"
+      ]
+    },
+    {
+      "id": "psql-shop-replica",
+      "rawType": "Microsoft.DBforPostgreSQL/flexibleServers",
+      "category": "database.postgresql",
+      "region": "westeurope",
+      "capabilities": [
+        "encryption-at-rest",
+        "point-in-time-restore"
+      ]
+    },
+    {
+      "id": "sb-shop-invoices",
+      "rawType": "Microsoft.ServiceBus/namespaces/queues",
+      "category": "messaging.queue",
+      "region": "westeurope",
+      "capabilities": [
+        "dead-letter-queue"
+      ]
+    },
+    {
+      "id": "sb-shop-orders",
+      "rawType": "Microsoft.ServiceBus/namespaces/queues",
+      "category": "messaging.queue",
+      "region": "westeurope",
+      "capabilities": [
+        "dead-letter-queue"
+      ]
+    },
+    {
+      "id": "shop.example.com",
+      "rawType": "Microsoft.Network/dnsZones",
+      "category": "unclassified"
+    },
+    {
+      "id": "stshopassets",
+      "rawType": "Microsoft.Storage/storageAccounts",
+      "category": "storage.object",
+      "region": "westeurope",
+      "capabilities": [
+        "encryption-at-rest",
+        "object-versioning"
+      ]
+    },
+    {
+      "id": "stshopfiles",
+      "rawType": "Microsoft.Storage/storageAccounts",
+      "category": "unclassified",
+      "region": "westeurope"
+    },
+    {
+      "id": "vm-shop-web-1",
+      "rawType": "Microsoft.Compute/virtualMachines",
+      "category": "compute.vm",
+      "region": "westeurope",
+      "capabilities": [
+        "ipv6",
+        "snapshots"
+      ]
+    },
+    {
+      "id": "vmss-shop-web",
+      "rawType": "Microsoft.Compute/virtualMachineScaleSets",
+      "category": "compute.vm",
+      "region": "westeurope",
+      "capabilities": [
+        "autoscaling",
+        "zone-high-availability"
+      ]
+    }
+  ]
+}

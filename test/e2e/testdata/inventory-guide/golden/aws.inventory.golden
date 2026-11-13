@@ -1,0 +1,163 @@
+{
+  "schemaVersion": 1,
+  "source": "aws",
+  "resources": [
+    {
+      "id": "E0123456789ABC",
+      "rawType": "AWS::CloudFront::Distribution",
+      "category": "unclassified"
+    },
+    {
+      "id": "i-0123456789abcdef0",
+      "rawType": "AWS::EC2::Instance",
+      "category": "compute.vm",
+      "region": "eu-central-1",
+      "capabilities": [
+        "ipv6",
+        "snapshots"
+      ]
+    },
+    {
+      "id": "i-0123456789abcdef1",
+      "rawType": "AWS::EC2::Instance",
+      "category": "compute.vm",
+      "region": "eu-central-1"
+    },
+    {
+      "id": "shop-alb",
+      "rawType": "AWS::ElasticLoadBalancingV2::LoadBalancer",
+      "category": "unclassified",
+      "region": "eu-central-1"
+    },
+    {
+      "id": "shop-assets-example",
+      "rawType": "AWS::S3::Bucket",
+      "category": "storage.object",
+      "region": "eu-central-1",
+      "capabilities": [
+        "encryption-at-rest",
+        "object-versioning"
+      ]
+    },
+    {
+      "id": "shop-db",
+      "rawType": "AWS::RDS::DBInstance",
+      "category": "database.postgresql",
+      "region": "eu-central-1",
+      "capabilities": [
+        "encryption-at-rest",
+        "point-in-time-restore",
+        "read-replicas",
+        "zone-high-availability"
+      ]
+    },
+    {
+      "id": "shop-db-replica",
+      "rawType": "AWS::RDS::DBInstance",
+      "category": "database.postgresql",
+      "region": "eu-central-1",
+      "capabilities": [
+        "encryption-at-rest"
+      ]
+    },
+    {
+      "id": "shop-eks",
+      "rawType": "AWS::EKS::Cluster",
+      "category": "kubernetes.managed",
+      "region": "eu-central-1",
+      "capabilities": [
+        "autoscaling",
+        "node-high-availability"
+      ]
+    },
+    {
+      "id": "shop-legacy-mysql",
+      "rawType": "AWS::RDS::DBInstance",
+      "category": "database.mysql",
+      "region": "eu-central-1",
+      "capabilities": [
+        "point-in-time-restore"
+      ]
+    },
+    {
+      "id": "shop-logs-example",
+      "rawType": "AWS::S3::Bucket",
+      "category": "storage.object",
+      "region": "eu-west-1",
+      "capabilities": [
+        "encryption-at-rest"
+      ]
+    },
+    {
+      "id": "shop-orders (AWS::Lambda::Function, eu-central-1)",
+      "rawType": "AWS::Lambda::Function",
+      "category": "serverless.function",
+      "region": "eu-central-1"
+    },
+    {
+      "id": "shop-orders (AWS::Lambda::Function, eu-west-1)",
+      "rawType": "AWS::Lambda::Function",
+      "category": "serverless.function",
+      "region": "eu-west-1"
+    },
+    {
+      "id": "shop-orders (AWS::SQS::Queue, eu-central-1)",
+      "rawType": "AWS::SQS::Queue",
+      "category": "messaging.queue",
+      "region": "eu-central-1",
+      "capabilities": [
+        "dead-letter-queue",
+        "encryption-at-rest"
+      ]
+    },
+    {
+      "id": "shop-orders-dlq",
+      "rawType": "AWS::SQS::Queue",
+      "category": "messaging.queue",
+      "region": "eu-central-1"
+    },
+    {
+      "id": "shop-reports-mariadb",
+      "rawType": "AWS::RDS::DBInstance",
+      "category": "unclassified",
+      "region": "eu-central-1"
+    },
+    {
+      "id": "shop-thumbnailer",
+      "rawType": "AWS::Lambda::Function",
+      "category": "serverless.function",
+      "region": "eu-central-1"
+    },
+    {
+      "id": "shop-web-asg",
+      "rawType": "AWS::AutoScaling::AutoScalingGroup",
+      "category": "compute.vm",
+      "region": "eu-central-1",
+      "capabilities": [
+        "autoscaling",
+        "zone-high-availability"
+      ]
+    },
+    {
+      "id": "shop.example.com.",
+      "rawType": "AWS::Route53::HostedZone",
+      "category": "unclassified"
+    },
+    {
+      "id": "vol-0123456789abcdef0",
+      "rawType": "AWS::EC2::Volume",
+      "category": "storage.block",
+      "region": "eu-central-1",
+      "capabilities": [
+        "encryption-at-rest",
+        "snapshots"
+      ]
+    },
+    {
+      "id": "vol-0123456789abcdef1",
+      "rawType": "AWS::EC2::Volume",
+      "category": "storage.block",
+      "region": "eu-central-1"
+    }
+  ]
+}
