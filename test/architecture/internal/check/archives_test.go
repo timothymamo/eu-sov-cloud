@@ -35,7 +35,9 @@ archives:
 // it holds (shift2eu alone), the name the CLI's archives have always had,
 // goreleaser's default template written out, tar.gz on every platform, zip on
 // Windows, and the files the archive ships beside the binary (LICENSE and
-// README.md, with the pages under docs/ that README.md links to, issue #149).
+// README.md, with the pages under docs/ that README.md links to, issue #149,
+// and the sample inventories under examples/ that docs/guide/try-it.md runs
+// the CLI on, issue #188).
 const cliArchive = `  - id: shift2eu
     ids: [shift2eu]
     name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
@@ -48,13 +50,15 @@ const cliArchive = `  - id: shift2eu
       - README.md
       - docs/*.md
       - docs/**/*
+      - examples/*.md
+      - examples/**/*
 
 `
 
 // serverArchive is the archive entry of the HTTP API's build: its own id, the
 // build it holds (shift2eu-server alone), its own name,
 // shift2eu-server_<version>_<os>_<arch>, the same formats and the same files
-// as the CLI's.
+// as the CLI's, examples/ included.
 const serverArchive = `  - id: shift2eu-server
     ids: [shift2eu-server]
     name_template: "{{ .ProjectName }}-server_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
@@ -67,6 +71,8 @@ const serverArchive = `  - id: shift2eu-server
       - README.md
       - docs/*.md
       - docs/**/*
+      - examples/*.md
+      - examples/**/*
 
 `
 
@@ -114,8 +120,11 @@ func goreleaserArchives(cli, server string) string {
 //     name_template;
 //   - each entry is tar.gz on every platform and zip on Windows (formats: and
 //     format_overrides:, worded with tar.gz and zip);
-//   - each entry ships exactly LICENSE, README.md, docs/*.md and docs/**/*
-//     (files:), worded with the entry it does not ship;
+//   - each entry ships exactly LICENSE, README.md, docs/*.md, docs/**/*,
+//     examples/*.md and examples/**/* (files:), worded with the entry it does
+//     not ship: README.md's links stay inside the archive (issue #149), and
+//     the walkthrough in docs/guide/try-it.md finds the sample inventories a
+//     release unpacks in examples/ rather than only in a clone (issue #188);
 //   - the checksum section holds exactly name_template: checksums.txt, so one
 //     checksums.txt covers every archive: a missing section, another name and
 //     any other key in it (split: for one) are refused, worded with what it
@@ -322,6 +331,25 @@ func TestGoReleaserArchives(t *testing.T) {
 				serverArchive,
 			),
 			wantIn: "docs/**/*",
+		},
+
+		// The sample inventories docs/guide/try-it.md runs the CLI on (issue
+		// #188): a release someone unpacks holds them too, not only a clone.
+		{
+			name: "an archive without the sample inventories' README",
+			goreleaser: goreleaserArchives(
+				cliArchive,
+				mutate(t, serverArchive, "      - examples/*.md\n", ""),
+			),
+			wantIn: "examples/*.md",
+		},
+		{
+			name: "an archive without the inventories under examples/",
+			goreleaser: goreleaserArchives(
+				mutate(t, cliArchive, "      - examples/**/*\n", ""),
+				serverArchive,
+			),
+			wantIn: "examples/**/*",
 		},
 
 		// The checksum: one file covering every archive.

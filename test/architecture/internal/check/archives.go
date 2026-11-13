@@ -46,8 +46,10 @@ var archiveNames = map[string]string{
 var archiveKeys = []string{"id", "ids", "name_template", "formats", "format_overrides", "files"}
 
 // archiveFiles are the files every archive ships beside its binary: LICENSE,
-// README.md and the pages under docs/ that README.md links to (issue #149).
-var archiveFiles = []string{"LICENSE", "README.md", "docs/*.md", "docs/**/*"}
+// README.md, the pages under docs/ that README.md links to (issue #149), and
+// the sample inventories under examples/ that docs/guide/try-it.md runs the
+// CLI on (issue #188).
+var archiveFiles = []string{"LICENSE", "README.md", "docs/*.md", "docs/**/*", "examples/*.md", "examples/**/*"}
 
 // GoReleaserArchives returns one message for every way the .goreleaser.yaml
 // document goreleaser lets one archive hold both binaries, or moves a binary
@@ -65,7 +67,7 @@ var archiveFiles = []string{"LICENSE", "README.md", "docs/*.md", "docs/**/*"}
 //     goreleaser's default written out for the CLI (shift2eu), and
 //     shift2eu-server_<version>_<os>_<arch> for the server (shift2eu-server);
 //   - each entry is tar.gz, and zip on Windows, and ships exactly LICENSE,
-//     README.md, docs/*.md and docs/**/*;
+//     README.md, docs/*.md, docs/**/*, examples/*.md and examples/**/*;
 //   - an entry holds no key beyond id, ids, name_template, formats,
 //     format_overrides and files;
 //   - checksum: holds exactly name_template: checksums.txt, one file covering
@@ -394,7 +396,10 @@ func (r *schemaReader) archiveFormats(entries []yamlread.Entry, path string) {
 	r.list(override["formats"], overridesPath+": formats (Windows, want zip)", []string{windowsFormat})
 }
 
-// archiveFiles checks that an archive entry ships exactly archiveFiles.
+// archiveFiles checks that an archive entry ships exactly archiveFiles: beside
+// its binary, LICENSE, README.md and the pages under docs/ (issue #149), so
+// README.md's links work in an unpacked archive, and the sample inventories
+// under examples/ that docs/guide/try-it.md runs the CLI on (issue #188).
 func (r *schemaReader) archiveFiles(entries []yamlread.Entry, path string) {
 	e, ok := child(entries, "files")
 	if !ok {
@@ -412,7 +417,7 @@ func (r *schemaReader) archiveFiles(entries []yamlread.Entry, path string) {
 
 	for _, want := range archiveFiles {
 		if !slices.Contains(got, want) {
-			r.fail("line %d: %s ships no %s, want exactly %s: README.md links to LICENSE and the pages under docs/ (issue #149)", e.Num, path, want, strings.Join(archiveFiles, ", "))
+			r.fail("line %d: %s ships no %s, want exactly %s: README.md links to LICENSE and the pages under docs/ (issue #149), and docs/guide/try-it.md runs the CLI on the sample inventories under examples/ (issue #188)", e.Num, path, want, strings.Join(archiveFiles, ", "))
 		}
 	}
 
