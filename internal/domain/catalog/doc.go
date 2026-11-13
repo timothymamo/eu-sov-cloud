@@ -1,7 +1,8 @@
 // Package catalog models what a target EU cloud provider (OVHcloud, Scaleway,
 // UpCloud) offers: its offerings, the taxonomy categories and capabilities each
-// one covers, the EU regions it is available in, and the dated, sourced snapshot
-// the data was taken from.
+// one covers, the EU regions it is available in, the plans it sells and their
+// monthly prices in EUR, and the dated, sourced snapshot the data was taken
+// from, with the default region estimates use (ADR 0024).
 //
 // A Catalog is validated when it is built with New: a target display name that
 // is not blank, a snapshot dated and sourced from an absolute https URL with an
@@ -20,7 +21,16 @@
 // deterministic. Each offering's capabilities are expanded with the ones they
 // imply (taxonomy Capability.Implies), so an offering listing
 // zone-high-availability also has node-high-availability; inventory resources
-// are never expanded. A zero Catalog has not been validated; later layers only
+// are never expanded.
+//
+// Money is never a float: an Amount is an exact count of ten-thousandths of a
+// euro, and a plan's memory an exact count of thousandths of a GiB. New refuses
+// a plan without a usable name, with sizes out of range or without a price, a
+// duplicate plan name, a price that is negative, above MaxAmount, not in EUR or
+// in a region the offering is not in, and two prices of one list that apply to
+// the same region (a price with no region applies to every one). It keeps each
+// offering's plans sorted by name and every price list sorted by first region,
+// the every-region price first, and a snapshot's default region as given. A zero Catalog has not been validated; later layers only
 // receive catalogs built by New.
 //
 // The target is the display name reports show (for example Scaleway), not a CLI
