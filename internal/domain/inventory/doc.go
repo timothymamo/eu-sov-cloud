@@ -21,10 +21,10 @@
 // takes; a Workload name; Relations to other resources of the same inventory,
 // from a closed vocabulary (ParseRelationType), resolved to the target's own
 // ID, de-duplicated and sorted; and the source's MonthlyCost. A number that is
-// not given is nil, never 0, and a size, usage or relations list that gives
-// nothing is nil. Errors in these fields are *FieldError values that name the
-// field by its path in the order the resources were given,
-// resources[1].size.vcpus.
+// not given is nil, never 0, a given -0 is stored as 0, and a size, usage or
+// relations list that gives nothing is nil. Errors in these fields are
+// *FieldError values that name the field by its path in the order the
+// resources were given, resources[1].size.vcpus.
 //
 // Domain layer: standard library and other domain packages only, no I/O, no
 // clock.

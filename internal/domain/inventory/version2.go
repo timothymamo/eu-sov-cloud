@@ -206,7 +206,25 @@ func checkVersion2(i int, r Resource) (Resource, error) {
 		return Resource{}, err
 	}
 
+	// The fields that take 0 store a given -0 as +0, so nothing derived from
+	// the inventory ever shows "-0". r is a clone, so its numbers may be set.
+	if r.Size != nil {
+		unsignZero(r.Size.StorageGiB)
+	}
+
+	if r.MonthlyCost != nil {
+		unsignZero(r.MonthlyCost.Amount)
+	}
+
 	return r, nil
+}
+
+// unsignZero sets *v to +0 when it is a zero of either sign, and leaves any
+// other number, and nil, as it is.
+func unsignZero(v *float64) {
+	if v != nil && *v == 0 {
+		*v = 0
+	}
 }
 
 // checkNumber checks v, the number at path: not given, or, when the category

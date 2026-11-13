@@ -81,7 +81,8 @@ absent too. Both keys of a relation and of a cost are required. An element of `r
 ### Absent versus 0, and defaults
 
 The domain keeps every number as a pointer: nil is "not given", a pointer to 0 is a given 0. It stores
-what the file says and no defaults. Later milestones read a `count` that is not given as 1 and an
+what the file says and no defaults, except that a given -0 (`storageGiB`, `amount`) is stored as 0, so no
+report ever prints "-0". Later milestones read a `count` that is not given as 1 and an
 `hoursPerMonth` that is not given as 730 (an average month: 365 × 24 / 12), and say so in the report.
 A missing `vcpus`, `memoryGiB` or `storageGiB` stays unknown, and a resource that cannot be sized is
 never priced as if it cost 0.
