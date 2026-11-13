@@ -78,44 +78,64 @@ func optionalText(w *jsondoc.Walker) (string, error) {
 	return w.String()
 }
 
+// resourceChunk is how many resources resources gathers in one slice before it
+// starts the next.
+const resourceChunk = 1024
+
 // resources reads the resources list, counting its elements as it goes: the
 // list is refused at its first element past MaxResources. null is refused, as
 // a value that is not an array.
+//
+// The resources are gathered in slices of resourceChunk and joined once at the
+// end, so a long list is copied once, not at every growth of one slice, which
+// keeps the memory a document of many resources costs in proportion to the
+// file. Each is decoded straight into its place.
 func resources(w *jsondoc.Walker, version int) ([]inventory.Resource, error) {
-	list := []inventory.Resource{}
+	var (
+		full  [][]inventory.Resource
+		chunk []inventory.Resource
+		total int
+	)
 
 	err := w.Array("an array", func(i int) error {
 		if i == MaxResources {
 			return fmt.Errorf("%w: more than %d", ErrTooManyResources, MaxResources)
 		}
 
-		r, err := resource(w, version)
-		list = append(list, r)
+		if len(chunk) == cap(chunk) {
+			if chunk != nil {
+				full = append(full, chunk)
+			}
 
-		return err
+			chunk = make([]inventory.Resource, 0, resourceChunk)
+		}
+
+		chunk = append(chunk, inventory.Resource{})
+		total++
+
+		return resource(w, version, &chunk[len(chunk)-1])
 	})
 	if err != nil {
 		return nil, err
 	}
 
-	return list, nil
+	list := make([]inventory.Resource, 0, total)
+	for _, c := range full {
+		list = append(list, c...)
+	}
+
+	return append(list, chunk...), nil
 }
 
-// resource reads the next value: a resource object of version, with the keys
-// that version defines. Its values are checked by inventory.New, not here.
-func resource(w *jsondoc.Walker, version int) (inventory.Resource, error) {
-	var r inventory.Resource
-
+// resource reads the next value into r: a resource object of version, with the
+// keys that version defines. Its values are checked by inventory.New, not here.
+func resource(w *jsondoc.Walker, version int, r *inventory.Resource) error {
 	keys := resourceKeys
 	if version == schemaVersion2 {
 		keys = resourceKeysV2
 	}
 
-	// at is the resource's own path, resources[1], which the relations cap
-	// names.
-	at := w.Path()
-
-	err := w.Object(keys, func(key string) error {
+	return w.Object(keys, func(key string) error {
 		var (
 			s   string
 			err error
@@ -140,18 +160,13 @@ func resource(w *jsondoc.Walker, version int) (inventory.Resource, error) {
 		case keyWorkload:
 			r.Workload, err = optionalText(w)
 		case keyRelations:
-			r.Relations, err = relations(w, at)
+			r.Relations, err = relations(w)
 		case keyMonthlyCost:
 			r.MonthlyCost, err = cost(w)
 		}
 
 		return err
 	})
-	if err != nil {
-		return inventory.Resource{}, err
-	}
-
-	return r, nil
 }
 
 // capabilities reads the next value: an array of at most MaxCapabilities
@@ -268,14 +283,19 @@ func cost(w *jsondoc.Walker) (*inventory.Cost, error) {
 }
 
 // relations reads the next value: an array of at most MaxRelations relation
-// objects, duplicates included, or null for an absent list. at is the path of
-// the resource the list belongs to. The list is refused at its first element
+// objects, duplicates included, or null for an absent list. The list is refused at its first element
 // past the cap, before that element is read; a null element is refused, as a
 // value that is not an object.
-func relations(w *jsondoc.Walker, at string) ([]inventory.Relation, error) {
+func relations(w *jsondoc.Walker) ([]inventory.Relation, error) {
 	if null, err := w.Null(); null || err != nil {
 		return nil, err
 	}
+
+	// The cap names the resource the list belongs to, resources[1]: the list's
+	// path without its key. It is built here, never for a resource without
+	// relations, so a document of many resources pays nothing for it.
+	path := w.Path()
+	at := path[:len(path)-len("."+keyRelations)]
 
 	list := []inventory.Relation{}
 
