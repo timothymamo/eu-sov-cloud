@@ -26,7 +26,13 @@
     "disks": [
       {
         "source": "https://www.googleapis.com/compute/v1/projects/example-project/zones/europe-west1-c/disks/shop-web-mig-0abc",
-        "boot": true
+        "boot": true,
+        "autoDelete": true
+      },
+      {
+        "source": "https://www.googleapis.com/compute/v1/projects/example-project/zones/europe-west1-c/disks/shop-web-mig-0abc-data",
+        "boot": false,
+        "autoDelete": true
       }
     ],
     "networkInterfaces": [

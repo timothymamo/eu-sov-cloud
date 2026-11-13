@@ -130,14 +130,18 @@ func inventoryGuides() []inventoryGuideCase {
 				// A persistent volume is a disk no Kubernetes node label covers:
 				// it holds data and stays, only a node's boot disk goes.
 				{id: "pvc-00000000-0000-0000-0000-000000000001", rawType: "compute.googleapis.com/Disk", category: "storage.block"},
+				// So does a disk a standalone instance keeps after it goes: only a
+				// managed instance group's members and their disks are left out.
+				{id: "shop-web-1-data", rawType: "compute.googleapis.com/Disk", category: "storage.block"},
 			},
 			// A node pool's managed instance group, a node with its disk,
-			// labelled goog-gke-node, and the boot disk of the group's member:
-			// the group stands for its instances.
+			// labelled goog-gke-node, and the boot and data disks of the group's
+			// member: the group stands for its instances.
 			absent: []string{
 				"gke-shop-gke-default-pool-0a1b2c3d-grp",
 				"gke-shop-gke-default-pool-0a1b2c3d-x1y2",
 				"shop-web-mig-0abc",
+				"shop-web-mig-0abc-data",
 			},
 		},
 		{
@@ -158,10 +162,12 @@ func inventoryGuides() []inventoryGuideCase {
 				// stays: only what AKS manages for the cluster is left out.
 				{id: "pvc-00000000-0000-0000-0000-000000000000", rawType: "Microsoft.Compute/disks", category: "storage.block"},
 			},
-			// The cluster's node scale set and its load balancer.
+			// The cluster's node scale set and its load balancer, and the OS disk
+			// of a scale set member: the member's scale set stands for both.
 			absent: []string{
 				"aks-system-12345678-vmss",
 				"kubernetes",
+				"vmss-shop-web_0abc_OsDisk_1",
 			},
 		},
 	}

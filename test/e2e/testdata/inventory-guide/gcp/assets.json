@@ -40,6 +40,11 @@
     "location": "europe-west1-c"
   },
   {
+    "name": "//compute.googleapis.com/projects/example-project/zones/europe-west1-c/disks/shop-web-mig-0abc-data",
+    "assetType": "compute.googleapis.com/Disk",
+    "location": "europe-west1-c"
+  },
+  {
     "name": "//compute.googleapis.com/projects/example-project/zones/europe-west1-b/disks/pvc-00000000-0000-0000-0000-000000000001",
     "assetType": "compute.googleapis.com/Disk",
     "location": "europe-west1-b"

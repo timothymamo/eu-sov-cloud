@@ -1,5 +1,5 @@
 {
-  "count": 10,
+  "count": 11,
   "data": [
     {
       "id": "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg-shop/providers/Microsoft.Compute/virtualMachines/vm-shop-web-1",
@@ -44,6 +44,14 @@
       "properties": {
         "virtualMachineScaleSet": {
           "id": "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg-shop/providers/Microsoft.Compute/virtualMachineScaleSets/vmss-shop-web"
+        },
+        "storageProfile": {
+          "osDisk": {
+            "managedDisk": {
+              "id": "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg-shop/providers/Microsoft.Compute/disks/vmss-shop-web_0abc_OsDisk_1"
+            }
+          },
+          "dataDisks": []
         },
         "networkProfile": {
           "networkInterfaces": []
@@ -124,6 +132,17 @@
       "properties": null
     },
     {
+      "id": "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg-shop/providers/Microsoft.Compute/disks/vmss-shop-web_0abc_OsDisk_1",
+      "name": "vmss-shop-web_0abc_OsDisk_1",
+      "type": "microsoft.compute/disks",
+      "kind": "",
+      "location": "westeurope",
+      "zones": [
+        "1"
+      ],
+      "properties": null
+    },
+    {
       "id": "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg-shop/providers/Microsoft.Compute/snapshots/snap-shop-web-1-data",
       "name": "snap-shop-web-1-data",
       "type": "microsoft.compute/snapshots",
@@ -156,5 +175,5 @@
     }
   ],
   "skip_token": "ew0KICAiJGlkIjogIjEiLA0KICAiTWF4Um93cyI6IDEwLA0KfQ==",
-  "total_records": 24
+  "total_records": 25
 }
