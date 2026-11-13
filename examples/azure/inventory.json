@@ -55,8 +55,7 @@
       "id": "func-shop-thumbnails",
       "rawType": "Microsoft.Web/sites",
       "category": "serverless.function",
-      "region": "westeurope",
-      "capabilities": ["ipv6"]
+      "region": "westeurope"
     },
     {
       "id": "sb-shop-orders",

@@ -16,6 +16,7 @@ types, as `gcloud asset search-all-resources` and `gcloud asset export` report t
 | `shop-gke` | `container.googleapis.com/Cluster` | `kubernetes.managed` | `zone-high-availability`, `autoscaling` |
 | `shop-resize-images` | `cloudfunctions.googleapis.com/Function` | `serverless.function` | `autoscaling` |
 | `shop-orders` | `pubsub.googleapis.com/Subscription` | `messaging.queue` | `dead-letter-queue` |
+| `shop-orders-dlq` | `pubsub.googleapis.com/Topic` | `messaging.queue` | |
 | `shop-cdn-backend` | `compute.googleapis.com/BackendBucket` | `unclassified` | |
 | `shop-zone` | `dns.googleapis.com/ManagedZone` | `unclassified` | |
 

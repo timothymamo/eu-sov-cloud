@@ -6,7 +6,7 @@ describes the same small web shop as it might run on one source:
 | Directory | Source | Resources |
 |---|---|---|
 | [`aws/`](aws/) | AWS | 13 |
-| [`gcp/`](gcp/) | GCP | 12 |
+| [`gcp/`](gcp/) | GCP | 13 |
 | [`azure/`](azure/) | Azure | 11 |
 
 The shop has web VMs (one of them a scaling group), a data volume, an object storage bucket with

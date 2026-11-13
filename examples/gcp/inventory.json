@@ -72,6 +72,12 @@
       "capabilities": ["dead-letter-queue"]
     },
     {
+      "id": "shop-orders-dlq",
+      "rawType": "pubsub.googleapis.com/Topic",
+      "category": "messaging.queue",
+      "region": "europe-west1"
+    },
+    {
       "id": "shop-cdn-backend",
       "rawType": "compute.googleapis.com/BackendBucket",
       "category": "unclassified"
