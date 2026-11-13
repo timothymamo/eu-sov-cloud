@@ -46,6 +46,26 @@ type sample struct {
 func sampleFiles(t *testing.T) []sample {
 	t.Helper()
 
+	return filesUnder(t, "sample inventory", func(path string) bool {
+		return strings.EqualFold(filepath.Ext(path), ".json")
+	})
+}
+
+// allFiles returns every regular file under examples/, the READMEs included,
+// sorted by path. TestSamplesAreSanitised scans all of them: prose and a
+// command leak an identifier as easily as a field does, so the documentation
+// values rule (CLAUDE.md rule 2) holds for the whole directory.
+func allFiles(t *testing.T) []sample {
+	t.Helper()
+
+	return filesUnder(t, "file", func(string) bool { return true })
+}
+
+// filesUnder returns every regular file under examples/ that keep selects,
+// sorted by path, with the source its directory names.
+func filesUnder(t *testing.T, kind string, keep func(path string) bool) []sample {
+	t.Helper()
+
 	root := filepath.Join(repoRoot, examplesDir)
 	var files []sample
 
@@ -54,7 +74,7 @@ func sampleFiles(t *testing.T) []sample {
 			return err
 		}
 
-		if entry.IsDir() || !strings.EqualFold(filepath.Ext(path), ".json") {
+		if entry.IsDir() || !entry.Type().IsRegular() || !keep(path) {
 			return nil
 		}
 
@@ -71,13 +91,12 @@ func sampleFiles(t *testing.T) []sample {
 		return nil
 	})
 	if err != nil {
-		t.Fatalf("walk the sample inventories under %s: %v: want a *%s per source, for example %s",
-			root, err, ".json", filepath.ToSlash(filepath.Join(examplesDir, "aws", inventoryFileName)))
+		t.Fatalf("walk the files under %s: %v", root, err)
 	}
 
 	if len(files) == 0 {
-		t.Fatalf("no sample inventory under %s: want at least one *.json per source (%s), for example %s",
-			root, strings.Join(sources, ", "), filepath.ToSlash(filepath.Join(examplesDir, "aws", inventoryFileName)))
+		t.Fatalf("no %s under %s: want at least one, for example %s",
+			kind, root, filepath.ToSlash(filepath.Join(examplesDir, "aws", inventoryFileName)))
 	}
 
 	slices.SortFunc(files, func(a, b sample) int { return strings.Compare(a.path, b.path) })
@@ -118,4 +137,36 @@ var targets = []targetCatalog{
 	{key: "ovhcloud", catalog: func() analysis.CatalogSource { return ovhcloud.New() }},
 	{key: "scaleway", catalog: func() analysis.CatalogSource { return scaleway.New() }},
 	{key: "upcloud", catalog: func() analysis.CatalogSource { return upcloud.New() }},
+}
+
+// TestSanitisedFilesCoverEverySampleFile pins that the sanitisation check reads
+// every file a reader finds under examples/, the READMEs included, and not only
+// the JSON inventories (the audit's L-2 finding on issue #179): a README quotes
+// values and commands, and leaks an identifier as easily as a field does.
+func TestSanitisedFilesCoverEverySampleFile(t *testing.T) {
+	t.Parallel()
+
+	all := allFiles(t)
+
+	names := make([]string, len(all))
+	for i, file := range all {
+		names[i] = file.name
+	}
+
+	for _, file := range sampleFiles(t) {
+		if !slices.Contains(names, file.name) {
+			t.Errorf("%s is not among the files the sanitisation check reads: %v", file.name, names)
+		}
+	}
+
+	want := []string{"README.md"}
+	for _, source := range sources {
+		want = append(want, source+"/README.md")
+	}
+
+	for _, name := range want {
+		if !slices.Contains(names, name) {
+			t.Errorf("%s is not among the files the sanitisation check reads: %v", name, names)
+		}
+	}
 }
