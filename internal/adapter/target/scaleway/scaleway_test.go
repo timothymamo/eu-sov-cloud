@@ -112,11 +112,13 @@ func TestCatalogSnapshotHeader(t *testing.T) {
 // TestCatalogPlansAndPrices pins PRD #190 milestone 4: the snapshot records what an
 // estimate needs (ADR 0024). Every offering of a category priced by plan sells at
 // least one plan, every offering of a category priced per GiB of storage lists at
-// least one storage price, every price is a positive monthly amount in EUR, and
-// every offering available in the default region can be priced there, so an
-// estimate for that region never borrows another region's price and never reads a
-// missing price as zero. leftOut names the offerings the two coverage rules below
-// are waived for, with the reason, because Scaleway publishes no price for them.
+// least one storage price, every offering of a category priced by plan whose plans
+// include no storage prices the storage beyond the plan, every price is a positive
+// monthly amount in EUR, and every offering available in the default region can be
+// priced there, so an estimate for that region never borrows another region's price
+// and never reads a missing price as zero. leftOut names the offerings the coverage
+// rules below are waived for, with the reason, because Scaleway publishes no price
+// for them.
 func TestCatalogPlansAndPrices(t *testing.T) {
 	t.Parallel()
 
@@ -169,6 +171,17 @@ func TestCatalogPlansAndPrices(t *testing.T) {
 				text.Quote(o.Name))
 		}
 
+		// A plan that includes no storage leaves every GiB of the resource to be
+		// priced on its own: under ADR 0024 an empty storagePrices is not estimated,
+		// never zero, so a sized resource on such a plan could not be estimated at
+		// all. Scaleway sells Instances and Kapsule nodes without a local disk and
+		// bills their volumes as Block Storage, so those offerings must price it.
+		// Elastic Metal is not hit: its plans include their disks.
+		if !exempt && servesAny(o, planCategories) && noPlanIncludesStorage(o) && len(o.StoragePrices) == 0 {
+			t.Errorf("offering %s serves a category priced by plan and a plan of it includes no storage but it lists no storage price, want at least one: storage beyond the plan cannot be priced",
+				text.Quote(o.Name))
+		}
+
 		for _, p := range o.Plans {
 			for i, price := range p.Prices {
 				checkPrice(t, o, fmt.Sprintf("plan %s prices[%d]", text.Quote(p.Name), i), price)
@@ -213,6 +226,14 @@ func checkPrice(t *testing.T, o catalog.Offering, where string, price catalog.Pr
 				text.Quote(o.Name), where, text.Quote(region), o.Regions)
 		}
 	}
+}
+
+// noPlanIncludesStorage reports whether one of o's plans includes no storage, which
+// leaves the storage the resource needs to be priced per GiB.
+func noPlanIncludesStorage(o catalog.Offering) bool {
+	return slices.ContainsFunc(o.Plans, func(p catalog.Plan) bool {
+		return p.IncludedStorageGiB == 0
+	})
 }
 
 // servesAny reports whether o serves one of categories.
