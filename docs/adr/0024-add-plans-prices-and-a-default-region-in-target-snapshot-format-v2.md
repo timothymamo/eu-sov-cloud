@@ -320,13 +320,14 @@ test in the same file over the same glob):
 default`). `Check` adds these checks, each violation starting with its label:
 
 - `default-region`: `Catalog.Snapshot().DefaultRegion` equals `want.DefaultRegion`, and is one of
-  `want.Regions` (skipped when `want.Regions` is empty);
-- `prices`: every price of every plan and every storage price has `Currency` `EUR` and an `Amount` at
-  least 0, and each plan has at least one price;
-- `price-regions`: every region of every plan price and storage price is a region of its offering.
+  `want.Regions` (skipped when `want.Regions` is empty).
 
-`catalog.New` already enforces the last two; the contract still states them, so a target that builds
-its catalog some other way later cannot skip them. The `repeat` check's comparison (`diff`,
+The contract has no check that every price is in `EUR` at an amount of at least 0, that every plan
+has a price, or that every price region is a region of its offering. The domain already guarantees
+all three: a `catalog.Catalog` can only be built by `catalog.New`, which refuses each case
+(`ErrInvalidPrice`, `ErrUnpricedPlan`, `ErrPriceRegion`), so such a check could never be violated
+and no test could pin it. (An earlier draft of this ADR named them `prices` and `price-regions`;
+they were dropped while implementing milestone 2.) The `repeat` check's comparison (`diff`,
 `equalOffering`) also compares plans, prices and storage prices, and `snapshot` also compares
 `DefaultRegion`.
 
@@ -335,7 +336,7 @@ its catalog some other way later cannot skip them. The `repeat` check's comparis
 Milestone 2 ships, in one change: the domain types and checks, the version 2 reader (version 1
 refused), the `targettest` checks, the `SOURCES.md` checks, and the three snapshots at version 2 with
 empty `plans` and `storagePrices` and a **provisional** default region: `GRA` for OVHcloud, `fr-par`
-for Scaleway, `de-fra1` for UpCloud, each the provider's first-listed and longest-running region. Each
+for Scaleway, `de-fra1` for UpCloud, each the first region its snapshot declares. Each
 `SOURCES.md` gets its `## Default region` section saying the choice is provisional until its pricing
 milestone. Milestones 3 to 5 add the plans and prices and confirm or change the default region with
 their reason.
