@@ -8,6 +8,9 @@
 - Amended: 2026-11-12, two Apps instead of one, each in a job and an environment of its own, and
   `client-id` instead of the deprecated `app-id` (issues #157 and #159; see "Amendment: two Apps and
   client-id"). Where the decision below speaks of "the release App", the amendment says which App.
+- Amended: 2026-11-12, a branch ruleset on `release-please--branches--*` that only the release-please
+  App and Repository admin bypass, checked by the `release-tag` skill (issue #158; see "Amendment: the
+  release PR's branch ruleset").
 
 ## Context
 
@@ -270,6 +273,49 @@ After the merge:
 1. Remove the variable `RELEASE_APP_ID` from the `release-please` environment.
 2. Run the `release-tag` skill's ruleset check (its step 2).
 
+## Amendment: the release PR's branch ruleset (issue #158)
+
+The tag job trusts a merged pull request from `release-please--branches--main--components--shift2eu`,
+authored by the release-please App, that changes only `CHANGELOG.md` and the manifest. Nothing stopped
+another actor with write access from pushing to that branch, so the release PR's content rested on the
+tag step's checks alone (raised by the #142 audit). A branch ruleset now keeps the branch to the App
+that opens it, beside the two tag rulesets:
+
+| Ruleset | Target | Rules | Bypass (Always) |
+|---|---|---|---|
+| `Release please branches` | `refs/heads/release-please--branches--*` (exactly; no exclude) | creation, update, deletion | Repository admin (`RepositoryRole` 5), the release-please App (`Integration` `5729776`) |
+| `Release tag creation` | `refs/tags/v*` | creation | Repository admin, the release-tag App |
+| `Release tags` | `refs/tags/v*` | update, deletion, non_fast_forward | Repository admin |
+
+- The bypass actor is the **release-please App**, not the release-tag App: the release-please App
+  opens and pushes the release PR's branch (issue #157). The release-tag App only tags, and must not
+  be able to write the content it then tags.
+- The pattern is exactly the release-please prefix: a wider one (`~ALL`, `refs/heads/*`) would hand
+  the release-please App a bypass on every branch it matches. The ruleset restricts no other branch,
+  and `Protect main` keeps no bypass actor.
+- The `release-tag` skill's step 2 checks it before every release and fails closed: exactly one active
+  branch ruleset listing `refs/heads/release-please--branches--*`, with exactly that one include and
+  no exclude, restricting creation, update and deletion, and with exactly two bypass actors, both
+  `always`: Repository admin (`actor_id` 5) and the recorded release-please App ID. A missing
+  ruleset, a second one, a missing rule, another bypass actor (the release-tag App included) or an
+  empty bypass list stops the release.
+- This narrows, and does not close, the risk "Still open" above: a compromised `release-please-action`
+  holds the release-please App's token, which bypasses this ruleset by design and can still write the
+  release PR's branch. The ruleset stops every **other** actor with write access, a person or a
+  workflow's `GITHUB_TOKEN`, from changing the release PR.
+- Deleting the branch is restricted too: `gh pr merge --delete-branch` on the release PR deletes it
+  only for Repository admin or the App. If the
+  deletion is refused, the PR still merges, and release-please force-pushes the same branch for the
+  next release PR, which its bypass allows.
+
+**Maintainer steps for this amendment.** Before the merge (the skill's check fails until the ruleset
+exists): in **Settings → Rules → Rulesets → New ruleset → New branch ruleset**, create
+`Release please branches`, enforcement **Active**; under **Bypass list**, add **Repository admin** and
+the release-please App (`shift2eu-release`), each **Always allow**; under **Target branches → Add
+target → Include by pattern**, add `release-please--branches--*` (no exclusion); under **Rules**, tick
+**Restrict creations**, **Restrict updates** and **Restrict deletions**.
+After the merge, run the `release-tag` skill's step 2.
+
 ## Alternatives considered
 
 - **Release on every `feat` or `fix` merge (semantic-release style).** Every merge would publish
@@ -351,7 +397,8 @@ After the merge:
     `main` alone, holding `RELEASE_APP_ID` and `RELEASE_APP_PRIVATE_KEY`;
   - create the labels `autorelease: pending` and `autorelease: tagged`;
   - add a branch ruleset on `release-please--branches--*` that restricts creation, update and deletion
-    to the release App and repository admins, so no one else can push to the release PR's branch;
+    to the release App and repository admins, so no one else can push to the release PR's branch
+    (since issue #157 the release-please App; see "Amendment: the release PR's branch ruleset");
   - make CI's `Release please dry run` job a required status check of the `Protect main` ruleset.
   When it merges, split the tag ruleset as in the table. Until the App exists, the workflow fails on
   every push to `main` at the token step, and nothing is tagged.

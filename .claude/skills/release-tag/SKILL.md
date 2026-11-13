@@ -24,7 +24,8 @@ moves or deletes a tag.
    `git -C <repository root> pull --ff-only` and `git -C <repository root> fetch --tags`. The tree must
    be clean and CI on `main` green (`gh run list --branch main --limit 3`). This flow commits nothing,
    so it runs here: every git command in it is `git -C <repository root> ...`.
-2. Confirm the `v*` tag rulesets before every release; stop if they fall short (ADR 0015, ADR 0021).
+2. Confirm the `v*` tag rulesets and the release PR's branch ruleset before every release; stop if they
+   fall short (ADR 0015, ADR 0021).
    The ancestry guard in `release.yml` only catches mistakes: the run uses the tagged commit's workflow
    file, so the rulesets are what keep anyone else from publishing a signed image.
    The two Apps are compared against the identifiers recorded here and in ADR 0021 (amendment), never
@@ -63,6 +64,24 @@ moves or deletes a tag.
    every rule of its ruleset, so the App sits only in the one that restricts nothing but creation. Any
    other bypass actor, an App that may bypass update or deletion, or a missing rule fails the check: report
    what you found, that a maintainer must fix it (an agent must not), and stop.
+   Then confirm the release PR's branch ruleset (issue #158, ADR 0021): the tag step trusts a merged PR
+   from release-please's branch, so only the release-please App may write that branch. Read each ruleset
+   of the list with `target` `branch`. There must be **exactly one** that is active (`enforcement`
+   `active`) and whose `conditions.ref_name.include` lists `refs/heads/release-please--branches--*`, and
+   it must hold all of this:
+   - `conditions.ref_name.include` is exactly `["refs/heads/release-please--branches--*"]` and
+     `conditions.ref_name.exclude` is empty: a wider pattern (`~ALL`, `refs/heads/*`) would let the
+     release-please App bypass it on other branches too, and an exclude could leave its branch out;
+   - its `rules` include `creation`, `update` and `deletion` (others, such as `non_fast_forward`, may be
+     there too);
+   - its `bypass_actors` are **exactly two**, both with `bypass_mode` `always`: Repository admin
+     (`actor_type` `RepositoryRole`, `actor_id` 5) and the release-please App (`actor_type`
+     `Integration`, `actor_id` the release-please App ID recorded above, `5729776`). The release-tag
+     App, any other App, team, role or user, a missing actor, or an empty list (which is also what a
+     token that may not read the bypass list sees) fails the check.
+   No such ruleset, more than one, or any of these not held: report the rulesets you found (`id`, `name`,
+   `enforcement`, `conditions`, `rules`, `bypass_actors`), that a maintainer must create or fix it as ADR
+   0021 describes (an agent must not), and stop.
    Then check both environments, `release-please` (the release-please App's key) and `release-tag` (the
    release-tag App's key): for each `<env>`, `gh api repos/{owner}/{repo}/environments/<env>` must show
    `deployment_branch_policy.custom_branch_policies` `true` (and `protected_branches` `false`), and
