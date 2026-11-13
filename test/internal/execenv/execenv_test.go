@@ -175,6 +175,15 @@ func TestCheckExecEnv(t *testing.T) {
 			probe: "composite_env.go.txt",
 		},
 		{
+			// The element literal writes no type of its own: the slice and
+			// the map name exec.Cmd, so each element is a command with no Env
+			// key, and one whose Env key holds a composite literal is
+			// accepted as the literal that names the type is.
+			name:  "an elided-type exec.Cmd literal in an exec.Cmd slice or map with no Env is refused",
+			probe: "composite_elided.go.txt",
+			want:  find("composite_elided.go.txt", 10, 11),
+		},
+		{
 			// A zero value of exec.Cmd is never followed, so no Env is ever
 			// assigned to it: the type expression itself is refused, in every
 			// shape that names it.
@@ -421,7 +430,7 @@ func TestCheckExecEnv(t *testing.T) {
 			// command the check built, so the rebinding is refused.
 			name:  "a followed name rebound to a command the file did not build is refused at the rebinding",
 			probe: "rebind_non_command.go.txt",
-			want:  find("rebind_non_command.go.txt", 10),
+			want:  find("rebind_non_command.go.txt", 11),
 		},
 		{
 			name:  "a function literal in a package-level var is a function of its own and is checked",

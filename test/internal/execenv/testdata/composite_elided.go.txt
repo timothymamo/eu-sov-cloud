@@ -1,0 +1,13 @@
+package probe
+
+import "os/exec"
+
+// The element literals elide their type: the slice and the map name exec.Cmd,
+// so each element builds a command of its own, with no Env key, however little
+// the literal itself writes. An element whose Env key holds a composite
+// literal is accepted, as the literal that names the type is.
+func compositeElided() {
+	_ = []*exec.Cmd{{Path: "/bin/sh"}}
+	_ = map[string]*exec.Cmd{"sh": {Path: "/bin/sh"}}
+	_ = []*exec.Cmd{{Path: "/bin/sh", Env: []string{"PATH=/usr/bin"}}}
+}
