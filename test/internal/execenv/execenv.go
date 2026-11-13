@@ -80,9 +80,13 @@ var runMethods = map[string]bool{
 // proven value; a *exec.Cmd anywhere but as the whole type of a struct field,
 // a parameter, a result, a var, a type assertion or a type-switch case (the
 // element or key of an array, slice, map or chan type, the right of a type
-// declaration, a type argument, a conversion), so no composite value holds a
-// command; an embedded *exec.Cmd field; the address of any Env field; a
-// generic function declaration; and a blank or dot import of os/exec.
+// declaration, a type argument, a conversion): no array, slice, map or chan
+// element type is a *exec.Cmd, so no elided literal can build one; a command
+// reaches a struct field only through a use the check vouches for. Refused as
+// well: an embedded *exec.Cmd field; the address of any Env field; a generic
+// function declaration; a blank or dot import of os/exec; and, in a file that
+// imports os/exec, an import of reflect or unsafe, which reach a command's Env
+// out of the check's sight.
 //
 // exempt is handed the command name, the first argument of exec.Command and the
 // second of exec.CommandContext, sub, the argument after it, when both are
@@ -233,14 +237,25 @@ type command struct {
 }
 
 // imports reports whether file imports os/exec under a name the checker can
-// follow, and refuses a blank or a dot import of it.
+// follow, and refuses a blank or a dot import of it. In a file that imports
+// os/exec in any form, it refuses every import of reflect or unsafe as well,
+// one finding per import line.
 func (c *execChecker) imports(file *ast.File) bool {
-	named := false
+	named, imported := false, false
+	var opaque []*ast.ImportSpec
 	for _, imp := range file.Imports {
 		p, err := strconv.Unquote(imp.Path.Value)
-		if err != nil || p != execPath {
+		if err != nil {
 			continue
 		}
+		if p == "reflect" || p == "unsafe" {
+			opaque = append(opaque, imp)
+			continue
+		}
+		if p != execPath {
+			continue
+		}
+		imported = true
 		switch {
 		case imp.Name != nil && imp.Name.Name == "_":
 			c.report(imp.Pos(), "a blank import of os/exec hides the commands this check follows; import os/exec by its name")
@@ -248,6 +263,13 @@ func (c *execChecker) imports(file *ast.File) bool {
 			c.report(imp.Pos(), "a dot import of os/exec hides the commands this check follows; import os/exec by its name")
 		default:
 			named = true
+		}
+	}
+	if imported {
+		for _, imp := range opaque {
+			c.report(imp.Pos(), fmt.Sprintf(
+				"an import of %s beside os/exec reaches a command's Env where this check cannot follow it; a file that imports os/exec imports neither reflect nor unsafe",
+				imp.Path.Value))
 		}
 	}
 	return named
@@ -318,7 +340,7 @@ func (c *execChecker) visit(n ast.Node) bool {
 		// composite type, a type declaration or a type argument holding one
 		// would let a command travel where the check cannot follow it.
 		if !c.allowed[n] {
-			c.report(n.Pos(), "*exec.Cmd is declared only as the whole type of a struct field, a parameter, a result or a var; a composite type, a type declaration or a type argument holding one lets a command travel where the check cannot follow its Env")
+			c.report(n.Pos(), "*exec.Cmd is declared only as the whole type of a struct field, a parameter, a result, a var, a type assertion or a type-switch case; a composite type, a type declaration or a type argument holding one lets a command travel where the check cannot follow its Env")
 		}
 		return false
 	case *ast.SelectorExpr:

@@ -135,7 +135,11 @@
 // under a `*`, a *exec.Cmd anywhere but as the whole type of a struct field,
 // a parameter, a result, a var, a type assertion or a type-switch case, an
 // embedded *exec.Cmd, an exec.Cmd composite literal without a proven Env, a
-// generic function, and a blank or dot import of os/exec. The proven Env
+// generic function, a blank or dot import of os/exec, and, beside os/exec, an
+// import of reflect or unsafe, one finding per import line. No array, slice,
+// map or chan element type is a *exec.Cmd, so no elided literal can build one;
+// a command reaches a struct field only through a use the check vouches for.
+// The proven Env
 // values are a composite literal, a make, an append of one, and a call to a
 // helper of the same file, with no named result and no defer, that returns
 // one. The exemption the test declares (e2eToolchainCommands) is keyed on the
@@ -146,8 +150,12 @@
 // spread argument and a Path or Args assigned on the command take the
 // exemption away too. Four gaps are accepted and left to review: the rule
 // follows the source, not the flow (an Env assigned in a branch that never
-// runs, or in a closure, counts); a path built at run time; a command built in
-// another package; and a non-literal toolchain argument that holds a flag.
+// runs, or in a closure, counts); a path built at run time; a command built in,
+// or handed to, another package (a decoder such as json.Unmarshal writing Env
+// through a command that escaped into it); and a non-literal toolchain
+// argument that holds a flag, alongside which a Dir set on an exempt command
+// keeps the exemption, the go command then reading that directory's go.mod
+// and go.work.
 // TestTestTreeNamesNoProcEnviron runs execenv.CheckEnvironLiterals over every
 // Go file under test/, testdata directories included and no file left out,
 // which reads the same environment without a child at all, in two tiers:

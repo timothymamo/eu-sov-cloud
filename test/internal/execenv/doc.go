@@ -44,11 +44,18 @@
 // accepted only as the whole type of a struct field, a parameter, a result, a
 // var, a type assertion or a type-switch case, since a nil pointer runs
 // nothing; as the element or key of an array, slice, map or chan type, on the
-// right of a type declaration or as a type argument it is refused, so no
-// composite value holds a command. A generic function, which could build or
-// hold one the check cannot follow, is refused in a file that imports
-// os/exec, and so is a blank or dot import of os/exec, which hides the
-// commands the check follows. A finding names the line a reader fixes, and
+// right of a type declaration or as a type argument it is refused: no array,
+// slice, map or chan element type is a *exec.Cmd, so no elided literal can
+// build one; a command reaches a struct field only through a use the check
+// vouches for. A generic function, which could build or hold one the check
+// cannot follow, is refused in a file that imports os/exec, and so is a blank
+// or dot import of os/exec, which hides the commands the check follows. In a
+// file that imports os/exec, an import of reflect or unsafe is refused at its
+// import line, one finding per line: reflection can build a command with a nil
+// Env (reflect.New) or reset a followed command's Env (FieldByName("Env")),
+// and unsafe reaches the Env field by offset, both out of the check's sight. A
+// file that imports no os/exec builds no command, and its reflect or unsafe
+// import is no finding. A finding names the line a reader fixes, and
 // says nothing about how far the child's output travels, which no source
 // check can see.
 //
@@ -70,9 +77,14 @@
 //     e2e-no-env group accepts its embedded-type gap.
 //   - Paths built at run time are beyond CheckEnvironLiterals, a rule of
 //     literals (below).
-//   - A command built in another package is out of the file's sight.
+//   - A command built in, or handed to, another package is out of the file's
+//     sight: a decoder such as json.Unmarshal may write Env through a command
+//     that has escaped into it.
 //   - A non-literal argument to an exempt toolchain command that holds a flag
 //     keeps the exemption: only literals are checked against the allow-list.
+//     A Dir set on an exempt command keeps the exemption too: the go command
+//     then reads that directory's go.mod and go.work, which a planted
+//     toolchain line could abuse, and that is left to review as well.
 //
 // CheckEnvironLiterals refuses the string literals of a file that name the
 // environment of a process, which reads it without starting a child, under one
