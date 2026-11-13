@@ -183,9 +183,10 @@ fi
 # refuses a draft holding anything checksums.txt does not list (issue #163), so a new asset registered
 # by a pipe a snapshot runs (an SBOM, a signature, a source archive, checksum.extra_files) fails here,
 # before a release is left a draft. release.extra_files does not: GoReleaser adds those only in the
-# release pipe's publish step, which --snapshot skips, so artifacts.json never lists them. That key is
-# refused by check.GitHubRelease (release: is a closed section), and the publish job's draft check
-# refuses what it uploads. It fails closed: an artifact type this does not know counts as uploaded.
+# release pipe's publish step, which --snapshot skips, so artifacts.json never lists them. release: is a
+# closed section that check.GitHubRelease lets hold only the bundled OpenAPI document there (issue #139),
+# and the publish job's draft check sees what it uploads. It fails closed: an artifact type this does not
+# know counts as uploaded.
 uploads="$(jq -r '.[]
   | select(.type != "Metadata")
   | select((.type == "Binary" and .name == (.extra.Binary + .extra.Ext)) | not)
