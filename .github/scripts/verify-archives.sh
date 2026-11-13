@@ -7,9 +7,11 @@
 # README.md, Markdown pages under docs/ (no path segment may start with a dot, so no ., .. or hidden
 # file), and exactly the samples docs/guide/try-it.md runs on (issue #188): examples/README.md and, for
 # each of aws, azure and gcp, examples/<source>/README.md and examples/<source>/inventory.json, with
-# their directories. Any other entry fails the run, so a stray file under docs/, or any file under
+# their directories, and exactly the jq programs docs/guide/inventory.md builds an inventory with (issue
+# #178): docs/guide/inventory/<source>.jq for aws, azure and gcp. Any other entry fails the run, so a
+# stray file under docs/ (a .jq file there that is not one of the three), or any file under
 # examples/ that is not a known sample (a real inventory committed as examples/<name>/inventory.json),
-# never ships unnoticed. Each archive must hold every sample too. Every entry must be a regular file or
+# never ships unnoticed. Each archive must hold every sample and jq program too. Every entry must be a regular file or
 # a directory: a symbolic link, hard link or device fails the run too. Every built
 # platform has one archive of each, and checksums.txt lists and matches every archive. checksums.txt also
 # lists, exactly once, shift2eu-server_openapi.json, the bundled OpenAPI document the release publishes
@@ -91,8 +93,9 @@ sift() {
 }
 
 # check_archive archive own: the archive holds exactly one binary, own (or own.exe), at its root, and
-# otherwise only LICENSE, README.md, Markdown pages under docs/ and the samples (with their
-# directories, sample_dirs), each a regular file or a directory. The other binary is not on that list,
+# otherwise only LICENSE, README.md, Markdown pages under docs/, the inventory guide's jq programs
+# (guide_programs) and the samples (with their directories, sample_dirs), each a regular file or a
+# directory. The other binary is not on that list,
 # so an archive holding it fails too. Under examples/ it may hold only the samples, and it must hold
 # every one of them: one list, so a file there that is not a known sample fails the run.
 check_archive() {
@@ -119,8 +122,8 @@ check_archive() {
   if [ -n "${stray}" ]; then
     problem "${archive}: holds entries outside its allow list:"$'\n'"${stray}"
   fi
-  for sample in "${samples[@]}"; do
-    grep -qxF "${sample}" <<<"${list}" || problem "${archive}: does not hold the sample ${sample}"
+  for sample in "${samples[@]}" "${guide_programs[@]}"; do
+    grep -qxF "${sample}" <<<"${list}" || problem "${archive}: does not hold ${sample}, which every archive must ship"
   done
 }
 
@@ -133,10 +136,17 @@ for source in aws azure gcp; do
   samples+=("examples/${source}/README.md" "examples/${source}/inventory.json")
   sample_dirs+=("examples/${source}/")
 done
-# The allow list under examples/, one exact path a line, for grep -f: a file, not a process
+# The jq programs docs/guide/inventory.md runs (issue #178), which it tells users a release archive
+# ships: every archive must hold each of them, and no other non-Markdown file under docs/ is allowed, so
+# a new program is added here as well as under docs/guide/inventory/.
+guide_programs=()
+for source in aws azure gcp; do
+  guide_programs+=("docs/guide/inventory/${source}.jq")
+done
+# The allow list beyond the Markdown pages, one exact path a line, for grep -f: a file, not a process
 # substitution, whose status $? would never see.
-allowed="${work}/allowed-samples"
-printf '%s\n' "${samples[@]}" "${sample_dirs[@]}" >"${allowed}"
+allowed="${work}/allowed-files"
+printf '%s\n' "${samples[@]}" "${sample_dirs[@]}" "${guide_programs[@]}" >"${allowed}"
 
 shopt -s nullglob
 cli=("${dist}"/shift2eu_*.tar.gz "${dist}"/shift2eu_*.zip)
@@ -250,4 +260,4 @@ fi
 if [ "${fail}" != 0 ]; then
   exit 1
 fi
-echo "${#cli[@]} CLI and ${#server[@]} server archives, one per built platform, each holding exactly its own binary, LICENSE, README.md, docs/**/*.md and exactly the samples under examples/, all in checksums.txt with ${bundle_asset}"
+echo "${#cli[@]} CLI and ${#server[@]} server archives, one per built platform, each holding exactly its own binary, LICENSE, README.md, docs/**/*.md, the inventory guide's jq programs and exactly the samples under examples/, all in checksums.txt with ${bundle_asset}"
