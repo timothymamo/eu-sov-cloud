@@ -1427,7 +1427,13 @@ linters:
         # !$test takes the test files out, whose imports these lists would not fit, and the
         # nested internal tree under test/architecture is taken out with a negated glob, because a
         # files: list cannot say "this directory only" and test/architecture/internal/check reads
-        # os and os/exec.
+        # os and os/exec. An import list says nothing of a file that needs no import, so
+        # test/lint's TestDocPackagesHoldNoNonGoSource refuses a non-Go source (assembly, C, a
+        # .syso object, ...) outside testdata, _ and . directories in every tree this files:
+        # list holds, read from it (issue #194), and every symlink in, or above, a held tree,
+        # anywhere, testdata, _ and . directories included. The testdata, _ and . exemption of
+        # ./... covers non-Go files only. A package under testdata or _x is still built when it
+        # is imported by path, which that check does not cover (the follow-up to #194).
         test-docs-are-pure:
           list-mode: strict
           files:
@@ -1969,8 +1975,9 @@ linters:
         # unsafe and os/user at the import (TestE2EImportsProbe and
         # test/architecture's depguard pin hold it), so an exec.Cmd with a
         # nil Env, which inherits the whole environment, cannot be written
-        # there through an import. An assembly file needs no import (issue
-        # #194). The group is defence in depth there.
+        # there through an import. An assembly file needs no import, so
+        # test/lint refuses one there (issue #194). The group is defence in
+        # depth there.
         # Scope: every file under test/e2e/, _test.go files included; its
         # exclusion rule drops it everywhere else.
         - pattern: '^os\.(?:Getenv|LookupEnv|ExpandEnv|Environ|StartProcess|UserHomeDir|UserConfigDir|UserCacheDir|TempDir)$'
