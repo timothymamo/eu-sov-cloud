@@ -202,10 +202,11 @@ func checkSnapshotSources(t *testing.T, catalogPath string) {
 // nothing to cite.
 //
 // It is a pure function so the rule can be pinned on an invented priced document:
-// none of the embedded snapshots sells a plan yet, so the check over them never
-// reaches it. A missing "## Offerings" section, an offering without a section and
-// a section naming no offering are checkSnapshotSources's own findings, reported
-// there, so this function yields nothing for them.
+// the invented document pins the rule independently of the embedded snapshots'
+// data, whichever plans and fees they happen to carry. A missing "## Offerings"
+// section, an offering without a section and a section naming no offering are
+// checkSnapshotSources's own findings, reported there, so this function yields
+// nothing for them.
 func priceCitationViolations(doc snapshot.Document, sources string) []string {
 	offerings, ok := section(strings.Split(sources, "\n"), offeringsHeading)
 	if !ok {
@@ -447,10 +448,10 @@ func TestSourcesHelpers(t *testing.T) {
 
 // sourcesPricedDocument is a version 2 snapshot that sells a plan, publishes a
 // storage price and charges a fixed fee per instance, so the rule that all three
-// are cited in the SOURCES.md can be pinned on a document that exercises it: the
-// embedded snapshots sell no plan yet, and the plan's amount is written 12.5 in
-// the document but rendered 12.50 by Amount.String. Every name, region and amount
-// is invented.
+// are cited in the SOURCES.md can be pinned on a document that exercises it,
+// independently of the embedded snapshots' data: the plan's amount is written
+// 12.5 in the document but rendered 12.50 by Amount.String. Every name, region
+// and amount is invented.
 const sourcesPricedDocument = `{
   "schemaVersion": 2,
   "target": "Example Cloud",
