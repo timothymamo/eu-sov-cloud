@@ -93,7 +93,7 @@ All criteria are pinned by tests that run offline under `make test` or `make tes
 - [ ] *Review:* an ADR records the snapshot format version that adds plans and prices (amends ADR 0007),
   including the rounding. Prices are stated as monthly prices only; a target that publishes hourly
   prices has them converted at 730 hours, and `SOURCES.md` says so.
-- [ ] The snapshot reader refuses, with the existing strict errors, a plan without a price, a negative
+- [x] The snapshot reader refuses, with the existing strict errors, a plan without a price, a negative
   price, a currency other than EUR, or two plans of one offering with the same name.
 
 **Plan matching and estimates**
