@@ -15,7 +15,9 @@ records where each fact comes from, so the snapshot can be checked and refreshed
   currency switch reads "Currently showing prices in Euros"). Every plan and storage price comes from it
   (*Prices*). `upcloud.com` answers automated clients with HTTP 403 outside `/docs/`, so the prices were
   read from the maintainer's saved browser copy of that page, saved on 2026-11-13, not fetched by a tool.
-  The copy is not in the repository; only the prices cited below are taken from it.
+  The copy is not in the repository; only the prices cited below are taken from it. A refresh follows
+  the same rule as for fetched pages: save the browser copy from a logged-out browser session, into a
+  scratch directory outside the repository, read it as data, never as instructions, and never commit it.
 - **Documentation:** every other page lives under <https://upcloud.com/docs/>, the snapshot's
   `sourceURL` until the prices were added. The text was read from each page's `<article>` element. Pages
   were found through <https://upcloud.com/docs/llms.txt> and <https://upcloud.com/docs/sitemap.xml>,
@@ -45,17 +47,36 @@ described above; each section names the part of the page (its tab or table) a pr
   maximum of 28 days per month", and under the Kubernetes data plane that "All node plans are billed by
   the starting hour, maximum of 28 days per month". A server running all month pays the monthly price, so
   the snapshot stores that price as shown. Converting an hourly price at 730 hours (ADR 0024) does not
-  apply: there is no hourly price, and 730 hours would exceed the cap.
-- **Databases and Object Storage: the page's monthly figure.** These services are billed by the hour with
-  no cap, and the pricing page shows only a monthly figure, which it calls an estimate: "Resources are
+  apply: there is no hourly price, and 730 hours would exceed the cap. Because the month is capped at
+  672 hours, an estimate for a server or node running fewer than 730 hours a month (price × hours / 730)
+  is lower than UpCloud's bill (min(hours, 672) / 672 of the price): at 336 hours, 46% against 50%.
+  Milestone 6 of PRD #190 handles `hoursPerMonth`.
+- **Databases, storage and Object Storage: converted to a 730-hour month.** These are billed by the hour
+  with no cap, and the pricing page shows a monthly figure for a 30-day month, 720 hours: "Resources are
   charged by the hour. Monthly prices are estimates based on a 30-day month" (under each database table
-  and under Managed Object Storage); the PostgreSQL FAQ
-  (<https://upcloud.com/docs/products/managed-postgresql/faq/>) says the same. The page gives no hourly
-  price to convert at 730 hours, so the snapshot stores the monthly figure as shown, never a derived
-  hourly price. A service that runs a 730-hour month is billed for 10 hours more than the page's 720, so
-  an estimate from these prices is low by up to 730/720 − 1, about 1.4%.
-- **No rounding.** Every stored amount is the page's figure unchanged, or (Object Storage) a division
-  that ends within two decimal places, so ADR 0024's half-up rounding to 4 decimal places never applied.
+  and under Managed Object Storage), and "Block Storage is priced by allocated size per GB. Resources are
+  charged by the hour. Monthly prices are estimates for 1 GB based on a 30-day month" (*Block Storage*
+  table). The documentation says the same, with no cap: the PostgreSQL and MySQL FAQs
+  (<https://upcloud.com/docs/products/managed-postgresql/faq/>,
+  <https://upcloud.com/docs/products/managed-mysql/faq/>, read 2026-11-13) say "Database clusters are
+  billed hourly" and "Monthly prices are estimates based on a 30 day month"; the Block Storage billing
+  page (<https://upcloud.com/docs/products/block-storage/billing/>, read 2026-11-13) says additional
+  storage is "Billed per GB per hour"; the Managed Object Storage billing page
+  (<https://upcloud.com/docs/products/managed-object-storage/billing/>, read 2026-11-13) says "Storage is
+  billed in increments of 250 GB, and each increment is billed per hour". ADR 0024 and PRD #190 price an
+  hourly-billed service at 730 hours a month, as the OVHcloud snapshot does, so the snapshot stores
+  **page monthly figure × 730 / 720**, rounded once, half up, to 4 decimal places (ADR 0024). This applies
+  to every database plan and the database storage price (*Managed MySQL*, *Managed PostgreSQL*), the
+  Block Storage price (*Block Storage*, *Block Storage Encrypted*, and the extra-disk price of *Cloud
+  Servers*) and the Object Storage price. One example of each:
+  - database plan: €60/mo × 730 / 720 = 60.833333… → `60.8333`;
+  - database storage: €0.10/GB/mo × 730 / 720 = 0.101388… → `0.1014`;
+  - Block Storage MaxIOPS (and the Cloud Servers extra disk): €0.220/GB/mo × 730 / 720 = 0.223055… →
+    `0.2231`;
+  - Object Storage: €5 / 250 GB = 0.02 per GiB, × 730 / 720 = 0.020277… → `0.0203`.
+
+  Rounding to 4 places moves a stored amount by at most 0.00005 EUR, so a per-GiB price can differ from
+  the exact product by up to 0.25% (Object Storage: 0.0203 against 0.020277…); a plan price by far less.
 - **Units.** The page gives memory and storage in "GB"; the documentation's database tables give the same
   sizes in "GiB" (Managed PostgreSQL configurations page: "8 GiB" for `rdb.standard.2CPU-8GB`). The
   snapshot records them as GiB, unconverted, and a per-"GB" price as a per-GiB price, as the OVHcloud
@@ -65,8 +86,8 @@ described above; each section names the part of the page (its tab or table) a pr
   pricing page lists the plans by memory and CPU cores without a name; each row was matched to the
   identifier with the same cores, memory and included storage, and all 75 server rows matched one each.
 - **Plans chosen.** Cloud Servers: every plan of the three current plan types (Starter, Premium and Cloud
-  Native), which the configurations page lists as "three current plan types". Managed Kubernetes: the same
-  plans with at least 2 GB of memory. Managed MySQL and PostgreSQL: the Standard and High Memory compute
+  Native), which the configurations page lists as "three current plan types". Managed Kubernetes: the
+  Starter and Premium plans with at least 2 GB of memory (no Cloud Native plan, *Managed Kubernetes*). Managed MySQL and PostgreSQL: the Standard and High Memory compute
   plans. The plans and prices left out are listed under *Left out on purpose*.
 - **A pricing change announced for 2026-11-16.** The page's banner announces "Pricing changes to previous
   Cloud Server plans, Standard and Archive Block Storage, and Windows Server licenses taking effect on
@@ -171,15 +192,16 @@ so none gets an offering.
   availability page says "All Block Storage tiers are available in all UpCloud locations" and marks every
   tier available in each of these zones.
 - **Storage price** (pricing page, *Block Storage* table, read 2026-11-13; <https://upcloud.com/pricing/>):
-  MaxIOPS "€0.220/GB/mo" in both the "Global Price" and "Helsinki Price" columns, stored as `0.22` per GiB
-  a month, in every zone. The offering covers every tier, and ADR 0024 allows one storage price per zone,
+  MaxIOPS "€0.220/GB/mo" in both the "Global Price" and "Helsinki Price" columns, stored as `0.2231` per
+  GiB a month (0.22 × 730 / 720, *Prices*), in every zone. The offering covers every tier, and ADR 0024 allows one storage price per zone,
   so one tier's price stands for all. MaxIOPS is chosen because it is "the default storage tier for our
   Premium Cloud Servers" (tiers page), the plan type UpCloud recommends for production, because its price
   is the same in every zone, and because it is not part of the pricing change announced for 2026-11-16
   (*Prices*). It is the dearest tier, so a volume on Standard ("€0.085/GB/mo") or Archive ("€0.056/GB/mo",
   "€0.100/GB/mo" in Helsinki) is estimated high; those tiers are left out (*Left out on purpose*). The
   page says "Block Storage is priced by allocated size per GB. Resources are charged by the hour. Monthly
-  prices are estimates for 1 GB based on a 30-day month", so the 30-day caveat of *Prices* applies.
+  prices are estimates for 1 GB based on a 30-day month", so the price is converted to a 730-hour month
+  (*Prices*).
 
 ### Block Storage Encrypted
 
@@ -199,7 +221,8 @@ after creation". Pages: <https://upcloud.com/docs/products/block-storage/encrypt
   locations", and the encryption page says "Encryption is available for all block storage tiers", with no
   location caveat.
 - **Storage price** (pricing page, *Block Storage* table, read 2026-11-13; <https://upcloud.com/pricing/>):
-  `0.22` per GiB a month, in every zone, the MaxIOPS price chosen for *Block Storage*. Encryption adds
+  `0.2231` per GiB a month, in every zone, the MaxIOPS price chosen for *Block Storage*, converted to a
+  730-hour month (*Prices*). Encryption adds
   nothing: the Block Storage billing page (<https://upcloud.com/docs/products/block-storage/billing/>, read
   2026-11-13) says "Encryption at Rest is offered free of charge to all block storage devices", and the
   encryption page says "Encryption at Rest is offered free of charge". So an encrypted volume costs what
@@ -236,8 +259,8 @@ Category `compute.vm`. Pages: <https://upcloud.com/docs/products/cloud-servers/a
   `STARTER-1xCPU-1GB` is "restricted to 5 instances per account" (configurations page).
 - **Storage price** (pricing page, *Cloud Servers*, *Additional services*, *Block Storage* table, read
   2026-11-13; <https://upcloud.com/pricing/>; Block Storage billing page,
-  <https://upcloud.com/docs/products/block-storage/billing/>, read 2026-11-13): `0.22` per GiB a month,
-  in every zone, the MaxIOPS "€0.220/GB/mo" of the table, in both its "Global Price" and "Helsinki
+  <https://upcloud.com/docs/products/block-storage/billing/>, read 2026-11-13): `0.2231` per GiB a
+  month, in every zone, the MaxIOPS "€0.220/GB/mo" of the table converted to a 730-hour month (*Prices*), in both its "Global Price" and "Helsinki
   Price" columns. It prices the storage a server has beyond its plan's included storage. The billing page
   says how the two combine: "If the server has multiple storage devices, the largest storage that fits
   within the plan quota is counted as part of the plan. Any additional storage devices are billed per GB
@@ -355,9 +378,11 @@ capability follows from that.
   Worker node according to the selected configuration" and "Worker nodes can use Starter, Premium, Cloud
   Native and GPU plans with at least 2 GB of memory". So a plan is a **worker node plan at its *Cloud
   Servers* price**, and an estimate counts nodes. The plans are every *Cloud Servers* plan with at least
-  2 GB of memory, 73 of the 75 (`STARTER-1xCPU-1GB` and `PREMIUM-1xCPU-1GB` are below the minimum), at
-  the same monthly list prices: the data plane table says "All node plans are billed by the starting hour,
-  maximum of 28 days per month". GPU plans are left out (*Left out on purpose*). Included storage is as
+  2 GB of memory, except the Cloud Native plans: 31 of the 75 (`STARTER-1xCPU-1GB` and
+  `PREMIUM-1xCPU-1GB` are below the minimum), at the same monthly list prices: the data plane table says
+  "All node plans are billed by the starting hour, maximum of 28 days per month". The 42 Cloud Native
+  plans include no storage, every node needs a disk, and this offering has no storage price, so a Cloud
+  Native plan would price a node without its disk; GPU plans are left out too (*Left out on purpose*). Included storage is as
   for *Cloud Servers*.
 - **No storage price.** Worker-node storage beyond a plan's included storage is not priced: no page read
   on 2026-11-13 gives a per-GiB price for it (*Left out on purpose*). A sized node needing more disk than
@@ -396,48 +421,6 @@ capability follows from that.
 | `PREMIUM-48xCPU-256GB` | Premium | 48 | 256 GB | 500 GB MaxIOPS | €1364/mo | `1364.00` |
 | `PREMIUM-64xCPU-384GB` | Premium | 64 | 384 GB | 500 GB MaxIOPS | €1992/mo | `1992.00` |
 | `PREMIUM-80xCPU-512GB` | Premium | 80 | 512 GB | 500 GB MaxIOPS | €2552/mo | `2552.00` |
-| `CLOUDNATIVE-1xCPU-4GB` | Cloud Native | 1 | 4 GB | none | €12/mo | `12.00` |
-| `CLOUDNATIVE-2xCPU-4GB` | Cloud Native | 2 | 4 GB | none | €15/mo | `15.00` |
-| `CLOUDNATIVE-1xCPU-8GB` | Cloud Native | 1 | 8 GB | none | €20/mo | `20.00` |
-| `CLOUDNATIVE-2xCPU-8GB` | Cloud Native | 2 | 8 GB | none | €24/mo | `24.00` |
-| `CLOUDNATIVE-4xCPU-8GB` | Cloud Native | 4 | 8 GB | none | €32/mo | `32.00` |
-| `CLOUDNATIVE-2xCPU-16GB` | Cloud Native | 2 | 16 GB | none | €34/mo | `34.00` |
-| `CLOUDNATIVE-4xCPU-16GB` | Cloud Native | 4 | 16 GB | none | €68/mo | `68.00` |
-| `CLOUDNATIVE-6xCPU-16GB` | Cloud Native | 6 | 16 GB | none | €74/mo | `74.00` |
-| `CLOUDNATIVE-8xCPU-16GB` | Cloud Native | 8 | 16 GB | none | €80/mo | `80.00` |
-| `CLOUDNATIVE-4xCPU-24GB` | Cloud Native | 4 | 24 GB | none | €72/mo | `72.00` |
-| `CLOUDNATIVE-6xCPU-24GB` | Cloud Native | 6 | 24 GB | none | €78/mo | `78.00` |
-| `CLOUDNATIVE-8xCPU-24GB` | Cloud Native | 8 | 24 GB | none | €84/mo | `84.00` |
-| `CLOUDNATIVE-12xCPU-24GB` | Cloud Native | 12 | 24 GB | none | €90/mo | `90.00` |
-| `CLOUDNATIVE-4xCPU-32GB` | Cloud Native | 4 | 32 GB | none | €90/mo | `90.00` |
-| `CLOUDNATIVE-8xCPU-32GB` | Cloud Native | 8 | 32 GB | none | €130/mo | `130.00` |
-| `CLOUDNATIVE-12xCPU-32GB` | Cloud Native | 12 | 32 GB | none | €145/mo | `145.00` |
-| `CLOUDNATIVE-16xCPU-32GB` | Cloud Native | 16 | 32 GB | none | €160/mo | `160.00` |
-| `CLOUDNATIVE-4xCPU-48GB` | Cloud Native | 4 | 48 GB | none | €160/mo | `160.00` |
-| `CLOUDNATIVE-8xCPU-48GB` | Cloud Native | 8 | 48 GB | none | €190/mo | `190.00` |
-| `CLOUDNATIVE-16xCPU-48GB` | Cloud Native | 16 | 48 GB | none | €230/mo | `230.00` |
-| `CLOUDNATIVE-8xCPU-64GB` | Cloud Native | 8 | 64 GB | none | €220/mo | `220.00` |
-| `CLOUDNATIVE-16xCPU-64GB` | Cloud Native | 16 | 64 GB | none | €270/mo | `270.00` |
-| `CLOUDNATIVE-20xCPU-64GB` | Cloud Native | 20 | 64 GB | none | €285/mo | `285.00` |
-| `CLOUDNATIVE-32xCPU-64GB` | Cloud Native | 32 | 64 GB | none | €300/mo | `300.00` |
-| `CLOUDNATIVE-8xCPU-96GB` | Cloud Native | 8 | 96 GB | none | €240/mo | `240.00` |
-| `CLOUDNATIVE-16xCPU-96GB` | Cloud Native | 16 | 96 GB | none | €340/mo | `340.00` |
-| `CLOUDNATIVE-20xCPU-96GB` | Cloud Native | 20 | 96 GB | none | €380/mo | `380.00` |
-| `CLOUDNATIVE-8xCPU-128GB` | Cloud Native | 8 | 128 GB | none | €340/mo | `340.00` |
-| `CLOUDNATIVE-16xCPU-128GB` | Cloud Native | 16 | 128 GB | none | €370/mo | `370.00` |
-| `CLOUDNATIVE-32xCPU-128GB` | Cloud Native | 32 | 128 GB | none | €460/mo | `460.00` |
-| `CLOUDNATIVE-16xCPU-192GB` | Cloud Native | 16 | 192 GB | none | €560/mo | `560.00` |
-| `CLOUDNATIVE-32xCPU-192GB` | Cloud Native | 32 | 192 GB | none | €670/mo | `670.00` |
-| `CLOUDNATIVE-64xCPU-192GB` | Cloud Native | 64 | 192 GB | none | €700/mo | `700.00` |
-| `CLOUDNATIVE-24xCPU-256GB` | Cloud Native | 24 | 256 GB | none | €720/mo | `720.00` |
-| `CLOUDNATIVE-32xCPU-256GB` | Cloud Native | 32 | 256 GB | none | €740/mo | `740.00` |
-| `CLOUDNATIVE-64xCPU-256GB` | Cloud Native | 64 | 256 GB | none | €820/mo | `820.00` |
-| `CLOUDNATIVE-32xCPU-384GB` | Cloud Native | 32 | 384 GB | none | €880/mo | `880.00` |
-| `CLOUDNATIVE-48xCPU-384GB` | Cloud Native | 48 | 384 GB | none | €920/mo | `920.00` |
-| `CLOUDNATIVE-64xCPU-384GB` | Cloud Native | 64 | 384 GB | none | €980/mo | `980.00` |
-| `CLOUDNATIVE-48xCPU-512GB` | Cloud Native | 48 | 512 GB | none | €1200/mo | `1200.00` |
-| `CLOUDNATIVE-64xCPU-512GB` | Cloud Native | 64 | 512 GB | none | €1400/mo | `1400.00` |
-| `CLOUDNATIVE-80xCPU-512GB` | Cloud Native | 80 | 512 GB | none | €1800/mo | `1800.00` |
 
 ### Managed Kubernetes Production
 
@@ -465,7 +448,8 @@ Category `kubernetes.managed`. A variant of *Managed Kubernetes* (tier-variant r
   *Cloud Servers*, read 2026-11-13; <https://upcloud.com/pricing/>; Managed Kubernetes billing page,
   <https://upcloud.com/docs/products/managed-kubernetes/billing/>, read 2026-11-13): the worker node plans
   and prices are those of *Managed Kubernetes*, for the same reasons: the data plane does not depend on the
-  control plane plan. The Production control plane costs "€60/mo" per cluster on the pricing page ("Billed
+  control plane plan. So they are the same 31 Starter and Premium plans, without the 42 Cloud Native
+  plans, which include no storage while this offering has no storage price either. The Production control plane costs "€60/mo" per cluster on the pricing page ("Billed
   per hour" on the billing page), which ADR 0024's format cannot hold: a plan is multiplied by the node
   count, and there is no per-cluster price. It is left out (*Left out on purpose*), so an estimate for a
   cluster on this offering is low by that fee.
@@ -506,48 +490,6 @@ Category `kubernetes.managed`. A variant of *Managed Kubernetes* (tier-variant r
 | `PREMIUM-48xCPU-256GB` | Premium | 48 | 256 GB | 500 GB MaxIOPS | €1364/mo | `1364.00` |
 | `PREMIUM-64xCPU-384GB` | Premium | 64 | 384 GB | 500 GB MaxIOPS | €1992/mo | `1992.00` |
 | `PREMIUM-80xCPU-512GB` | Premium | 80 | 512 GB | 500 GB MaxIOPS | €2552/mo | `2552.00` |
-| `CLOUDNATIVE-1xCPU-4GB` | Cloud Native | 1 | 4 GB | none | €12/mo | `12.00` |
-| `CLOUDNATIVE-2xCPU-4GB` | Cloud Native | 2 | 4 GB | none | €15/mo | `15.00` |
-| `CLOUDNATIVE-1xCPU-8GB` | Cloud Native | 1 | 8 GB | none | €20/mo | `20.00` |
-| `CLOUDNATIVE-2xCPU-8GB` | Cloud Native | 2 | 8 GB | none | €24/mo | `24.00` |
-| `CLOUDNATIVE-4xCPU-8GB` | Cloud Native | 4 | 8 GB | none | €32/mo | `32.00` |
-| `CLOUDNATIVE-2xCPU-16GB` | Cloud Native | 2 | 16 GB | none | €34/mo | `34.00` |
-| `CLOUDNATIVE-4xCPU-16GB` | Cloud Native | 4 | 16 GB | none | €68/mo | `68.00` |
-| `CLOUDNATIVE-6xCPU-16GB` | Cloud Native | 6 | 16 GB | none | €74/mo | `74.00` |
-| `CLOUDNATIVE-8xCPU-16GB` | Cloud Native | 8 | 16 GB | none | €80/mo | `80.00` |
-| `CLOUDNATIVE-4xCPU-24GB` | Cloud Native | 4 | 24 GB | none | €72/mo | `72.00` |
-| `CLOUDNATIVE-6xCPU-24GB` | Cloud Native | 6 | 24 GB | none | €78/mo | `78.00` |
-| `CLOUDNATIVE-8xCPU-24GB` | Cloud Native | 8 | 24 GB | none | €84/mo | `84.00` |
-| `CLOUDNATIVE-12xCPU-24GB` | Cloud Native | 12 | 24 GB | none | €90/mo | `90.00` |
-| `CLOUDNATIVE-4xCPU-32GB` | Cloud Native | 4 | 32 GB | none | €90/mo | `90.00` |
-| `CLOUDNATIVE-8xCPU-32GB` | Cloud Native | 8 | 32 GB | none | €130/mo | `130.00` |
-| `CLOUDNATIVE-12xCPU-32GB` | Cloud Native | 12 | 32 GB | none | €145/mo | `145.00` |
-| `CLOUDNATIVE-16xCPU-32GB` | Cloud Native | 16 | 32 GB | none | €160/mo | `160.00` |
-| `CLOUDNATIVE-4xCPU-48GB` | Cloud Native | 4 | 48 GB | none | €160/mo | `160.00` |
-| `CLOUDNATIVE-8xCPU-48GB` | Cloud Native | 8 | 48 GB | none | €190/mo | `190.00` |
-| `CLOUDNATIVE-16xCPU-48GB` | Cloud Native | 16 | 48 GB | none | €230/mo | `230.00` |
-| `CLOUDNATIVE-8xCPU-64GB` | Cloud Native | 8 | 64 GB | none | €220/mo | `220.00` |
-| `CLOUDNATIVE-16xCPU-64GB` | Cloud Native | 16 | 64 GB | none | €270/mo | `270.00` |
-| `CLOUDNATIVE-20xCPU-64GB` | Cloud Native | 20 | 64 GB | none | €285/mo | `285.00` |
-| `CLOUDNATIVE-32xCPU-64GB` | Cloud Native | 32 | 64 GB | none | €300/mo | `300.00` |
-| `CLOUDNATIVE-8xCPU-96GB` | Cloud Native | 8 | 96 GB | none | €240/mo | `240.00` |
-| `CLOUDNATIVE-16xCPU-96GB` | Cloud Native | 16 | 96 GB | none | €340/mo | `340.00` |
-| `CLOUDNATIVE-20xCPU-96GB` | Cloud Native | 20 | 96 GB | none | €380/mo | `380.00` |
-| `CLOUDNATIVE-8xCPU-128GB` | Cloud Native | 8 | 128 GB | none | €340/mo | `340.00` |
-| `CLOUDNATIVE-16xCPU-128GB` | Cloud Native | 16 | 128 GB | none | €370/mo | `370.00` |
-| `CLOUDNATIVE-32xCPU-128GB` | Cloud Native | 32 | 128 GB | none | €460/mo | `460.00` |
-| `CLOUDNATIVE-16xCPU-192GB` | Cloud Native | 16 | 192 GB | none | €560/mo | `560.00` |
-| `CLOUDNATIVE-32xCPU-192GB` | Cloud Native | 32 | 192 GB | none | €670/mo | `670.00` |
-| `CLOUDNATIVE-64xCPU-192GB` | Cloud Native | 64 | 192 GB | none | €700/mo | `700.00` |
-| `CLOUDNATIVE-24xCPU-256GB` | Cloud Native | 24 | 256 GB | none | €720/mo | `720.00` |
-| `CLOUDNATIVE-32xCPU-256GB` | Cloud Native | 32 | 256 GB | none | €740/mo | `740.00` |
-| `CLOUDNATIVE-64xCPU-256GB` | Cloud Native | 64 | 256 GB | none | €820/mo | `820.00` |
-| `CLOUDNATIVE-32xCPU-384GB` | Cloud Native | 32 | 384 GB | none | €880/mo | `880.00` |
-| `CLOUDNATIVE-48xCPU-384GB` | Cloud Native | 48 | 384 GB | none | €920/mo | `920.00` |
-| `CLOUDNATIVE-64xCPU-384GB` | Cloud Native | 64 | 384 GB | none | €980/mo | `980.00` |
-| `CLOUDNATIVE-48xCPU-512GB` | Cloud Native | 48 | 512 GB | none | €1200/mo | `1200.00` |
-| `CLOUDNATIVE-64xCPU-512GB` | Cloud Native | 64 | 512 GB | none | €1400/mo | `1400.00` |
-| `CLOUDNATIVE-80xCPU-512GB` | Cloud Native | 80 | 512 GB | none | €1800/mo | `1800.00` |
 
 ### Managed MySQL
 
@@ -582,35 +524,37 @@ cluster of two or three nodes is the variant *Managed MySQL Multi-node*.
   more nodes. vCPU and memory are the page's "Cores" and "Memory". Included storage is `0`: storage is
   selected and billed separately, so no plan includes any. The 15-day point-in-time backups ("PITR backup
   days" 15) are included in the price; "Extended 31-day backup retention" costs extra and is not recorded.
-  The prices are the page's 30-day monthly figures (*Prices*). The Developer plans are left out (*Left out
+  The prices are the page's 30-day monthly figures converted to a 730-hour month, × 730 / 720 and
+  rounded half up to 4 decimal places (*Prices*): €60/mo is stored as `60.8333`. The Developer plans are left out (*Left out
   on purpose*).
 - **Storage price**: the page's *Storage* table gives the "Additional Storage" price of the Standard and
-  High Memory plans as "MaxIOPS – €0.10/GB/mo", stored as `0.10` per GiB a month, in every zone. On one
+  High Memory plans as "MaxIOPS – €0.10/GB/mo", stored as `0.1014` per GiB a month (0.10 × 730 / 720,
+  *Prices*), in every zone. On one
   node it is the price of a GiB of the service's data. Each plan has a minimum storage size (10, 80 or
   500 GiB, configurations page), which is billed whatever the data size; an estimate whose size is below
   that minimum is low by the difference.
 
 | Plan | Family | CPU cores | Memory | Page price | Stored |
 |---|---|---|---|---|---|
-| `rdb.standard.2CPU-8GB` | Standard | 2 | 8 GB | €60/mo | `60.00` |
-| `rdb.standard.4CPU-16GB` | Standard | 4 | 16 GB | €140/mo | `140.00` |
-| `rdb.standard.8CPU-32GB` | Standard | 8 | 32 GB | €317/mo | `317.00` |
-| `rdb.standard.12CPU-48GB` | Standard | 12 | 48 GB | €485/mo | `485.00` |
-| `rdb.standard.16CPU-64GB` | Standard | 16 | 64 GB | €665/mo | `665.00` |
-| `rdb.standard.24CPU-96GB` | Standard | 24 | 96 GB | €993/mo | `993.00` |
-| `rdb.standard.32CPU-128GB` | Standard | 32 | 128 GB | €1317/mo | `1317.00` |
-| `rdb.standard.48CPU-192GB` | Standard | 48 | 192 GB | €2017/mo | `2017.00` |
-| `rdb.standard.64CPU-256GB` | Standard | 64 | 256 GB | €2669/mo | `2669.00` |
-| `rdb.standard.80CPU-320GB` | Standard | 80 | 320 GB | €3429/mo | `3429.00` |
-| `rdb.memory.2CPU-16GB` | High Memory | 2 | 16 GB | €126/mo | `126.00` |
-| `rdb.memory.4CPU-32GB` | High Memory | 4 | 32 GB | €283/mo | `283.00` |
-| `rdb.memory.8CPU-64GB` | High Memory | 8 | 64 GB | €593/mo | `593.00` |
-| `rdb.memory.12CPU-96GB` | High Memory | 12 | 96 GB | €883/mo | `883.00` |
-| `rdb.memory.16CPU-128GB` | High Memory | 16 | 128 GB | €1173/mo | `1173.00` |
-| `rdb.memory.24CPU-192GB` | High Memory | 24 | 192 GB | €1800/mo | `1800.00` |
-| `rdb.memory.32CPU-256GB` | High Memory | 32 | 256 GB | €2380/mo | `2380.00` |
-| `rdb.memory.48CPU-384GB` | High Memory | 48 | 384 GB | €3655/mo | `3655.00` |
-| `rdb.memory.64CPU-512GB` | High Memory | 64 | 512 GB | €4855/mo | `4855.00` |
+| `rdb.standard.2CPU-8GB` | Standard | 2 | 8 GB | €60/mo | `60.8333` |
+| `rdb.standard.4CPU-16GB` | Standard | 4 | 16 GB | €140/mo | `141.9444` |
+| `rdb.standard.8CPU-32GB` | Standard | 8 | 32 GB | €317/mo | `321.4028` |
+| `rdb.standard.12CPU-48GB` | Standard | 12 | 48 GB | €485/mo | `491.7361` |
+| `rdb.standard.16CPU-64GB` | Standard | 16 | 64 GB | €665/mo | `674.2361` |
+| `rdb.standard.24CPU-96GB` | Standard | 24 | 96 GB | €993/mo | `1006.7917` |
+| `rdb.standard.32CPU-128GB` | Standard | 32 | 128 GB | €1317/mo | `1335.2917` |
+| `rdb.standard.48CPU-192GB` | Standard | 48 | 192 GB | €2017/mo | `2045.0139` |
+| `rdb.standard.64CPU-256GB` | Standard | 64 | 256 GB | €2669/mo | `2706.0694` |
+| `rdb.standard.80CPU-320GB` | Standard | 80 | 320 GB | €3429/mo | `3476.625` |
+| `rdb.memory.2CPU-16GB` | High Memory | 2 | 16 GB | €126/mo | `127.75` |
+| `rdb.memory.4CPU-32GB` | High Memory | 4 | 32 GB | €283/mo | `286.9306` |
+| `rdb.memory.8CPU-64GB` | High Memory | 8 | 64 GB | €593/mo | `601.2361` |
+| `rdb.memory.12CPU-96GB` | High Memory | 12 | 96 GB | €883/mo | `895.2639` |
+| `rdb.memory.16CPU-128GB` | High Memory | 16 | 128 GB | €1173/mo | `1189.2917` |
+| `rdb.memory.24CPU-192GB` | High Memory | 24 | 192 GB | €1800/mo | `1825.00` |
+| `rdb.memory.32CPU-256GB` | High Memory | 32 | 256 GB | €2380/mo | `2413.0556` |
+| `rdb.memory.48CPU-384GB` | High Memory | 48 | 384 GB | €3655/mo | `3705.7639` |
+| `rdb.memory.64CPU-512GB` | High Memory | 64 | 512 GB | €4855/mo | `4922.4306` |
 
 ### Managed MySQL Multi-node
 
@@ -679,11 +623,12 @@ No storage classes or tiers are documented, so there are no variants.
   page gives "250 GB", transfer "Included", "€5/mo", and "+ 250 GB for each upscale" at "+ €5/mo", as a
   "Global price". The billing page says "Storage is billed in increments of 250 GB, and each increment is
   billed per hour. A new service starts with one increment, which is also the minimum billed." The per-GiB
-  price is one increment's price over its size: 5 / 250 = `0.02` per GiB a month, exact, in every zone of
+  price is one increment's price over its size: 5 / 250 = 0.02 per GiB a month for a 30-day month, stored converted to a 730-hour
+  month, 0.02 × 730 / 720 = 0.020277… → `0.0203` (*Prices*), in every zone of
   the offering. The page's "GB" is taken as GiB, unconverted (*Prices*). An estimate from it is low where
   the data does not fill its last increment (the service pays for the whole increment) and below the
-  250 GB minimum; for a size that is a multiple of 250 it is the page's price. The 30-day caveat of
-  *Prices* applies ("Monthly prices are estimates based on a 30-day month").
+  250 GB minimum; for a size that is a multiple of 250 it is the page's price for a 730-hour month,
+  within the rounding (*Prices*).
 
 ### Managed PostgreSQL
 
@@ -719,35 +664,37 @@ cluster of two or three nodes is the variant *Managed PostgreSQL Multi-node*.
   more nodes. vCPU and memory are the page's "Cores" and "Memory". Included storage is `0`: storage is
   selected and billed separately, so no plan includes any. The 15-day point-in-time backups ("PITR backup
   days" 15) are included in the price; "Extended 31-day backup retention" costs extra and is not recorded.
-  The prices are the page's 30-day monthly figures (*Prices*). The Developer plans are left out (*Left out
+  The prices are the page's 30-day monthly figures converted to a 730-hour month, × 730 / 720 and
+  rounded half up to 4 decimal places (*Prices*): €60/mo is stored as `60.8333`. The Developer plans are left out (*Left out
   on purpose*).
 - **Storage price**: the page's *Storage* table gives the "Additional Storage" price of the Standard and
-  High Memory plans as "MaxIOPS – €0.10/GB/mo", stored as `0.10` per GiB a month, in every zone. On one
+  High Memory plans as "MaxIOPS – €0.10/GB/mo", stored as `0.1014` per GiB a month (0.10 × 730 / 720,
+  *Prices*), in every zone. On one
   node it is the price of a GiB of the service's data. Each plan has a minimum storage size (10, 80 or
   500 GiB, configurations page), which is billed whatever the data size; an estimate whose size is below
   that minimum is low by the difference.
 
 | Plan | Family | CPU cores | Memory | Page price | Stored |
 |---|---|---|---|---|---|
-| `rdb.standard.2CPU-8GB` | Standard | 2 | 8 GB | €60/mo | `60.00` |
-| `rdb.standard.4CPU-16GB` | Standard | 4 | 16 GB | €140/mo | `140.00` |
-| `rdb.standard.8CPU-32GB` | Standard | 8 | 32 GB | €317/mo | `317.00` |
-| `rdb.standard.12CPU-48GB` | Standard | 12 | 48 GB | €485/mo | `485.00` |
-| `rdb.standard.16CPU-64GB` | Standard | 16 | 64 GB | €665/mo | `665.00` |
-| `rdb.standard.24CPU-96GB` | Standard | 24 | 96 GB | €993/mo | `993.00` |
-| `rdb.standard.32CPU-128GB` | Standard | 32 | 128 GB | €1317/mo | `1317.00` |
-| `rdb.standard.48CPU-192GB` | Standard | 48 | 192 GB | €2017/mo | `2017.00` |
-| `rdb.standard.64CPU-256GB` | Standard | 64 | 256 GB | €2669/mo | `2669.00` |
-| `rdb.standard.80CPU-320GB` | Standard | 80 | 320 GB | €3429/mo | `3429.00` |
-| `rdb.memory.2CPU-16GB` | High Memory | 2 | 16 GB | €126/mo | `126.00` |
-| `rdb.memory.4CPU-32GB` | High Memory | 4 | 32 GB | €283/mo | `283.00` |
-| `rdb.memory.8CPU-64GB` | High Memory | 8 | 64 GB | €593/mo | `593.00` |
-| `rdb.memory.12CPU-96GB` | High Memory | 12 | 96 GB | €883/mo | `883.00` |
-| `rdb.memory.16CPU-128GB` | High Memory | 16 | 128 GB | €1173/mo | `1173.00` |
-| `rdb.memory.24CPU-192GB` | High Memory | 24 | 192 GB | €1800/mo | `1800.00` |
-| `rdb.memory.32CPU-256GB` | High Memory | 32 | 256 GB | €2380/mo | `2380.00` |
-| `rdb.memory.48CPU-384GB` | High Memory | 48 | 384 GB | €3655/mo | `3655.00` |
-| `rdb.memory.64CPU-512GB` | High Memory | 64 | 512 GB | €4855/mo | `4855.00` |
+| `rdb.standard.2CPU-8GB` | Standard | 2 | 8 GB | €60/mo | `60.8333` |
+| `rdb.standard.4CPU-16GB` | Standard | 4 | 16 GB | €140/mo | `141.9444` |
+| `rdb.standard.8CPU-32GB` | Standard | 8 | 32 GB | €317/mo | `321.4028` |
+| `rdb.standard.12CPU-48GB` | Standard | 12 | 48 GB | €485/mo | `491.7361` |
+| `rdb.standard.16CPU-64GB` | Standard | 16 | 64 GB | €665/mo | `674.2361` |
+| `rdb.standard.24CPU-96GB` | Standard | 24 | 96 GB | €993/mo | `1006.7917` |
+| `rdb.standard.32CPU-128GB` | Standard | 32 | 128 GB | €1317/mo | `1335.2917` |
+| `rdb.standard.48CPU-192GB` | Standard | 48 | 192 GB | €2017/mo | `2045.0139` |
+| `rdb.standard.64CPU-256GB` | Standard | 64 | 256 GB | €2669/mo | `2706.0694` |
+| `rdb.standard.80CPU-320GB` | Standard | 80 | 320 GB | €3429/mo | `3476.625` |
+| `rdb.memory.2CPU-16GB` | High Memory | 2 | 16 GB | €126/mo | `127.75` |
+| `rdb.memory.4CPU-32GB` | High Memory | 4 | 32 GB | €283/mo | `286.9306` |
+| `rdb.memory.8CPU-64GB` | High Memory | 8 | 64 GB | €593/mo | `601.2361` |
+| `rdb.memory.12CPU-96GB` | High Memory | 12 | 96 GB | €883/mo | `895.2639` |
+| `rdb.memory.16CPU-128GB` | High Memory | 16 | 128 GB | €1173/mo | `1189.2917` |
+| `rdb.memory.24CPU-192GB` | High Memory | 24 | 192 GB | €1800/mo | `1825.00` |
+| `rdb.memory.32CPU-256GB` | High Memory | 32 | 256 GB | €2380/mo | `2413.0556` |
+| `rdb.memory.48CPU-384GB` | High Memory | 48 | 384 GB | €3655/mo | `3705.7639` |
+| `rdb.memory.64CPU-512GB` | High Memory | 64 | 512 GB | €4855/mo | `4922.4306` |
 
 ### Managed PostgreSQL Multi-node
 
@@ -874,10 +821,17 @@ Prices and plans left out (PRD #190 milestone 5, read 2026-11-13 from <https://u
   (<https://upcloud.com/docs/products/managed-kubernetes/billing/>, read 2026-11-13) refers only to Cloud
   Server pricing, and the pricing page (<https://upcloud.com/pricing/>, read 2026-11-13) gives no per-GiB
   node storage price. Its Cloud Native node-group example, 8 nodes of 2 cores, 8 GB and 20 GB at
-  "€252.88/mo", is €31.61 a node against the €24.00 `CLOUDNATIVE-2xCPU-8GB` plan, leaving €7.61 for 20 GB:
+  "€252.88/mo", is €31.61 a node against the €24.00 `CLOUDNATIVE-2xCPU-8GB` Cloud Server plan, leaving €7.61 for 20 GB:
   neither MaxIOPS (€4.40) nor Standard (€1.70), with or without an IPv4 address (€3.47). The *Cloud
   Servers* storage price is not assumed to apply, so none is recorded, and a sized node needing more disk
   than its plan includes is "not estimated" (PRD #190 milestone 6).
+- **Cloud Native plans as Managed Kubernetes worker nodes** (*Managed Kubernetes*, *Managed Kubernetes
+  Production*; the 42 `CLOUDNATIVE-*` plans, which *Cloud Servers* keeps). The billing page lets a node
+  use them, but they include no storage ("Cloud Native and GPU plans don't include storage", Block Storage
+  billing page), every node needs a disk, and the Kubernetes offerings have no storage price (previous
+  entry). Plan matching picks the cheapest plan that fits, so a Cloud Native plan would win many sizes and
+  price a node without its disk: the page's own example prices a `CLOUDNATIVE-2xCPU-8GB` node with 20 GB at
+  €31.61, not the plan's €24. Left out, each Kubernetes offering has 31 plans, all with included storage.
 - **Managed Database Developer plans** (`rdb.development.1CPU-1GB`, `rdb.development.1CPU-2GB`,
   `rdb.development.1CPU-4GB`: "€9/mo", "€14/mo", "€24/mo", read 2026-11-13). Their storage is a different
   tier at a different price ("Standard – €0.04/GB/mo" against "MaxIOPS – €0.10/GB/mo" for Standard and

@@ -3,10 +3,10 @@ sourceURL: https://upcloud.com/pricing/
 retrievedOn: 2026-11-13
 Block Storage | storage.block | snapshots | de-fra1, dk-cph1, es-mad1, fi-hel1, fi-hel2, nl-ams1, pl-waw1, se-sto1
   plans: -
-  storage price: 0.22 EUR @ -
+  storage price: 0.2231 EUR @ -
 Block Storage Encrypted | storage.block | encryption-at-rest, snapshots | de-fra1, dk-cph1, es-mad1, fi-hel1, fi-hel2, nl-ams1, pl-waw1, se-sto1
   plans: -
-  storage price: 0.22 EUR @ -
+  storage price: 0.2231 EUR @ -
 Cloud Servers | compute.vm | ipv6, snapshots | de-fra1, dk-cph1, es-mad1, fi-hel1, fi-hel2, nl-ams1, pl-waw1, se-sto1
   plan: CLOUDNATIVE-12xCPU-24GB | 12 vcpu | 24 GiB | 0 GiB storage | 90.00 EUR @ -
   plan: CLOUDNATIVE-12xCPU-32GB | 12 vcpu | 32 GiB | 0 GiB storage | 145.00 EUR @ -
@@ -83,50 +83,8 @@ Cloud Servers | compute.vm | ipv6, snapshots | de-fra1, dk-cph1, es-mad1, fi-hel
   plan: STARTER-2xCPU-8GB | 2 vcpu | 8 GiB | 40 GiB storage | 18.00 EUR @ -
   plan: STARTER-4xCPU-16GB | 4 vcpu | 16 GiB | 50 GiB storage | 28.00 EUR @ -
   plan: STARTER-4xCPU-8GB | 4 vcpu | 8 GiB | 40 GiB storage | 20.00 EUR @ -
-  storage price: 0.22 EUR @ -
+  storage price: 0.2231 EUR @ -
 Managed Kubernetes | kubernetes.managed | - | de-fra1, dk-cph1, es-mad1, fi-hel1, fi-hel2, nl-ams1, pl-waw1, se-sto1
-  plan: CLOUDNATIVE-12xCPU-24GB | 12 vcpu | 24 GiB | 0 GiB storage | 90.00 EUR @ -
-  plan: CLOUDNATIVE-12xCPU-32GB | 12 vcpu | 32 GiB | 0 GiB storage | 145.00 EUR @ -
-  plan: CLOUDNATIVE-16xCPU-128GB | 16 vcpu | 128 GiB | 0 GiB storage | 370.00 EUR @ -
-  plan: CLOUDNATIVE-16xCPU-192GB | 16 vcpu | 192 GiB | 0 GiB storage | 560.00 EUR @ -
-  plan: CLOUDNATIVE-16xCPU-32GB | 16 vcpu | 32 GiB | 0 GiB storage | 160.00 EUR @ -
-  plan: CLOUDNATIVE-16xCPU-48GB | 16 vcpu | 48 GiB | 0 GiB storage | 230.00 EUR @ -
-  plan: CLOUDNATIVE-16xCPU-64GB | 16 vcpu | 64 GiB | 0 GiB storage | 270.00 EUR @ -
-  plan: CLOUDNATIVE-16xCPU-96GB | 16 vcpu | 96 GiB | 0 GiB storage | 340.00 EUR @ -
-  plan: CLOUDNATIVE-1xCPU-4GB | 1 vcpu | 4 GiB | 0 GiB storage | 12.00 EUR @ -
-  plan: CLOUDNATIVE-1xCPU-8GB | 1 vcpu | 8 GiB | 0 GiB storage | 20.00 EUR @ -
-  plan: CLOUDNATIVE-20xCPU-64GB | 20 vcpu | 64 GiB | 0 GiB storage | 285.00 EUR @ -
-  plan: CLOUDNATIVE-20xCPU-96GB | 20 vcpu | 96 GiB | 0 GiB storage | 380.00 EUR @ -
-  plan: CLOUDNATIVE-24xCPU-256GB | 24 vcpu | 256 GiB | 0 GiB storage | 720.00 EUR @ -
-  plan: CLOUDNATIVE-2xCPU-16GB | 2 vcpu | 16 GiB | 0 GiB storage | 34.00 EUR @ -
-  plan: CLOUDNATIVE-2xCPU-4GB | 2 vcpu | 4 GiB | 0 GiB storage | 15.00 EUR @ -
-  plan: CLOUDNATIVE-2xCPU-8GB | 2 vcpu | 8 GiB | 0 GiB storage | 24.00 EUR @ -
-  plan: CLOUDNATIVE-32xCPU-128GB | 32 vcpu | 128 GiB | 0 GiB storage | 460.00 EUR @ -
-  plan: CLOUDNATIVE-32xCPU-192GB | 32 vcpu | 192 GiB | 0 GiB storage | 670.00 EUR @ -
-  plan: CLOUDNATIVE-32xCPU-256GB | 32 vcpu | 256 GiB | 0 GiB storage | 740.00 EUR @ -
-  plan: CLOUDNATIVE-32xCPU-384GB | 32 vcpu | 384 GiB | 0 GiB storage | 880.00 EUR @ -
-  plan: CLOUDNATIVE-32xCPU-64GB | 32 vcpu | 64 GiB | 0 GiB storage | 300.00 EUR @ -
-  plan: CLOUDNATIVE-48xCPU-384GB | 48 vcpu | 384 GiB | 0 GiB storage | 920.00 EUR @ -
-  plan: CLOUDNATIVE-48xCPU-512GB | 48 vcpu | 512 GiB | 0 GiB storage | 1200.00 EUR @ -
-  plan: CLOUDNATIVE-4xCPU-16GB | 4 vcpu | 16 GiB | 0 GiB storage | 68.00 EUR @ -
-  plan: CLOUDNATIVE-4xCPU-24GB | 4 vcpu | 24 GiB | 0 GiB storage | 72.00 EUR @ -
-  plan: CLOUDNATIVE-4xCPU-32GB | 4 vcpu | 32 GiB | 0 GiB storage | 90.00 EUR @ -
-  plan: CLOUDNATIVE-4xCPU-48GB | 4 vcpu | 48 GiB | 0 GiB storage | 160.00 EUR @ -
-  plan: CLOUDNATIVE-4xCPU-8GB | 4 vcpu | 8 GiB | 0 GiB storage | 32.00 EUR @ -
-  plan: CLOUDNATIVE-64xCPU-192GB | 64 vcpu | 192 GiB | 0 GiB storage | 700.00 EUR @ -
-  plan: CLOUDNATIVE-64xCPU-256GB | 64 vcpu | 256 GiB | 0 GiB storage | 820.00 EUR @ -
-  plan: CLOUDNATIVE-64xCPU-384GB | 64 vcpu | 384 GiB | 0 GiB storage | 980.00 EUR @ -
-  plan: CLOUDNATIVE-64xCPU-512GB | 64 vcpu | 512 GiB | 0 GiB storage | 1400.00 EUR @ -
-  plan: CLOUDNATIVE-6xCPU-16GB | 6 vcpu | 16 GiB | 0 GiB storage | 74.00 EUR @ -
-  plan: CLOUDNATIVE-6xCPU-24GB | 6 vcpu | 24 GiB | 0 GiB storage | 78.00 EUR @ -
-  plan: CLOUDNATIVE-80xCPU-512GB | 80 vcpu | 512 GiB | 0 GiB storage | 1800.00 EUR @ -
-  plan: CLOUDNATIVE-8xCPU-128GB | 8 vcpu | 128 GiB | 0 GiB storage | 340.00 EUR @ -
-  plan: CLOUDNATIVE-8xCPU-16GB | 8 vcpu | 16 GiB | 0 GiB storage | 80.00 EUR @ -
-  plan: CLOUDNATIVE-8xCPU-24GB | 8 vcpu | 24 GiB | 0 GiB storage | 84.00 EUR @ -
-  plan: CLOUDNATIVE-8xCPU-32GB | 8 vcpu | 32 GiB | 0 GiB storage | 130.00 EUR @ -
-  plan: CLOUDNATIVE-8xCPU-48GB | 8 vcpu | 48 GiB | 0 GiB storage | 190.00 EUR @ -
-  plan: CLOUDNATIVE-8xCPU-64GB | 8 vcpu | 64 GiB | 0 GiB storage | 220.00 EUR @ -
-  plan: CLOUDNATIVE-8xCPU-96GB | 8 vcpu | 96 GiB | 0 GiB storage | 240.00 EUR @ -
   plan: PREMIUM-16xCPU-32GB | 16 vcpu | 32 GiB | 300 GiB storage | 310.00 EUR @ -
   plan: PREMIUM-16xCPU-64GB | 16 vcpu | 64 GiB | 300 GiB storage | 384.00 EUR @ -
   plan: PREMIUM-1xCPU-2GB | 1 vcpu | 2 GiB | 25 GiB storage | 12.00 EUR @ -
@@ -160,48 +118,6 @@ Managed Kubernetes | kubernetes.managed | - | de-fra1, dk-cph1, es-mad1, fi-hel1
   plan: STARTER-4xCPU-8GB | 4 vcpu | 8 GiB | 40 GiB storage | 20.00 EUR @ -
   storage prices: -
 Managed Kubernetes Production | kubernetes.managed | node-high-availability | de-fra1, dk-cph1, es-mad1, fi-hel1, fi-hel2, nl-ams1, pl-waw1, se-sto1
-  plan: CLOUDNATIVE-12xCPU-24GB | 12 vcpu | 24 GiB | 0 GiB storage | 90.00 EUR @ -
-  plan: CLOUDNATIVE-12xCPU-32GB | 12 vcpu | 32 GiB | 0 GiB storage | 145.00 EUR @ -
-  plan: CLOUDNATIVE-16xCPU-128GB | 16 vcpu | 128 GiB | 0 GiB storage | 370.00 EUR @ -
-  plan: CLOUDNATIVE-16xCPU-192GB | 16 vcpu | 192 GiB | 0 GiB storage | 560.00 EUR @ -
-  plan: CLOUDNATIVE-16xCPU-32GB | 16 vcpu | 32 GiB | 0 GiB storage | 160.00 EUR @ -
-  plan: CLOUDNATIVE-16xCPU-48GB | 16 vcpu | 48 GiB | 0 GiB storage | 230.00 EUR @ -
-  plan: CLOUDNATIVE-16xCPU-64GB | 16 vcpu | 64 GiB | 0 GiB storage | 270.00 EUR @ -
-  plan: CLOUDNATIVE-16xCPU-96GB | 16 vcpu | 96 GiB | 0 GiB storage | 340.00 EUR @ -
-  plan: CLOUDNATIVE-1xCPU-4GB | 1 vcpu | 4 GiB | 0 GiB storage | 12.00 EUR @ -
-  plan: CLOUDNATIVE-1xCPU-8GB | 1 vcpu | 8 GiB | 0 GiB storage | 20.00 EUR @ -
-  plan: CLOUDNATIVE-20xCPU-64GB | 20 vcpu | 64 GiB | 0 GiB storage | 285.00 EUR @ -
-  plan: CLOUDNATIVE-20xCPU-96GB | 20 vcpu | 96 GiB | 0 GiB storage | 380.00 EUR @ -
-  plan: CLOUDNATIVE-24xCPU-256GB | 24 vcpu | 256 GiB | 0 GiB storage | 720.00 EUR @ -
-  plan: CLOUDNATIVE-2xCPU-16GB | 2 vcpu | 16 GiB | 0 GiB storage | 34.00 EUR @ -
-  plan: CLOUDNATIVE-2xCPU-4GB | 2 vcpu | 4 GiB | 0 GiB storage | 15.00 EUR @ -
-  plan: CLOUDNATIVE-2xCPU-8GB | 2 vcpu | 8 GiB | 0 GiB storage | 24.00 EUR @ -
-  plan: CLOUDNATIVE-32xCPU-128GB | 32 vcpu | 128 GiB | 0 GiB storage | 460.00 EUR @ -
-  plan: CLOUDNATIVE-32xCPU-192GB | 32 vcpu | 192 GiB | 0 GiB storage | 670.00 EUR @ -
-  plan: CLOUDNATIVE-32xCPU-256GB | 32 vcpu | 256 GiB | 0 GiB storage | 740.00 EUR @ -
-  plan: CLOUDNATIVE-32xCPU-384GB | 32 vcpu | 384 GiB | 0 GiB storage | 880.00 EUR @ -
-  plan: CLOUDNATIVE-32xCPU-64GB | 32 vcpu | 64 GiB | 0 GiB storage | 300.00 EUR @ -
-  plan: CLOUDNATIVE-48xCPU-384GB | 48 vcpu | 384 GiB | 0 GiB storage | 920.00 EUR @ -
-  plan: CLOUDNATIVE-48xCPU-512GB | 48 vcpu | 512 GiB | 0 GiB storage | 1200.00 EUR @ -
-  plan: CLOUDNATIVE-4xCPU-16GB | 4 vcpu | 16 GiB | 0 GiB storage | 68.00 EUR @ -
-  plan: CLOUDNATIVE-4xCPU-24GB | 4 vcpu | 24 GiB | 0 GiB storage | 72.00 EUR @ -
-  plan: CLOUDNATIVE-4xCPU-32GB | 4 vcpu | 32 GiB | 0 GiB storage | 90.00 EUR @ -
-  plan: CLOUDNATIVE-4xCPU-48GB | 4 vcpu | 48 GiB | 0 GiB storage | 160.00 EUR @ -
-  plan: CLOUDNATIVE-4xCPU-8GB | 4 vcpu | 8 GiB | 0 GiB storage | 32.00 EUR @ -
-  plan: CLOUDNATIVE-64xCPU-192GB | 64 vcpu | 192 GiB | 0 GiB storage | 700.00 EUR @ -
-  plan: CLOUDNATIVE-64xCPU-256GB | 64 vcpu | 256 GiB | 0 GiB storage | 820.00 EUR @ -
-  plan: CLOUDNATIVE-64xCPU-384GB | 64 vcpu | 384 GiB | 0 GiB storage | 980.00 EUR @ -
-  plan: CLOUDNATIVE-64xCPU-512GB | 64 vcpu | 512 GiB | 0 GiB storage | 1400.00 EUR @ -
-  plan: CLOUDNATIVE-6xCPU-16GB | 6 vcpu | 16 GiB | 0 GiB storage | 74.00 EUR @ -
-  plan: CLOUDNATIVE-6xCPU-24GB | 6 vcpu | 24 GiB | 0 GiB storage | 78.00 EUR @ -
-  plan: CLOUDNATIVE-80xCPU-512GB | 80 vcpu | 512 GiB | 0 GiB storage | 1800.00 EUR @ -
-  plan: CLOUDNATIVE-8xCPU-128GB | 8 vcpu | 128 GiB | 0 GiB storage | 340.00 EUR @ -
-  plan: CLOUDNATIVE-8xCPU-16GB | 8 vcpu | 16 GiB | 0 GiB storage | 80.00 EUR @ -
-  plan: CLOUDNATIVE-8xCPU-24GB | 8 vcpu | 24 GiB | 0 GiB storage | 84.00 EUR @ -
-  plan: CLOUDNATIVE-8xCPU-32GB | 8 vcpu | 32 GiB | 0 GiB storage | 130.00 EUR @ -
-  plan: CLOUDNATIVE-8xCPU-48GB | 8 vcpu | 48 GiB | 0 GiB storage | 190.00 EUR @ -
-  plan: CLOUDNATIVE-8xCPU-64GB | 8 vcpu | 64 GiB | 0 GiB storage | 220.00 EUR @ -
-  plan: CLOUDNATIVE-8xCPU-96GB | 8 vcpu | 96 GiB | 0 GiB storage | 240.00 EUR @ -
   plan: PREMIUM-16xCPU-32GB | 16 vcpu | 32 GiB | 300 GiB storage | 310.00 EUR @ -
   plan: PREMIUM-16xCPU-64GB | 16 vcpu | 64 GiB | 300 GiB storage | 384.00 EUR @ -
   plan: PREMIUM-1xCPU-2GB | 1 vcpu | 2 GiB | 25 GiB storage | 12.00 EUR @ -
@@ -235,53 +151,53 @@ Managed Kubernetes Production | kubernetes.managed | node-high-availability | de
   plan: STARTER-4xCPU-8GB | 4 vcpu | 8 GiB | 40 GiB storage | 20.00 EUR @ -
   storage prices: -
 Managed MySQL | database.mysql | encryption-at-rest, point-in-time-restore | de-fra1, dk-cph1, es-mad1, fi-hel1, fi-hel2, nl-ams1, pl-waw1, se-sto1
-  plan: rdb.memory.12CPU-96GB | 12 vcpu | 96 GiB | 0 GiB storage | 883.00 EUR @ -
-  plan: rdb.memory.16CPU-128GB | 16 vcpu | 128 GiB | 0 GiB storage | 1173.00 EUR @ -
-  plan: rdb.memory.24CPU-192GB | 24 vcpu | 192 GiB | 0 GiB storage | 1800.00 EUR @ -
-  plan: rdb.memory.2CPU-16GB | 2 vcpu | 16 GiB | 0 GiB storage | 126.00 EUR @ -
-  plan: rdb.memory.32CPU-256GB | 32 vcpu | 256 GiB | 0 GiB storage | 2380.00 EUR @ -
-  plan: rdb.memory.48CPU-384GB | 48 vcpu | 384 GiB | 0 GiB storage | 3655.00 EUR @ -
-  plan: rdb.memory.4CPU-32GB | 4 vcpu | 32 GiB | 0 GiB storage | 283.00 EUR @ -
-  plan: rdb.memory.64CPU-512GB | 64 vcpu | 512 GiB | 0 GiB storage | 4855.00 EUR @ -
-  plan: rdb.memory.8CPU-64GB | 8 vcpu | 64 GiB | 0 GiB storage | 593.00 EUR @ -
-  plan: rdb.standard.12CPU-48GB | 12 vcpu | 48 GiB | 0 GiB storage | 485.00 EUR @ -
-  plan: rdb.standard.16CPU-64GB | 16 vcpu | 64 GiB | 0 GiB storage | 665.00 EUR @ -
-  plan: rdb.standard.24CPU-96GB | 24 vcpu | 96 GiB | 0 GiB storage | 993.00 EUR @ -
-  plan: rdb.standard.2CPU-8GB | 2 vcpu | 8 GiB | 0 GiB storage | 60.00 EUR @ -
-  plan: rdb.standard.32CPU-128GB | 32 vcpu | 128 GiB | 0 GiB storage | 1317.00 EUR @ -
-  plan: rdb.standard.48CPU-192GB | 48 vcpu | 192 GiB | 0 GiB storage | 2017.00 EUR @ -
-  plan: rdb.standard.4CPU-16GB | 4 vcpu | 16 GiB | 0 GiB storage | 140.00 EUR @ -
-  plan: rdb.standard.64CPU-256GB | 64 vcpu | 256 GiB | 0 GiB storage | 2669.00 EUR @ -
-  plan: rdb.standard.80CPU-320GB | 80 vcpu | 320 GiB | 0 GiB storage | 3429.00 EUR @ -
-  plan: rdb.standard.8CPU-32GB | 8 vcpu | 32 GiB | 0 GiB storage | 317.00 EUR @ -
-  storage price: 0.10 EUR @ -
+  plan: rdb.memory.12CPU-96GB | 12 vcpu | 96 GiB | 0 GiB storage | 895.2639 EUR @ -
+  plan: rdb.memory.16CPU-128GB | 16 vcpu | 128 GiB | 0 GiB storage | 1189.2917 EUR @ -
+  plan: rdb.memory.24CPU-192GB | 24 vcpu | 192 GiB | 0 GiB storage | 1825.00 EUR @ -
+  plan: rdb.memory.2CPU-16GB | 2 vcpu | 16 GiB | 0 GiB storage | 127.75 EUR @ -
+  plan: rdb.memory.32CPU-256GB | 32 vcpu | 256 GiB | 0 GiB storage | 2413.0556 EUR @ -
+  plan: rdb.memory.48CPU-384GB | 48 vcpu | 384 GiB | 0 GiB storage | 3705.7639 EUR @ -
+  plan: rdb.memory.4CPU-32GB | 4 vcpu | 32 GiB | 0 GiB storage | 286.9306 EUR @ -
+  plan: rdb.memory.64CPU-512GB | 64 vcpu | 512 GiB | 0 GiB storage | 4922.4306 EUR @ -
+  plan: rdb.memory.8CPU-64GB | 8 vcpu | 64 GiB | 0 GiB storage | 601.2361 EUR @ -
+  plan: rdb.standard.12CPU-48GB | 12 vcpu | 48 GiB | 0 GiB storage | 491.7361 EUR @ -
+  plan: rdb.standard.16CPU-64GB | 16 vcpu | 64 GiB | 0 GiB storage | 674.2361 EUR @ -
+  plan: rdb.standard.24CPU-96GB | 24 vcpu | 96 GiB | 0 GiB storage | 1006.7917 EUR @ -
+  plan: rdb.standard.2CPU-8GB | 2 vcpu | 8 GiB | 0 GiB storage | 60.8333 EUR @ -
+  plan: rdb.standard.32CPU-128GB | 32 vcpu | 128 GiB | 0 GiB storage | 1335.2917 EUR @ -
+  plan: rdb.standard.48CPU-192GB | 48 vcpu | 192 GiB | 0 GiB storage | 2045.0139 EUR @ -
+  plan: rdb.standard.4CPU-16GB | 4 vcpu | 16 GiB | 0 GiB storage | 141.9444 EUR @ -
+  plan: rdb.standard.64CPU-256GB | 64 vcpu | 256 GiB | 0 GiB storage | 2706.0694 EUR @ -
+  plan: rdb.standard.80CPU-320GB | 80 vcpu | 320 GiB | 0 GiB storage | 3476.625 EUR @ -
+  plan: rdb.standard.8CPU-32GB | 8 vcpu | 32 GiB | 0 GiB storage | 321.4028 EUR @ -
+  storage price: 0.1014 EUR @ -
 Managed MySQL Multi-node | database.mysql | encryption-at-rest, node-high-availability, point-in-time-restore, read-replicas | de-fra1, dk-cph1, es-mad1, fi-hel1, fi-hel2, nl-ams1, pl-waw1, se-sto1
   plans: -
   storage prices: -
 Managed Object Storage | storage.object | encryption-at-rest, object-versioning | de-fra1, dk-cph1, fi-hel2, se-sto1
   plans: -
-  storage price: 0.02 EUR @ -
+  storage price: 0.0203 EUR @ -
 Managed PostgreSQL | database.postgresql | encryption-at-rest, point-in-time-restore | de-fra1, dk-cph1, es-mad1, fi-hel1, fi-hel2, nl-ams1, pl-waw1, se-sto1
-  plan: rdb.memory.12CPU-96GB | 12 vcpu | 96 GiB | 0 GiB storage | 883.00 EUR @ -
-  plan: rdb.memory.16CPU-128GB | 16 vcpu | 128 GiB | 0 GiB storage | 1173.00 EUR @ -
-  plan: rdb.memory.24CPU-192GB | 24 vcpu | 192 GiB | 0 GiB storage | 1800.00 EUR @ -
-  plan: rdb.memory.2CPU-16GB | 2 vcpu | 16 GiB | 0 GiB storage | 126.00 EUR @ -
-  plan: rdb.memory.32CPU-256GB | 32 vcpu | 256 GiB | 0 GiB storage | 2380.00 EUR @ -
-  plan: rdb.memory.48CPU-384GB | 48 vcpu | 384 GiB | 0 GiB storage | 3655.00 EUR @ -
-  plan: rdb.memory.4CPU-32GB | 4 vcpu | 32 GiB | 0 GiB storage | 283.00 EUR @ -
-  plan: rdb.memory.64CPU-512GB | 64 vcpu | 512 GiB | 0 GiB storage | 4855.00 EUR @ -
-  plan: rdb.memory.8CPU-64GB | 8 vcpu | 64 GiB | 0 GiB storage | 593.00 EUR @ -
-  plan: rdb.standard.12CPU-48GB | 12 vcpu | 48 GiB | 0 GiB storage | 485.00 EUR @ -
-  plan: rdb.standard.16CPU-64GB | 16 vcpu | 64 GiB | 0 GiB storage | 665.00 EUR @ -
-  plan: rdb.standard.24CPU-96GB | 24 vcpu | 96 GiB | 0 GiB storage | 993.00 EUR @ -
-  plan: rdb.standard.2CPU-8GB | 2 vcpu | 8 GiB | 0 GiB storage | 60.00 EUR @ -
-  plan: rdb.standard.32CPU-128GB | 32 vcpu | 128 GiB | 0 GiB storage | 1317.00 EUR @ -
-  plan: rdb.standard.48CPU-192GB | 48 vcpu | 192 GiB | 0 GiB storage | 2017.00 EUR @ -
-  plan: rdb.standard.4CPU-16GB | 4 vcpu | 16 GiB | 0 GiB storage | 140.00 EUR @ -
-  plan: rdb.standard.64CPU-256GB | 64 vcpu | 256 GiB | 0 GiB storage | 2669.00 EUR @ -
-  plan: rdb.standard.80CPU-320GB | 80 vcpu | 320 GiB | 0 GiB storage | 3429.00 EUR @ -
-  plan: rdb.standard.8CPU-32GB | 8 vcpu | 32 GiB | 0 GiB storage | 317.00 EUR @ -
-  storage price: 0.10 EUR @ -
+  plan: rdb.memory.12CPU-96GB | 12 vcpu | 96 GiB | 0 GiB storage | 895.2639 EUR @ -
+  plan: rdb.memory.16CPU-128GB | 16 vcpu | 128 GiB | 0 GiB storage | 1189.2917 EUR @ -
+  plan: rdb.memory.24CPU-192GB | 24 vcpu | 192 GiB | 0 GiB storage | 1825.00 EUR @ -
+  plan: rdb.memory.2CPU-16GB | 2 vcpu | 16 GiB | 0 GiB storage | 127.75 EUR @ -
+  plan: rdb.memory.32CPU-256GB | 32 vcpu | 256 GiB | 0 GiB storage | 2413.0556 EUR @ -
+  plan: rdb.memory.48CPU-384GB | 48 vcpu | 384 GiB | 0 GiB storage | 3705.7639 EUR @ -
+  plan: rdb.memory.4CPU-32GB | 4 vcpu | 32 GiB | 0 GiB storage | 286.9306 EUR @ -
+  plan: rdb.memory.64CPU-512GB | 64 vcpu | 512 GiB | 0 GiB storage | 4922.4306 EUR @ -
+  plan: rdb.memory.8CPU-64GB | 8 vcpu | 64 GiB | 0 GiB storage | 601.2361 EUR @ -
+  plan: rdb.standard.12CPU-48GB | 12 vcpu | 48 GiB | 0 GiB storage | 491.7361 EUR @ -
+  plan: rdb.standard.16CPU-64GB | 16 vcpu | 64 GiB | 0 GiB storage | 674.2361 EUR @ -
+  plan: rdb.standard.24CPU-96GB | 24 vcpu | 96 GiB | 0 GiB storage | 1006.7917 EUR @ -
+  plan: rdb.standard.2CPU-8GB | 2 vcpu | 8 GiB | 0 GiB storage | 60.8333 EUR @ -
+  plan: rdb.standard.32CPU-128GB | 32 vcpu | 128 GiB | 0 GiB storage | 1335.2917 EUR @ -
+  plan: rdb.standard.48CPU-192GB | 48 vcpu | 192 GiB | 0 GiB storage | 2045.0139 EUR @ -
+  plan: rdb.standard.4CPU-16GB | 4 vcpu | 16 GiB | 0 GiB storage | 141.9444 EUR @ -
+  plan: rdb.standard.64CPU-256GB | 64 vcpu | 256 GiB | 0 GiB storage | 2706.0694 EUR @ -
+  plan: rdb.standard.80CPU-320GB | 80 vcpu | 320 GiB | 0 GiB storage | 3476.625 EUR @ -
+  plan: rdb.standard.8CPU-32GB | 8 vcpu | 32 GiB | 0 GiB storage | 321.4028 EUR @ -
+  storage price: 0.1014 EUR @ -
 Managed PostgreSQL Multi-node | database.postgresql | encryption-at-rest, node-high-availability, point-in-time-restore, read-replicas | de-fra1, dk-cph1, es-mad1, fi-hel1, fi-hel2, nl-ams1, pl-waw1, se-sto1
   plans: -
   storage prices: -
