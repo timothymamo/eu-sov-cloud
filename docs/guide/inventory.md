@@ -1,6 +1,6 @@
 # Build an inventory from your cloud
 
-Turn your AWS, GCP or Azure estate into an `inventory.json` that `shift2eu assess` reads, using only
+Turn your AWS, GCP or Azure estate into an inventory file that `shift2eu assess` reads, using only
 the provider's own command-line tool, read-only credentials and `jq`. You run a handful of list and
 describe calls, save their output in one directory, and run one `jq` program from this repository
 over it. This is an interim path: `shift2eu discover`, which will do the same from inside the tool,
@@ -87,9 +87,27 @@ There is one program per source under `docs/guide/inventory/`: `aws.jq`, `gcp.jq
 For each source you:
 
 1. run the source's commands below, which write their JSON output into one directory
-   (`aws-inventory/<region>/`, `gcp-inventory/` or `azure-inventory/`);
+   (`inventories/aws/<region>/`, `inventories/gcp/` or `inventories/azure/`);
 2. run the source's program once, with `jq -n`, over every file in that directory, and redirect the
-   result to `inventory.json`.
+   result to `inventories/<source>.inventory.json`;
+3. review the inventory, and delete the collected directory.
+
+Run the commands from the directory you want the files in, such as a clone of this repository:
+`inventories/` and `*.inventory.json` are in its `.gitignore`, so neither the raw output nor an
+inventory can be committed by accident.
+
+The collected directory is the providers' raw output. The commands keep only the fields the programs
+read (`--query` for `aws` and `az`, a `--format` projection for `gcloud`), so it holds no environment
+variables, startup scripts or tag values, but it still holds full ARNs and resource IDs, which carry
+the account, project or subscription, and can hold IP addresses, tag keys and labels. Share only the
+reviewed inventory file, never the directory, and delete the directory once the inventory is built
+(see [Privacy](#privacy)).
+
+The loops below go on when one call fails, so read what they print on stderr. A failed call
+(`AccessDenied`, `AuthorizationFailed`, `PERMISSION_DENIED`) means the setting it reads is missing
+from the inventory: the resource is still listed, but without the capability that setting would have
+added, which makes a move look easier than it is. Fix the permission and collect again, or add the
+capability by hand.
 
 A program recognises each input by its shape, not by its file name, so the file names below are only
 a convention, and a file may hold several JSON documents one after the other (the loops below write
@@ -143,8 +161,9 @@ only the calls this page makes:
 }
 ```
 
-`ViewOnlyAccess` lists resources but is not meant to grant every `Get` call above; check it against
-the list before you rely on it.
+`ViewOnlyAccess` is narrower than `ReadOnlyAccess`: it lists and describes resources and grants no
+reads of your data. It may lack some of the actions above, though, so check it against this list with
+the IAM policy simulator before you rely on it. The custom policy above is the minimal option.
 
 ### Collect from AWS
 
@@ -153,34 +172,58 @@ directory of its own:
 
 ```bash
 export AWS_REGION=eu-central-1
-out="aws-inventory/$AWS_REGION"
+out="inventories/aws/$AWS_REGION"
 mkdir -p "$out"
 
-aws ec2 describe-instances --output json > "$out/ec2-instances.json"
-aws ec2 describe-volumes --output json > "$out/ec2-volumes.json"
-aws ec2 describe-snapshots --owner-ids self --output json > "$out/ec2-snapshots.json"
-aws autoscaling describe-auto-scaling-groups --output json > "$out/autoscaling-groups.json"
+aws ec2 describe-instances --output json --query '{Reservations: Reservations[].{Instances: Instances[].{
+  InstanceId: InstanceId, State: {Name: State.Name},
+  Placement: {AvailabilityZone: Placement.AvailabilityZone},
+  BlockDeviceMappings: BlockDeviceMappings[].{Ebs: {VolumeId: Ebs.VolumeId}},
+  NetworkInterfaces: NetworkInterfaces[].{Ipv6AddressCount: length(Ipv6Addresses || `[]`)},
+  Tags: Tags[].{Key: Key}}}}' > "$out/ec2-instances.json"
+aws ec2 describe-volumes --output json --query '{Volumes: Volumes[].{
+  VolumeId: VolumeId, AvailabilityZone: AvailabilityZone, Encrypted: Encrypted,
+  Attachments: Attachments[].{InstanceId: InstanceId, DeleteOnTermination: DeleteOnTermination}}}' \
+  > "$out/ec2-volumes.json"
+aws ec2 describe-snapshots --owner-ids self --output json \
+  --query '{Snapshots: Snapshots[].{VolumeId: VolumeId}}' > "$out/ec2-snapshots.json"
+aws autoscaling describe-auto-scaling-groups --output json --query '{AutoScalingGroups: AutoScalingGroups[].{
+  AutoScalingGroupName: AutoScalingGroupName, AutoScalingGroupARN: AutoScalingGroupARN,
+  MinSize: MinSize, MaxSize: MaxSize, AvailabilityZones: AvailabilityZones,
+  Tags: Tags[].{Key: Key}}}' > "$out/autoscaling-groups.json"
 
-aws s3api list-buckets --output json > "$out/s3-buckets.json"
+aws s3api list-buckets --output json \
+  --query '{Buckets: Buckets[].{Name: Name, BucketRegion: BucketRegion}}' > "$out/s3-buckets.json"
 jq -r '.Buckets[].Name' "$out/s3-buckets.json" | while read -r bucket; do
-  aws s3api get-bucket-versioning --bucket "$bucket" --output json |
+  aws s3api get-bucket-versioning --bucket "$bucket" --output json --query '{Status: Status}' |
     jq --arg bucket "$bucket" '{Bucket: $bucket, Versioning: .}'
 done > "$out/s3-versioning.json"
 
-aws rds describe-db-instances --output json > "$out/rds-instances.json"
+aws rds describe-db-instances --output json --query '{DBInstances: DBInstances[].{
+  DBInstanceIdentifier: DBInstanceIdentifier, DBInstanceArn: DBInstanceArn,
+  DBClusterIdentifier: DBClusterIdentifier, Engine: Engine,
+  BackupRetentionPeriod: BackupRetentionPeriod, MultiAZ: MultiAZ, StorageEncrypted: StorageEncrypted,
+  ReadReplicaDBInstanceIdentifiers: ReadReplicaDBInstanceIdentifiers}}' > "$out/rds-instances.json"
 
 aws eks list-clusters --output json | jq -r '.clusters[]' | while read -r cluster; do
-  aws eks describe-cluster --name "$cluster" --output json
+  aws eks describe-cluster --name "$cluster" --output json \
+    --query '{cluster: {name: cluster.name, arn: cluster.arn}}'
   aws eks list-nodegroups --cluster-name "$cluster" --output json | jq -r '.nodegroups[]' |
     while read -r nodegroup; do
-      aws eks describe-nodegroup --cluster-name "$cluster" --nodegroup-name "$nodegroup" --output json
+      aws eks describe-nodegroup --cluster-name "$cluster" --nodegroup-name "$nodegroup" \
+        --output json --query '{nodegroup: {clusterName: nodegroup.clusterName,
+          nodegroupArn: nodegroup.nodegroupArn, scalingConfig: nodegroup.scalingConfig,
+          resources: {autoScalingGroups: nodegroup.resources.autoScalingGroups}}}'
     done
 done > "$out/eks.json"
 
-aws lambda list-functions --output json > "$out/lambda-functions.json"
+aws lambda list-functions --output json \
+  --query '{Functions: Functions[].{FunctionName: FunctionName, FunctionArn: FunctionArn}}' \
+  > "$out/lambda-functions.json"
 
 aws sqs list-queues --output json | jq -r '.QueueUrls[]?' | while read -r queue; do
-  aws sqs get-queue-attributes --queue-url "$queue" --attribute-names All --output json
+  aws sqs get-queue-attributes --queue-url "$queue" --output json \
+    --attribute-names QueueArn RedrivePolicy SqsManagedSseEnabled KmsMasterKeyId
 done > "$out/sqs-queues.json"
 
 # Optional: everything else, from AWS Config (see "Everything else on AWS").
@@ -189,6 +232,10 @@ aws configservice select-resource-config \
   --output json > "$out/config.json"
 ```
 
+Every list and describe call above, `select-resource-config` included, is paginated by AWS, and the
+AWS CLI version 2 fetches every page and merges them before it applies `--query`, so each file holds
+the whole region. Do not pass `--no-paginate` or `--max-items`.
+
 S3 is global: `list-buckets` returns every bucket from any region, and the program lists each bucket
 once. A bucket's region comes from the `BucketRegion` field, which recent versions of the AWS CLI
 version 2 print; with an older CLI, buckets have no region.
@@ -196,8 +243,10 @@ version 2 print; with an older CLI, buckets have no region.
 ### Build the AWS inventory
 
 ```bash
-jq -n -f docs/guide/inventory/aws.jq aws-inventory/*/*.json > inventory.json
+jq -n -f docs/guide/inventory/aws.jq inventories/aws/*/*.json > inventories/aws.inventory.json
 ```
+
+Review `inventories/aws.inventory.json`, then delete the raw output: `rm -r inventories/aws`.
 
 ### AWS classification
 
@@ -212,13 +261,28 @@ The `rawType` is the resource's AWS CloudFormation type.
 | `AWS::RDS::DBInstance`, engine `postgres` or `aurora-postgresql` | `database.postgresql` | `rds describe-db-instances` |
 | `AWS::RDS::DBInstance`, engine `mysql` or `aurora-mysql` | `database.mysql` | `rds describe-db-instances` |
 | `AWS::RDS::DBInstance`, any other engine (MariaDB, Oracle, SQL Server) | `unclassified` | `rds describe-db-instances` |
+| `AWS::RDS::DBCluster` (Aurora) | none: its instances stand for it | `configservice select-resource-config` |
 | `AWS::EKS::Cluster` | `kubernetes.managed` | `eks describe-cluster` |
 | `AWS::Lambda::Function` | `serverless.function` | `lambda list-functions` |
 | `AWS::SQS::Queue` | `messaging.queue` | `sqs get-queue-attributes` |
 | any other type AWS Config records | `unclassified` | `configservice select-resource-config` |
 
-Instances that are terminated or shutting down are left out, and so are instances an Auto Scaling
-group launched (tag `aws:autoscaling:groupName`): the group stands for them.
+Left out:
+
+- instances that are terminated or shutting down, and instances an Auto Scaling group launched (tag
+  `aws:autoscaling:groupName`): the group stands for them;
+- the nodes of an EKS cluster, which the cluster stands for: the Auto Scaling group of a managed node
+  group (`describe-nodegroup` names it), instances and Auto Scaling groups tagged `eks:cluster-name`
+  or `kubernetes.io/cluster/<name>`, and a node's volumes that are deleted with it
+  (`DeleteOnTermination`). A volume that outlives its node, such as a persistent volume, stays;
+- an Aurora cluster (`AWS::RDS::DBCluster`, which AWS Config lists): Aurora is assessed per instance,
+  and each instance of the cluster is a `database.postgresql` or `database.mysql` resource. Its
+  capabilities come from the instance's settings, and Aurora keeps replicas and zone redundancy at the
+  cluster level, as more instances in other zones, which the instance does not report: add
+  `read-replicas` or `zone-high-availability` by hand when the cluster has them.
+
+An EKS cluster's node groups are matched to it by name and region, so a cluster of the same name in
+another region gets none of their capabilities.
 
 | Category | Capability | When |
 |---|---|---|
@@ -263,26 +327,50 @@ Without `config.json`, the inventory holds only the resources the service calls 
 
 ### GCP permissions
 
-On the project: `roles/cloudasset.viewer` (Cloud Asset Inventory) and `roles/viewer` (the
-per-service lists). The Cloud Asset API (`cloudasset.googleapis.com`) must be enabled on the project;
+Prefer these roles on the project, each of which reads configuration only:
+
+- `roles/cloudasset.viewer` (Cloud Asset Inventory);
+- `roles/compute.viewer` (instances, managed instance groups, snapshots);
+- `roles/cloudsql.viewer` (Cloud SQL instances);
+- `roles/container.clusterViewer` (GKE clusters);
+- `roles/pubsub.viewer` (Pub/Sub subscriptions);
+- `roles/storage.bucketViewer` (bucket metadata, with no access to the objects in them).
+
+The simpler fallback is `roles/cloudasset.viewer` and the basic role `roles/viewer`, which covers
+every call too but is broad: it reads the configuration of every service in the project, far more
+than this page needs. The Cloud Asset API (`cloudasset.googleapis.com`) must be enabled on the project;
 if it is not, ask your administrator to enable it.
 
 ### Collect from GCP
 
 ```bash
 project=example-project   # your project ID
-out=gcp-inventory
+out=inventories/gcp
 mkdir -p "$out"
 
-gcloud asset search-all-resources --scope="projects/$project" --format=json > "$out/assets.json"
-gcloud compute instances list --project="$project" --format=json > "$out/compute-instances.json"
-gcloud compute instance-groups managed list --project="$project" --format=json > "$out/compute-instance-groups.json"
-gcloud compute snapshots list --project="$project" --format=json > "$out/compute-snapshots.json"
-gcloud sql instances list --project="$project" --format=json > "$out/sql-instances.json"
-gcloud storage buckets list --project="$project" --raw --format=json > "$out/storage-buckets.json"
-gcloud container clusters list --project="$project" --format=json > "$out/container-clusters.json"
-gcloud pubsub subscriptions list --project="$project" --format=json > "$out/pubsub-subscriptions.json"
+gcloud asset search-all-resources --scope="projects/$project" \
+  --format='json(name,assetType,location,labels)' > "$out/assets.json"
+gcloud compute instances list --project="$project" \
+  --format='json(kind,selfLink,metadata.items[].key,networkInterfaces[].stackType,networkInterfaces[].ipv6AccessConfigs[].type)' \
+  > "$out/compute-instances.json"
+gcloud compute instance-groups managed list --project="$project" \
+  --format='json(kind,selfLink,status.autoscaler)' > "$out/compute-instance-groups.json"
+gcloud compute snapshots list --project="$project" \
+  --format='json(kind,sourceDisk)' > "$out/compute-snapshots.json"
+gcloud sql instances list --project="$project" \
+  --format='json(kind,selfLink,region,databaseVersion,replicaNames,settings.availabilityType,settings.backupConfiguration.pointInTimeRecoveryEnabled,settings.backupConfiguration.binaryLogEnabled)' \
+  > "$out/sql-instances.json"
+gcloud storage buckets list --project="$project" --raw \
+  --format='json(kind,name,versioning)' > "$out/storage-buckets.json"
+gcloud container clusters list --project="$project" \
+  --format='json(selfLink,location,currentNodeCount,autopilot.enabled,nodePools[].autoscaling.enabled,nodePools[].instanceGroupUrls)' \
+  > "$out/container-clusters.json"
+gcloud pubsub subscriptions list --project="$project" \
+  --format='json(name,deadLetterPolicy.deadLetterTopic)' > "$out/pubsub-subscriptions.json"
 ```
+
+The `--format` projections keep only what the program reads: an instance's metadata keys, for
+example, but not their values, which hold startup scripts and SSH keys.
 
 The Cloud Asset Inventory listing is the list of resources; the other calls add the settings the
 capabilities need. A resource the other calls do not cover still appears, as `unclassified` or
@@ -292,8 +380,10 @@ inventory per project.
 ### Build the GCP inventory
 
 ```bash
-jq -n -f docs/guide/inventory/gcp.jq gcp-inventory/*.json > inventory.json
+jq -n -f docs/guide/inventory/gcp.jq inventories/gcp/*.json > inventories/gcp.inventory.json
 ```
+
+Review `inventories/gcp.inventory.json`, then delete the raw output: `rm -r inventories/gcp`.
 
 ### GCP classification
 
@@ -317,7 +407,9 @@ The `rawType` is the resource's Cloud Asset Inventory asset type.
 
 A Pub/Sub topic (where publishers write) and a subscription (where consumers read) are both listed,
 as both have to move. Left out: instances a managed instance group created (metadata `created-by`;
-the group stands for them), the Cloud Run service behind a 2nd gen Cloud Function (label
+the group stands for them), the nodes of a GKE cluster (the managed instance groups its node pools
+name in `instanceGroupUrls`, and instances and disks labelled `goog-gke-node`; the cluster stands for
+them, while a persistent volume's disk stays), the Cloud Run service behind a 2nd gen Cloud Function (label
 `goog-managed-by: cloudfunctions`; the function stands for it), and snapshots and autoscalers, which
 become capabilities of their disk or group. Any other Cloud Run service runs a container, not a
 function, and stays `unclassified`.
@@ -344,8 +436,9 @@ function, and stays `unclassified`.
 
 ### Azure permissions
 
-The built-in `Reader` role on the subscription. It covers Resource Graph and the two management-plane
-reads below; none of the commands reads a storage account key or any data.
+The built-in `Reader` role on the subscription. It covers Resource Graph and the management-plane
+reads below (Service Bus queues and topics, storage queues, blob service properties); none of the
+commands reads a storage account key or any data.
 
 ### Collect from Azure
 
@@ -354,10 +447,17 @@ no skip token is left. It reads the subscription the CLI is set to (`az account 
 
 ```bash
 subscription="$(az account show --query id --output tsv)"
-out=azure-inventory
+out=inventories/azure
 mkdir -p "$out"
 
-query="Resources | project id, name, type, kind, location, zones, properties"
+# Keep properties only for the types azure.jq reads them from.
+query="Resources
+| extend properties = iff(type in~ ('microsoft.compute/virtualmachines',
+    'microsoft.network/networkinterfaces', 'microsoft.compute/snapshots',
+    'microsoft.insights/autoscalesettings', 'microsoft.dbforpostgresql/flexibleservers',
+    'microsoft.dbformysql/flexibleservers', 'microsoft.containerservice/managedclusters'),
+    properties, dynamic(null))
+| project id, name, type, kind, location, zones, properties"
 page=1
 token=""
 while :; do
@@ -375,25 +475,42 @@ done
 
 az servicebus namespace list --query "[].[name, resourceGroup]" --output tsv |
   while read -r name group; do
-    az servicebus queue list --namespace-name "$name" --resource-group "$group" --output json
-  done > "$out/servicebus-queues.json"
+    az servicebus queue list --namespace-name "$name" --resource-group "$group" \
+      --query "[].{id: id, name: name, type: type}" --output json
+    az servicebus topic list --namespace-name "$name" --resource-group "$group" \
+      --query "[].{id: id, name: name, type: type}" --output json
+  done > "$out/servicebus.json"
+
+az storage account list --query "[?kind=='StorageV2' || kind=='Storage'].id" --output tsv |
+  while read -r id; do
+    az rest --method get \
+      --url "https://management.azure.com${id}/queueServices/default/queues?api-version=2023-05-01" \
+      --query "value[].{id: id, name: name, type: type}" --output json
+  done > "$out/storage-queues.json"
 
 az storage account list --query "[].[name, resourceGroup]" --output tsv |
   while read -r name group; do
     az storage account blob-service-properties show --account-name "$name" \
-      --resource-group "$group" --output json
+      --resource-group "$group" --query "{id: id, type: type, isVersioningEnabled: isVersioningEnabled}" \
+      --output json
   done > "$out/blob-services.json"
 ```
 
-Resource Graph holds most settings; Service Bus queues and a storage account's blob versioning are
-not in it, hence the two loops. Storage queues are read through the data plane, which `Reader` cannot
-do, so they are not collected: add them by hand if you use them.
+Resource Graph holds most settings; Service Bus queues and topics, storage queues and a storage
+account's blob versioning are not in it, hence the three loops. Storage queues are listed through the
+Resource Manager API (`az rest --method get`, a read), not the data plane, so `Reader` is enough and
+no account key is needed. A Basic tier Service Bus namespace has no topics, and its `topic list`
+fails: that error is expected. An account with more queues than one response returns adds a
+`nextLink` to the response; run that call without `--query` and fetch the `nextLink` URL with
+`az rest --method get --url` as well.
 
 ### Build the Azure inventory
 
 ```bash
-jq -n -f docs/guide/inventory/azure.jq azure-inventory/*.json > inventory.json
+jq -n -f docs/guide/inventory/azure.jq inventories/azure/*.json > inventories/azure.inventory.json
 ```
+
+Review `inventories/azure.inventory.json`, then delete the raw output: `rm -r inventories/azure`.
 
 ### Azure classification
 
@@ -413,11 +530,21 @@ Graph writes types in lower case).
 | `Microsoft.Web/sites`, kind `functionapp` | `serverless.function` |
 | `Microsoft.Web/sites`, any other kind (web app, Logic App) | `unclassified` |
 | `Microsoft.ServiceBus/namespaces/queues` | `messaging.queue` |
+| `Microsoft.ServiceBus/namespaces/topics` | `unclassified` |
+| `Microsoft.Storage/storageAccounts/queueServices/queues` | `messaging.queue` |
 | any other type | `unclassified` |
 
+A Service Bus topic, where every subscription gets its own copy of a message, is publish and
+subscribe, which no taxonomy category covers: each topic is listed as `unclassified` under its own
+name, so the report shows it as a blocker.
+
 Left out: virtual machines of a scale set (the scale set stands for them), snapshots and autoscale
-settings, which become capabilities of their disk or scale set, and a Service Bus namespace whose
-queues are listed (a namespace without queues stays `unclassified`).
+settings, which become capabilities of their disk or scale set, a Service Bus namespace whose queues
+or topics are listed (they stand for it; a namespace with neither stays `unclassified`), and
+everything in an AKS cluster's node resource group (`properties.nodeResourceGroup`, usually
+`MC_<group>_<cluster>_<region>`): the node pools' scale sets, load balancers, public IP addresses and
+network interfaces, which AKS manages and the cluster stands for. A managed disk in that group is a
+persistent volume that holds data, and stays.
 
 | Category | Capability | When |
 |---|---|---|
@@ -437,7 +564,8 @@ queues are listed (a namespace without queues stays `unclassified`).
 | `kubernetes.managed` | `autoscaling` | a node pool has autoscaling on |
 | `kubernetes.managed` | `zone-high-availability` | a node pool spans two or more zones |
 | `kubernetes.managed` | `node-high-availability` | its node pools run two or more nodes in all |
-| `messaging.queue` | `dead-letter-queue` | always: every Service Bus queue has a dead-letter subqueue |
+| `messaging.queue` (Service Bus) | `dead-letter-queue` | always: every Service Bus queue has a dead-letter subqueue |
+| `messaging.queue` (storage queue) | `encryption-at-rest` | always: Azure encrypts every storage account |
 
 ## Trim what you do not want assessed
 
@@ -447,7 +575,7 @@ of a type, filter the inventory with `jq`; for example, every Azure networking r
 
 ```bash
 jq 'del(.resources[] | select(.category == "unclassified" and (.rawType | startswith("Microsoft.Network/"))))' \
-  inventory.json > inventory-trimmed.json
+  inventories/azure.inventory.json > inventories/azure-trimmed.inventory.json
 ```
 
 Edit the file by hand as well: it is plain JSON. Leave out only what really has nothing to move.
@@ -458,28 +586,37 @@ An inventory holds the names and IDs of resources in a real account. The program
 they can (short IDs, no account, project or subscription field), but names can still say a lot about
 a business.
 
+The collected directory under `inventories/<source>/` says far more. It is the providers' raw output:
+even trimmed to the fields the programs read, it holds full ARNs and resource IDs with the account,
+project or subscription, and it can hold IP addresses, tag keys, labels and settings, and, if you
+drop a `--query` or `--format` projection, secrets such as function environment variables or startup
+scripts.
+
+- Share only the reviewed inventory file, never the collected directory.
+- Delete the collected directory right after the build (`rm -r inventories/<source>`).
+
 - Keep short IDs. Do not replace them with ARNs, full GCP resource names or Azure resource IDs, which
   carry the account, project or subscription ID.
 - Review the file before you share it, and rename anything that should not leave your organisation.
 - `shift2eu assess` runs offline: it reads the file and writes a report, and sends nothing anywhere.
-- Delete the collected directory when you are done, and never commit an inventory or the raw CLI
-  output from a real account to a repository (this repository's fixtures are sanitised by rule).
+- Never commit an inventory or the raw CLI output from a real account to a repository. In a clone of
+  this one, `inventories/` and `*.inventory.json` are git-ignored; its fixtures are sanitised by rule.
 
 ## Validate the result
 
 Assess the inventory against every target:
 
 ```bash
-shift2eu assess --inventory inventory.json --target all
+shift2eu assess --inventory inventories/aws.inventory.json --target all
 ```
 
 `assess` refuses a file it cannot read exactly, with exit code 1 and one line that names the file
 and the field by its path, for example:
 
 ```text
-shift2eu: load inventory: inventory file "inventory.json": not a valid inventory document: unknown key "regoin" at "resources[0].regoin", line 1, column 82
-shift2eu: load inventory: inventory file "inventory.json": resource "i-0123456789abcdef0": unknown taxonomy category "compute.mv"
-shift2eu: load inventory: inventory file "inventory.json": resources[1]: duplicate resource ID "a"
+shift2eu: load inventory: inventory file "inventories/aws.inventory.json": not a valid inventory document: unknown key "regoin" at "resources[0].regoin", line 1, column 82
+shift2eu: load inventory: inventory file "inventories/aws.inventory.json": resource "i-0123456789abcdef0": unknown taxonomy category "compute.mv"
+shift2eu: load inventory: inventory file "inventories/aws.inventory.json": resources[1]: duplicate resource ID "a"
 ```
 
 It also refuses a file over 10 MiB, more than 50,000 resources and more than 32 capabilities on one
