@@ -60,6 +60,13 @@ builds:
 # it to that), so each archive ships docs/ beside it and the links work in an
 # unpacked archive too (issue #149). docs/**/* matches only the files in
 # docs/'s subdirectories, so docs/*.md takes those directly in it.
+#
+# docs/guide/try-it.md runs the CLI on the sample inventories under
+# examples/, so each archive ships examples/ beside docs/ too, and the
+# walkthrough works in an unpacked archive as well as in a clone (issue
+# #188); examples/*.md and examples/**/* split as the docs/ lines do. The
+# container images do not carry the samples: they are distroless and the
+# inventory is mounted (docs/guide/docker.md).
 archives:
   - id: shift2eu
     ids: [shift2eu]
@@ -73,6 +80,8 @@ archives:
       - README.md
       - docs/*.md
       - docs/**/*
+      - examples/*.md
+      - examples/**/*
 
   - id: shift2eu-server
     ids: [shift2eu-server]
@@ -86,6 +95,8 @@ archives:
       - README.md
       - docs/*.md
       - docs/**/*
+      - examples/*.md
+      - examples/**/*
 
 # The bundled OpenAPI document is published beside the archives as
 # shift2eu-server_openapi.json and listed in checksums.txt (issue #139).

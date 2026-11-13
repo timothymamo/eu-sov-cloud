@@ -4,8 +4,12 @@
 # what it should. The CLI's archives, shift2eu_<version>_<os>_<arch>, hold shift2eu (shift2eu.exe on
 # Windows) and not shift2eu-server; the server's, shift2eu-server_<version>_<os>_<arch>, hold
 # shift2eu-server (.exe) and not shift2eu. Besides its own binary an archive may hold only LICENSE,
-# README.md and Markdown pages under docs/ (no path segment may start with a dot, so no ., .. or hidden
-# file): any other entry fails the run, so a stray file under docs/ never ships unnoticed. Every entry must
+# README.md, Markdown pages under docs/, and the samples under examples/: its Markdown pages and the
+# sample inventories, examples/<source>/inventory.json (no path segment may start with a dot, so no ., ..
+# or hidden file): any other entry fails the run, so a stray file under docs/ or examples/ never ships
+# unnoticed. Each archive must also hold the samples docs/guide/try-it.md runs on (issue #188):
+# examples/README.md and, for each of aws, azure and gcp, examples/<source>/README.md and
+# examples/<source>/inventory.json. Every entry must
 # be a regular file or a directory: a symbolic link, hard link or device fails the run too. Every built
 # platform has one archive of each, and checksums.txt lists and matches every archive. checksums.txt also
 # lists, exactly once, shift2eu-server_openapi.json, the bundled OpenAPI document the release publishes
@@ -74,10 +78,12 @@ details() {
 }
 
 # check_archive archive own: the archive holds exactly one binary, own (or own.exe), at its root, and
-# otherwise only LICENSE, README.md and Markdown pages under docs/ (with their directories), each a
-# regular file or a directory. The other binary is not on that list, so an archive holding it fails too.
+# otherwise only LICENSE, README.md, Markdown pages under docs/ and examples/ and the sample inventories
+# examples/<source>/inventory.json (with their directories), each a regular file or a directory. The
+# other binary is not on that list, so an archive holding it fails too. It must hold every sample in
+# samples, too.
 check_archive() {
-  local archive="$1" own="$2" list long special owns stray
+  local archive="$1" own="$2" list long special owns stray sample
   list="$(entries "${archive}")" || { problem "${archive}: cannot list its entries"; return; }
   long="$(details "${archive}")" || { problem "${archive}: cannot list its entries' types"; return; }
   if [ "$(wc -l <<<"${long}")" != "$(wc -l <<<"${list}")" ]; then
@@ -91,11 +97,20 @@ check_archive() {
   if [ "${owns}" != 1 ]; then
     problem "${archive}: holds ${owns} ${own} binaries at its root, want exactly 1"
   fi
-  stray="$(grep -vxE "${own}(\\.exe)?|LICENSE|README\\.md|docs/([^/.][^/]*/)*[^/.][^/]*\\.md|docs/([^/.][^/]*/)*" <<<"${list}" || true)"
+  stray="$(grep -vxE "${own}(\\.exe)?|LICENSE|README\\.md|docs/([^/.][^/]*/)*[^/.][^/]*\\.md|docs/([^/.][^/]*/)*|examples/([^/.][^/]*/)*[^/.][^/]*\\.md|examples/[^/.][^/]*/inventory\\.json|examples/([^/.][^/]*/)*" <<<"${list}" || true)"
   if [ -n "${stray}" ]; then
     problem "${archive}: holds entries outside its allow list:"$'\n'"${stray}"
   fi
+  for sample in "${samples[@]}"; do
+    grep -qxF "${sample}" <<<"${list}" || problem "${archive}: does not hold the sample ${sample}"
+  done
 }
+
+# The samples docs/guide/try-it.md runs on (issue #188), which every archive must hold.
+samples=(examples/README.md)
+for source in aws azure gcp; do
+  samples+=("examples/${source}/README.md" "examples/${source}/inventory.json")
+done
 
 shopt -s nullglob
 cli=("${dist}"/shift2eu_*.tar.gz "${dist}"/shift2eu_*.zip)
@@ -209,4 +224,4 @@ fi
 if [ "${fail}" != 0 ]; then
   exit 1
 fi
-echo "${#cli[@]} CLI and ${#server[@]} server archives, one per built platform, each holding exactly its own binary, LICENSE, README.md and docs/**/*.md, all in checksums.txt with ${bundle_asset}"
+echo "${#cli[@]} CLI and ${#server[@]} server archives, one per built platform, each holding exactly its own binary, LICENSE, README.md, docs/**/*.md and the samples under examples/, all in checksums.txt with ${bundle_asset}"
