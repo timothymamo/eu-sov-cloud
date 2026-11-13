@@ -35,12 +35,23 @@ func TestPricedCatalog(t *testing.T) {
 		t.Fatalf("Offerings() returned %d offerings, want 2", len(offerings))
 	}
 
-	first := offerings[0]
+	// The offerings come back sorted by name, so the compute one is found by
+	// name: the tests that read a plan must not depend on where it sits.
+	machinesName := "Example Virtual Machines"
+
+	index := slices.IndexFunc(offerings, func(o catalog.Offering) bool {
+		return o.Name == machinesName
+	})
+	if index < 0 {
+		t.Fatalf("Offerings() holds no offering named %q", machinesName)
+	}
+
+	machines := offerings[index]
 
 	wantPlanNames := []string{"EX-L", "EX-M", "EX-S"}
 
-	gotPlanNames := make([]string, len(first.Plans))
-	for i, plan := range first.Plans {
+	gotPlanNames := make([]string, len(machines.Plans))
+	for i, plan := range machines.Plans {
 		gotPlanNames[i] = plan.Name
 	}
 
@@ -48,36 +59,51 @@ func TestPricedCatalog(t *testing.T) {
 		t.Errorf("plan names = %v, want %v, sorted by name", gotPlanNames, wantPlanNames)
 	}
 
-	if len(first.Plans) != 3 {
-		t.Fatalf("the compute offering has %d plans, want 3", len(first.Plans))
+	if len(machines.Plans) != 3 {
+		t.Fatalf("the compute offering has %d plans, want 3", len(machines.Plans))
 	}
 
-	// The first plan is priced for every region and for one region: the price
-	// with no regions comes first.
-	if len(first.Plans[0].Prices) != 2 {
-		t.Fatalf("EX-L has %d prices, want 2: one for every region and one for a region",
-			len(first.Plans[0].Prices))
+	// Two plans are priced region by region and one has a single every-region
+	// price: EX-L comes first, at a different amount for each region, and EX-S
+	// last, with the price that applies to every region.
+	if len(machines.Plans[0].Prices) != 2 {
+		t.Fatalf("EX-L has %d prices, want 2: one for each region",
+			len(machines.Plans[0].Prices))
 	}
 
-	if regions := first.Plans[0].Prices[0].Regions; regions != nil {
-		t.Errorf("EX-L's first price applies to %v, want the every-region price first", regions)
+	if got := machines.Plans[0].Prices[0].Regions; !slices.Equal(got, []string{"xx-ams"}) {
+		t.Errorf("EX-L's first price regions = %v, want [xx-ams]", got)
 	}
 
-	if got := first.Plans[0].Prices[1].Regions; !slices.Equal(got, []string{"xx-ams"}) {
-		t.Errorf("EX-L's second price regions = %v, want [xx-ams]", got)
+	if got := machines.Plans[0].Prices[1].Regions; !slices.Equal(got, []string{"xx-par"}) {
+		t.Errorf("EX-L's second price regions = %v, want [xx-par]", got)
+	}
+
+	if got, want := machines.Plans[0].Prices[0].Amount, machines.Plans[0].Prices[1].Amount; got == want {
+		t.Errorf("EX-L's two prices both amount to %s, want a different amount per region", got)
+	}
+
+	// EX-S sells one price that applies to every region, which the catalog keeps
+	// as a price with no regions at all (ADR 0024).
+	if len(machines.Plans[2].Prices) != 1 {
+		t.Fatalf("EX-S has %d prices, want 1", len(machines.Plans[2].Prices))
+	}
+
+	if regions := machines.Plans[2].Prices[0].Regions; regions != nil {
+		t.Errorf("EX-S's price applies to %v, want every region, stored as no regions", regions)
 	}
 
 	// The second plan is priced region by region, written out of order and with a
 	// region repeated: sorted by first region, de-duplicated.
-	if len(first.Plans[1].Prices) != 2 {
-		t.Fatalf("EX-M has %d prices, want 2", len(first.Plans[1].Prices))
+	if len(machines.Plans[1].Prices) != 2 {
+		t.Fatalf("EX-M has %d prices, want 2", len(machines.Plans[1].Prices))
 	}
 
-	if got := first.Plans[1].Prices[0].Regions; !slices.Equal(got, []string{"xx-ams"}) {
+	if got := machines.Plans[1].Prices[0].Regions; !slices.Equal(got, []string{"xx-ams"}) {
 		t.Errorf("EX-M's first price regions = %v, want [xx-ams]", got)
 	}
 
-	if got := first.Plans[1].Prices[1].Regions; !slices.Equal(got, []string{"xx-par"}) {
+	if got := machines.Plans[1].Prices[1].Regions; !slices.Equal(got, []string{"xx-par"}) {
 		t.Errorf("EX-M's second price regions = %v, want [xx-par], the repeated region stored once", got)
 	}
 

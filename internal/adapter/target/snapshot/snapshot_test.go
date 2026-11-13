@@ -997,10 +997,12 @@ func TestParseErrors(t *testing.T) {
 			wantContains: []string{"region"},
 		},
 		{
-			name:       "blank price region",
-			data:       withNested(t, pricedDocument, pricePath, "regions", `[""]`),
-			wantErr:    []error{catalog.ErrInvalidPrice},
-			wantQuoted: []string{"regions"},
+			// The domain names a field bare, so the empty region is named by the
+			// index it sits at, not by a quoted path.
+			name:         "blank price region",
+			data:         withNested(t, pricedDocument, pricePath, "regions", `[""]`),
+			wantErr:      []error{catalog.ErrInvalidPrice},
+			wantContains: []string{"regions[0]"},
 		},
 		{
 			name:       "storage price region the offering is not in",

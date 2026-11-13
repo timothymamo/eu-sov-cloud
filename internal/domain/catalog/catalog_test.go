@@ -1788,6 +1788,38 @@ func TestNewDefaultRegion(t *testing.T) {
 // The catalog is immutable: mutating the slices handed to New, or what Offerings
 // and OfferingsFor return, must not reach the catalog. Plans, their prices and a
 // price's regions are part of that copy (ADR 0024).
+// tamperPricedOffering breaks every plan, price and storage price reachable
+// through off, so a catalog that hands out a list it shares with its input or
+// its result shows the change. It walks the lists instead of indexing a plan: the
+// plans come back sorted by name, and a plan with an every-region price holds no
+// region to change (ADR 0024).
+func tamperPricedOffering(t *testing.T, off *catalog.Offering) {
+	t.Helper()
+
+	if len(off.Plans) == 0 {
+		t.Fatal("the offering sells no plan to tamper with")
+	}
+
+	if len(off.StoragePrices) == 0 {
+		t.Fatal("the offering publishes no storage price to tamper with")
+	}
+
+	for i := range off.Plans {
+		off.Plans[i].Name = "Tampered"
+
+		for j := range off.Plans[i].Prices {
+			off.Plans[i].Prices[j].Amount = 1
+
+			for k := range off.Plans[i].Prices[j].Regions {
+				off.Plans[i].Prices[j].Regions[k] = "tampered"
+			}
+		}
+	}
+
+	off.StoragePrices[0].Amount = 1
+	off.StoragePrices[0].Regions = []string{"tampered"}
+}
+
 func TestPlansAndPricesAreCopied(t *testing.T) {
 	t.Parallel()
 
@@ -1816,11 +1848,7 @@ func TestPlansAndPricesAreCopied(t *testing.T) {
 		offerings := []catalog.Offering{pricedOffering()}
 		cat := newCatalog(t, targetName, validSnapshot(), offerings)
 
-		offerings[0].Plans[0].Name = "Tampered"
-		offerings[0].Plans[0].Prices[0].Amount = 1
-		offerings[0].Plans[0].Prices[0].Regions[0] = "tampered"
-		offerings[0].StoragePrices[0].Amount = 1
-		offerings[0].StoragePrices[0].Regions = []string{"tampered"}
+		tamperPricedOffering(t, &offerings[0])
 
 		check(t, cat)
 	})
@@ -1831,11 +1859,11 @@ func TestPlansAndPricesAreCopied(t *testing.T) {
 		cat := newCatalog(t, targetName, validSnapshot(), []catalog.Offering{pricedOffering()})
 
 		got := cat.Offerings()
-		got[0].Plans[0].Name = "Tampered"
-		got[0].Plans[0].Prices[0].Amount = 1
-		got[0].Plans[0].Prices[0].Regions[0] = "tampered"
-		got[0].StoragePrices[0].Amount = 1
-		got[0].StoragePrices[0].Regions = []string{"tampered"}
+		if len(got) != 1 {
+			t.Fatalf("Offerings() returned %d offerings, want 1", len(got))
+		}
+
+		tamperPricedOffering(t, &got[0])
 
 		check(t, cat)
 	})
@@ -1850,11 +1878,7 @@ func TestPlansAndPricesAreCopied(t *testing.T) {
 			t.Fatal("OfferingsFor(compute.vm) is empty")
 		}
 
-		got[0].Plans[0].Name = "Tampered"
-		got[0].Plans[0].Prices[0].Amount = 1
-		got[0].Plans[0].Prices[0].Regions[0] = "tampered"
-		got[0].StoragePrices[0].Amount = 1
-		got[0].StoragePrices[0].Regions = []string{"tampered"}
+		tamperPricedOffering(t, &got[0])
 
 		check(t, cat)
 	})

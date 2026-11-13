@@ -33,12 +33,12 @@ func PricedSnapshot() catalog.Snapshot {
 }
 
 // PricedOfferings is a small catalog that sells plans and prices: a compute
-// offering with three plans, one with a price for every region and one for a
-// region only, one with a price per region, and a per-GiB storage price on both
-// offerings. The plans are in no particular order, one price's regions are
-// repeated and the prices of a plan are written out of order, so a test sees the
-// canonical form catalog.New gives them. It returns a fresh slice on every call,
-// so a test may mutate its result.
+// offering with three plans, two priced region by region and one with a single
+// price for every region, and a per-GiB storage price on both offerings. The
+// plans are in no particular order, one price's regions are repeated and the
+// prices of a plan are written out of order, so a test sees the canonical form
+// catalog.New gives them. It returns a fresh slice on every call, so a test may
+// mutate its result.
 func PricedOfferings() []catalog.Offering {
 	return []catalog.Offering{
 		{
@@ -48,16 +48,20 @@ func PricedOfferings() []catalog.Offering {
 			Regions:      []string{"xx-par", "xx-ams"},
 			Plans: []catalog.Plan{
 				{
+					// A plan priced region by region: an every-region price beside a
+					// price for one region would overlap it (ADR 0024).
 					Name:               "EX-L",
 					VCPUs:              4,
 					MemoryMilliGiB:     8000,
 					IncludedStorageGiB: 80,
 					Prices: []catalog.Price{
 						{Amount: 520000, Currency: catalog.EUR, Regions: []string{"xx-ams"}},
-						{Amount: 500000, Currency: catalog.EUR},
+						{Amount: 540000, Currency: catalog.EUR, Regions: []string{"xx-par"}},
 					},
 				},
 				{
+					// A plan with a single price for every region, stored with no
+					// regions at all.
 					Name:           "EX-S",
 					VCPUs:          1,
 					MemoryMilliGiB: 2000,
