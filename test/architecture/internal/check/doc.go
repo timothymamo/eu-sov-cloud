@@ -43,17 +43,19 @@
 // StrayReleaseFiles and ReleaseWorkflow pin that the release builds what the
 // check lists: no other goreleaser document, go.work or vendor at the root that
 // git could commit, and a release workflow read as a closed schema of one
-// release at a time and twelve jobs: the tests, behind the guard that the
-// tagged commit is on main; a goreleaser job that runs no repository code,
+// release at a time and thirteen jobs: the tests, behind the guard that the
+// tagged commit is on main; a latest job, read-only, that decides once per run
+// whether the tag is the highest release tag on main, the one decision the
+// images' latest tag and GitHub's "Latest" release both follow (issue #173);
+// a goreleaser job that runs no repository code,
 // sets no environment for the go command, uploads to a draft release, puts the
 // bundled OpenAPI document beside the archives in dist/ (issue #139) and hands
 // the archives, the document and checksums.txt on as a workflow artifact; an
 // attest-archives job that attests every archive, the document and
 // checksums.txt with GitHub build provenance and cannot write the repository;
 // a publish job, contents: write alone, that publishes the draft last (issues
-// #156, #163), GitHub's "Latest" release only when the tag is the highest
-// release tag on main, by the same line the image jobs decide the images'
-// latest tag by (issue #173); and, for each of the two images, the
+// #156, #163), with no checkout, GitHub's "Latest" release only when the
+// latest job decided so; and, for each of the two images, the
 // CLI's and the HTTP API's (PRD #103), an image job that builds and pushes the
 // image and can do nothing more, an sbom job that can only read the registry,
 // and a sign job, the only one with an OIDC token, that signs and attests the
@@ -62,8 +64,9 @@
 // OIDC token and no checkout, that verifies both published images by digest
 // and the tag rule (issue #99), and a verify-archives job beside it, as
 // read-only, that verifies the published archives' digests and attestations
-// (issue #163) and that GitHub's "Latest" release follows the highest release
-// tag (issue #173). WorkflowPrivileges keeps every other
+// (issue #163) and, reading the highest release tag again on its own, that
+// GitHub's "Latest" release follows it and is never a pre-release (issue
+// #173). WorkflowPrivileges keeps every other
 // workflow from publishing: no packages, id-token or attestations write, no
 // write-all, no trigger a tag runs (push of tags, create, release,
 // workflow_run), and a top-level permissions: always. DryRunMirrorsRelease

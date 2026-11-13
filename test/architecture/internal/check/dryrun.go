@@ -28,14 +28,15 @@ var buildSettings = []string{"platforms", "annotations", "provenance", "sbom"}
 // dry run and the release.
 var sbomSettings = []string{"format", "syft-version"}
 
-// The latest decision: the id of the step that makes it in each document, the
-// flavor: through which metadata-action reads it, the line of its run: block
-// that picks the highest release tag, and the source of the tags that line
-// reads in each document.
+// The latest decision: the release's job that makes it, the id of the step
+// that makes it in each document, the flavor: through which metadata-action
+// reads it, the line of its run: block that picks the highest release tag,
+// and the source of the tags that line reads in each document.
 const (
-	releaseLatestID  = "stamp"
+	releaseLatestJob = "latest"
+	releaseLatestID  = "decide"
 	ciLatestID       = "latest"
-	releaseFlavor    = "latest=${{ steps." + releaseLatestID + ".outputs.latest }}"
+	releaseFlavor    = "latest=${{ needs." + releaseLatestJob + ".outputs.latest }}"
 	ciFlavorPrefix   = "latest=${{ steps." + ciLatestID + ".outputs."
 	flavorSuffix     = " }}"
 	latestFlavor     = "latest=<the latest decision>"
@@ -96,11 +97,12 @@ type workflowJob struct {
 //     the sample, quoted or not, is replaced by github.ref_name, are exactly
 //     the release's tags: ReleaseWorkflow holds the HTTP API's tag rules to
 //     exactly the CLI's;
-//   - the release's metadata-action reads latest from its stamp step alone
-//     (flavor: latest=${{ steps.stamp.outputs.latest }}), and every one of the
-//     dry run's from an output of its own step id: latest;
-//   - the line of the stamp's run: block that picks the highest tag, the one
-//     starting highest="$(, is the dry run's line in its latest step once the
+//   - the release's metadata-action reads latest from its latest job's
+//     output alone (flavor: latest=${{ needs.latest.outputs.latest }}), and
+//     every one of the dry run's from an output of its own step id: latest;
+//   - the line of the run: block of the latest job's step id: decide that
+//     picks the highest tag, the one starting highest="$(, of which there
+//     must be exactly one, is the dry run's line in its latest step once the
 //     release's tag source, git tag -l 'v*.*.*' --merged
 //     refs/remotes/origin/main, is replaced by the dry run's printf '%s\n'
 //     "$@": the same filter, sort and pick, on sample tags;
@@ -142,6 +144,13 @@ func DryRunMirrorsRelease(ci, release []byte) []string {
 		return r.messages
 	}
 
+	// The job that decides, once per run, whether the tag is the latest
+	// release: both images and GitHub's "Latest" release follow it.
+	latest, ok := r.readJob(release, "release.yml", releaseLatestJob)
+	if !ok {
+		return r.messages
+	}
+
 	d := dryRun{r: r, ciRaw: rawLines(ci), releaseRaw: rawLines(release)}
 
 	d.pins(ciJob.steps, slices.Concat(perImage...))
@@ -154,12 +163,13 @@ func DryRunMirrorsRelease(ci, release []byte) []string {
 		}
 	}
 
-	// The tag rules and the latest decision are the CLI image's: ReleaseWorkflow
-	// holds every other image's to exactly the same, its name aside.
+	// The tag rules and the flavor are the CLI image's: ReleaseWorkflow holds
+	// every other image's to exactly the same, its name aside. The highest tag
+	// is picked once, in the latest job.
 	cli := perImage[0]
 	d.tags(ciJob.steps, cli)
 	d.flavor(ciJob.steps, cli)
-	d.highest(ciJob.steps, cli)
+	d.highest(ciJob.steps, latest.steps)
 
 	for _, img := range releaseImages {
 		d.containerRun(ciJob.steps, verify.steps, img)
@@ -665,8 +675,9 @@ func (d dryRun) sbom(ci, release []workflowStep, img releaseImage, oci string) {
 	}
 }
 
-// flavor checks that the release's metadata-action reads latest from its stamp
-// step and every one of the dry run's from an output of its latest step.
+// flavor checks that the release's metadata-action reads latest from its
+// latest job's output and every one of the dry run's from an output of its
+// latest step.
 func (d dryRun) flavor(ci, release []workflowStep) {
 	releaseStep, ok := d.one(release, "release.yml's image job", metadataName)
 	if !ok {
@@ -679,7 +690,7 @@ func (d dryRun) flavor(ci, release []workflowStep) {
 	}
 
 	if want != releaseFlavor {
-		d.r.fail("release.yml: %s (line %d): with: flavor is %q, want exactly %q: the dry run must tag latest as the release does, so the release must read latest from its stamp", metadataName, releaseStep.num, want, releaseFlavor)
+		d.r.fail("release.yml: %s (line %d): with: flavor is %q, want exactly %q: the dry run must tag latest as the release does, so the release must read latest from its latest job", metadataName, releaseStep.num, want, releaseFlavor)
 
 		return
 	}
@@ -712,10 +723,11 @@ func normaliseCIFlavor(flavor string) string {
 	return latestFlavor
 }
 
-// highest checks that the dry run picks the highest tag with the release's
-// pipeline, on its sample tags in place of the release's tags on main.
-func (d dryRun) highest(ci, release []workflowStep) {
-	want, wantNum, ok := d.highestLine(d.releaseRaw, release, "release.yml's image job", releaseLatestID)
+// highest checks that the dry run picks the highest tag with the pipeline of
+// the release's latest job, on its sample tags in place of the release's tags
+// on main.
+func (d dryRun) highest(ci, latest []workflowStep) {
+	want, wantNum, ok := d.highestLine(d.releaseRaw, latest, "release.yml's "+releaseLatestJob+" job", releaseLatestID)
 	if !ok {
 		return
 	}

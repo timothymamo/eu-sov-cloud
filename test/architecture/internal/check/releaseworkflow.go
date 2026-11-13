@@ -239,38 +239,45 @@ var attestArchivesSteps = []releaseStep{
 // ghEnv is the env: of a gh step: the tag, and the job's own token for gh.
 var ghEnv = []string{tagEnv, "GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}"}
 
-// publishSteps are the publish job's steps (issues #156, #163, #173): the
-// whole history, for origin/main; GitHub's own download of the archives'
-// workflow artifact, for the checksums.txt the attest-archives job attested;
-// and one step that decides, as the image jobs' stamp does (latestDecision),
-// whether the tag is the highest release tag on main, reads the API's list of the
-// releases, since a draft is not readable by its tag, refuses a tag that
-// already holds a published release, checks that the tag's one draft holds
-// exactly that file and the files it lists, each with the digest it records,
-// and publishes that draft by the id the list gave it, with make_latest from
-// that decision alone, a string field (-f), since the API takes "true" or
-// "false" and not a JSON boolean. Publishing by tag in a
-// step of its own would let gh resolve a published release, or a draft
-// swapped in after the check, in the place of the one checked. gh is given
-// the repository in its own arguments, so none reads it from a git remote.
+// latestEnv is the latest job's decision, as the publish job reads it.
+const latestEnv = "LATEST: ${{ needs.latest.outputs.latest }}"
+
+// publishSteps are the publish job's steps (issues #156, #163, #173): no
+// checkout, so no repository code runs beside contents: write; GitHub's own
+// download of the archives' workflow artifact, for the checksums.txt the
+// attest-archives job attested; and one step that refuses a latest decision
+// other than exactly true or false, reads the API's list of the releases,
+// since a draft is not readable by its tag, refuses a tag that already holds
+// a published release, checks that the tag's one draft holds exactly that
+// file and the files it lists, each with the digest it records, and
+// publishes that draft by the id the list gave it, with make_latest from the
+// latest job's decision alone (LATEST through env:), a string field (-f),
+// since the API takes "true" or "false" and not a JSON boolean. Publishing
+// by tag in a step of its own would let gh resolve a published release, or a
+// draft swapped in after the check, in the place of the one checked. gh is
+// given the repository in its own arguments, so none reads it from a git
+// remote.
 var publishSteps = []releaseStep{
-	fullCheckoutStep,
 	{
 		what: "actions/download-artifact (the archives)", uses: downloadArtifactAction,
 		with: map[string]*regexp.Regexp{"name": exactly(archivesArtifact)},
 	},
 	{
 		what: "the check and publication of the draft", name: "Check the draft's assets and publish it",
-		env: ghEnv,
+		env: slices.Insert(slices.Clone(ghEnv), 1, latestEnv),
 		run: strings.Join([]string{
 			strictShell,
-			`# Whether this tag is the highest release tag on main, decided as the`,
-			`# image jobs' stamp decides it: the release tags merged into main, in`,
-			`# the same filter, sort and pick, so GitHub's "Latest" release and`,
-			`# the images' latest tag name the same version (ADR 0015, issue #173).`,
-			`# fetch-depth: 0 brings origin/main; the step refuses a checkout`,
-			`# without it rather than publish a release with latest false.`,
-			latestDecision,
+			`# Whether this tag is the highest release tag on main is the latest`,
+			`# job's decision, made once for both images and for this release: the`,
+			`# step refuses anything but the two values it can hold, rather than`,
+			`# publish a release with a make_latest nobody decided (issue #173).`,
+			`case "$LATEST" in`,
+			`  true|false) ;;`,
+			`  *)`,
+			`    echo "latest is '$LATEST', want true or false" >&2`,
+			`    exit 1`,
+			`    ;;`,
+			`esac`,
 			`tmp="$(mktemp -d)"`,
 			`# A draft release is not readable by its tag. The API lists it among`,
 			`# the releases, with draft: true, and gives every asset the digest of`,
@@ -321,11 +328,10 @@ var publishSteps = []releaseStep{
 			`  exit 1`,
 			`fi`,
 			`# The draft this job read and checked, and no other, published with`,
-			`# GitHub's "Latest" release moved by the same rule as the images'`,
-			`# latest tag: true only for the highest release tag on main, so a`,
-			`# patch on an older line is published without taking it over (issue`,
-			`# #173).`,
-			`gh api -X PATCH "repos/` + releaseRepo + `/releases/$id" -F draft=false -f make_latest="$latest"`,
+			`# GitHub's "Latest" release moved by the latest job's one decision:`,
+			`# true only for the highest release tag on main, so a patch on an`,
+			`# older line is published without taking it over (issue #173).`,
+			`gh api -X PATCH "repos/` + releaseRepo + `/releases/$id" -F draft=false -f make_latest="$LATEST"`,
 		}, "\n"),
 	},
 }
@@ -339,10 +345,12 @@ var publishSteps = []releaseStep{
 // directory to exactly the release's assets, so no pattern of the workflow's
 // own decides what is verified. The last step checks GitHub's "Latest"
 // release (issue #173): it must be the tag when the tag is the highest release
-// tag on main, read by ancestry as the verify job reads it, and must not be
-// when the highest release tag's release is published; while that release is
-// not published yet (only the API's 404), a ::notice:: says so and the check
-// is skipped, as the verify job skips the images' latest check.
+// tag on main, read by ancestry as the verify job reads it, independently of
+// the latest job's decision, and must not be when the highest release tag's
+// release is published; while that release is not published yet (only the
+// API's 404), a ::notice:: says so and the check is skipped, as the verify job
+// skips the images' latest check. A pre-release must never be it, checked
+// before and whatever the highest is, so that skip cannot let one through.
 var verifyArchivesSteps = []releaseStep{
 	{
 		what: "the download of the published archives", name: "Download the published archives",
@@ -437,6 +445,18 @@ var verifyArchivesSteps = []releaseStep{
 			`  return 1`,
 			`}`,
 			`latest="$(latest_tag)"`,
+			`# A pre-release is never GitHub's "Latest" release, whatever the`,
+			`# highest release tag is, and without a condition: while the highest`,
+			`# release tag's own release is still unpublished the check below is`,
+			`# skipped with a notice, which must not let a pre-release through.`,
+			`case "$TAG" in`,
+			`  *-*)`,
+			`    if [ "$latest" = "$TAG" ]; then`,
+			`      echo "GitHub's latest release is $TAG, a pre-release, and a pre-release is never the latest release" >&2`,
+			`      exit 1`,
+			`    fi`,
+			`    ;;`,
+			`esac`,
 			`if [ "$highest" = "$TAG" ]; then`,
 			`  if [ "$latest" != "$TAG" ]; then`,
 			`    echo "GitHub's latest release is '$latest', not $TAG, the highest release tag" >&2`,
@@ -465,12 +485,10 @@ var verifyArchivesSteps = []releaseStep{
 }
 
 // imageSteps are the image job's steps: the build arguments GoReleaser
-// stamps and whether the tag is the highest release tag on main, read from git
-// with the tag passed through env:, refusing a checkout without origin/main
-// because the run shell has no pipefail and the pipeline would otherwise
-// leave highest empty and latest false; a build of two platforms from an empty
-// BuildKit, pushed, without BuildKit's own provenance or SBOM, tagged
-// latest by the stamp's decision alone. Nothing signs or attests here.
+// stamps, read from git with the tag passed through env:; a build of two
+// platforms from an empty BuildKit, pushed, without BuildKit's own provenance
+// or SBOM, tagged latest by the latest job's decision alone, so the image and
+// GitHub's "Latest" release cannot disagree. Nothing signs or attests here.
 func imageSteps(img releaseImage) []releaseStep {
 	return []releaseStep{
 		fullCheckoutStep,
@@ -478,12 +496,10 @@ func imageSteps(img releaseImage) []releaseStep {
 			what: "the stamp of the build arguments", name: "Build arguments, as GoReleaser stamps them", id: "stamp",
 			env: []string{"TAG: ${{ github.ref_name }}"},
 			run: strings.Join([]string{
-				latestDecision,
 				`{`,
 				`  echo "version=${TAG#v}"`,
 				`  echo "commit=$(git rev-parse --short HEAD)"`,
 				`  echo "date=$(TZ=UTC git log -1 --format=%cd --date=format-local:%Y-%m-%dT%H:%M:%SZ)"`,
-				`  echo "latest=$latest"`,
 				`} >> "$GITHUB_OUTPUT"`,
 			}, "\n"),
 		},
@@ -496,7 +512,7 @@ func imageSteps(img releaseImage) []releaseStep {
 			what: "docker/metadata-action", name: "Image tags", id: "tags", uses: metadataAction,
 			with: map[string]*regexp.Regexp{
 				"images": exactly(img.name),
-				"flavor": exactly("latest=${{ steps.stamp.outputs.latest }}"),
+				"flavor": exactly(latestFlavorOutput),
 				"tags": exactly(strings.Join([]string{
 					"type=semver,pattern={{raw}}",
 					"type=semver,pattern={{major}}.{{minor}},enable=${{ !contains(github.ref_name, '-') }}",
@@ -679,10 +695,11 @@ func verifyImageStep(img releaseImage, what, name string, smoke ...string) relea
 // highestReleaseTag is the line that sets highest to the highest release tag
 // merged into main, read by git, the command given: git in a checkout, git -C
 // tags in the repository mainTagsInit makes. Release tags only (vX.Y.Z, no
-// pre-release), by version order. The image jobs' stamp decides the images'
-// latest tag by it and the publish job GitHub's "Latest" release, so both
-// name the same version (ADR 0015, issue #173); the verify and
-// verify-archives jobs check them by it.
+// pre-release), by version order. The latest job decides by it, once per
+// run, whether the tag is the latest release, and both images' latest tag and
+// GitHub's "Latest" release follow that one decision (ADR 0015, issue #173);
+// the verify and verify-archives jobs read it again on their own to check
+// them.
 func highestReleaseTag(git string) string {
 	return `highest="$(` + git + ` tag -l 'v*.*.*' --merged refs/remotes/origin/main | sed -nE '/^v[0-9]+\.[0-9]+\.[0-9]+$/p' | sort -V | tail -n 1)"`
 }
@@ -696,19 +713,33 @@ const (
 	mainTagsFetch = `git -C tags fetch -q --filter=tree:0 --no-tags https://github.com/` + releaseRepo + `.git '+refs/heads/main:refs/remotes/origin/main' '+refs/tags/v*:refs/tags/v*'`
 )
 
-// latestDecision are the lines that set latest to true only when the tag is
-// the highest release tag on main, from a checkout of the whole history. They
-// refuse a checkout without origin/main: the stamp's shell has no pipefail,
-// and the pipeline would otherwise leave highest empty and latest false.
-var latestDecision = strings.Join([]string{
-	`git rev-parse --verify --quiet refs/remotes/origin/main > /dev/null || {`,
-	`  echo "origin/main is missing from the checkout" >&2`,
-	`  exit 1`,
-	`}`,
-	highestReleaseTag("git"),
-	`latest=false`,
-	`if [ "$TAG" = "$highest" ]; then latest=true; fi`,
-}, "\n")
+// latestFlavorOutput is the flavor of both images' metadata-action: latest
+// from the latest job's one decision (issue #173).
+const latestFlavorOutput = "latest=${{ needs.latest.outputs.latest }}"
+
+// latestSteps are the latest job's steps: the whole history, for origin/main,
+// and the one step that sets latest to true only when the tag is the highest
+// release tag on main and writes it to the job's output. It refuses a
+// checkout without origin/main: its run: has no set -o pipefail, and the run
+// shell, bash -e, would otherwise let the pipeline leave highest empty and
+// latest false without failing.
+var latestSteps = []releaseStep{
+	fullCheckoutStep,
+	{
+		what: "the decision of the latest release", name: "Decide whether the tag is the highest release tag on main", id: "decide",
+		env: []string{tagEnv},
+		run: strings.Join([]string{
+			`git rev-parse --verify --quiet refs/remotes/origin/main > /dev/null || {`,
+			`  echo "origin/main is missing from the checkout" >&2`,
+			`  exit 1`,
+			`}`,
+			highestReleaseTag("git"),
+			`latest=false`,
+			`if [ "$TAG" = "$highest" ]; then latest=true; fi`,
+			`echo "latest=$latest" >> "$GITHUB_OUTPUT"`,
+		}, "\n"),
+	},
+}
 
 // strictShell is the first line of every verify script: the run shell is
 // bash -e without pipefail or nounset, so an error inside a pipeline or an
@@ -852,6 +883,12 @@ var releaseJobs = func() []releaseJob {
 	jobs := []releaseJob{
 		{key: "test", name: "Test", permissions: map[string]string{"contents": "read"}, steps: testSteps},
 		{
+			key: "latest", name: "Latest", needs: []string{"test"},
+			permissions: map[string]string{"contents": "read"},
+			outputs:     map[string]string{"latest": "${{ steps.decide.outputs.latest }}"},
+			steps:       latestSteps,
+		},
+		{
 			key: "goreleaser", name: "GoReleaser", needs: []string{"test"},
 			permissions: map[string]string{"contents": "write"}, steps: goreleaserSteps,
 		},
@@ -861,7 +898,7 @@ var releaseJobs = func() []releaseJob {
 			steps:       attestArchivesSteps,
 		},
 		{
-			key: "publish", name: "Publish the release", needs: []string{"test", "goreleaser", "attest-archives"},
+			key: "publish", name: "Publish the release", needs: []string{"test", "goreleaser", "attest-archives", "latest"},
 			permissions: map[string]string{"contents": "write"}, steps: publishSteps,
 		},
 	}
@@ -869,7 +906,7 @@ var releaseJobs = func() []releaseJob {
 	for _, img := range releaseImages {
 		jobs = append(jobs,
 			releaseJob{
-				key: img.imageJob, name: "Container image" + img.suffix, needs: []string{"test", "goreleaser"},
+				key: img.imageJob, name: "Container image" + img.suffix, needs: []string{"test", "goreleaser", "latest"},
 				permissions: map[string]string{"contents": "read", "packages": "write"},
 				outputs:     map[string]string{"digest": builtDigest},
 				steps:       imageSteps(img),
@@ -912,7 +949,7 @@ var releaseJobs = func() []releaseJob {
 //     tag and a run in progress is never cancelled half published; a waiting
 //     run may be replaced by a newer tag's and must then be re-run by hand,
 //     ADR 0015) and jobs, so no workflow-level env: or defaults:;
-//   - jobs holds exactly test, goreleaser, attest-archives, publish, an
+//   - jobs holds exactly test, latest, goreleaser, attest-archives, publish, an
 //     image, an sbom and a sign job for each image the release publishes
 //     (image, sbom and sign for the CLI's, ghcr.io/timothymamo/shift2eu;
 //     server-image, server-sbom and server-sign for the HTTP API's,
@@ -921,14 +958,15 @@ var releaseJobs = func() []releaseJob {
 //     the release published (issue #99), and verify-archives, that of its
 //     archives (issue #163). Each holds exactly name, runs-on
 //     (ubuntu-latest), permissions and steps, and needs for all but test
-//     (goreleaser needs test; attest-archives goreleaser; publish [test,
-//     goreleaser, attest-archives]; an image job [test, goreleaser]; an sbom
-//     job its image job; a sign job [its image job, its sbom job], in that
-//     order; verify [image, sign, server-image, server-sign]; verify-archives
-//     publish), and an image job an outputs: of exactly its build's digest,
-//     so no job-level env:, container:, if: or other key;
-//   - the permissions are exactly contents: read for test; contents: write
-//     for goreleaser and for publish; id-token: write, attestations: write
+//     (latest needs test; goreleaser test; attest-archives goreleaser;
+//     publish [test, goreleaser, attest-archives, latest]; an image job
+//     [test, goreleaser, latest]; an sbom job its image job; a sign job [its
+//     image job, its sbom job], in that order; verify [image, sign,
+//     server-image, server-sign]; verify-archives publish), latest an outputs: of exactly its decide step's latest, and
+//     an image job an outputs: of exactly its build's digest, so no
+//     job-level env:, container:, if: or other key;
+//   - the permissions are exactly contents: read for test and for latest;
+//     contents: write for goreleaser and for publish; id-token: write, attestations: write
 //     and contents: read for attest-archives; contents: read and packages:
 //     write for an image job; packages: read for an sbom job; packages:
 //     write, id-token: write and attestations: write for a sign job;
@@ -947,12 +985,21 @@ var releaseJobs = func() []releaseJob {
 //     attestation or publication can be re-run); setup-go with cache: false in both jobs,
 //     goreleaser asked for exactly release --clean at an exact version, with
 //     an env: of exactly GITHUB_TOKEN from secrets.GITHUB_TOKEN;
+//   - the latest job's steps are exactly actions/checkout of the whole
+//     history, without the token, and one step, id: decide, with the tag
+//     through env:, that refuses a checkout without origin/main (its run:
+//     has no pipefail), reads the release tags merged into origin/main,
+//     pre-releases left out, and writes latest=true to GITHUB_OUTPUT only
+//     when the tag is the highest of them, latest=false otherwise: the one
+//     decision, made once per run, that both images' latest tag and GitHub's
+//     "Latest" release follow, so they cannot disagree (issue #173);
 //   - the attest-archives job's steps are exactly actions/download-artifact
 //     of that artifact, sha256sum -c checksums.txt and
 //     actions/attest-build-provenance with a subject-path of every archive,
 //     by its extension, the bundled OpenAPI document and checksums.txt;
 //   - the publish job's steps are exactly actions/download-artifact of that
-//     artifact, and one step that checks the draft release (an exact run:
+//     artifact, with no checkout, and one step that refuses a LATEST other
+//     than exactly true or false and checks the draft release (an exact run:
 //     script under set -euo pipefail, reading the API's list of the
 //     releases: no published release for the tag, exactly one draft for it,
 //     holding exactly checksums.txt and the files it lists, each asset's
@@ -960,21 +1007,15 @@ var releaseJobs = func() []releaseJob {
 //     then publishes that draft, the one GoReleaser uploaded to (.goreleaser.yaml's
 //     release.draft, check.GitHubRelease), by the id the list gave it with gh
 //     api -X PATCH repos/timothymamo/shift2eu/releases/$id -F draft=false -f
-//     make_latest="$latest", never by its tag, the tag and token through
-//     env:; the one step of the workflow that publishes it (issues #156,
-//     #163). Before them, actions/checkout of the whole history, and latest
-//     set to true only when the tag is the highest release tag on main, by
-//     the image jobs' stamp's own lines, origin/main guard included, so
-//     GitHub's "Latest" release and the images' latest tag name the same
-//     version (issue #173);
+//     make_latest="$LATEST", never by its tag, the tag, the latest job's
+//     decision and the token through env:; the one step of the workflow that
+//     publishes it (issues #156, #163, #173);
 //   - an image job's steps are exactly actions/checkout, the stamp of the
-//     build arguments and of the latest decision (a run: script, with the
-//     tag through env:, counting only the release tags merged into
-//     origin/main, and refusing a checkout without origin/main, since the
-//     run shell has no pipefail to fail the pipeline that counts them),
+//     build arguments (version, commit and date, a run: script with the tag
+//     through env:),
 //     docker/setup-buildx-action (BuildKit by exact release and index
 //     digest), docker/login-action, docker/metadata-action (its image's name,
-//     latest from the stamp's output alone) and docker/build-push-action
+//     latest from the latest job's output alone) and docker/build-push-action
 //     (linux/amd64 and linux/arm64, pushed, no cache, no BuildKit provenance
 //     or SBOM; the HTTP API's with target: server, the CLI's with no target,
 //     so the Dockerfile's last stage);
@@ -1008,7 +1049,9 @@ var releaseJobs = func() []releaseJob {
 //     release identity, bound to this tag and commit, on GitHub's runners
 //     only; and the check of GitHub's latest release (releases/latest,
 //     tag_name) against the highest release tag, read as the verify job's tag
-//     rule reads it, refusing an empty one: the tag if it is the highest, not
+//     rule reads it, independently of the latest job, refusing an empty one:
+//     never the tag if it is a pre-release, whatever else holds; the tag if
+//     it is the highest, not
 //     the tag if the highest's release is published, a ::notice:: and no
 //     check while the API answers 404 for it, and any other answer a failure
 //     (issue #173);
