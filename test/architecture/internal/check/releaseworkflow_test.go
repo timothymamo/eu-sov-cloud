@@ -347,7 +347,7 @@ var publishSteps = []string{
           # latest tag: true only for the highest release tag on main, so a
           # patch on an older line is published without taking it over (issue
           # #173).
-          gh api -X PATCH "repos/timothymamo/shift2eu/releases/$id" -F draft=false -F make_latest="$latest"
+          gh api -X PATCH "repos/timothymamo/shift2eu/releases/$id" -F draft=false -f make_latest="$latest"
 `,
 }
 
@@ -356,7 +356,7 @@ var publishSteps = []string{
 // resolves to a published release before a draft (issues #156, #163), with
 // GitHub's "Latest" release moved by the stamp's own highest decision, so the
 // release and both images' latest tag move together (issue #173).
-const publishByID = `gh api -X PATCH "repos/timothymamo/shift2eu/releases/$id" -F draft=false -F make_latest="$latest"`
+const publishByID = `gh api -X PATCH "repos/timothymamo/shift2eu/releases/$id" -F draft=false -f make_latest="$latest"`
 
 // publishByTagStep is the publication the second review of issue #163 refused:
 // a step of its own, after the check, that resolves the tag again, so a release
@@ -1540,10 +1540,11 @@ func TestReleaseWorkflow(t *testing.T) {
 		// image jobs' stamp's own command line, and sends make_latest from that
 		// decision alone: never omitted, never a constant, so publishing a patch
 		// on an older line does not take GitHub's "Latest" over.
-		{name: "the publish step without make_latest", workflow: in("publish", ` -F make_latest="$latest"`, ""), wantIn: `make_latest=\"$latest\"`},
-		{name: "the publish step with make_latest always true", workflow: in("publish", `-F make_latest="$latest"`, `-F make_latest=true`), wantIn: `make_latest=\"$latest\"`},
-		{name: "the publish step with make_latest always false", workflow: in("publish", `-F make_latest="$latest"`, `-F make_latest=false`), wantIn: `make_latest=\"$latest\"`},
-		{name: "the publish step with make_latest from an expression", workflow: in("publish", `-F make_latest="$latest"`, `-F make_latest=${{ github.ref_name }}`), wantIn: "holds a ${{ }} expression"},
+		{name: "the publish step without make_latest", workflow: in("publish", ` -f make_latest="$latest"`, ""), wantIn: `-f make_latest=\"$latest\"`},
+		{name: "the publish step with make_latest always true", workflow: in("publish", `-f make_latest="$latest"`, `-f make_latest=true`), wantIn: `-f make_latest=\"$latest\"`},
+		{name: "the publish step with make_latest always false", workflow: in("publish", `-f make_latest="$latest"`, `-f make_latest=false`), wantIn: `-f make_latest=\"$latest\"`},
+		{name: "the publish step with make_latest from an expression", workflow: in("publish", `-f make_latest="$latest"`, `-f make_latest=${{ github.ref_name }}`), wantIn: "holds a ${{ }} expression"},
+		{name: "the publish step sending make_latest as a typed field", workflow: in("publish", `-f make_latest="$latest"`, `-F make_latest="$latest"`), wantIn: `-f make_latest=\"$latest\"`},
 		{name: "the publish step without the latest decision", workflow: in("publish", "\n          latest=false\n          if [ \"$TAG\" = \"$highest\" ]; then latest=true; fi", ""), wantIn: "want the check and publication of the draft: run is"},
 		{name: "the publish step with latest always", workflow: in("publish", "          latest=false\n", "          latest=true\n"), wantIn: "want the check and publication of the draft: run is"},
 		// The highest is the stamp's, byte for byte: the release tags merged
