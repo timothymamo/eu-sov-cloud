@@ -152,7 +152,10 @@ Category `storage.block`. Pages: <https://www.scaleway.com/en/docs/block-storage
 
 ### Elastic Metal
 
-Category `compute.vm` (dedicated servers running a general purpose operating system). Pages:
+Category `compute.baremetal`: dedicated physical servers running a general purpose operating system, with
+no hypervisor. Until issue #187 (ADR 0023) it served `compute.vm`, and tied with Instances for a virtual
+machine workload, so a group of VMs could be pointed at bare-metal servers. Moving it changed no source
+fact. Pages:
 <https://www.scaleway.com/en/docs/elastic-metal/faq/>,
 <https://www.scaleway.com/en/docs/elastic-metal/reference-content/elastic-metal-networking/>,
 <https://www.scaleway.com/en/docs/ipam/reference-content/ipv6/>.
@@ -167,7 +170,8 @@ Category `compute.vm` (dedicated servers running a general purpose operating sys
 
 ### Instances
 
-Category `compute.vm`. Pages: <https://www.scaleway.com/en/docs/instances/concepts/>,
+Category `compute.vm` (virtual machines; Elastic Metal is `compute.baremetal`). Pages:
+<https://www.scaleway.com/en/docs/instances/concepts/>,
 <https://www.scaleway.com/en/docs/instances/how-to/use-flexips/>,
 <https://www.scaleway.com/en/docs/ipam/reference-content/ipv6/>.
 
@@ -363,7 +367,9 @@ Category `serverless.function`. Pages: <https://www.scaleway.com/en/docs/serverl
   Groups in Public Beta* (2026-08-25) opens them in fr-par, nl-ams and pl-waw, no later entry announces
   general availability, and the Autoscaling Groups API guide
   (<https://www.scaleway.com/en/docs/instances/api-cli/getting-started-autoscaling-groups/>) still
-  requires "Beta access".
+  requires "Beta access". Re-checked on 2026-11-13 for issue #187: `scaleway/docs-content` `main` at
+  commit `6349594be902c7191c324538265827ea4f1ee1aa` still lists "Beta access to the Autoscaling Groups
+  Private Beta" among the guide's requirements, so the capability stays out.
 - **Block Storage `encryption-at-rest`:** the Key Manager encryption page
   (<https://www.scaleway.com/en/docs/block-storage/api-cli/encrypt-volumes-with-key-manager/>, validated
   2026-10-15) says volume encryption "is currently in Private Beta, and is only available via the Block

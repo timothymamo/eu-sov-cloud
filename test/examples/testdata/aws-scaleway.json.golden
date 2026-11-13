@@ -233,21 +233,19 @@
       "category": "compute.vm",
       "region": "eu-central-1",
       "fit": "partial",
-      "bestOffering": "Elastic Metal",
-      "ties": [
-        "Instances"
-      ],
+      "bestOffering": "Instances",
+      "ties": [],
       "reasons": [
         {
           "code": "missing-capability",
-          "text": "Elastic Metal does not offer autoscaling",
-          "offering": "Elastic Metal",
+          "text": "Instances does not offer autoscaling",
+          "offering": "Instances",
           "capability": "autoscaling"
         },
         {
           "code": "missing-capability",
-          "text": "Elastic Metal does not offer zone-high-availability",
-          "offering": "Elastic Metal",
+          "text": "Instances does not offer zone-high-availability",
+          "offering": "Instances",
           "capability": "zone-high-availability"
         }
       ],

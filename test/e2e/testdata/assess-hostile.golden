@@ -18,13 +18,13 @@
 | ID | Raw type | Category | Fit | Best offering | Reasons |
 |---|---|---|---|---|---|
 | `#1` | `$\Huge X$` | `storage.object` | direct | `Object Storage` | `Object Storage` offers every capability the resource uses |
-| `[ ] x` | `@octocat` | `compute.vm` | direct | `Elastic Metal` (tie: `Instances`) | `Elastic Metal` offers every capability the resource uses |
-| `a\|b` | `<b>` | `compute.vm` | partial | `Elastic Metal` (tie: `Instances`) | `Elastic Metal` does not offer `node-high-availability` |
+| `[ ] x` | `@octocat` | `compute.vm` | direct | `Instances` | `Instances` offers every capability the resource uses |
+| `a\|b` | `<b>` | `compute.vm` | partial | `Instances` | `Instances` does not offer `node-high-availability` |
 | ``tick`x`` | `:x:` | `storage.object` | direct | `Object Storage` | `Object Storage` offers every capability the resource uses |
 
 ## Required changes
 
-- `a|b`: `node-high-availability` (not offered by `Elastic Metal`)
+- `a|b`: `node-high-availability` (not offered by `Instances`)
 
 ## Blockers
 

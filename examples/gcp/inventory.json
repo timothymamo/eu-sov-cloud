@@ -17,6 +17,12 @@
       "capabilities": ["autoscaling", "zone-high-availability"]
     },
     {
+      "id": "shop-search-bms",
+      "rawType": "baremetalsolution.googleapis.com/Instance",
+      "category": "compute.baremetal",
+      "region": "europe-west3"
+    },
+    {
       "id": "shop-web-1-data",
       "rawType": "compute.googleapis.com/Disk",
       "category": "storage.block",

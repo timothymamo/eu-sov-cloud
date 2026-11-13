@@ -183,9 +183,7 @@
           "region": "eu-west-1",
           "fit": "direct",
           "bestOffering": "Instances",
-          "ties": [
-            "Metal Instances"
-          ],
+          "ties": [],
           "reasons": [
             {
               "code": "all-capabilities",
@@ -218,9 +216,7 @@
           "region": "eu-west-1",
           "fit": "partial",
           "bestOffering": "Instances",
-          "ties": [
-            "Metal Instances"
-          ],
+          "ties": [],
           "reasons": [
             {
               "code": "missing-capability",
@@ -438,15 +434,13 @@
           "category": "compute.vm",
           "region": "eu-west-1",
           "fit": "direct",
-          "bestOffering": "Elastic Metal",
-          "ties": [
-            "Instances"
-          ],
+          "bestOffering": "Instances",
+          "ties": [],
           "reasons": [
             {
               "code": "all-capabilities",
-              "text": "Elastic Metal offers every capability the resource uses",
-              "offering": "Elastic Metal"
+              "text": "Instances offers every capability the resource uses",
+              "offering": "Instances"
             }
           ],
           "requiredChanges": []

@@ -59,7 +59,8 @@ in taxonomy terms. This file records where each fact comes from, so the snapshot
 ## Rules applied
 
 - **Scope:** OVHcloud Public Cloud only (PRD #11). Bare Metal dedicated servers, Hosted Private Cloud, Web
-  Cloud, Local Zones and the SecNumCloud platform are out of scope.
+  Cloud, Local Zones and the SecNumCloud platform are out of scope. So `compute.baremetal` is served by the
+  Public Cloud's Metal Instances only.
 - **Regions:** one code per location, the code the regions page prints under each location (PRD #11,
   *one region name per location*). Only locations in EU member states are declared. Products name their
   regions differently; *Declared EU regions* below records which product-level names each code covers.
@@ -629,7 +630,9 @@ from *Managed PostgreSQL Multi-node 3-AZ* because it adds `read-replicas`. Pages
 
 ### Metal Instances
 
-Category `compute.vm`: Public Cloud instances on dedicated physical servers with no virtualisation layer.
+Category `compute.baremetal`: Public Cloud instances on dedicated physical servers with no virtualisation
+layer. Until issue #187 (ADR 0023) it served `compute.vm`; a bare-metal server is now its own category, so
+it no longer competes with Instances for a virtual machine workload. Moving it changed no source fact.
 Pages: <https://www.ovhcloud.com/en/public-cloud/metal-instances/>,
 <https://docs.ovhcloud.com/en/guides/public-cloud/network-services/ipv6-configuration>,
 <https://docs.ovhcloud.com/en/guides/public-cloud/compute/save-an-instance>.

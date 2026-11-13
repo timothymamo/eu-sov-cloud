@@ -212,14 +212,17 @@ A direct row and an unclassified row, from the Scaleway report:
 Where several offerings fit equally well, the others are named as a tie:
 
 ```markdown
-| `shop-web-asg` | `AWS::AutoScaling::AutoScalingGroup` | `compute.vm` | partial | `Elastic Metal` (tie: `Instances`) | `Elastic Metal` does not offer `autoscaling`; `Elastic Metal` does not offer `zone-high-availability` |
+| `shop-db` | `AWS::RDS::DBInstance` | `database.postgresql` | partial | `Managed Database for PostgreSQL and MySQL` (tie: `Managed Database for PostgreSQL and MySQL High Availability`) | `Managed Database for PostgreSQL and MySQL` does not offer `point-in-time-restore`; `Managed Database for PostgreSQL and MySQL` does not offer `zone-high-availability` |
 ```
 
 Offerings tie when they have the same fit and lack as many of the resource's capabilities; among
-them, the best offering is simply the first by name. Here `Elastic Metal` and `Instances` both lack
-`autoscaling` and `zone-high-availability`, so the reasons and required changes name `Elastic Metal`
-only because it sorts first: either one needs the same changes. Tied offerings lack the same number of
-capabilities, not always the same ones, so check a tie's own capabilities before you pick it.
+them, the best offering is simply the first by name. Here the Standalone tier and its High
+Availability variant both lack `point-in-time-restore` and `zone-high-availability`, so the reasons
+and required changes name `Managed Database for PostgreSQL and MySQL` only because it sorts first:
+either one needs the same changes. The variant still adds `node-high-availability`, which the
+resource does not ask for but a zone-redundant database comes closer to. Tied offerings lack the same
+number of capabilities, not always the same ones, so check a tie's own capabilities before you pick
+it.
 
 **Required changes** lists every partial resource with the capabilities its best offering lacks: what
 you would have to replace, rebuild or do without on that target.

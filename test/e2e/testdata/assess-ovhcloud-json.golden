@@ -180,9 +180,7 @@
       "region": "eu-west-1",
       "fit": "direct",
       "bestOffering": "Instances",
-      "ties": [
-        "Metal Instances"
-      ],
+      "ties": [],
       "reasons": [
         {
           "code": "all-capabilities",
@@ -215,9 +213,7 @@
       "region": "eu-west-1",
       "fit": "partial",
       "bestOffering": "Instances",
-      "ties": [
-        "Metal Instances"
-      ],
+      "ties": [],
       "reasons": [
         {
           "code": "missing-capability",

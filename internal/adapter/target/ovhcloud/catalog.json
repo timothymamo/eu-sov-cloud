@@ -109,7 +109,7 @@
     },
     {
       "name": "Metal Instances",
-      "categories": ["compute.vm"],
+      "categories": ["compute.baremetal"],
       "capabilities": ["ipv6", "snapshots"],
       "regions": ["GRA", "LIM", "SBG", "WAW"]
     },

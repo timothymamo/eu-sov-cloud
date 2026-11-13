@@ -2,7 +2,7 @@ target: Scaleway
 sourceURL: https://www.scaleway.com/en/docs/
 retrievedOn: 2026-11-11
 Block Storage | storage.block | snapshots | fr-par, it-mil, nl-ams, pl-waw
-Elastic Metal | compute.vm | ipv6 | fr-par, nl-ams, pl-waw
+Elastic Metal | compute.baremetal | ipv6 | fr-par, nl-ams, pl-waw
 Instances | compute.vm | ipv6, snapshots | fr-par, it-mil, nl-ams, pl-waw
 Kubernetes Kapsule | kubernetes.managed | autoscaling | fr-par, it-mil, nl-ams, pl-waw
 Kubernetes Kapsule Dedicated | kubernetes.managed | autoscaling, node-high-availability | fr-par, nl-ams, pl-waw

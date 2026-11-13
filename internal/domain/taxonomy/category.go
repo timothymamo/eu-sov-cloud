@@ -15,9 +15,14 @@ type Category string
 // The taxonomy categories. Sources classify resources into one of these, and
 // targets declare which of them their offerings serve.
 const (
-	// ComputeVM is a virtual machine or a dedicated server running a general
-	// purpose operating system.
+	// ComputeVM is a virtual machine running a general purpose operating
+	// system, on a host the provider runs and may share. A dedicated physical
+	// server is ComputeBareMetal instead.
 	ComputeVM Category = "compute.vm"
+	// ComputeBareMetal is a dedicated physical (bare-metal) server running a
+	// general purpose operating system, with no hypervisor between the
+	// operating system and the hardware.
+	ComputeBareMetal Category = "compute.baremetal"
 	// KubernetesManaged is a Kubernetes cluster whose control plane the provider runs.
 	KubernetesManaged Category = "kubernetes.managed"
 	// StorageObject is object storage: buckets of objects addressed by key.
@@ -43,6 +48,7 @@ var ErrUnknownCategory = errors.New("unknown taxonomy category")
 
 // categories lists every category, sorted by value. It is read-only.
 var categories = []Category{
+	ComputeBareMetal,
 	ComputeVM,
 	DatabaseMySQL,
 	DatabasePostgreSQL,
