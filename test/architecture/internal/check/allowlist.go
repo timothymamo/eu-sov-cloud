@@ -101,10 +101,13 @@ func sortedAllowLists(rules []Rule) []Rule {
 // its place among the rules, so edits elsewhere in the file do not move it. It
 // fails closed: an error when the rule is missing, when its list-mode is not
 // strict (depguard's default mode lets through what no list names), when it
-// has no allow entry, or when an entry does not name an import path: an exact
+// has no allow key or an allow key left null with no entries below it, or when
+// an entry does not name an import path: an exact
 // one once the $ is removed, a prefix one once a trailing / is removed. $gostd,
 // which depguard expands to the standard library's top-level directories, is
-// no import path and so is refused.
+// no import path and so is refused. An explicit empty flow sequence, allow: [],
+// is how a rule says it allows nothing: it comes back as no entries and no
+// error (issue #166), and depguard in strict mode then refuses every import.
 func AllowList(golangci []byte, rule string) ([]AllowEntry, error) {
 	lines, err := yamlread.SplitLines(golangci)
 	if err != nil {
@@ -259,8 +262,12 @@ func readAllow(body []yamlread.Line, aliased func() ([]string, error)) ([]AllowE
 		return nil, err
 	}
 
-	if len(values) == 0 {
-		return nil, fmt.Errorf("line %d: the allow list is empty", allow.Num)
+	// A rule says it allows nothing with an explicit flow sequence, allow: [],
+	// the only way the key has a value on its own line and no entries. An
+	// allow key left null reads as no entries too, and is refused: a rule
+	// parsed as empty by mistake must not pass for one that allows nothing.
+	if len(values) == 0 && allow.Value == "" {
+		return nil, fmt.Errorf("line %d: the allow list is empty: write allow: [] for a rule that allows nothing", allow.Num)
 	}
 
 	out := make([]AllowEntry, 0, len(values))

@@ -210,8 +210,10 @@ The check fails closed:
   extracted modules again. So `actions/setup-go` must have `cache: false` in both jobs. As a backstop, no line, comments included, may name `github.env` or
   `github.path`, `GITHUB_ENV` or `GITHUB_PATH`, or a variable of the go command or of cgo (a word in
   upper case starting `GO` or `CGO`: `GOFLAGS`, `GOEXPERIMENT`, `GOAMD64`, `CGO_ENABLED`, ...).
-- A depguard rule it reads must be `list-mode: strict` with a non-empty allow list whose every entry
-  ends in `$`, so the list names packages exactly.
+- A depguard rule it reads must be `list-mode: strict` with an allow list that is either an explicit
+  empty `allow: []`, which allows nothing, or one whose every entry ends in `$` (an exact package) or
+  in `/` (a prefix); a missing or null `allow:` is refused. *(Amended by #166: the list was first
+  non-empty with every entry ending in `$`.)*
 - `go list` runs with an environment built from an allow list of inherited variables (`PATH`,
   `GOROOT`, `HOME`, `USERPROFILE`, `XDG_CACHE_HOME`, `LOCALAPPDATA`, `GOPATH`, `GOMODCACHE`, `GOCACHE`,
   `GOTOOLCHAIN`, `TMPDIR`, `TEMP`, `TMP`) plus `GOENV=off` (an empty variable does not override a
@@ -398,15 +400,19 @@ holds that.
 
 The properties called for four changes. `contract-suites-are-pure` holds both suites (`!$test`) to
 exactly what they import. `config-is-pure` and `target-docs-are-pure` hold `internal/config` and the
-doc-only `internal/adapter/target` to `errors$`: an empty allow list would say it better, but
-`check.AllowList` refuses a strict rule with none, and `errors$` is the smallest it reads (follow-up
-issue #166 lets it accept an empty list). `test-docs-are-pure` holds the doc-only `test/apiparity`,
+doc-only `internal/adapter/target` to an empty allow list, `allow: []`: they import nothing, so the
+rules allow nothing. (They first allowed `errors$` as a placeholder, as `check.AllowList` refused a
+strict rule with no entry; issue #166 made it read an explicit `allow: []` as no entries, while a
+missing or null `allow:` is still refused, and dropped the placeholders. depguard refuses a rule
+with no list at all, so each rule carries one deny entry, `os`; the strict empty allow list is what
+refuses every import.) `test-docs-are-pure` holds the doc-only `test/apiparity`,
 `test/architecture` (minus its `internal/` tree), `test/container`, `test/devenv`, `test/docs`,
-`test/e2e` and `test/lint` to the same placeholder, their tests left out with `!$test`: it takes the
-e2e test files out too (depguard applies negated globs whatever their position), so they stay on
-`e2e-is-black-box` alone. A future
-`os` import in `internal/config` must come with a forbidigo group for its reads, and any read of a
-named variable with an exception decided in an ADR. The forbidigo group `inventoryfile-no-env`
+`test/e2e` and `test/lint` to the same empty list and `os` deny entry, their tests left out with
+`!$test`: it takes the e2e test files out too (depguard applies negated globs whatever their
+position), so they stay on `e2e-is-black-box` alone. A future `os` import in `internal/config` must
+come with a forbidigo group for its reads, and any read of a named variable with an exception
+decided in an ADR; the same commit drops the `os` deny entry, as `check.AllowList` refuses a rule
+whose allow list allows a package its deny list names. The forbidigo group `inventoryfile-no-env`
 refuses the nine reads under `internal/adapter/source/inventoryfile/`, tests included; and
 `composition-root-env` gains `os.UserHomeDir`, `os.UserConfigDir`, `os.UserCacheDir` and `os.TempDir`
 in an entry of its own, which the roots, alone of the packages allowed `os`, did not refuse. The

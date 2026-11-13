@@ -510,16 +510,20 @@ target, with the `e2e` and `integration` tags (`strictcoverage_test.go`):
 `TestStrictRuleCoverageHolds` pins the helpers the tests share. The rules the properties called for:
 
 - **`config-is-pure`** (depguard, strict) holds `internal/config`, which has only a `doc.go` today,
-  to `errors$`: the smallest allow list `check.AllowList` reads, as it refuses a strict rule with
-  none (follow-up issue #166 lets it accept an empty list and drops these placeholders). Its
-  `doc.go` announces flags, the environment and a file; a future `os` import comes with a
-  forbidigo group for its reads (the second property fails until it does), and any read of a named
-  variable needs an exception decided in an ADR, as `composition-root-env`'s for
-  `SHIFT2EU_SERVER_TOKEN` (ADR 0019).
+  to an empty allow list, `allow: []`: it imports nothing, so the rule allows nothing.
+  `check.AllowList` reads an explicit `allow: []` as no entries and still refuses a missing or
+  null `allow:`, so a rule parsed as empty by mistake does not pass for one (issue #166).
+  depguard refuses a rule with no list at all, so the rule carries one deny entry, `os`; the strict
+  empty allow list is what refuses every import. Its `doc.go` announces flags, the environment and a
+  file; a future `os` import comes with a forbidigo group for its reads (the second property fails
+  until it does), and any read of a named variable needs an exception decided in an ADR, as
+  `composition-root-env`'s for `SHIFT2EU_SERVER_TOKEN` (ADR 0019). The same commit drops the `os`
+  deny entry, as `check.AllowList` refuses a rule whose allow list allows a package its deny list
+  names.
 - **`target-docs-are-pure`** (depguard, strict) holds `internal/adapter/target`, a `doc.go` with no
-  code, to `errors$` as well; negated globs take out the providers, the snapshot reader and
-  `targettest`, which have rules of their own. A provider added under it is named there and in
-  `embedded-snapshot-targets-stay-offline` in the same commit.
+  code, to `allow: []` and the `os` deny entry, as `config-is-pure`; negated globs take out the
+  providers, the snapshot reader and `targettest`, which have rules of their own. A provider added
+  under it is named there and in `embedded-snapshot-targets-stay-offline` in the same commit.
 - **`contract-suites-are-pure`** (depguard, strict) holds `internal/adapter/source/sourcetest` and
   `internal/adapter/target/targettest`. They are production packages that any `_test.go` file may
   import, so a scoped test could delegate a call through them. The allow list is what they import
@@ -534,13 +538,13 @@ target, with the `e2e` and `integration` tags (`strictcoverage_test.go`):
   `TestInventoryFileNoEnvForbidigoPatterns` pin it.
 - **`test-docs-are-pure`** (depguard, strict) holds the doc-only packages `test/apiparity`,
   `test/architecture`, `test/container`, `test/devenv`, `test/docs`, `test/e2e` and `test/lint` to
-  the same `errors$` placeholder (issue #166). Each is a production package a root could import
-  through the module prefix. `!$test` leaves their tests out, and a negated glob takes out
-  `test/architecture/internal/...`, which Go's internal rule hides from the roots and which reads
-  `os` and `os/exec`. `test/e2e`'s untagged `doc.go` is held here as well (the third property):
+  `allow: []` and the `os` deny entry, as `config-is-pure`. Each is a production package a root
+  could import through the module prefix. `!$test` leaves their tests out, and a negated glob takes
+  out `test/architecture/internal/...`, which Go's internal rule hides from the roots and which
+  reads `os` and `os/exec`. `test/e2e`'s untagged `doc.go` is held here as well (the third property):
   `!$test` takes the e2e test files out (depguard applies negated globs whatever their position), so
-  they stay on `e2e-is-black-box` alone, which allows `$gostd` and holds the package too. A package that starts importing something names it there and in the
-  pin in the same commit.
+  they stay on `e2e-is-black-box` alone, which allows `$gostd` and holds the package too. A package
+  that starts importing something names it there and in the pin in the same commit.
 
 ### Tests change no process state
 
