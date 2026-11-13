@@ -14,6 +14,7 @@ import (
 	"go/ast"
 	"go/parser"
 	"go/token"
+	"math"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -1694,6 +1695,41 @@ func TestInventoryReadsVersion1And2TwinsAlike(t *testing.T) {
 
 	if diff := cmp.Diff(fromOne.Resources(), fromTwo.Resources()); diff != "" {
 		t.Errorf("Resources() of the version 2 twin differ (-version 1 +version 2):\n%s", diff)
+	}
+}
+
+// TestInventoryReadsNegativeZeroAsZero pins that a document that writes -0 is
+// read as a given 0, not as a given -0: the JSON number parses with its sign
+// bit, and an amount a later milestone prints must never print "-0.00". The
+// value stays a given field, so the check refuses an absent one.
+func TestInventoryReadsNegativeZeroAsZero(t *testing.T) {
+	t.Parallel()
+
+	path := writeFile(t, t.TempDir(), `{"schemaVersion":2,"source":"aws","resources":[`+
+		`{"id":"volume-example","category":"storage.block",`+
+		`"size":{"storageGiB":-0,"count":1},`+
+		`"monthlyCost":{"amount":-0,"currency":"EUR"}}]}`)
+
+	resources := inventoryOf(t, path).Resources()
+	if len(resources) != 1 {
+		t.Fatalf("len(Resources()) = %d, want 1", len(resources))
+	}
+
+	sized := resources[0]
+	if sized.Size == nil || sized.Size.StorageGiB == nil {
+		t.Fatalf("Resources()[0].Size = %v, want the given -0 kept as a given 0", sized.Size)
+	}
+
+	if storage := *sized.Size.StorageGiB; storage != 0 || math.Signbit(storage) {
+		t.Errorf("Size.StorageGiB = %v, want +0: a negative zero is read as a zero", storage)
+	}
+
+	if sized.MonthlyCost == nil || sized.MonthlyCost.Amount == nil {
+		t.Fatalf("Resources()[0].MonthlyCost = %v, want the given -0 kept as a given 0", sized.MonthlyCost)
+	}
+
+	if amount := *sized.MonthlyCost.Amount; amount != 0 || math.Signbit(amount) {
+		t.Errorf("MonthlyCost.Amount = %v, want +0: a negative zero is read as a zero", amount)
 	}
 }
 

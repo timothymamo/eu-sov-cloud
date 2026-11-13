@@ -240,6 +240,45 @@ func TestNewKeepsVersion2Fields(t *testing.T) {
 	})
 }
 
+// TestNewStoresNegativeZeroAsZero pins that a given -0 is kept as +0: a negative
+// zero passes the "at least 0" bound, and a later renderer that prints a stored
+// number must never print "-0.00". Everything else about the value stays: it is
+// still a given field, not an absent one.
+func TestNewStoresNegativeZeroAsZero(t *testing.T) {
+	t.Parallel()
+
+	minusZero := math.Copysign(0, -1)
+	if !math.Signbit(minusZero) {
+		t.Fatalf("math.Copysign(0, -1) = %v, want a negative zero", minusZero)
+	}
+
+	volume := withSize(vm("volume-example"), inventory.Size{StorageGiB: ptr(minusZero)})
+	cost := withCost(vm("i-0123456789abcdef0"),
+		inventory.Cost{Amount: ptr(minusZero), Currency: "EUR"})
+
+	inv := newInventory(t, "aws", []inventory.Resource{volume, cost})
+
+	sized := resourceOf(t, inv, volume.ID)
+	if sized.Size == nil || sized.Size.StorageGiB == nil {
+		t.Fatalf("Resources() of %s holds Size = %v, want the given -0 kept as a given 0",
+			volume.ID, sized.Size)
+	}
+
+	if storage := *sized.Size.StorageGiB; storage != 0 || math.Signbit(storage) {
+		t.Errorf("Size.StorageGiB = %v, want +0: a negative zero is stored as zero", storage)
+	}
+
+	priced := resourceOf(t, inv, cost.ID)
+	if priced.MonthlyCost == nil || priced.MonthlyCost.Amount == nil {
+		t.Fatalf("Resources() of %s holds MonthlyCost = %v, want the given -0 kept as a given 0",
+			cost.ID, priced.MonthlyCost)
+	}
+
+	if amount := *priced.MonthlyCost.Amount; amount != 0 || math.Signbit(amount) {
+		t.Errorf("MonthlyCost.Amount = %v, want +0: a negative zero is stored as zero", amount)
+	}
+}
+
 // TestNewCanonicalisesAbsentVersion2Fields pins the other side of the pointer
 // rule: an empty size object, an empty usage object and an empty relations list
 // describe the same resource as leaving the key out, so callers never have to
