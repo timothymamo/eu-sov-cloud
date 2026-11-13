@@ -141,13 +141,12 @@
 // gostdOnlyExempt (empty) names it with a reason. That last one found test/e2e:
 // its doc.go carries no build tag, and e2e-is-black-box allows $gostd, so
 // test-docs-are-pure holds it as well. TestStrictRuleCoverageHolds pins their
-// helpers. The properties brought three strict rules: config-is-pure and
+// helpers. The properties brought three strict rules. config-is-pure and
 // target-docs-are-pure hold internal/config and the doc-only
-// internal/adapter/target to an allow list of nothing, allow: [], which
-// check.AllowList reads as no entries while it refuses a null allow: (issue
-// #166); depguard needs at least one list, so each also denies os, and
-// contract-suites-are-pure holds sourcetest and targettest, which any _test.go
-// file may import, to what they import today.
+// internal/adapter/target to an allow list of nothing, allow: [], and the one
+// deny entry, os, as the config-is-pure comment in .golangci.yml explains
+// (issue #166). contract-suites-are-pure holds sourcetest and targettest,
+// which any _test.go file may import, to what they import today.
 // The exemption trusts the import path, which is sound because nothing can
 // substitute other code for an allowed path: TestModulesHaveNoReplace reads
 // the root go.mod, and every other tracked one outside testdata, with the go

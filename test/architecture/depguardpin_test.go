@@ -905,11 +905,12 @@ var pinnedDepguardRules = []check.DepguardRule{
 		// the auditor's finding M-A): internal/config loads it from flags,
 		// the environment and an optional file, so it announces the environment
 		// reads that need a forbidigo group of its own and an ADR before it may
-		// import os. It has no code yet, so it allows nothing: allow: [],
-		// which check.AllowList reads as no entries (issue #166). depguard
-		// refuses a rule with no list, so it denies os as well; the strict
-		// empty allow list is what refuses every import. The day it
-		// imports a package, the rule names it here in the same commit.
+		// import os. It has no code yet, so it allows nothing: allow: [] and
+		// the one deny entry, os, as the config-is-pure comment in
+		// .golangci.yml explains (issue #166). The day it imports a package,
+		// the rule names it here in the same commit; an os import also drops
+		// the os deny entry, as check.AllowList refuses a rule whose allow
+		// list allows a package its deny list names.
 		Name:     "config-is-pure",
 		ListMode: "strict",
 		Files: []string{
@@ -924,8 +925,8 @@ var pinnedDepguardRules = []check.DepguardRule{
 		// auditor's finding M-A): internal/adapter/target holds doc.go and no
 		// code, and its providers have strict rules of their own, which the
 		// negated globs take out here. It imports nothing, so it allows
-		// nothing (allow: [], issue #166) and denies os, the list depguard
-		// needs, as config-is-pure does. A provider added under it is named
+		// nothing: allow: [] and the one deny entry, os, as config-is-pure.
+		// A provider added under it is named
 		// here or in embedded-snapshot-targets-stay-offline in the same commit.
 		Name:     "target-docs-are-pure",
 		ListMode: "strict",
@@ -978,10 +979,9 @@ var pinnedDepguardRules = []check.DepguardRule{
 		// the roots' allow lists name the module path as a prefix entry. Go's internal
 		// rule keeps test/internal/... and test/architecture/internal/... out of cmd/
 		// and internal/ and nothing keeps these out, so they get a rule of their own. It
-		// is one shared strict rule that allows nothing, allow: [], which check.AllowList
-		// reads as no entries (issue #166), plus the os deny entry depguard needs, as
-		// config-is-pure has; the day one of these packages imports a
-		// package, it names it here and in .golangci.yml in the same commit.
+		// is one shared strict rule that allows nothing: allow: [] and the one deny entry,
+		// os, as config-is-pure. The day one of these packages imports a package, it
+		// names it here and in .golangci.yml in the same commit.
 		// test/e2e belongs here too since issue #152 (the reviewer's B1, the auditor's
 		// L-1): its doc.go carries no build tag, so test/e2e is a production package a
 		// composition root may import, and e2e-is-black-box, the only rule that held it,
