@@ -1,0 +1,13 @@
+[
+  {
+    "kind": "storage#bucket",
+    "name": "shop-assets-example",
+    "versioning": {
+      "enabled": true
+    }
+  },
+  {
+    "kind": "storage#bucket",
+    "name": "shop-backups-example"
+  }
+]

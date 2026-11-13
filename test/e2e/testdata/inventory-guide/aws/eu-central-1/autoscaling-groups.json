@@ -1,0 +1,54 @@
+{
+  "AutoScalingGroups": [
+    {
+      "AutoScalingGroupName": "shop-web-asg",
+      "AutoScalingGroupARN": "arn:aws:autoscaling:eu-central-1:123456789012:autoScalingGroup:00000000-0000-0000-0000-000000000000:autoScalingGroupName/shop-web-asg",
+      "MinSize": 2,
+      "MaxSize": 6,
+      "AvailabilityZones": [
+        "eu-central-1a",
+        "eu-central-1b"
+      ],
+      "Tags": [
+        {
+          "Key": "Name"
+        }
+      ]
+    },
+    {
+      "AutoScalingGroupName": "eks-shop-eks-default-00000000-0000-0000-0000-000000000000",
+      "AutoScalingGroupARN": "arn:aws:autoscaling:eu-central-1:123456789012:autoScalingGroup:00000000-0000-0000-0000-000000000001:autoScalingGroupName/eks-shop-eks-default-00000000-0000-0000-0000-000000000000",
+      "MinSize": 2,
+      "MaxSize": 5,
+      "AvailabilityZones": [
+        "eu-central-1a",
+        "eu-central-1b"
+      ],
+      "Tags": [
+        {
+          "Key": "eks:cluster-name"
+        },
+        {
+          "Key": "eks:nodegroup-name"
+        },
+        {
+          "Key": "kubernetes.io/cluster/shop-eks"
+        }
+      ]
+    },
+    {
+      "AutoScalingGroupName": "shop-eks-self-managed",
+      "AutoScalingGroupARN": "arn:aws:autoscaling:eu-central-1:123456789012:autoScalingGroup:00000000-0000-0000-0000-000000000002:autoScalingGroupName/shop-eks-self-managed",
+      "MinSize": 1,
+      "MaxSize": 1,
+      "AvailabilityZones": [
+        "eu-central-1b"
+      ],
+      "Tags": [
+        {
+          "Key": "kubernetes.io/cluster/shop-eks"
+        }
+      ]
+    }
+  ]
+}

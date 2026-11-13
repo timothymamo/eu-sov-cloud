@@ -1,0 +1,156 @@
+[
+  {
+    "name": "//compute.googleapis.com/projects/example-project/zones/europe-west1-b/instances/shop-web-1",
+    "assetType": "compute.googleapis.com/Instance",
+    "location": "europe-west1-b"
+  },
+  {
+    "name": "//compute.googleapis.com/projects/example-project/zones/europe-west1-c/instances/shop-web-mig-0abc",
+    "assetType": "compute.googleapis.com/Instance",
+    "location": "europe-west1-c"
+  },
+  {
+    "name": "//compute.googleapis.com/projects/example-project/regions/europe-west1/instanceGroupManagers/shop-web-mig",
+    "assetType": "compute.googleapis.com/InstanceGroupManager",
+    "location": "europe-west1"
+  },
+  {
+    "name": "//compute.googleapis.com/projects/example-project/regions/europe-west1/autoscalers/shop-web-mig-autoscaler",
+    "assetType": "compute.googleapis.com/Autoscaler",
+    "location": "europe-west1"
+  },
+  {
+    "name": "//baremetalsolution.googleapis.com/projects/example-project/locations/europe-west1/instances/shop-baremetal-1",
+    "assetType": "baremetalsolution.googleapis.com/Instance",
+    "location": "europe-west1"
+  },
+  {
+    "name": "//compute.googleapis.com/projects/example-project/zones/europe-west1-b/disks/shop-web-1",
+    "assetType": "compute.googleapis.com/Disk",
+    "location": "europe-west1-b"
+  },
+  {
+    "name": "//compute.googleapis.com/projects/example-project/zones/europe-west1-b/disks/shop-web-1-data",
+    "assetType": "compute.googleapis.com/Disk",
+    "location": "europe-west1-b"
+  },
+  {
+    "name": "//compute.googleapis.com/projects/example-project/zones/europe-west1-c/disks/shop-web-mig-0abc",
+    "assetType": "compute.googleapis.com/Disk",
+    "location": "europe-west1-c"
+  },
+  {
+    "name": "//compute.googleapis.com/projects/example-project/zones/europe-west1-c/disks/shop-web-mig-0abc-data",
+    "assetType": "compute.googleapis.com/Disk",
+    "location": "europe-west1-c"
+  },
+  {
+    "name": "//compute.googleapis.com/projects/example-project/zones/europe-west1-b/disks/pvc-00000000-0000-0000-0000-000000000001",
+    "assetType": "compute.googleapis.com/Disk",
+    "location": "europe-west1-b"
+  },
+  {
+    "name": "//compute.googleapis.com/projects/example-project/global/snapshots/shop-web-1-data-daily",
+    "assetType": "compute.googleapis.com/Snapshot",
+    "location": "global"
+  },
+  {
+    "name": "//storage.googleapis.com/shop-assets-example",
+    "assetType": "storage.googleapis.com/Bucket",
+    "location": "europe-west1"
+  },
+  {
+    "name": "//storage.googleapis.com/shop-backups-example",
+    "assetType": "storage.googleapis.com/Bucket",
+    "location": "eu"
+  },
+  {
+    "name": "//cloudsql.googleapis.com/projects/example-project/instances/shop-db",
+    "assetType": "sqladmin.googleapis.com/Instance",
+    "location": "europe-west1"
+  },
+  {
+    "name": "//cloudsql.googleapis.com/projects/example-project/instances/shop-catalog-mysql",
+    "assetType": "sqladmin.googleapis.com/Instance",
+    "location": "europe-west1"
+  },
+  {
+    "name": "//cloudsql.googleapis.com/projects/example-project/instances/shop-reports-sqlserver",
+    "assetType": "sqladmin.googleapis.com/Instance",
+    "location": "europe-west1"
+  },
+  {
+    "name": "//container.googleapis.com/projects/example-project/locations/europe-west1/clusters/shop-gke",
+    "assetType": "container.googleapis.com/Cluster",
+    "location": "europe-west1"
+  },
+  {
+    "name": "//cloudfunctions.googleapis.com/projects/example-project/locations/europe-west1/functions/shop-resize-images",
+    "assetType": "cloudfunctions.googleapis.com/Function",
+    "location": "europe-west1"
+  },
+  {
+    "name": "//run.googleapis.com/projects/example-project/locations/europe-west1/services/shop-resize-images",
+    "assetType": "run.googleapis.com/Service",
+    "location": "europe-west1",
+    "labels": {
+      "goog-managed-by": "cloudfunctions"
+    }
+  },
+  {
+    "name": "//run.googleapis.com/projects/example-project/locations/europe-west1/services/shop-storefront",
+    "assetType": "run.googleapis.com/Service",
+    "location": "europe-west1"
+  },
+  {
+    "name": "//pubsub.googleapis.com/projects/example-project/topics/shop-orders",
+    "assetType": "pubsub.googleapis.com/Topic",
+    "location": "global"
+  },
+  {
+    "name": "//pubsub.googleapis.com/projects/example-project/topics/shop-orders-dlq",
+    "assetType": "pubsub.googleapis.com/Topic",
+    "location": "global"
+  },
+  {
+    "name": "//pubsub.googleapis.com/projects/example-project/subscriptions/shop-orders-worker",
+    "assetType": "pubsub.googleapis.com/Subscription",
+    "location": "global"
+  },
+  {
+    "name": "//compute.googleapis.com/projects/example-project/global/backendBuckets/shop-cdn-backend",
+    "assetType": "compute.googleapis.com/BackendBucket",
+    "location": "global"
+  },
+  {
+    "name": "//dns.googleapis.com/projects/example-project/managedZones/shop-zone",
+    "assetType": "dns.googleapis.com/ManagedZone",
+    "location": "global"
+  },
+  {
+    "name": "//compute.googleapis.com/projects/example-project/zones/europe-west1-b/instanceGroupManagers/gke-shop-gke-default-pool-0a1b2c3d-grp",
+    "assetType": "compute.googleapis.com/InstanceGroupManager",
+    "location": "europe-west1-b"
+  },
+  {
+    "name": "//compute.googleapis.com/projects/example-project/zones/europe-west1-b/instances/gke-shop-gke-default-pool-0a1b2c3d-x1y2",
+    "assetType": "compute.googleapis.com/Instance",
+    "location": "europe-west1-b",
+    "labels": {
+      "goog-gke-node": ""
+    }
+  },
+  {
+    "name": "//compute.googleapis.com/projects/example-project/zones/europe-west1-b/disks/gke-shop-gke-default-pool-0a1b2c3d-x1y2",
+    "assetType": "compute.googleapis.com/Disk",
+    "location": "europe-west1-b",
+    "labels": {
+      "goog-gke-node": ""
+    }
+  },
+  {
+    "name": "//compute.googleapis.com/projects/example-project/global/snapshots/shop-imported",
+    "assetType": "compute.googleapis.com/Snapshot",
+    "location": "global"
+  }
+]

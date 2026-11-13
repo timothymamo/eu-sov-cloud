@@ -1,0 +1,12 @@
+{
+  "Functions": [
+    {
+      "FunctionName": "shop-thumbnailer",
+      "FunctionArn": "arn:aws:lambda:eu-central-1:123456789012:function:shop-thumbnailer"
+    },
+    {
+      "FunctionName": "shop-orders",
+      "FunctionArn": "arn:aws:lambda:eu-central-1:123456789012:function:shop-orders"
+    }
+  ]
+}

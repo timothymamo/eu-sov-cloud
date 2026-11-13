@@ -269,6 +269,7 @@ whichever target you choose.
 ## Next
 
 - [Assess an inventory](assess.md): every flag, the report formats and the exit codes.
-- [ADR 0006](../adr/0006-json-inventory-file-format-v1.md): the inventory format, to write one for
-  your own estate.
+- [Build an inventory from your cloud](inventory.md): an inventory of your own AWS, GCP or Azure
+  estate, from the provider's read-only CLI and `jq`.
+- [ADR 0006](../adr/0006-json-inventory-file-format-v1.md): the inventory format in full.
 - [Run the HTTP API](http-api.md) and [Behind a reverse proxy](reverse-proxy.md): deploying the server.

@@ -1,0 +1,63 @@
+[
+  {
+    "kind": "compute#instance",
+    "selfLink": "https://www.googleapis.com/compute/v1/projects/example-project/zones/europe-west1-b/instances/shop-web-1",
+    "networkInterfaces": [
+      {
+        "stackType": "IPV4_IPV6",
+        "ipv6AccessConfigs": [
+          {
+            "type": "DIRECT_IPV6"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "kind": "compute#instance",
+    "selfLink": "https://www.googleapis.com/compute/v1/projects/example-project/zones/europe-west1-c/instances/shop-web-mig-0abc",
+    "metadata": {
+      "items": [
+        {
+          "key": "created-by"
+        }
+      ]
+    },
+    "disks": [
+      {
+        "source": "https://www.googleapis.com/compute/v1/projects/example-project/zones/europe-west1-c/disks/shop-web-mig-0abc",
+        "boot": true,
+        "autoDelete": true
+      },
+      {
+        "source": "https://www.googleapis.com/compute/v1/projects/example-project/zones/europe-west1-c/disks/shop-web-mig-0abc-data",
+        "boot": false,
+        "autoDelete": true
+      }
+    ],
+    "networkInterfaces": [
+      {
+        "stackType": "IPV4_ONLY"
+      }
+    ]
+  },
+  {
+    "kind": "compute#instance",
+    "selfLink": "https://www.googleapis.com/compute/v1/projects/example-project/zones/europe-west1-b/instances/gke-shop-gke-default-pool-0a1b2c3d-x1y2",
+    "metadata": {
+      "items": [
+        {
+          "key": "created-by"
+        },
+        {
+          "key": "startup-script"
+        }
+      ]
+    },
+    "networkInterfaces": [
+      {
+        "stackType": "IPV4_ONLY"
+      }
+    ]
+  }
+]

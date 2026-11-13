@@ -18,6 +18,12 @@ go.work.sum
 /inventories/
 /reports/
 *.inventory.json
+# Backstops for raw CLI output and inventories written outside inventories/.
+/inventory.json
+/inventory-*.json
+/aws-inventory/
+/gcp-inventory/
+/azure-inventory/
 
 # --- Secrets and cloud credentials -------------------------------------------
 .env

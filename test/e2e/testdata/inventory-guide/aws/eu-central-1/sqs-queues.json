@@ -1,0 +1,13 @@
+{
+  "Attributes": {
+    "QueueArn": "arn:aws:sqs:eu-central-1:123456789012:shop-orders",
+    "RedrivePolicy": "{\"deadLetterTargetArn\":\"arn:aws:sqs:eu-central-1:123456789012:shop-orders-dlq\",\"maxReceiveCount\":5}",
+    "SqsManagedSseEnabled": "true"
+  }
+}
+{
+  "Attributes": {
+    "QueueArn": "arn:aws:sqs:eu-central-1:123456789012:shop-orders-dlq",
+    "SqsManagedSseEnabled": "false"
+  }
+}
