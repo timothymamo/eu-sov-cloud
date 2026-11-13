@@ -1189,7 +1189,9 @@ func TestReleaseWorkflowIsClosed(t *testing.T) {
 // one checksums.txt covering every archive; and ci.yml's test job, the dry run
 // that runs on every pull request, installs the GoReleaser that release.yml
 // runs and builds those archives with it, failing unless each holds exactly its
-// own binary (check.DryRunVerifiesArchives).
+// own binary (check.DryRunVerifiesArchives). The files each archive ships are
+// LICENSE, README.md, the pages under docs/ (issue #149) and the sample
+// inventories under examples/ the walkthrough runs (issue #188).
 func TestReleaseArchivesHoldOneBinary(t *testing.T) {
 	t.Parallel()
 

@@ -17,7 +17,7 @@ subscription. The raw types are Azure Resource Manager resource types.
 | `cdn-shop` | `Microsoft.Cdn/profiles` | `unclassified` | |
 | `dns-shop` | `Microsoft.Network/dnsZones` | `unclassified` | |
 
-Assess it from a clone:
+Assess it from a clone (from a release archive, run `./shift2eu` in place of `./bin/shift2eu`):
 
 ```bash
 make build
