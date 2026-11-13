@@ -15,7 +15,7 @@ import (
 	"github.com/google/go-cmp/cmp"
 
 	"github.com/timothymamo/shift2eu/test/internal/releasetarget"
-	"github.com/timothymamo/shift2eu/test/lint"
+	"github.com/timothymamo/shift2eu/test/internal/shellcheck"
 )
 
 // fakeLinter is the golangci-lint make lint finds on PATH. It records the
@@ -369,7 +369,7 @@ func TestMakeLintRunsEveryReleaseTarget(t *testing.T) {
 				t.Errorf("make lint ran shellcheck with SHELLCHECK_OPTS=%q, want it unset: shellcheck puts its words before its own arguments, and --norc does not stop them",
 					run.ShellcheckOpts)
 			} else if diff := cmp.Diff(append(slices.Clone(wantShellcheckFlags), scripts...), run.Args); diff != "" {
-				t.Errorf("make lint ran shellcheck with the wrong arguments, want %q and every tracked shell script, as test/lint's IsShellScript picks them, in git's order (-want +got):\n%s",
+				t.Errorf("make lint ran shellcheck with the wrong arguments, want %q and every tracked shell script, as test/internal/shellcheck's IsShellScript picks them, in git's order (-want +got):\n%s",
 					wantShellcheckFlags, diff)
 			}
 
@@ -532,7 +532,7 @@ func writeFakeShellcheck(t *testing.T, dir string) {
 }
 
 // trackedShellScripts returns the files git tracks in root that
-// lint.IsShellScript calls shell scripts, in git's order: what make lint must
+// shellcheck.IsShellScript calls shell scripts, in git's order: what make lint must
 // hand shellcheck.
 func trackedShellScripts(t *testing.T, root string) []string {
 	t.Helper()
@@ -572,13 +572,13 @@ func trackedShellScripts(t *testing.T, root string) []string {
 			t.Fatalf("read %s: %v", rel, err)
 		}
 
-		if lint.IsShellScript(rel, src) {
+		if shellcheck.IsShellScript(rel, src) {
 			scripts = append(scripts, rel)
 		}
 	}
 
 	if len(scripts) == 0 {
-		t.Fatal("git tracks no shell script lint.IsShellScript picks, so the shellcheck pin would pin nothing")
+		t.Fatal("git tracks no shell script shellcheck.IsShellScript picks, so the shellcheck pin would pin nothing")
 	}
 
 	return scripts

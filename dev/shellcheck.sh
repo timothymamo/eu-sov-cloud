@@ -4,9 +4,10 @@
 #
 # A shell script is a tracked file whose name ends in .sh, or whose first line is a #! shebang that runs
 # sh or bash, directly or through env, skipping env's options and VAR=value assignments: the hooks under
-# .githooks are scripts by their shebang. It is the rule IsShellScript in test/lint/shellcheckdirective.go
-# states, and test/architecture's TestMakeLintRunsEveryReleaseTarget fails when the two pick different
-# files. The list comes from git, so a new script is checked without editing anything.
+# .githooks are scripts by their shebang. It is the rule IsShellScript in
+# test/internal/shellcheck/shellcheck.go states, and test/architecture's
+# TestMakeLintRunsEveryReleaseTarget fails when the two pick different files. The list comes from git, so
+# a new script is checked without editing anything.
 #
 # --norc keeps every .shellcheckrc out: shellcheck otherwise reads one from the script's directory and each
 # parent, then ~/.shellcheckrc or $XDG_CONFIG_HOME/shellcheckrc, any of which could silence a check and

@@ -1,4 +1,4 @@
-package lint
+package shellcheck
 
 import (
 	"bytes"
@@ -7,7 +7,7 @@ import (
 	"strings"
 )
 
-// CheckShellcheckDirectives returns what in src, the content of the file
+// CheckDirectives returns what in src, the content of the file
 // at path, breaks the rule that a shellcheck disable directive names the
 // codes it silences and gives its reason, one line each and in line
 // order, each of the form "path:line: <why>"; nil when nothing does.
@@ -19,7 +19,7 @@ import (
 // may name a workflow file too. Only its
 // disable field is checked: every code must be SC and four digits, and the
 // reason is the text after the next "#" on the same line.
-func CheckShellcheckDirectives(path string, src []byte) []string {
+func CheckDirectives(path string, src []byte) []string {
 	var problems []string
 	for i, line := range strings.Split(string(src), "\n") {
 		line = strings.TrimSuffix(line, "\r")
