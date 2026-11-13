@@ -79,9 +79,11 @@ func docSymlinkLine(rel, dir string) string {
 //
 // It walks the module root with skipDir, the walk of scanSources, so a testdata
 // directory, a directory whose name starts with . or _ and the root of another
-// module are left out exactly as the go command leaves them out: testdata is no
-// package source, so a .s file there is a fixture, as in
-// testdata/docsources/mod below.
+// module are left out as the go command leaves them out of ./...: a non-Go file
+// under testdata is no source of the held package, so a .s file there is a
+// fixture, as in testdata/docsources/mod below. A package there is still built
+// when it is imported by path, which this check does not cover (a follow-up to
+// #194).
 func TestDocPackagesHoldNoNonGoSource(t *testing.T) {
 	t.Parallel()
 
@@ -111,9 +113,9 @@ func TestDocPackagesHoldNoNonGoSource(t *testing.T) {
 // TestDocPackageNonGoSourceProbe runs the check over the probe tree
 // testdata/docsources/mod, laid out as the repository's test directory is: an
 // assembly file under test/e2e must be refused, and the one under
-// test/e2e/testdata, which is no package source, must not be. The repository
-// holds no such file, so without the probe nothing would prove the check bites
-// (the pin of issue #194).
+// test/e2e/testdata, which is no source of the held package, must not be. The
+// repository holds no such file, so without the probe nothing would prove the
+// check bites (the pin of issue #194).
 func TestDocPackageNonGoSourceProbe(t *testing.T) {
 	t.Parallel()
 
@@ -154,12 +156,12 @@ func TestDocPackageSymlinkProbe(t *testing.T) {
 	const elsewhere = "elsewhere"
 
 	for _, dir := range []string{"test/e2e", elsewhere} {
-		if err := os.MkdirAll(filepath.Join(root, filepath.FromSlash(dir)), 0o755); err != nil {
+		if err := os.MkdirAll(filepath.Join(root, filepath.FromSlash(dir)), 0o750); err != nil {
 			t.Fatal(err)
 		}
 	}
 	assembly := filepath.Join(root, elsewhere, "x_amd64.s")
-	if err := os.WriteFile(assembly, []byte("// what an import of test/e2e/x compiles\n"), 0o644); err != nil {
+	if err := os.WriteFile(assembly, []byte("// what an import of test/e2e/x compiles\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 
@@ -216,10 +218,10 @@ var docSourceTakenOut = []string{"test/architecture/internal"}
 // TestDocPackagesHoldNoNonGoSource and TestDocPackageNonGoSourceProbe, on the
 // entries a walk hands it (docPath): every extension of the toolchain's non-Go
 // sources, a symlink of any name and extension, the files that are neither and
-// pass, the testdata directory whose files are no package source, the tree the
-// rule takes out, and the trees it does not hold, whose files are no concern of
-// this rule. Each refusal is one line, in the order the walk handed the entries
-// over.
+// pass, the testdata directory whose files are left out of ./... and no source
+// of the held package, the tree the rule takes out, and the trees it does not
+// hold, whose files are no concern of this rule. Each refusal is one line, in
+// the order the walk handed the entries over.
 func TestDocSourceProblems(t *testing.T) {
 	t.Parallel()
 
@@ -259,8 +261,9 @@ func TestDocSourceProblems(t *testing.T) {
 			},
 		},
 		{
-			// testdata is no package source, so a non-Go source there is a
-			// fixture: the e2e tier keeps its inventories and goldens there.
+			// A file under testdata is left out of ./... and no source of the held
+			// package, so a non-Go source there is a fixture: the e2e tier keeps
+			// its inventories and goldens there.
 			name: "a file under a testdata directory is exempt",
 			files: []string{
 				"test/e2e/testdata/probe_amd64.s",
@@ -306,13 +309,16 @@ func TestDocSourceProblems(t *testing.T) {
 			want:     []string{docSymlinkLine("test/lint/probe.go", "test/lint")},
 		},
 		{
-			// testdata is no package source, but an import of a path that
-			// reaches it through a symlink still compiles: the exemption of a
-			// file there is no exemption of a link to it.
+			// A file under testdata is left out of ./... and no source of the
+			// held package, but an import of a path that reaches it through a
+			// symlink still compiles: the exemption of a file there is no
+			// exemption of a link to it.
 			name:     "a symlink under a testdata directory is refused too",
 			symlinks: []string{"test/e2e/testdata/probe", "test/e2e/testdata"},
-			want: []string{docSymlinkLine("test/e2e/testdata/probe", "test/e2e"),
-				docSymlinkLine("test/e2e/testdata", "test/e2e")},
+			want: []string{
+				docSymlinkLine("test/e2e/testdata/probe", "test/e2e"),
+				docSymlinkLine("test/e2e/testdata", "test/e2e"),
+			},
 		},
 		{
 			name:     "a symlink under a tree the rule takes out is no tree",
