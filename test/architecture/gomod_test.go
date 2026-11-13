@@ -7,27 +7,84 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
+	"strings"
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
 )
 
-// TestRootModuleHasNoReplace pins the auditor's M1 finding: a replace directive
+// TestModulesHaveNoReplace pins the auditor's M1 finding: a replace directive
 // in the root go.mod lets a fork or a local copy stand in for an import the
 // depguard rules allow by prefix, and neither depguard nor the third-party
 // exemption of the package check sees the difference, so the release would
-// carry code no rule vetted. The module holds none today, and none may be
-// added: a fork belongs in an allow entry the rule names, reviewed with it.
-func TestRootModuleHasNoReplace(t *testing.T) {
+// carry code no rule vetted. The same holds for tools/go.mod (issue #164): a
+// replace there would point make lint's actionlint at code nobody reviewed with
+// the pin. No tracked module outside a testdata directory, where the probes'
+// fixtures replace stand-in SDKs on purpose, holds one, and none may be added: a
+// fork belongs in an allow entry the rule names, reviewed with it.
+func TestModulesHaveNoReplace(t *testing.T) {
 	t.Parallel()
 
-	for _, replace := range goModReplaces(t, repositoryRoot(t)) {
-		t.Errorf("go.mod holds the replace directive %s: it puts code no rule vetted where an allow entry allows an import by prefix",
-			replace)
+	root := repositoryRoot(t)
+
+	for _, goMod := range trackedModules(t, root) {
+		for _, replace := range readGoMod(t, filepath.Join(root, filepath.FromSlash(goMod))).replaces() {
+			t.Errorf("%s holds the replace directive %s: it puts code no rule vetted where an allow entry allows an import by prefix, or where the tools module pins a lint tool",
+				goMod, replace)
+		}
 	}
 }
 
-// TestGoModReplaces pins the check TestRootModuleHasNoReplace trusts, over
+// TestToolsModuleFollowsTheRootModulesGo pins the auditor's LOW-3 finding (issue
+// #164): tools/go.mod is a module of its own, which Renovate bumps separately,
+// so its go directive, and its toolchain directive when either module has one,
+// could drift from the root's. make lint would then build actionlint with a
+// different toolchain from the one the product builds with, or ask for a go
+// the VM and CI do not have. Both read through the go command's own parser.
+func TestToolsModuleFollowsTheRootModulesGo(t *testing.T) {
+	t.Parallel()
+
+	root := repositoryRoot(t)
+	rootMod := readGoMod(t, filepath.Join(root, "go.mod"))
+	toolsMod := readGoMod(t, filepath.Join(root, "tools", "go.mod"))
+
+	if rootMod.Go == "" {
+		t.Fatal("go.mod has no go directive")
+	}
+
+	if toolsMod.Go != rootMod.Go {
+		t.Errorf("tools/go.mod has go %q, want go.mod's %q: the tools module builds actionlint with the toolchain the product builds with",
+			toolsMod.Go, rootMod.Go)
+	}
+
+	if toolsMod.Toolchain != rootMod.Toolchain {
+		t.Errorf("tools/go.mod has toolchain %q, want go.mod's %q (empty for none): the tools module builds actionlint with the toolchain the product builds with",
+			toolsMod.Toolchain, rootMod.Toolchain)
+	}
+}
+
+// TestTrackedModulesFindsTheRootAndToolsModules pins the walk the two tests
+// above trust: a walk that found nothing would let every module through.
+func TestTrackedModulesFindsTheRootAndToolsModules(t *testing.T) {
+	t.Parallel()
+
+	modules := trackedModules(t, repositoryRoot(t))
+
+	for _, want := range []string{"go.mod", "tools/go.mod"} {
+		if !slices.Contains(modules, want) {
+			t.Errorf("trackedModules = %q, want it to hold %s", modules, want)
+		}
+	}
+
+	for _, goMod := range modules {
+		if slices.Contains(strings.Split(goMod, "/"), "testdata") {
+			t.Errorf("trackedModules holds %s, under a testdata directory, which the go command ignores and whose probes replace on purpose", goMod)
+		}
+	}
+}
+
+// TestGoModReplaces pins the check TestModulesHaveNoReplace trusts, over
 // go.mod files written here: a single-line replace directive, a block of them,
 // a local directory in place of a module, and the three spellings a hand
 // scanner misses - a bare carriage return after the word, with and without a
@@ -104,8 +161,8 @@ func TestGoModReplaces(t *testing.T) {
 				t.Fatalf("write go.mod: %v", err)
 			}
 
-			if diff := cmp.Diff(tc.want, goModReplaces(t, dir)); diff != "" {
-				t.Errorf("goModReplaces(-want +got):\n%s", diff)
+			if diff := cmp.Diff(tc.want, readGoMod(t, filepath.Join(dir, "go.mod")).replaces()); diff != "" {
+				t.Errorf("replaces(-want +got):\n%s", diff)
 			}
 		})
 	}
@@ -140,18 +197,28 @@ func TestRepositoryHasNoWorkspaceOrVendor(t *testing.T) {
 	}
 }
 
-// goModReplaces returns the replace directives the go command reads from the
-// go.mod in dir, each as "old => new" with the version of a module
-// replacement, in the order go.mod holds them. It asks the go command rather
-// than parsing the file: go.mod's lexer reads a bare carriage return as
-// whitespace, so replace\rexample.com/lib => ... and replace\r( + entries +
-// ) are directives the go command applies, and a hand scanner that reads only
-// a space, a tab or a parenthesis after the word reports neither.
-func goModReplaces(t *testing.T, dir string) []string {
+// goMod is what the go command reads from a go.mod: its go and toolchain
+// directives and its replace directives.
+type goMod struct {
+	Go        string
+	Toolchain string
+	Replace   []struct {
+		Old moduleRef
+		New moduleRef
+	}
+}
+
+// readGoMod reads the go.mod at path with the go command's own parser, go mod
+// edit -json, rather than parsing the file: go.mod's lexer reads a bare
+// carriage return as whitespace, so replace\rexample.com/lib => ... and
+// replace\r( + entries + ) are directives the go command applies, and a hand
+// scanner that reads only a space, a tab or a parenthesis after the word
+// reports neither.
+func readGoMod(t *testing.T, path string) goMod {
 	t.Helper()
 
-	cmd := exec.CommandContext(t.Context(), "go", "mod", "edit", "-json")
-	cmd.Dir = dir
+	cmd := exec.CommandContext(t.Context(), "go", "mod", "edit", "-json", path)
+	cmd.Dir = filepath.Dir(path)
 	// No toolchain, proxy or workspace of the developer's may decide what
 	// the go command reads: the guard is about the file, and the check runs
 	// offline.
@@ -164,31 +231,57 @@ func goModReplaces(t *testing.T, dir string) []string {
 
 	out, err := cmd.Output()
 	if err != nil {
-		t.Fatalf("go mod edit -json in %s: %v", dir, err)
+		t.Fatalf("go mod edit -json %s: %v", path, err)
 	}
 
-	var parsed struct {
-		Replace []struct {
-			Old moduleRef
-			New moduleRef
-		}
-	}
+	var parsed goMod
 
 	if err := json.Unmarshal(out, &parsed); err != nil {
-		t.Fatalf("decode go mod edit -json in %s: %v", dir, err)
+		t.Fatalf("decode go mod edit -json %s: %v", path, err)
 	}
 
-	replaces := make([]string, 0, len(parsed.Replace))
+	return parsed
+}
 
-	for _, replace := range parsed.Replace {
-		replaces = append(replaces, replace.Old.String()+" => "+replace.New.String())
-	}
-
-	if len(replaces) == 0 {
+// replaces returns the module's replace directives, each as "old => new" with
+// the version of a module replacement, in the order go.mod holds them, or nil
+// for none.
+func (mod goMod) replaces() []string {
+	if len(mod.Replace) == 0 {
 		return nil
 	}
 
+	replaces := make([]string, 0, len(mod.Replace))
+
+	for _, replace := range mod.Replace {
+		replaces = append(replaces, replace.Old.String()+" => "+replace.New.String())
+	}
+
 	return replaces
+}
+
+// trackedModules returns the slash-separated path of every go.mod git tracks in
+// root outside a testdata directory, which the go command ignores and where the
+// probes' fixture modules replace stand-in SDKs on purpose.
+func trackedModules(t *testing.T, root string) []string {
+	t.Helper()
+
+	out, err := exec.CommandContext(t.Context(), "git", "-C", root, "ls-files", "-z", "--", "go.mod", "**/go.mod").Output()
+	if err != nil {
+		t.Fatalf("git ls-files in %s: %v", root, err)
+	}
+
+	var modules []string
+
+	for _, name := range strings.Split(strings.TrimSuffix(string(out), "\x00"), "\x00") {
+		if name == "" || slices.Contains(strings.Split(name, "/"), "testdata") {
+			continue
+		}
+
+		modules = append(modules, name)
+	}
+
+	return modules
 }
 
 // moduleRef is a module path and, for a module replacement, the version it

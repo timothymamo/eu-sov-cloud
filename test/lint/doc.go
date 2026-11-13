@@ -2,7 +2,17 @@
 // cannot express, written as plain tests, and the probe that proves a
 // golangci-lint rule still fires. make lint runs them after golangci-lint, and
 // as they carry no build tag, make test, make check and make cover (CI's Test
-// job) run them too. The package has no code of its own.
+// job) run them too. Its only code is shellcheckdirective.go, the checker the
+// shellcheck directive rule below runs, exported for the external lint_test
+// package.
+//
+// TestTrackedShellScriptsNameTheirShellcheckCodes holds every shell script git
+// tracks (IsShellScript: a .sh file, or a sh or bash shebang, the hooks under
+// .githooks among them) to the rule that a shellcheck disable directive names
+// the codes it silences, each SC and four digits, never all, and gives its
+// reason after a second "#" on the same line (issue #164), as nolintlint does
+// for a Go nolint directive. CheckShellcheckDirectives is the checker; make
+// lint runs shellcheck and actionlint themselves.
 //
 // TestSourcesHideNothingFromDepguard reads every Go file the go command's
 // ./... pattern reaches, whatever its build constraints, so every file make

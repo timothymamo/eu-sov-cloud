@@ -88,8 +88,13 @@ fmt: ## Format code (gofumpt + goimports via golangci-lint)
 # make lint runs golangci-lint natively first, for the host's GOOS/GOARCH with cgo at the host's default (the
 # build make test's -race compiles; it warns when the host's cgo is off, and make test, so make check,
 # refuses such a host), then once per release target with cgo off, and last runs the source rules in
-# test/lint natively, with SHIFT2EU_LINT_PROBES=require so the forbidigo probes must run. It attempts every
-# run and fails at the end if any of them failed. Each golangci-lint run waits for
+# test/lint natively, with SHIFT2EU_LINT_PROBES=require so the forbidigo probes must run. Between the two, once
+# as they do not depend on the target, dev/shellcheck.sh runs shellcheck --norc on every shell script git tracks
+# and dev/actionlint.sh runs actionlint, pinned in tools/go.mod, on .github/workflows, handing it the path of
+# the shellcheck on PATH for their run: scripts (issue #164,
+# docs/adr/0022-lint-shell-scripts-and-workflows-with-shellcheck-and-actionlint.md). Both fail when no
+# shellcheck is installed; the go command builds actionlint for the host. It attempts every run and fails at
+# the end if any of them failed. Each golangci-lint run waits for
 # golangci-lint's lock (--allow-serial-runners) instead of failing while another worktree lints, and sees
 # the same build settings: GOFLAGS=-mod=readonly (a non-empty GOFLAGS also overrides the go env file's, so
 # a -tags of yours cannot take files out of lint), GOAMD64=v1 and GOARM64=v8.0 (the levels the release
@@ -102,7 +107,7 @@ fmt: ## Format code (gofumpt + goimports via golangci-lint)
 # root is $XDG_CACHE_HOME/shift2eu/golangci-lint, else ~/.cache/shift2eu/golangci-lint, outside the repository
 # so worktrees share it; GOLANGCI_LINT_CACHE overrides it. To clear the caches, rm -rf the root.
 .PHONY: lint
-lint: ## Lint natively and for every release target, incl. the architecture (depguard) rules and test/lint
+lint: ## Lint natively and for every release target, incl. the architecture (depguard) rules, test/lint, shellcheck and actionlint
 	@cache="$${GOLANGCI_LINT_CACHE:-$${XDG_CACHE_HOME:-$${HOME:?set HOME or GOLANGCI_LINT_CACHE}/.cache}/shift2eu/golangci-lint}"; \
 	export GOFLAGS=-mod=readonly GOAMD64=v1 GOARM64=v8.0 GOWORK=off; \
 	unset GOEXPERIMENT; \
@@ -120,12 +125,15 @@ lint: ## Lint natively and for every release target, incl. the architecture (dep
 		GOOS="$$goos" GOARCH="$$goarch" CGO_ENABLED=0 GOLANGCI_LINT_CACHE="$$cache/$$goos-$$goarch" \
 			golangci-lint run --allow-serial-runners || failed="$$failed $$target"; \
 	done; \
+	dev/shellcheck.sh || failed="$$failed shellcheck"; \
+	( unset GOOS GOARCH CGO_ENABLED; dev/actionlint.sh ) || failed="$$failed actionlint"; \
 	( unset GOOS GOARCH CGO_ENABLED; SHIFT2EU_LINT_PROBES=require go test -count=1 ./test/lint/ ) || failed="$$failed test/lint"; \
 	if [ -n "$$failed" ]; then echo "lint: failed for:$$failed" >&2; exit 1; fi
 
 .PHONY: tidy
-tidy: ## Tidy go.mod and go.sum
+tidy: ## Tidy go.mod and go.sum, and the lint tools' tools/go.mod and tools/go.sum
 	go mod tidy
+	go -C tools mod tidy
 
 .PHONY: openapi
 openapi: ## Regenerate api/openapi.bundled.json, the self-contained OpenAPI document each release publishes (issue #139)
@@ -151,8 +159,11 @@ cover: ## Unit tests with a coverage report in coverage.out
 	go tool cover -func=coverage.out | tail -n 1
 
 .PHONY: vuln
-vuln: ## Scan code and dependencies for known vulnerabilities
+# The second scan covers actionlint, the lint tool tools/go.mod pins: a module of its own, so ./... never
+# reaches it (ADR 0022).
+vuln: ## Scan code and dependencies, and the lint tools, for known vulnerabilities
 	govulncheck ./...
+	govulncheck -C tools github.com/rhysd/actionlint/cmd/actionlint
 
 .PHONY: check
 check: lint test vuln ## Everything CI gates on; run before every commit

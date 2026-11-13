@@ -49,6 +49,9 @@ jobs:
         run: |
           govulncheck -version
           govulncheck ./...
+      # actionlint, the lint tool tools/go.mod pins in a module of its own, which ./... never reaches (ADR 0022).
+      - name: govulncheck the lint tools
+        run: govulncheck -C tools github.com/rhysd/actionlint/cmd/actionlint
 
   codeql:
     name: CodeQL
