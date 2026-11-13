@@ -175,11 +175,13 @@ moves or deletes a tag.
    `--failed` re-run does not re-run the successful `latest` job, so it reuses the first attempt's
    `latest` decision (issue #173). `publish` refuses a stale `true` when a higher release is already
    GitHub's "Latest" (`GitHub's latest release is <tag>, higher than <this tag>: the latest decision
-   is stale, ...`) and leaves the draft; the images' `latest` tag has no such guard. So when a higher
-   release tag has been merged into `main` since the first attempt, always tell the maintainer to
-   re-run the whole run (`gh run rerun <id>`, without `--failed`), which runs `latest` again. Until it
-   is published, the images of the draft release are public already (ADR 0015). Then check the release
-   again from the top of this step.
+   is stale, ...`) and leaves the draft. When that "Latest" is a pre-release tag (`vX.Y.Z-rc.N`, which
+   `sort -V` ranks above `vX.Y.Z`), someone un-flagged its release by hand: tell the maintainer to mark
+   it a pre-release again (or set the correct "Latest") and re-run the release run. The images'
+   `latest` tag has no such guard. So when a higher release tag has been merged into `main` since the
+   first attempt, always tell the maintainer to re-run the whole run (`gh run rerun <id>`, without
+   `--failed`), which runs `latest` again. Until it is published, the images of the draft release are
+   public already (ADR 0015). Then check the release again from the top of this step.
    Report the result of the run's `verify-archives` job, "Verify the published archives", the
    independent check of every published archive and `checksums.txt` against their digests and their
    build provenance, and of GitHub's "Latest" release, which must follow the same highest-release rule

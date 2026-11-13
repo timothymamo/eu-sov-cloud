@@ -393,11 +393,16 @@ attestations, pushed to the registry beside the image.
     issue #173). `publish` therefore refuses a stale `true`: while `LATEST` is `true`, it reads
     GitHub's current "Latest" (`releases/latest`, `tag_name`) before anything else, and when that is
     another tag, higher by `sort -V`, it fails and leaves the release a draft; only the API's 404 (no
-    "Latest" yet) passes, and any other failed read fails the step. The images' `latest` tag has no
-    such guard: a partial re-run of a failed image job pushes `latest` from that stale decision. So
-    when a higher release tag has been merged into `main` since the first attempt, always re-run the
-    whole run (`gh run rerun <id>`, without `--failed`), which runs `latest` again. The `release-tag`
-    skill holds the maintainer's steps.
+    "Latest" yet) passes, and any other failed read fails the step. GNU `sort -V` ranks a pre-release
+    (`vX.Y.Z-rc.N`) above `vX.Y.Z`, but `releases/latest` never returns a release flagged as a
+    pre-release, GoReleaser flags rc tags as pre-releases (`prerelease: auto`) and `verify-archives`
+    refuses a pre-release as "Latest"; so the guard meets such a tag only when a release with a
+    pre-release tag name was un-flagged by hand. It then fails closed and leaves the draft: the
+    maintainer marks that release a pre-release again (or sets the correct "Latest") and re-runs the
+    release run. The images' `latest` tag has no such guard: a partial re-run of a failed image job
+    pushes `latest` from that stale decision. So when a higher release tag has been merged into
+    `main` since the first attempt, always re-run the whole run (`gh run rerun <id>`, without
+    `--failed`), which runs `latest` again. The `release-tag` skill holds the maintainer's steps.
   - **No fake-`gh` dry run.** The scripts of `publish`'s check and `verify-archives` run only in a
     release: CI does not run them against a fake `gh`. They are pinned verbatim by `check.ReleaseWorkflow`,
     were run against a stub `gh` and sample releases when written and again in review, and fail closed
@@ -449,8 +454,8 @@ attestations, pushed to the registry beside the image.
     highest, GitHub's "Latest" must be the tag. When the highest release tag's release is published,
     GitHub's "Latest" must not be the tag. When the API answers 404 for the highest release tag's
     release (not published yet, for any reason), the check is skipped with a `::notice::`, the same
-    window and handling as `verify`'s `latest` check; any other answer fails the job. Like `verify`, it detects a bad release rather than prevents
-    one, and a failure is handled the same way.
+    window and handling as `verify`'s `latest` check; any other answer fails the job. Like `verify`,
+    it detects a bad release rather than prevents one, and a failure is handled the same way.
   - `check.ReleaseWorkflow` pins the three new jobs as it pins the others, with the attest action as
     `actions/attest-build-provenance` by commit. CI's `test` job (`.github/scripts/verify-archives.sh`)
     mirrors the hand-over on a snapshot: the files the upload patterns pick must pass
