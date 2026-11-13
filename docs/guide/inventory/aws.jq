@@ -3,10 +3,11 @@
 # (docs/adr/0006-json-inventory-file-format-v1.md). Run it with -n on every file
 # the guide's commands wrote, from one region or several:
 #
-#   jq -n -f docs/guide/inventory/aws.jq aws-inventory/*/*.json > inventory.json
+#   jq -n -f docs/guide/inventory/aws.jq inventories/aws/*/*.json > inventories/aws.inventory.json
 #
 # It recognises each input by its shape, not by its file name, and a file may hold
-# several JSON values one after the other:
+# several JSON values one after the other. The guide's --query projections keep
+# only the fields read here; the full, unprojected output is read the same way:
 #
 #   {"Reservations": ...}          ec2 describe-instances
 #   {"Volumes": ...}               ec2 describe-volumes
@@ -18,21 +19,35 @@
 #   {"cluster": ...}               eks describe-cluster
 #   {"nodegroup": ...}             eks describe-nodegroup
 #   {"Functions": ...}             lambda list-functions
-#   {"Attributes": {"QueueArn"}}   sqs get-queue-attributes --attribute-names All
-#   {"Results": [...]}             configservice select-resource-config (optional)
+#   {"Attributes": {"QueueArn"}}   sqs get-queue-attributes
+#   {"Results": [...]}             configservice select-resource-config (optional;
+#                                  one value per page if you page by hand)
 #
 # Resource IDs are short (an instance ID, a bucket or queue name), never an ARN,
 # which would carry the account ID. Anything it cannot classify is "unclassified"
 # with its rawType (a CloudFormation type), so it shows up as a blocker.
+#
+# The nodes of an EKS cluster are left out, the cluster stands for them: the Auto
+# Scaling groups of its managed node groups, and instances and Auto Scaling groups
+# tagged eks:cluster-name or kubernetes.io/cluster/<name>, with the volumes that
+# are deleted with such an instance (a persistent volume, which outlives its
+# node, stays).
 
 # The CloudFormation types the service calls above cover. AWS Config lists them
-# too; those entries are dropped, so a resource is not listed twice.
+# too; those entries are dropped, so a resource is not listed twice. An Aurora
+# cluster (AWS::RDS::DBCluster) is covered by its instances, which
+# rds describe-db-instances lists.
 def covered_types:
   [
     "AWS::EC2::Instance", "AWS::EC2::Volume", "AWS::AutoScaling::AutoScalingGroup",
-    "AWS::S3::Bucket", "AWS::RDS::DBInstance", "AWS::EKS::Cluster",
+    "AWS::S3::Bucket", "AWS::RDS::DBInstance", "AWS::RDS::DBCluster", "AWS::EKS::Cluster",
     "AWS::Lambda::Function", "AWS::SQS::Queue"
   ];
+
+# True for an instance or an Auto Scaling group that is a Kubernetes node, by its
+# tag keys.
+def is_node:
+  any(.Tags[]?.Key // empty; . == "eks:cluster-name" or startswith("kubernetes.io/cluster/"));
 
 # The region of an availability zone: eu-central-1a -> eu-central-1.
 def zone_region: if . == null or . == "" then null else sub("[a-z]$"; "") end;
@@ -77,25 +92,33 @@ def inventory($source):
 | ([$docs[] | .Snapshots? // empty | .[] | .VolumeId] | unique) as $snapshotted
 | ([$docs[] | select(.Bucket? and has("Versioning")) | select(.Versioning.Status? == "Enabled") | .Bucket] | unique) as $versioned
 | [$docs[] | .nodegroup? // empty] as $nodegroups
+| [$docs[] | .Reservations? // empty | .[].Instances[]? | select(is_node) | .InstanceId] as $nodes
+| ([$nodegroups[] | .resources.autoScalingGroups[]?.name]
+   + [$docs[] | .AutoScalingGroups? // empty | .[] | select(is_node) | .AutoScalingGroupName]
+   | unique) as $nodegroupasgs
 | [
     # EC2 instances. One launched by an Auto Scaling group is left out: the group
-    # stands for it.
-    ($docs[] | .Reservations? // empty | .[].Instances[]
+    # stands for it. A Kubernetes node is left out: its cluster stands for it.
+    ($docs[] | .Reservations? // empty | .[].Instances[]?
       | select(.State.Name != "terminated" and .State.Name != "shutting-down")
       | select([.Tags[]?.Key] | index("aws:autoscaling:groupName") | not)
+      | select(is_node | not)
       | {
           id: .InstanceId,
           rawType: "AWS::EC2::Instance",
           category: "compute.vm",
           region: (.Placement.AvailabilityZone | zone_region),
           capabilities: [
-            cap("ipv6"; any(.NetworkInterfaces[]?; (.Ipv6Addresses // []) | length > 0)),
+            cap("ipv6"; any(.NetworkInterfaces[]?;
+              ((.Ipv6Addresses // []) | length > 0) or (.Ipv6AddressCount // 0) > 0)),
             cap("snapshots"; any(.BlockDeviceMappings[]?; .Ebs.VolumeId | IN($snapshotted[])))
           ]
         }),
 
-    # EBS volumes.
+    # EBS volumes. A Kubernetes node's root volume, deleted with the node, is
+    # left out.
     ($docs[] | .Volumes? // empty | .[]
+      | select(any(.Attachments[]?; .DeleteOnTermination == true and (.InstanceId | IN($nodes[]))) | not)
       | {
           id: .VolumeId,
           rawType: "AWS::EC2::Volume",
@@ -107,8 +130,10 @@ def inventory($source):
           ]
         }),
 
-    # Auto Scaling groups.
+    # Auto Scaling groups. The group of a managed node group, or one tagged as a
+    # Kubernetes node group, is left out: its cluster stands for it.
     ($docs[] | .AutoScalingGroups? // empty | .[]
+      | select(.AutoScalingGroupName | IN($nodegroupasgs[]) | not)
       | {
           id: .AutoScalingGroupName,
           rawType: "AWS::AutoScaling::AutoScalingGroup",
@@ -134,7 +159,7 @@ def inventory($source):
         }),
 
     # RDS DB instances: the engine decides the category; any other engine is
-    # unclassified.
+    # unclassified. An Aurora cluster is assessed per instance.
     ($docs[] | .DBInstances? // empty | .[]
       | (if .Engine == "postgres" or .Engine == "aurora-postgresql" then "database.postgresql"
          elif .Engine == "mysql" or .Engine == "aurora-mysql" then "database.mysql"
@@ -152,10 +177,12 @@ def inventory($source):
           ] end)
         }),
 
-    # EKS clusters, with their managed node groups.
+    # EKS clusters, with their managed node groups. Cluster names are unique per
+    # region only, so a node group matches by name and region.
     ($docs[] | .cluster? // empty
       | .name as $name
-      | [$nodegroups[] | select(.clusterName == $name)] as $groups
+      | (.arn | arn_region) as $region
+      | [$nodegroups[] | select(.clusterName == $name and (.nodegroupArn | arn_region) == $region)] as $groups
       | {
           id: .name,
           rawType: "AWS::EKS::Cluster",

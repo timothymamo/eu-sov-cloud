@@ -89,6 +89,15 @@
       ]
     },
     {
+      "id": "pvc-00000000-0000-0000-0000-000000000000",
+      "rawType": "Microsoft.Compute/disks",
+      "category": "storage.block",
+      "region": "westeurope",
+      "capabilities": [
+        "encryption-at-rest"
+      ]
+    },
+    {
       "id": "sb-shop-invoices",
       "rawType": "Microsoft.ServiceBus/namespaces/queues",
       "category": "messaging.queue",
@@ -98,12 +107,27 @@
       ]
     },
     {
+      "id": "sb-shop-order-events",
+      "rawType": "Microsoft.ServiceBus/namespaces/topics",
+      "category": "unclassified",
+      "region": "westeurope"
+    },
+    {
       "id": "sb-shop-orders",
       "rawType": "Microsoft.ServiceBus/namespaces/queues",
       "category": "messaging.queue",
       "region": "westeurope",
       "capabilities": [
         "dead-letter-queue"
+      ]
+    },
+    {
+      "id": "shop-thumbnail-jobs",
+      "rawType": "Microsoft.Storage/storageAccounts/queueServices/queues",
+      "category": "messaging.queue",
+      "region": "westeurope",
+      "capabilities": [
+        "encryption-at-rest"
       ]
     },
     {

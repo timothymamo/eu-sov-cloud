@@ -1,16 +1,12 @@
 {
-    "Functions": [
-        {
-            "FunctionName": "shop-thumbnailer",
-            "FunctionArn": "arn:aws:lambda:eu-central-1:123456789012:function:shop-thumbnailer",
-            "Runtime": "python3.13",
-            "MemorySize": 256
-        },
-        {
-            "FunctionName": "shop-orders",
-            "FunctionArn": "arn:aws:lambda:eu-central-1:123456789012:function:shop-orders",
-            "Runtime": "nodejs22.x",
-            "MemorySize": 128
-        }
-    ]
+  "Functions": [
+    {
+      "FunctionName": "shop-thumbnailer",
+      "FunctionArn": "arn:aws:lambda:eu-central-1:123456789012:function:shop-thumbnailer"
+    },
+    {
+      "FunctionName": "shop-orders",
+      "FunctionArn": "arn:aws:lambda:eu-central-1:123456789012:function:shop-orders"
+    }
+  ]
 }

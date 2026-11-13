@@ -1,22 +1,59 @@
 {
-    "Volumes": [
+  "Volumes": [
+    {
+      "VolumeId": "vol-0123456789abcdef0",
+      "AvailabilityZone": "eu-central-1a",
+      "Encrypted": true,
+      "Attachments": [
         {
-            "VolumeId": "vol-0123456789abcdef0",
-            "AvailabilityZone": "eu-central-1a",
-            "Size": 100,
-            "VolumeType": "gp3",
-            "Encrypted": true,
-            "State": "in-use",
-            "Attachments": [{"InstanceId": "i-0123456789abcdef0", "VolumeId": "vol-0123456789abcdef0", "State": "attached"}]
-        },
-        {
-            "VolumeId": "vol-0123456789abcdef1",
-            "AvailabilityZone": "eu-central-1b",
-            "Size": 20,
-            "VolumeType": "gp3",
-            "Encrypted": false,
-            "State": "in-use",
-            "Attachments": [{"InstanceId": "i-0123456789abcdef1", "VolumeId": "vol-0123456789abcdef1", "State": "attached"}]
+          "InstanceId": "i-0123456789abcdef0",
+          "DeleteOnTermination": true
         }
-    ]
+      ]
+    },
+    {
+      "VolumeId": "vol-0123456789abcdef1",
+      "AvailabilityZone": "eu-central-1b",
+      "Encrypted": false,
+      "Attachments": [
+        {
+          "InstanceId": "i-0123456789abcdef1",
+          "DeleteOnTermination": true
+        }
+      ]
+    },
+    {
+      "VolumeId": "vol-0123456789abcdef4",
+      "AvailabilityZone": "eu-central-1a",
+      "Encrypted": true,
+      "Attachments": [
+        {
+          "InstanceId": "i-0123456789abcdef4",
+          "DeleteOnTermination": true
+        }
+      ]
+    },
+    {
+      "VolumeId": "vol-0123456789abcdef5",
+      "AvailabilityZone": "eu-central-1b",
+      "Encrypted": true,
+      "Attachments": [
+        {
+          "InstanceId": "i-0123456789abcdef5",
+          "DeleteOnTermination": true
+        }
+      ]
+    },
+    {
+      "VolumeId": "vol-0123456789abcdef6",
+      "AvailabilityZone": "eu-central-1b",
+      "Encrypted": true,
+      "Attachments": [
+        {
+          "InstanceId": "i-0123456789abcdef5",
+          "DeleteOnTermination": false
+        }
+      ]
+    }
+  ]
 }

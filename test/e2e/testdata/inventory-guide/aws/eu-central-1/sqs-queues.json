@@ -1,17 +1,13 @@
 {
-    "Attributes": {
-        "QueueArn": "arn:aws:sqs:eu-central-1:123456789012:shop-orders",
-        "ApproximateNumberOfMessages": "0",
-        "VisibilityTimeout": "30",
-        "RedrivePolicy": "{\"deadLetterTargetArn\":\"arn:aws:sqs:eu-central-1:123456789012:shop-orders-dlq\",\"maxReceiveCount\":5}",
-        "SqsManagedSseEnabled": "true"
-    }
+  "Attributes": {
+    "QueueArn": "arn:aws:sqs:eu-central-1:123456789012:shop-orders",
+    "RedrivePolicy": "{\"deadLetterTargetArn\":\"arn:aws:sqs:eu-central-1:123456789012:shop-orders-dlq\",\"maxReceiveCount\":5}",
+    "SqsManagedSseEnabled": "true"
+  }
 }
 {
-    "Attributes": {
-        "QueueArn": "arn:aws:sqs:eu-central-1:123456789012:shop-orders-dlq",
-        "ApproximateNumberOfMessages": "0",
-        "VisibilityTimeout": "30",
-        "SqsManagedSseEnabled": "false"
-    }
+  "Attributes": {
+    "QueueArn": "arn:aws:sqs:eu-central-1:123456789012:shop-orders-dlq",
+    "SqsManagedSseEnabled": "false"
+  }
 }

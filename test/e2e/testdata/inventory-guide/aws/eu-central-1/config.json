@@ -1,12 +1,26 @@
 {
-    "Results": [
-        "{\"resourceId\":\"E0123456789ABC\",\"resourceType\":\"AWS::CloudFront::Distribution\",\"awsRegion\":\"global\"}",
-        "{\"resourceId\":\"Z0123456789ABCDEFGHIJ\",\"resourceName\":\"shop.example.com.\",\"resourceType\":\"AWS::Route53::HostedZone\",\"awsRegion\":\"global\"}",
-        "{\"resourceId\":\"arn:aws:elasticloadbalancing:eu-central-1:123456789012:loadbalancer/app/shop-alb/0123456789abcdef\",\"resourceName\":\"shop-alb\",\"resourceType\":\"AWS::ElasticLoadBalancingV2::LoadBalancer\",\"awsRegion\":\"eu-central-1\"}",
-        "{\"resourceId\":\"i-0123456789abcdef0\",\"resourceType\":\"AWS::EC2::Instance\",\"awsRegion\":\"eu-central-1\"}",
-        "{\"resourceId\":\"shop-assets-example\",\"resourceName\":\"shop-assets-example\",\"resourceType\":\"AWS::S3::Bucket\",\"awsRegion\":\"eu-central-1\"}"
-    ],
-    "QueryInfo": {
-        "SelectFields": [{"Name": "resourceId"}, {"Name": "resourceName"}, {"Name": "resourceType"}, {"Name": "awsRegion"}]
-    }
+  "Results": [
+    "{\"resourceId\":\"E0123456789ABC\",\"resourceType\":\"AWS::CloudFront::Distribution\",\"awsRegion\":\"global\"}",
+    "{\"resourceId\":\"Z0123456789ABCDEFGHIJ\",\"resourceName\":\"shop.example.com.\",\"resourceType\":\"AWS::Route53::HostedZone\",\"awsRegion\":\"global\"}",
+    "{\"resourceId\":\"arn:aws:elasticloadbalancing:eu-central-1:123456789012:loadbalancer/app/shop-alb/0123456789abcdef\",\"resourceName\":\"shop-alb\",\"resourceType\":\"AWS::ElasticLoadBalancingV2::LoadBalancer\",\"awsRegion\":\"eu-central-1\"}",
+    "{\"resourceId\":\"i-0123456789abcdef0\",\"resourceType\":\"AWS::EC2::Instance\",\"awsRegion\":\"eu-central-1\"}",
+    "{\"resourceId\":\"shop-assets-example\",\"resourceName\":\"shop-assets-example\",\"resourceType\":\"AWS::S3::Bucket\",\"awsRegion\":\"eu-central-1\"}",
+    "{\"resourceId\":\"cluster-0123456789ABCDEFGHIJKLMNOP\",\"resourceName\":\"shop-aurora\",\"resourceType\":\"AWS::RDS::DBCluster\",\"awsRegion\":\"eu-central-1\"}"
+  ],
+  "QueryInfo": {
+    "SelectFields": [
+      {
+        "Name": "resourceId"
+      },
+      {
+        "Name": "resourceName"
+      },
+      {
+        "Name": "resourceType"
+      },
+      {
+        "Name": "awsRegion"
+      }
+    ]
+  }
 }

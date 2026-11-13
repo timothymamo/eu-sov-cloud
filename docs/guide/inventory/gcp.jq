@@ -3,11 +3,13 @@
 # (docs/adr/0006-json-inventory-file-format-v1.md). Run it with -n on every file
 # the guide's commands wrote:
 #
-#   jq -n -f docs/guide/inventory/gcp.jq gcp-inventory/*.json > inventory.json
+#   jq -n -f docs/guide/inventory/gcp.jq inventories/gcp/*.json > inventories/gcp.inventory.json
 #
 # The Cloud Asset Inventory listing (gcloud asset search-all-resources) is the list
 # of resources; the other calls only add the details the capabilities need. Each
-# element of each input is recognised by its shape, not by its file name:
+# element of each input is recognised by its shape, not by its file name. The
+# guide's --format projections keep only the fields read here; the full output is
+# read the same way:
 #
 #   {"assetType": ..., "name": "//..."}       asset search-all-resources
 #   {"kind": "compute#instance"}              compute instances list
@@ -21,6 +23,10 @@
 # Resource IDs are short (the last part of the resource name), never the full name,
 # which carries the project. Anything it cannot classify is "unclassified" with its
 # rawType (a Cloud Asset Inventory asset type), so it shows up as a blocker.
+#
+# The nodes of a GKE cluster are left out, the cluster stands for them: the
+# managed instance groups its node pools name (instanceGroupUrls), and instances
+# and disks labelled goog-gke-node.
 
 # A key that names the same resource in an asset name
 # (//compute.googleapis.com/projects/p/zones/z/instances/n), a selfLink
@@ -28,8 +34,9 @@
 # Pub/Sub name (projects/p/subscriptions/s): the path from "projects/" on, with
 # zones and regions written as locations. A bucket's key is its name.
 def key:
+  if . == null then null else
   (if test("projects/") then capture("(?<k>projects/.*)$").k else sub("^//[^/]+/"; "") end)
-  | gsub("/(zones|regions)/"; "/locations/");
+  | gsub("/(zones|regions)/"; "/locations/") end;
 
 # A zone: europe-west1-b.
 def is_zone: test("^[a-z]+-[a-z]+[0-9]+-[a-z]$");
@@ -78,9 +85,12 @@ def details(f; k): map(select(f)) | INDEX(k);
 | ($all | details(.kind? == "storage#bucket"; .name)) as $buckets
 | ($all | details((.selfLink? // "") | startswith("https://container.googleapis.com/"); .selfLink | key)) as $clusters
 | ($all | details((.name? // "") | test("^projects/[^/]+/subscriptions/"); .name | key)) as $subscriptions
-| ([$all[] | select(.kind? == "compute#snapshot") | .sourceDisk | key] | unique) as $snapshotted
+| ([$all[] | select(.kind? == "compute#snapshot") | .sourceDisk? // empty | key] | unique) as $snapshotted
+| ([$clusters[] | .nodePools[]?.instanceGroupUrls[]? | key] | unique) as $nodegroups
 | [
     $all[] | select(.assetType? and ((.name? // "") | startswith("//")))
+    # A GKE node or its disk: the cluster stands for it.
+    | select(.labels["goog-gke-node"]? == null)
     | (.name | key) as $key
     | {
         id: (.name | split("/") | last),
@@ -97,7 +107,9 @@ def details(f; k): map(select(f)) | INDEX(k);
               (.ipv6AccessConfigs // []) | length > 0 or .stackType == "IPV4_IPV6"))
           ]}
       elif .assetType == "compute.googleapis.com/InstanceGroupManager" then
-        $base + {category: "compute.vm", capabilities: [
+        # The group of a GKE node pool is left out: the cluster stands for it.
+        select($key | IN($nodegroups[]) | not)
+        | $base + {category: "compute.vm", capabilities: [
           cap("autoscaling"; $groups[$key].status.autoscaler? != null),
           cap("zone-high-availability"; .name | test("/regions/"))
         ]}

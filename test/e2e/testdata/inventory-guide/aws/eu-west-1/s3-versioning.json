@@ -1,8 +1,7 @@
 {
   "Bucket": "shop-assets-example",
   "Versioning": {
-    "Status": "Enabled",
-    "MFADelete": "Disabled"
+    "Status": "Enabled"
   }
 }
 {

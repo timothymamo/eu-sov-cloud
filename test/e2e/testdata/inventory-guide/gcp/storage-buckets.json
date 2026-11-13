@@ -1,17 +1,13 @@
 [
   {
     "kind": "storage#bucket",
-    "id": "shop-assets-example",
     "name": "shop-assets-example",
-    "location": "EUROPE-WEST1",
-    "storageClass": "STANDARD",
-    "versioning": {"enabled": true}
+    "versioning": {
+      "enabled": true
+    }
   },
   {
     "kind": "storage#bucket",
-    "id": "shop-backups-example",
-    "name": "shop-backups-example",
-    "location": "EU",
-    "storageClass": "NEARLINE"
+    "name": "shop-backups-example"
   }
 ]

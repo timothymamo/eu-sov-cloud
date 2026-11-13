@@ -92,9 +92,7 @@
         "2",
         "3"
       ],
-      "properties": {
-        "orchestrationMode": "Flexible"
-      }
+      "properties": null
     },
     {
       "id": "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg-shop/providers/microsoft.insights/autoscalesettings/as-vmss-shop-web",
@@ -117,12 +115,7 @@
       "zones": [
         "1"
       ],
-      "properties": {
-        "diskSizeGB": 64,
-        "encryption": {
-          "type": "EncryptionAtRestWithPlatformKey"
-        }
-      }
+      "properties": null
     },
     {
       "id": "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg-shop/providers/Microsoft.Compute/disks/disk-shop-web-1-data",
@@ -133,12 +126,7 @@
       "zones": [
         "1"
       ],
-      "properties": {
-        "diskSizeGB": 256,
-        "encryption": {
-          "type": "EncryptionAtRestWithPlatformKey"
-        }
-      }
+      "properties": null
     },
     {
       "id": "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg-shop/providers/Microsoft.Compute/snapshots/snap-shop-web-1-data",
@@ -161,11 +149,7 @@
       "kind": "StorageV2",
       "location": "westeurope",
       "zones": null,
-      "properties": {
-        "primaryEndpoints": {
-          "blob": "https://stshopassets.blob.example.com/"
-        }
-      }
+      "properties": null
     },
     {
       "id": "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg-shop/providers/Microsoft.Storage/storageAccounts/stshopfiles",
@@ -174,9 +158,9 @@
       "kind": "FileStorage",
       "location": "westeurope",
       "zones": null,
-      "properties": {}
+      "properties": null
     }
   ],
   "skip_token": "ew0KICAiJGlkIjogIjEiLA0KICAiTWF4Um93cyI6IDEwLA0KfQ==",
-  "total_records": 19
+  "total_records": 22
 }

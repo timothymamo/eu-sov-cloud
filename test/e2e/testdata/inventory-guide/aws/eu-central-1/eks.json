@@ -1,18 +1,24 @@
 {
-    "cluster": {
-        "name": "shop-eks",
-        "arn": "arn:aws:eks:eu-central-1:123456789012:cluster/shop-eks",
-        "version": "1.31",
-        "endpoint": "https://0000000000000000.example.com",
-        "status": "ACTIVE"
-    }
+  "cluster": {
+    "name": "shop-eks",
+    "arn": "arn:aws:eks:eu-central-1:123456789012:cluster/shop-eks"
+  }
 }
 {
-    "nodegroup": {
-        "nodegroupName": "shop-eks-default",
-        "clusterName": "shop-eks",
-        "scalingConfig": {"minSize": 2, "maxSize": 5, "desiredSize": 3},
-        "subnets": ["subnet-0123456789abcdef0", "subnet-0123456789abcdef1"],
-        "status": "ACTIVE"
+  "nodegroup": {
+    "clusterName": "shop-eks",
+    "nodegroupArn": "arn:aws:eks:eu-central-1:123456789012:nodegroup/shop-eks/shop-eks-default/00000000-0000-0000-0000-000000000000",
+    "scalingConfig": {
+      "minSize": 2,
+      "maxSize": 5,
+      "desiredSize": 3
+    },
+    "resources": {
+      "autoScalingGroups": [
+        {
+          "name": "eks-shop-eks-default-00000000-0000-0000-0000-000000000000"
+        }
+      ]
     }
+  }
 }

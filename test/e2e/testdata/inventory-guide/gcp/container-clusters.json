@@ -1,13 +1,17 @@
 [
   {
-    "name": "shop-gke",
-    "location": "europe-west1",
     "selfLink": "https://container.googleapis.com/v1/projects/example-project/locations/europe-west1/clusters/shop-gke",
-    "endpoint": "192.0.2.40",
+    "location": "europe-west1",
     "currentNodeCount": 3,
-    "status": "RUNNING",
     "nodePools": [
-      {"name": "default-pool", "initialNodeCount": 1, "autoscaling": {"enabled": true, "minNodeCount": 1, "maxNodeCount": 3}}
+      {
+        "autoscaling": {
+          "enabled": true
+        },
+        "instanceGroupUrls": [
+          "https://www.googleapis.com/compute/v1/projects/example-project/zones/europe-west1-b/instanceGroupManagers/gke-shop-gke-default-pool-0a1b2c3d-grp"
+        ]
+      }
     ]
   }
 ]

@@ -3,14 +3,18 @@
 # (docs/adr/0006-json-inventory-file-format-v1.md). Run it with -n on every file
 # the guide's commands wrote:
 #
-#   jq -n -f docs/guide/inventory/azure.jq azure-inventory/*.json > inventory.json
+#   jq -n -f docs/guide/inventory/azure.jq inventories/azure/*.json > inventories/azure.inventory.json
 #
 # The Resource Graph listing (az graph query, one file per page) is the list of
-# resources and holds most details; two calls add what it lacks. Each element of
-# each input is recognised by its shape, not by its file name:
+# resources and holds most details; four calls add what it lacks. Each element of
+# each input is recognised by its shape, not by its file name. The guide's queries
+# keep only the fields read here; the full output is read the same way:
 #
 #   {"data": [...]}                              az graph query, one page
 #   {"type": "Microsoft.ServiceBus/Namespaces/Queues"}  az servicebus queue list
+#   {"type": "Microsoft.ServiceBus/Namespaces/Topics"}  az servicebus topic list
+#   {"type": "Microsoft.Storage/storageAccounts/queueServices/queues"}
+#                                                az rest --method get .../queues
 #   {"type": "Microsoft.Storage/storageAccounts/blobServices"}
 #                                                az storage account
 #                                                blob-service-properties show
@@ -18,6 +22,10 @@
 # Resource IDs are short (the resource's name), never the full Azure resource ID,
 # which carries the subscription. Anything it cannot classify is "unclassified"
 # with its rawType (an Azure Resource Manager type), so it shows up as a blocker.
+#
+# Everything in an AKS cluster's node resource group (its scale sets, load
+# balancers, network interfaces) is left out, the cluster stands for it; its
+# managed disks, persistent volumes that hold data, stay.
 
 # The Resource Manager type of a resource ID, in the casing of the ID (Resource
 # Graph writes types in lower case):
@@ -58,12 +66,24 @@ def inventory($source):
 def lower_type: (.type // "") | ascii_downcase;
 def lid: ascii_downcase;
 
+# The resource group of a resource ID, in lower case.
+def id_group: lid | split("/")[4] // "";
+
+# The types the four calls next to Resource Graph return.
+def child_types:
+  "microsoft.servicebus/namespaces/queues", "microsoft.servicebus/namespaces/topics",
+  "microsoft.storage/storageaccounts/queueservices/queues",
+  "microsoft.storage/storageaccounts/blobservices";
+
 [inputs | if type == "object" and (.data | type) == "array" then .data[]
-          elif type == "array" then .[] else . end | objects | select(.id? and .type?)] as $all
+          elif type == "object" and (.value | type) == "array" then .value[]
+          elif type == "array" then .[] else . end
+        | objects | select((.id? | type) == "string" and (.type? | type) == "string")] as $all
 | [$all[] | select(lower_type == "microsoft.servicebus/namespaces/queues")] as $queues
+| [$all[] | select(lower_type == "microsoft.servicebus/namespaces/topics")] as $topics
+| [$all[] | select(lower_type == "microsoft.storage/storageaccounts/queueservices/queues")] as $storagequeues
 | [$all[] | select(lower_type == "microsoft.storage/storageaccounts/blobservices")] as $blobs
-| [$all[] | select(lower_type | IN("microsoft.servicebus/namespaces/queues",
-    "microsoft.storage/storageaccounts/blobservices") | not)] as $rows
+| [$all[] | select(lower_type | IN(child_types) | not)] as $rows
 | ($rows | INDEX(.id | lid)) as $byid
 | ([$rows[] | select(lower_type == "microsoft.compute/snapshots")
     | .properties.creationData.sourceResourceId // empty | lid] | unique) as $snapshotted
@@ -71,7 +91,9 @@ def lid: ascii_downcase;
     | select(.properties.enabled != false) | .properties.targetResourceUri // empty | lid] | unique) as $autoscaled
 | ([$rows[] | .properties.sourceServerResourceId? // empty | lid] | unique) as $replicated
 | ([$blobs[] | select(.isVersioningEnabled == true) | .id | lid | sub("/blobservices/.*$"; "")]) as $versioned
-| ([$queues[] | .id | lid | sub("/queues/.*$"; "")] | unique) as $queuenamespaces
+| ([$queues[], $topics[] | .id | lid | sub("/(queues|topics)/.*$"; "")] | unique) as $queuenamespaces
+| ([$rows[] | select(lower_type == "microsoft.containerservice/managedclusters")
+    | .properties.nodeResourceGroup // empty | ascii_downcase] | unique) as $nodegroups
 | [
     # Service Bus queues. Every queue has a dead-letter subqueue.
     ($queues[]
@@ -84,9 +106,34 @@ def lid: ascii_downcase;
           capabilities: ["dead-letter-queue"]
         }),
 
+    # Service Bus topics: publish and subscribe, which no taxonomy category
+    # covers, so unclassified.
+    ($topics[]
+      | (.id | lid | sub("/topics/.*$"; "")) as $ns
+      | {
+          id: .name,
+          rawType: (.id | id_type),
+          category: "unclassified",
+          region: $byid[$ns].location
+        }),
+
+    # Storage queues. Azure encrypts every storage account at rest.
+    ($storagequeues[]
+      | (.id | lid | sub("/queueservices/.*$"; "")) as $account
+      | {
+          id: .name,
+          rawType: (.id | id_type),
+          category: "messaging.queue",
+          region: $byid[$account].location,
+          capabilities: ["encryption-at-rest"]
+        }),
+
     ($rows[]
       | (.id | lid) as $id
       | lower_type as $t
+      # Managed by AKS in a cluster's node resource group: the cluster stands
+      # for it. A managed disk there is a persistent volume and stays.
+      | select(($id | id_group | IN($nodegroups[])) and $t != "microsoft.compute/disks" | not)
       | {
           id: .name,
           rawType: (.id | id_type | if ascii_downcase == $t then . else $t end),
@@ -148,7 +195,7 @@ def lid: ascii_downcase;
           # Part of a disk's or a scale set's capabilities, not a resource to move.
           empty
         elif $t == "microsoft.servicebus/namespaces" and ($id | IN($queuenamespaces[])) then
-          # Its queues stand for it.
+          # Its queues and topics stand for it.
           empty
         else
           $base + {category: "unclassified"}

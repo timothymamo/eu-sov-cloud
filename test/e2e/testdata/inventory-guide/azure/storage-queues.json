@@ -1,0 +1,7 @@
+[
+  {
+    "id": "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg-shop/providers/Microsoft.Storage/storageAccounts/stshopassets/queueServices/default/queues/shop-thumbnail-jobs",
+    "name": "shop-thumbnail-jobs",
+    "type": "Microsoft.Storage/storageAccounts/queueServices/queues"
+  }
+]

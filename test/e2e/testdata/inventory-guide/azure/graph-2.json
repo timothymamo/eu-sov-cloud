@@ -1,5 +1,5 @@
 {
-  "count": 9,
+  "count": 12,
   "data": [
     {
       "id": "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg-shop/providers/Microsoft.DBforPostgreSQL/flexibleServers/psql-shop",
@@ -81,7 +81,8 @@
               "3"
             ]
           }
-        ]
+        ],
+        "nodeResourceGroup": "MC_rg-shop_aks-shop_westeurope"
       }
     },
     {
@@ -91,9 +92,7 @@
       "kind": "functionapp,linux",
       "location": "westeurope",
       "zones": null,
-      "properties": {
-        "defaultHostName": "func-shop-thumbnails.example.com"
-      }
+      "properties": null
     },
     {
       "id": "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg-shop/providers/Microsoft.Web/sites/app-shop-storefront",
@@ -102,9 +101,7 @@
       "kind": "app,linux",
       "location": "westeurope",
       "zones": null,
-      "properties": {
-        "defaultHostName": "app-shop-storefront.example.com"
-      }
+      "properties": null
     },
     {
       "id": "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg-shop/providers/Microsoft.ServiceBus/namespaces/sb-shop",
@@ -113,9 +110,7 @@
       "kind": "",
       "location": "westeurope",
       "zones": null,
-      "properties": {
-        "serviceBusEndpoint": "https://sb-shop.example.com:443/"
-      }
+      "properties": null
     },
     {
       "id": "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg-shop/providers/Microsoft.Cdn/profiles/cdn-shop",
@@ -124,7 +119,7 @@
       "kind": "",
       "location": "global",
       "zones": null,
-      "properties": {}
+      "properties": null
     },
     {
       "id": "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg-shop/providers/Microsoft.Network/dnsZones/shop.example.com",
@@ -133,9 +128,42 @@
       "kind": "",
       "location": "global",
       "zones": null,
-      "properties": {}
+      "properties": null
+    },
+    {
+      "id": "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/MC_rg-shop_aks-shop_westeurope/providers/Microsoft.Compute/virtualMachineScaleSets/aks-system-12345678-vmss",
+      "name": "aks-system-12345678-vmss",
+      "type": "microsoft.compute/virtualmachinescalesets",
+      "kind": "",
+      "location": "westeurope",
+      "zones": [
+        "1",
+        "2",
+        "3"
+      ],
+      "properties": null
+    },
+    {
+      "id": "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/MC_rg-shop_aks-shop_westeurope/providers/Microsoft.Network/loadBalancers/kubernetes",
+      "name": "kubernetes",
+      "type": "microsoft.network/loadbalancers",
+      "kind": "",
+      "location": "westeurope",
+      "zones": null,
+      "properties": null
+    },
+    {
+      "id": "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/MC_rg-shop_aks-shop_westeurope/providers/Microsoft.Compute/disks/pvc-00000000-0000-0000-0000-000000000000",
+      "name": "pvc-00000000-0000-0000-0000-000000000000",
+      "type": "microsoft.compute/disks",
+      "kind": "",
+      "location": "westeurope",
+      "zones": [
+        "1"
+      ],
+      "properties": null
     }
   ],
   "skip_token": null,
-  "total_records": 19
+  "total_records": 22
 }

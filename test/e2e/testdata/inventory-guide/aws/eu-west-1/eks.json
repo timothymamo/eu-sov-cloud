@@ -1,0 +1,24 @@
+{
+  "cluster": {
+    "name": "shop-eks",
+    "arn": "arn:aws:eks:eu-west-1:123456789012:cluster/shop-eks"
+  }
+}
+{
+  "nodegroup": {
+    "clusterName": "shop-eks",
+    "nodegroupArn": "arn:aws:eks:eu-west-1:123456789012:nodegroup/shop-eks/shop-eks-small/00000000-0000-0000-0000-000000000000",
+    "scalingConfig": {
+      "minSize": 1,
+      "maxSize": 1,
+      "desiredSize": 1
+    },
+    "resources": {
+      "autoScalingGroups": [
+        {
+          "name": "eks-shop-eks-small-00000000-0000-0000-0000-000000000000"
+        }
+      ]
+    }
+  }
+}

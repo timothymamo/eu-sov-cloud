@@ -1,9 +1,9 @@
 [
   {
     "kind": "compute#snapshot",
-    "name": "shop-web-1-data-daily",
-    "selfLink": "https://www.googleapis.com/compute/v1/projects/example-project/global/snapshots/shop-web-1-data-daily",
-    "sourceDisk": "https://www.googleapis.com/compute/v1/projects/example-project/zones/europe-west1-b/disks/shop-web-1-data",
-    "status": "READY"
+    "sourceDisk": "https://www.googleapis.com/compute/v1/projects/example-project/zones/europe-west1-b/disks/shop-web-1-data"
+  },
+  {
+    "kind": "compute#snapshot"
   }
 ]

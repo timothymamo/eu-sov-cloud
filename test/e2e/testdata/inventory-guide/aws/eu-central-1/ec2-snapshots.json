@@ -1,12 +1,7 @@
 {
-    "Snapshots": [
-        {
-            "SnapshotId": "snap-0123456789abcdef0",
-            "VolumeId": "vol-0123456789abcdef0",
-            "OwnerId": "123456789012",
-            "State": "completed",
-            "Encrypted": true,
-            "VolumeSize": 100
-        }
-    ]
+  "Snapshots": [
+    {
+      "VolumeId": "vol-0123456789abcdef0"
+    }
+  ]
 }

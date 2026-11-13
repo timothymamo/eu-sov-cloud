@@ -1,67 +1,165 @@
 {
-    "Reservations": [
+  "Reservations": [
+    {
+      "Instances": [
         {
-            "ReservationId": "r-0123456789abcdef0",
-            "OwnerId": "123456789012",
-            "Instances": [
-                {
-                    "InstanceId": "i-0123456789abcdef0",
-                    "InstanceType": "m6i.large",
-                    "Placement": {"AvailabilityZone": "eu-central-1a"},
-                    "PrivateIpAddress": "192.0.2.10",
-                    "PrivateDnsName": "ip-192-0-2-10.example.com",
-                    "State": {"Code": 16, "Name": "running"},
-                    "BlockDeviceMappings": [
-                        {"DeviceName": "/dev/xvda", "Ebs": {"VolumeId": "vol-0123456789abcdef0", "Status": "attached"}}
-                    ],
-                    "NetworkInterfaces": [
-                        {
-                            "NetworkInterfaceId": "eni-0123456789abcdef0",
-                            "PrivateIpAddress": "192.0.2.10",
-                            "Ipv6Addresses": [{"Ipv6Address": "2001:db8::10"}]
-                        }
-                    ],
-                    "Tags": [{"Key": "Name", "Value": "shop-web-1"}]
-                },
-                {
-                    "InstanceId": "i-0123456789abcdef1",
-                    "InstanceType": "t3.small",
-                    "Placement": {"AvailabilityZone": "eu-central-1b"},
-                    "PrivateIpAddress": "192.0.2.11",
-                    "State": {"Code": 80, "Name": "stopped"},
-                    "BlockDeviceMappings": [
-                        {"DeviceName": "/dev/xvda", "Ebs": {"VolumeId": "vol-0123456789abcdef1", "Status": "attached"}}
-                    ],
-                    "NetworkInterfaces": [
-                        {"NetworkInterfaceId": "eni-0123456789abcdef1", "PrivateIpAddress": "192.0.2.11", "Ipv6Addresses": []}
-                    ],
-                    "Tags": [{"Key": "Name", "Value": "shop-batch"}]
-                }
-            ]
+          "InstanceId": "i-0123456789abcdef0",
+          "State": {
+            "Name": "running"
+          },
+          "Placement": {
+            "AvailabilityZone": "eu-central-1a"
+          },
+          "BlockDeviceMappings": [
+            {
+              "Ebs": {
+                "VolumeId": "vol-0123456789abcdef0"
+              }
+            }
+          ],
+          "NetworkInterfaces": [
+            {
+              "Ipv6AddressCount": 1
+            }
+          ],
+          "Tags": [
+            {
+              "Key": "Name"
+            }
+          ]
         },
         {
-            "ReservationId": "r-0123456789abcdef1",
-            "OwnerId": "123456789012",
-            "Instances": [
-                {
-                    "InstanceId": "i-0123456789abcdef2",
-                    "InstanceType": "m6i.large",
-                    "Placement": {"AvailabilityZone": "eu-central-1a"},
-                    "PrivateIpAddress": "192.0.2.12",
-                    "State": {"Code": 16, "Name": "running"},
-                    "BlockDeviceMappings": [],
-                    "NetworkInterfaces": [],
-                    "Tags": [{"Key": "aws:autoscaling:groupName", "Value": "shop-web-asg"}]
-                },
-                {
-                    "InstanceId": "i-0123456789abcdef3",
-                    "InstanceType": "t3.micro",
-                    "Placement": {"AvailabilityZone": "eu-central-1c"},
-                    "State": {"Code": 48, "Name": "terminated"},
-                    "BlockDeviceMappings": [],
-                    "NetworkInterfaces": []
-                }
-            ]
+          "InstanceId": "i-0123456789abcdef1",
+          "State": {
+            "Name": "stopped"
+          },
+          "Placement": {
+            "AvailabilityZone": "eu-central-1b"
+          },
+          "BlockDeviceMappings": [
+            {
+              "Ebs": {
+                "VolumeId": "vol-0123456789abcdef1"
+              }
+            }
+          ],
+          "NetworkInterfaces": [
+            {
+              "Ipv6AddressCount": 0
+            }
+          ],
+          "Tags": [
+            {
+              "Key": "Name"
+            }
+          ]
         }
-    ]
+      ]
+    },
+    {
+      "Instances": [
+        {
+          "InstanceId": "i-0123456789abcdef2",
+          "State": {
+            "Name": "running"
+          },
+          "Placement": {
+            "AvailabilityZone": "eu-central-1a"
+          },
+          "BlockDeviceMappings": [],
+          "NetworkInterfaces": [],
+          "Tags": [
+            {
+              "Key": "aws:autoscaling:groupName"
+            }
+          ]
+        },
+        {
+          "InstanceId": "i-0123456789abcdef3",
+          "State": {
+            "Name": "terminated"
+          },
+          "Placement": {
+            "AvailabilityZone": "eu-central-1c"
+          },
+          "BlockDeviceMappings": [],
+          "NetworkInterfaces": [],
+          "Tags": null
+        }
+      ]
+    },
+    {
+      "Instances": [
+        {
+          "InstanceId": "i-0123456789abcdef4",
+          "State": {
+            "Name": "running"
+          },
+          "Placement": {
+            "AvailabilityZone": "eu-central-1a"
+          },
+          "BlockDeviceMappings": [
+            {
+              "Ebs": {
+                "VolumeId": "vol-0123456789abcdef4"
+              }
+            }
+          ],
+          "NetworkInterfaces": [
+            {
+              "Ipv6AddressCount": 0
+            }
+          ],
+          "Tags": [
+            {
+              "Key": "aws:autoscaling:groupName"
+            },
+            {
+              "Key": "eks:cluster-name"
+            },
+            {
+              "Key": "eks:nodegroup-name"
+            },
+            {
+              "Key": "kubernetes.io/cluster/shop-eks"
+            }
+          ]
+        },
+        {
+          "InstanceId": "i-0123456789abcdef5",
+          "State": {
+            "Name": "running"
+          },
+          "Placement": {
+            "AvailabilityZone": "eu-central-1b"
+          },
+          "BlockDeviceMappings": [
+            {
+              "Ebs": {
+                "VolumeId": "vol-0123456789abcdef5"
+              }
+            },
+            {
+              "Ebs": {
+                "VolumeId": "vol-0123456789abcdef6"
+              }
+            }
+          ],
+          "NetworkInterfaces": [
+            {
+              "Ipv6AddressCount": 0
+            }
+          ],
+          "Tags": [
+            {
+              "Key": "Name"
+            },
+            {
+              "Key": "kubernetes.io/cluster/shop-eks"
+            }
+          ]
+        }
+      ]
+    }
+  ]
 }
