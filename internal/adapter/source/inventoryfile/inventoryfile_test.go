@@ -8,6 +8,7 @@
 package inventoryfile_test
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"go/ast"
@@ -20,6 +21,7 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"unicode/utf8"
 
 	"github.com/google/go-cmp/cmp"
 
@@ -210,6 +212,15 @@ func TestInventoryContract(t *testing.T) {
 	sourcetest.Run(t, inventoryfile.New(validPath), wantValidInventory(t))
 }
 
+// TestInventoryContractVersion2 runs the same contract suite on the version 2
+// fixture, whose resources carry every version 2 field: a source that drops a
+// size, a usage, a workload, a relation or a cost between calls fails it.
+func TestInventoryContractVersion2(t *testing.T) {
+	t.Parallel()
+
+	sourcetest.Run(t, inventoryfile.New(validV2Path), wantVersion2Inventory(t))
+}
+
 // TestInventoryReadsNullAsAbsent pins the null policy ADR 0006 gives the
 // optional fields: a resource whose rawType, region and capabilities are null is
 // the same resource as one whose JSON leaves those keys out. The policy is the
@@ -340,6 +351,67 @@ const (
 		`{"id":"\ud83d\ude00","category":"compute.vm"}]}`
 )
 
+// schemaDocument returns an inventory document of version 1 or 2 holding one
+// compute.vm resource with extra appended to it, for the cases whose version 2
+// fields are written out here instead of installed as a fixture. extra starts
+// with its own comma.
+func schemaDocument(version int, extra string) string {
+	return `{"schemaVersion":` + strconv.Itoa(version) + `,"source":"aws","resources":[` +
+		`{"id":"i-0123456789abcdef0","category":"compute.vm"` + extra + `}]}`
+}
+
+// relationDocument returns a version 2 inventory document holding two databases,
+// the second carrying relations, the JSON array the case writes. Two resources,
+// because a relation's target must name one: the first is what a valid relation
+// points at.
+func relationDocument(relations string) string {
+	return `{"schemaVersion":2,"source":"aws","resources":[` +
+		`{"id":"db-primary","category":"database.postgresql"},` +
+		`{"id":"db-replica","category":"database.postgresql","relations":` + relations + `}]}`
+}
+
+// relationsDocument returns a version 2 inventory document whose first resource
+// lists n relations, all pointing at the second: input too large for a fixture.
+// The duplicates count toward the cap, and the domain de-duplicates them once
+// the document is read.
+func relationsDocument(n int) string {
+	var b strings.Builder
+	b.WriteString(`{"schemaVersion":2,"source":"aws","resources":[`)
+	b.WriteString(`{"id":"i-0","category":"compute.vm","relations":[`)
+
+	for i := range n {
+		if i > 0 {
+			b.WriteString(",")
+		}
+
+		b.WriteString(`{"type":"attached-to","target":"i-1"}`)
+	}
+
+	b.WriteString(`]},{"id":"i-1","category":"compute.vm"}]}`)
+
+	return b.String()
+}
+
+// positionOf returns the "line L, column C" of the first occurrence of token in
+// the document at path, as the shared decoder places a value: 1-based, the
+// column counted in characters. A case names the token, never a column, so the
+// expectation is read from the document itself.
+func positionOf(t *testing.T, path, token string) string {
+	t.Helper()
+
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("reading the document %s: %v", text.Quote(path), err)
+	}
+
+	i := strings.Index(string(data), token)
+	if i < 0 {
+		t.Fatalf("the document at %s does not hold %s", text.Quote(path), text.Quote(token))
+	}
+
+	return "line 1, column " + strconv.Itoa(utf8.RuneCountInString(string(data[:i]))+1)
+}
+
 // capabilitiesDocument returns an inventory document holding one resource whose
 // capabilities list repeats the JSON value element n times: input too large for
 // a fixture.
@@ -399,6 +471,10 @@ func TestInventoryErrors(t *testing.T) {
 		// wantPosition is where the message must place the problem: a 1-based
 		// line and column in the document, never a byte offset.
 		wantPosition string
+		// wantPositionAt is a token of the document whose line and column the
+		// message must name: the position is computed from the document the case
+		// writes, so a case never repeats a column a reader has to count to.
+		wantPositionAt string
 		// wantAbsent lists substrings the message must not contain.
 		wantAbsent []string
 	}{
@@ -556,6 +632,232 @@ func TestInventoryErrors(t *testing.T) {
 			wantErr:    []error{inventoryfile.ErrDecode},
 			wantQuoted: []string{"resources[0].capabilities[0]"},
 		},
+		// A version 1 file may not hold a field only version 2 defines: the
+		// reader knows each version's keys, so the key is unknown, named by its
+		// path, and never quietly ignored.
+		{
+			name:       "size in a version 1 file",
+			path:       generated(schemaDocument(1, `,"size":{"vcpus":2}`)),
+			wantErr:    []error{inventoryfile.ErrDecode},
+			wantQuoted: []string{"resources[0].size"},
+		},
+		{
+			name:       "usage in a version 1 file",
+			path:       generated(schemaDocument(1, `,"usage":{"hoursPerMonth":730}`)),
+			wantErr:    []error{inventoryfile.ErrDecode},
+			wantQuoted: []string{"resources[0].usage"},
+		},
+		{
+			name:       "workload in a version 1 file",
+			path:       generated(schemaDocument(1, `,"workload":"shop"`)),
+			wantErr:    []error{inventoryfile.ErrDecode},
+			wantQuoted: []string{"resources[0].workload"},
+		},
+		{
+			name:       "relations in a version 1 file",
+			path:       generated(schemaDocument(1, `,"relations":[]`)),
+			wantErr:    []error{inventoryfile.ErrDecode},
+			wantQuoted: []string{"resources[0].relations"},
+		},
+		{
+			name:       "monthlyCost in a version 1 file",
+			path:       generated(schemaDocument(1, `,"monthlyCost":{"amount":1,"currency":"EUR"}`)),
+			wantErr:    []error{inventoryfile.ErrDecode},
+			wantQuoted: []string{"resources[0].monthlyCost"},
+		},
+		// The version 1 rules hold for every version 2 object too: keys are
+		// exact, appear at most once, and their values are of the JSON type the
+		// format gives them.
+		{
+			name:           "unknown key in a size object",
+			path:           generated(schemaDocument(2, `,"size":{"vcpu":4}`)),
+			wantErr:        []error{inventoryfile.ErrDecode},
+			wantQuoted:     []string{"resources[0].size.vcpu"},
+			wantPositionAt: "\"vcpu\"",
+		},
+		{
+			name:       "unknown key in a usage object",
+			path:       generated(schemaDocument(2, `,"usage":{"hours":730}`)),
+			wantErr:    []error{inventoryfile.ErrDecode},
+			wantQuoted: []string{"resources[0].usage.hours"},
+		},
+		{
+			name:       "unknown key in a cost object",
+			path:       generated(schemaDocument(2, `,"monthlyCost":{"amount":1,"currency":"EUR","unit":"month"}`)),
+			wantErr:    []error{inventoryfile.ErrDecode},
+			wantQuoted: []string{"resources[0].monthlyCost.unit"},
+		},
+		{
+			name:       "unknown key in a relation object",
+			path:       generated(relationDocument(`[{"type":"attached-to","target":"db-primary","kind":"x"}]`)),
+			wantErr:    []error{inventoryfile.ErrDecode},
+			wantQuoted: []string{"resources[1].relations[0].kind"},
+		},
+		{
+			// encoding/json keeps the last value of a repeated key, so a repeated
+			// key would decide a size silently.
+			name:           "repeated key in a size object",
+			path:           generated(schemaDocument(2, `,"size":{"vcpus":2,"vcpus":4}`)),
+			wantErr:        []error{inventoryfile.ErrDecode},
+			wantMentions:   [][]string{{"duplicate", "twice", "repeated", "again", "more than once"}},
+			wantQuoted:     []string{"resources[0].size.vcpus"},
+			wantPositionAt: `"vcpus":4`,
+		},
+		{
+			// A key must be byte-equal to the one the format declares:
+			// encoding/json matches case-insensitively, so VCPUs would be read as
+			// vcpus by a decoder that does not check.
+			name:         "key in a size object that differs in case",
+			path:         generated(schemaDocument(2, `,"size":{"VCPUs":2}`)),
+			wantErr:      []error{inventoryfile.ErrDecode},
+			wantMentions: [][]string{{"did you mean"}},
+			wantQuoted:   []string{"VCPUs"},
+		},
+		{
+			name:         "vcpus that is a string",
+			path:         generated(schemaDocument(2, `,"size":{"vcpus":"4"}`)),
+			wantErr:      []error{inventoryfile.ErrDecode},
+			wantQuoted:   []string{"resources[0].size.vcpus"},
+			wantMentions: [][]string{{"line 1, column "}},
+			wantAbsent:   []string{"byte offset"},
+		},
+		{
+			// A count is an integer: 1.5 is not one, and is refused where it is.
+			name:         "fractional count",
+			path:         generated(schemaDocument(2, `,"size":{"count":1.5}`)),
+			wantErr:      []error{inventoryfile.ErrDecode},
+			wantQuoted:   []string{"resources[0].size.count"},
+			wantMentions: [][]string{{"line 1, column "}},
+		},
+		{
+			// A number that overflows float64 is not a number the format reads.
+			name:         "size number that overflows float64",
+			path:         generated(schemaDocument(2, `,"size":{"vcpus":1e999}`)),
+			wantErr:      []error{inventoryfile.ErrDecode},
+			wantQuoted:   []string{"resources[0].size.vcpus"},
+			wantMentions: [][]string{{"line 1, column "}},
+		},
+		{
+			// An amount that overflows float64 is refused too, wherever it is.
+			name:         "cost amount that overflows float64",
+			path:         generated(schemaDocument(2, `,"monthlyCost":{"amount":1e999,"currency":"EUR"}`)),
+			wantErr:      []error{inventoryfile.ErrDecode},
+			wantQuoted:   []string{"resources[0].monthlyCost.amount"},
+			wantMentions: [][]string{{"line 1, column "}},
+		},
+		{
+			name:         "relations that is an object",
+			path:         generated(schemaDocument(2, `,"relations":{}`)),
+			wantErr:      []error{inventoryfile.ErrDecode},
+			wantQuoted:   []string{"resources[0].relations"},
+			wantMentions: [][]string{{"an array"}},
+		},
+		{
+			// A relation is a value of the list: null is not an absent value
+			// here, as null is no absent element of resources or capabilities.
+			name:         "relation that is null",
+			path:         generated(relationDocument(`[null]`)),
+			wantErr:      []error{inventoryfile.ErrDecode},
+			wantNotErr:   []error{inventory.ErrEmptyID},
+			wantMentions: [][]string{{"null"}},
+			wantQuoted:   []string{"resources[1].relations[0]"},
+		},
+		{
+			// Within a relation both keys are required, and the error names the
+			// one that is missing.
+			name:         "relation without a type",
+			path:         generated(relationDocument(`[{"target":"db-primary"}]`)),
+			wantErr:      []error{inventoryfile.ErrDecode},
+			wantMentions: [][]string{{"required key"}},
+			wantQuoted:   []string{"type"},
+		},
+		{
+			name:         "relation without a target",
+			path:         generated(relationDocument(`[{"type":"attached-to"}]`)),
+			wantErr:      []error{inventoryfile.ErrDecode},
+			wantMentions: [][]string{{"required key"}},
+			wantQuoted:   []string{"target"},
+		},
+		{
+			name:         "relation type that is not a string",
+			path:         generated(relationDocument(`[{"type":3,"target":"db-primary"}]`)),
+			wantErr:      []error{inventoryfile.ErrDecode},
+			wantQuoted:   []string{"resources[1].relations[0].type"},
+			wantMentions: [][]string{{"a string"}},
+		},
+		{
+			name:         "cost without an amount",
+			path:         generated(schemaDocument(2, `,"monthlyCost":{"currency":"EUR"}`)),
+			wantErr:      []error{inventoryfile.ErrDecode},
+			wantMentions: [][]string{{"required key"}},
+			wantQuoted:   []string{"amount"},
+		},
+		{
+			name:         "cost without a currency",
+			path:         generated(schemaDocument(2, `,"monthlyCost":{"amount":1}`)),
+			wantErr:      []error{inventoryfile.ErrDecode},
+			wantMentions: [][]string{{"required key"}},
+			wantQuoted:   []string{"currency"},
+		},
+		// The domain checks the values of the version 2 fields, and its error
+		// reaches the reader with the path it names: the reader repeats no rule of
+		// its own, so the two cannot drift.
+		{
+			name:       "relation to a resource that is not in the inventory",
+			path:       generated(relationDocument(`[{"type":"replica-of","target":"db-missing"}]`)),
+			wantErr:    []error{inventory.ErrUnknownRelationTarget},
+			wantNotErr: []error{inventoryfile.ErrDecode},
+			wantQuoted: []string{"resources[1].relations[0].target", "db-missing"},
+		},
+		{
+			name:       "relation to the resource itself",
+			path:       generated(relationDocument(`[{"type":"replica-of","target":"db-replica"}]`)),
+			wantErr:    []error{inventory.ErrSelfRelation},
+			wantNotErr: []error{inventoryfile.ErrDecode},
+			wantQuoted: []string{"resources[1].relations[0].target"},
+		},
+		{
+			name:       "relation type outside the vocabulary",
+			path:       generated(relationDocument(`[{"type":"replica","target":"db-primary"}]`)),
+			wantErr:    []error{inventory.ErrUnknownRelationType},
+			wantNotErr: []error{inventoryfile.ErrDecode},
+			wantQuoted: []string{"resources[1].relations[0].type", "replica"},
+		},
+		{
+			name:       "vcpus of zero",
+			path:       generated(schemaDocument(2, `,"size":{"vcpus":0}`)),
+			wantErr:    []error{inventory.ErrInvalidSize},
+			wantNotErr: []error{inventoryfile.ErrDecode},
+			wantQuoted: []string{"resources[0].size.vcpus"},
+		},
+		{
+			name:       "vcpus on a category that takes none",
+			path:       generated(`{"schemaVersion":2,"source":"aws","resources":[{"id":"bucket-example","category":"storage.object","size":{"vcpus":2}}]}`),
+			wantErr:    []error{inventory.ErrFieldNotForCategory},
+			wantNotErr: []error{inventoryfile.ErrDecode},
+			wantQuoted: []string{"resources[0].size.vcpus"},
+		},
+		{
+			name:       "hoursPerMonth above the longest month",
+			path:       generated(schemaDocument(2, `,"usage":{"hoursPerMonth":745}`)),
+			wantErr:    []error{inventory.ErrInvalidUsage},
+			wantNotErr: []error{inventoryfile.ErrDecode},
+			wantQuoted: []string{"resources[0].usage.hoursPerMonth"},
+		},
+		{
+			name:       "currency that is not three upper-case letters",
+			path:       generated(schemaDocument(2, `,"monthlyCost":{"amount":1,"currency":"usd"}`)),
+			wantErr:    []error{inventory.ErrInvalidCost},
+			wantNotErr: []error{inventoryfile.ErrDecode},
+			wantQuoted: []string{"resources[0].monthlyCost.currency", "usd"},
+		},
+		{
+			name:       "workload with a control character",
+			path:       generated(schemaDocument(2, `,"workload":"a\u001bb"`)),
+			wantErr:    []error{text.ErrInvalid},
+			wantNotErr: []error{inventoryfile.ErrDecode},
+			wantQuoted: []string{"resources[0].workload"},
+		},
 		{
 			// A null element of the resources list is refused by the reader, as
 			// the element of that list, never passed on to the domain as a
@@ -631,14 +933,32 @@ func TestInventoryErrors(t *testing.T) {
 			wantAbsent:   []string{"byte offset"},
 		},
 		{
-			// The version is checked on the envelope before any field of this
-			// version is decoded, so a version 2 file that carries a field version
-			// 2 has and version 1 does not is refused for its version alone.
+			// The version is checked on the envelope before any field is decoded,
+			// so a version 3 file that carries a field no version this reader reads
+			// has is refused for its version alone. Versions 1 and 2 are read.
 			name:         "unsupported schema version",
-			path:         fixture("schema-version-2.json"),
+			path:         fixture("schema-version-3.json"),
 			wantErr:      []error{inventoryfile.ErrSchemaVersion},
 			wantNotErr:   []error{inventoryfile.ErrDecode},
-			wantMentions: [][]string{{"schemaVersion"}, {"2"}},
+			wantMentions: [][]string{{"schemaVersion"}, {"3"}},
+		},
+		{
+			// A version is the integer it is written as: 2.0 is a different JSON
+			// number from 2, and is refused for its version, not read as 2.
+			name:         "version 2 as a fractional number",
+			path:         generated(`{"schemaVersion":2.0,"source":"aws","resources":[]}`),
+			wantErr:      []error{inventoryfile.ErrSchemaVersion},
+			wantNotErr:   []error{inventoryfile.ErrDecode},
+			wantMentions: [][]string{{"schemaVersion"}},
+		},
+		{
+			// Nor is a version the string "2".
+			name:         "version 2 as a string",
+			path:         generated(`{"schemaVersion":"2","source":"aws","resources":[]}`),
+			wantErr:      []error{inventoryfile.ErrSchemaVersion},
+			wantNotErr:   []error{inventoryfile.ErrDecode},
+			wantMentions: [][]string{{"schemaVersion"}, {"string"}},
+			wantAbsent:   []string{`\"`},
 		},
 		{
 			// A version is a JSON number: the string "1" is not it. The message
@@ -659,14 +979,15 @@ func TestInventoryErrors(t *testing.T) {
 		{
 			// The version error is worded once, by the shared decoder, so both
 			// readers say a version is an integer: a document without a version is
-			// missing the integer 1, not a bare 1.
+			// missing the integers this reader reads, not a bare version.
 			name:    "missing schema version",
 			path:    fixture("no-schema-version.json"),
 			wantErr: []error{inventoryfile.ErrSchemaVersion},
 			wantMentions: [][]string{
 				{"schemaVersion"},
 				{"0", "absent", "missing", "not set", "not present"},
-				{"schemaVersion is missing, want the integer 1"},
+				{"1"},
+				{"2"},
 			},
 		},
 		{
@@ -679,7 +1000,7 @@ func TestInventoryErrors(t *testing.T) {
 			wantNotErr: []error{inventoryfile.ErrDecode},
 			// The wording is the shared decoder's, and the key that was meant is
 			// still named.
-			wantMentions: [][]string{{"schemaVersion"}, {"schemaVersion is missing, want the integer 1"}},
+			wantMentions: [][]string{{"schemaVersion"}, {"missing"}, {"1"}, {"2"}},
 			wantQuoted:   []string{"SchemaVersion"},
 		},
 		{
@@ -839,6 +1160,14 @@ func TestInventoryErrors(t *testing.T) {
 			// of the file can look up, not a byte offset it has to count to.
 			if tt.wantPosition != "" && !strings.Contains(msg, tt.wantPosition) {
 				t.Errorf("Inventory() error = %q, want it to report the position as %q", msg, tt.wantPosition)
+			}
+
+			if tt.wantPositionAt != "" {
+				want := positionOf(t, path, tt.wantPositionAt)
+				if !strings.Contains(msg, want) {
+					t.Errorf("Inventory() error = %q, want it to report the position of %q as %q",
+						msg, tt.wantPositionAt, want)
+				}
 			}
 
 			// An adapter that passes the OS error through echoes the path unquoted:
@@ -1232,4 +1561,240 @@ func TestInventoryAcceptsSurrogatePair(t *testing.T) {
 	if got, want := resources[0].ID, "\U0001F600"; got != want {
 		t.Errorf("Resources()[0].ID = %q, want %q", got, want)
 	}
+}
+
+// validV2Path is the sanitised version 2 fixture the schema version 2 tests
+// read: every version 2 field on one resource or another, including a relation
+// that points at a resource of the same file.
+const validV2Path = "testdata/valid-v2.json"
+
+// ptr returns a pointer to v, for a version 2 field the fixture gives: the
+// domain keeps nil, a field the file did not give, apart from the zero value.
+func ptr[T any](v T) *T {
+	return &v
+}
+
+// wantVersion2Inventory is the inventory testdata/valid-v2.json must produce. It
+// is built with inventory.New from the same data, so the domain's own rules
+// (capabilities and relations sorted, resources in ID order) apply to the
+// expectation too: a compute.vm with every size field and a usage, a database
+// that is the replica of another, another that depends on it, a block volume
+// with a storage size and no vcpus, and an unclassified resource with a
+// workload and a cost of zero.
+func wantVersion2Inventory(t *testing.T) inventory.Inventory {
+	t.Helper()
+
+	inv, err := inventory.New("aws", []inventory.Resource{
+		{
+			ID:           "i-0123456789abcdef0",
+			RawType:      "AWS::EC2::Instance",
+			Category:     taxonomy.ComputeVM,
+			Region:       "eu-west-1",
+			Capabilities: []taxonomy.Capability{taxonomy.IPv6},
+			Size: &inventory.Size{
+				VCPUs:      ptr(2.0),
+				MemoryGiB:  ptr(8.0),
+				StorageGiB: ptr(100.0),
+				Count:      ptr(1),
+			},
+			Usage:       &inventory.Usage{HoursPerMonth: ptr(730.0)},
+			Workload:    "shop",
+			MonthlyCost: &inventory.Cost{Amount: ptr(123.45), Currency: "USD"},
+		},
+		{
+			ID:           "db-example",
+			RawType:      "AWS::RDS::DBInstance",
+			Category:     taxonomy.DatabasePostgreSQL,
+			Region:       "eu-west-1",
+			Capabilities: []taxonomy.Capability{taxonomy.ReadReplicas, taxonomy.PointInTimeRestore},
+			Size: &inventory.Size{
+				VCPUs:      ptr(0.5),
+				MemoryGiB:  ptr(4.0),
+				StorageGiB: ptr(200.0),
+				Count:      ptr(2),
+			},
+			Usage:       &inventory.Usage{HoursPerMonth: ptr(744.0)},
+			Workload:    "shop",
+			Relations:   []inventory.Relation{{Type: inventory.ReplicaOf, Target: "db-primary"}},
+			MonthlyCost: &inventory.Cost{Amount: ptr(456.78), Currency: "EUR"},
+		},
+		{
+			ID:       "db-primary",
+			RawType:  "AWS::RDS::DBInstance",
+			Category: taxonomy.DatabasePostgreSQL,
+			Region:   "eu-west-1",
+			Size: &inventory.Size{
+				VCPUs:      ptr(0.5),
+				MemoryGiB:  ptr(4.0),
+				StorageGiB: ptr(200.0),
+				Count:      ptr(1),
+			},
+			Relations: []inventory.Relation{{Type: inventory.DependsOn, Target: "db-example"}},
+		},
+		{
+			ID:       "volume-example",
+			RawType:  "AWS::EC2::Volume",
+			Category: taxonomy.StorageBlock,
+			Region:   "eu-west-1",
+			Size:     &inventory.Size{StorageGiB: ptr(500.0), Count: ptr(1)},
+		},
+		{
+			ID:          "global-example",
+			Category:    taxonomy.Unclassified,
+			Workload:    "legacy",
+			MonthlyCost: &inventory.Cost{Amount: ptr(0.0), Currency: "EUR"},
+		},
+	})
+	if err != nil {
+		t.Fatalf("inventory.New() returned unexpected error: %v", err)
+	}
+
+	return inv
+}
+
+// TestInventoryReadsSchemaVersion2 pins that a version 2 file is read, and that
+// every field it adds reaches the inventory: the size with each of its fields,
+// the usage profile, the workload, the relations and the source's monthly cost.
+func TestInventoryReadsSchemaVersion2(t *testing.T) {
+	t.Parallel()
+
+	got := inventoryOf(t, validV2Path)
+	want := wantVersion2Inventory(t)
+
+	if diff := cmp.Diff(want.Source(), got.Source()); diff != "" {
+		t.Errorf("Source() differs (-want +got):\n%s", diff)
+	}
+
+	if diff := cmp.Diff(want.Resources(), got.Resources()); diff != "" {
+		t.Errorf("Resources() differ (-want +got):\n%s", diff)
+	}
+}
+
+// TestInventoryReadsVersion1And2TwinsAlike pins that the version is a fact about
+// the file, not about the resources: a version 1 file and the same bytes with
+// only the version changed describe the same inventory.
+func TestInventoryReadsVersion1And2TwinsAlike(t *testing.T) {
+	t.Parallel()
+
+	one := fixtureBytes(t, validPath)
+
+	const versionKey = `"schemaVersion": 1`
+	if !bytes.Contains(one, []byte(versionKey)) {
+		t.Fatalf("the fixture %s does not spell %s, so the test cannot build its twin", validPath, versionKey)
+	}
+
+	two := bytes.Replace(one, []byte(versionKey), []byte(`"schemaVersion": 2`), 1)
+
+	fromOne := inventoryOf(t, validPath)
+	fromTwo := inventoryOf(t, writeFile(t, t.TempDir(), string(two)))
+
+	if diff := cmp.Diff(fromOne.Source(), fromTwo.Source()); diff != "" {
+		t.Errorf("Source() of the version 2 twin differs (-version 1 +version 2):\n%s", diff)
+	}
+
+	if diff := cmp.Diff(fromOne.Resources(), fromTwo.Resources()); diff != "" {
+		t.Errorf("Resources() of the version 2 twin differ (-version 1 +version 2):\n%s", diff)
+	}
+}
+
+// TestInventoryReadsAbsentVersion2FieldsAlike pins the null policy of version 2:
+// null is the same as an absent field at every level, and an empty size or usage
+// object is absent too, so every spelling of "not given" is one inventory.
+func TestInventoryReadsAbsentVersion2FieldsAlike(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name string
+		// extra is appended to a version 2 resource: the version 2 fields the
+		// case gives, or null, or empty.
+		extra string
+	}{
+		{name: "null fields", extra: `,"size":null,"usage":null,"workload":null,"relations":null,"monthlyCost":null`},
+		{name: "empty objects", extra: `,"size":{},"usage":{}`},
+		{name: "empty relations", extra: `,"relations":[]`},
+		{name: "empty workload", extra: `,"workload":""`},
+		{name: "null members of size and usage", extra: `,"size":{"vcpus":null,"memoryGiB":null,"storageGiB":null,"count":null},"usage":{"hoursPerMonth":null}`},
+	}
+
+	want := inventoryOf(t, writeFile(t, t.TempDir(), schemaDocument(2, "")))
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			got := inventoryOf(t, writeFile(t, t.TempDir(), schemaDocument(2, tc.extra)))
+
+			if diff := cmp.Diff(want.Source(), got.Source()); diff != "" {
+				t.Errorf("Source() differs (-absent +this spelling):\n%s", diff)
+			}
+
+			if diff := cmp.Diff(want.Resources(), got.Resources()); diff != "" {
+				t.Errorf("Resources() differ (-absent +this spelling):\n%s", diff)
+			}
+		})
+	}
+}
+
+// TestInventoryCapsRelations pins the relations cap: a resource carries at most
+// MaxRelations relations, counted as the document lists them, duplicates
+// included, and refused at the first one past the cap.
+func TestInventoryCapsRelations(t *testing.T) {
+	t.Parallel()
+
+	const (
+		wantCap   = 32
+		resource  = "resources[0]"
+		relations = "relations"
+	)
+
+	if inventoryfile.MaxRelations != wantCap {
+		t.Fatalf("inventoryfile.MaxRelations = %d, want %d", inventoryfile.MaxRelations, wantCap)
+	}
+
+	t.Run("exactly the cap is accepted", func(t *testing.T) {
+		t.Parallel()
+
+		path := writeFile(t, t.TempDir(), relationsDocument(wantCap))
+
+		inv, err := inventoryfile.New(path).Inventory(t.Context())
+		if err != nil {
+			t.Fatalf("Inventory() returned an error for a resource with exactly %d relations: %v", wantCap, err)
+		}
+
+		resources := inv.Resources()
+		if len(resources) != 2 {
+			t.Fatalf("len(Resources()) = %d, want 2", len(resources))
+		}
+
+		// The list repeats one relation, and duplicates are dropped once the
+		// document is read: the cap counts what the file lists.
+		if got := len(resources[0].Relations); got != 1 {
+			t.Errorf("len(Relations()) = %d, want 1: the %d duplicates are one relation", got, wantCap)
+		}
+	})
+
+	t.Run("one past the cap is refused", func(t *testing.T) {
+		t.Parallel()
+
+		path := writeFile(t, t.TempDir(), relationsDocument(wantCap+1))
+
+		_, err := inventoryfile.New(path).Inventory(t.Context())
+		if !errors.Is(err, inventoryfile.ErrDecode) {
+			t.Fatalf("Inventory() for a resource with %d relations returned error %v, want one wrapping %v",
+				wantCap+1, err, inventoryfile.ErrDecode)
+		}
+
+		msg := err.Error()
+		if !strings.Contains(msg, text.Quote(resource)) {
+			t.Errorf("Inventory() error = %q, want it to name the resource %s", msg, text.Quote(resource))
+		}
+
+		if !strings.Contains(msg, strconv.Itoa(wantCap)) {
+			t.Errorf("Inventory() error = %q, want it to name the limit %d", msg, wantCap)
+		}
+
+		if !strings.Contains(strings.ToLower(msg), relations) {
+			t.Errorf("Inventory() error = %q, want it to name the %s it is about", msg, relations)
+		}
+	})
 }
