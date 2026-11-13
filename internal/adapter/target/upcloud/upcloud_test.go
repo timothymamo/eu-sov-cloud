@@ -142,7 +142,8 @@ func TestCatalogSnapshotHeader(t *testing.T) {
 // every offering available in the default region can be priced there, so an
 // estimate for that region never borrows another region's price and never reads a
 // missing price as zero. leftOut names the offerings the two coverage rules below
-// are waived for, with the reason, because UpCloud publishes no price for them.
+// are waived for, with the reason, because the snapshot cannot express their price
+// as a plan or a storage price.
 func TestCatalogPlansAndPrices(t *testing.T) {
 	t.Parallel()
 
@@ -178,12 +179,22 @@ func TestCatalogPlansAndPrices(t *testing.T) {
 		taxonomy.DatabaseMySQL,
 	}
 
+	// multiNodeDatabaseLeftOut is why both multi-node managed databases are
+	// waived: the reason is the same for both.
+	const multiNodeDatabaseLeftOut = "UpCloud prices extra database nodes as a count-dependent discount " +
+		"(Second Node -10%, Third Node -30%), which a per-node plan price cannot express; see SOURCES.md"
+
 	// leftOut exempts an offering from the two coverage rules, never from the
 	// price rules, and gives the reason. An entry is a finding to explain in this
-	// test and in SOURCES.md, not a way past a refresh. It starts empty: every
-	// offering the snapshot holds is priced by categories UpCloud publishes
-	// prices for.
-	leftOut := map[string]string{}
+	// test and in SOURCES.md, not a way past a refresh. It holds the multi-node
+	// managed databases, the only offerings the snapshot cannot price: UpCloud
+	// publishes their price as a count-dependent discount on the per-node price
+	// rather than as a plan or a per-GiB one, and the domain has no price that
+	// depends on a count.
+	leftOut := map[string]string{
+		"Managed MySQL Multi-node":      multiNodeDatabaseLeftOut,
+		"Managed PostgreSQL Multi-node": multiNodeDatabaseLeftOut,
+	}
 
 	for _, o := range cat.Offerings() {
 		reason, exempt := leftOut[o.Name]
