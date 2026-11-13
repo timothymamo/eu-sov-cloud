@@ -141,7 +141,9 @@ func TestCatalogSnapshotHeader(t *testing.T) {
 // least one storage price, every price is a positive monthly amount in EUR, and
 // every offering available in the default region can be priced there, so an
 // estimate for that region never borrows another region's price and never reads a
-// missing price as zero. leftOut names the offerings the two coverage rules below
+// missing price as zero. An offering that sells plans for servers or clusters
+// also lists a storage price, so the estimate can price the disk above what the
+// plan includes from the same offering. leftOut names the offerings those rules
 // are waived for, with the reason, because the snapshot cannot express their price
 // as a plan or a storage price.
 func TestCatalogPlansAndPrices(t *testing.T) {
@@ -179,18 +181,26 @@ func TestCatalogPlansAndPrices(t *testing.T) {
 		taxonomy.DatabaseMySQL,
 	}
 
+	// planStorageCategories are the categories whose plans come with disk that a
+	// resource may outgrow: a server and a managed cluster, but not a managed
+	// database, whose storage volume is priced on its own offerings already.
+	planStorageCategories := []taxonomy.Category{
+		taxonomy.ComputeVM,
+		taxonomy.KubernetesManaged,
+	}
+
 	// multiNodeDatabaseLeftOut is why both multi-node managed databases are
 	// waived: the reason is the same for both.
 	const multiNodeDatabaseLeftOut = "UpCloud prices extra database nodes as a count-dependent discount " +
 		"(Second Node -10%, Third Node -30%), which a per-node plan price cannot express; see SOURCES.md"
 
-	// leftOut exempts an offering from the two coverage rules, never from the
-	// price rules, and gives the reason. An entry is a finding to explain in this
-	// test and in SOURCES.md, not a way past a refresh. It holds the multi-node
-	// managed databases, the only offerings the snapshot cannot price: UpCloud
-	// publishes their price as a count-dependent discount on the per-node price
-	// rather than as a plan or a per-GiB one, and the domain has no price that
-	// depends on a count.
+	// leftOut exempts an offering from the coverage and plan-storage rules, never
+	// from the price rules, and gives the reason. An entry is a finding to explain
+	// in this test and in SOURCES.md, not a way past a refresh. It holds the
+	// multi-node managed databases, the only offerings the snapshot cannot price:
+	// UpCloud publishes their price as a count-dependent discount on the per-node
+	// price rather than as a plan or a per-GiB one, and the domain has no price
+	// that depends on a count.
 	leftOut := map[string]string{
 		"Managed MySQL Multi-node":      multiNodeDatabaseLeftOut,
 		"Managed PostgreSQL Multi-node": multiNodeDatabaseLeftOut,
@@ -209,6 +219,17 @@ func TestCatalogPlansAndPrices(t *testing.T) {
 
 		if !exempt && servesAny(o, storageCategories) && len(o.StoragePrices) == 0 {
 			t.Errorf("offering %s serves a category priced per GiB of storage but lists no storage price, want at least one",
+				text.Quote(o.Name))
+		}
+
+		// PRD #190 estimates a resource as the plan price times its count and the
+		// hours it runs, plus the storage above what the plan includes, priced per
+		// GiB. That second summand can only come from a storage price of the same
+		// offering as the plan, so an offering that sells plans servers and
+		// clusters run on needs both, or every sized resource asking for more disk
+		// than the plan includes would be "not estimated".
+		if !exempt && servesAny(o, planStorageCategories) && len(o.Plans) > 0 && len(o.StoragePrices) == 0 {
+			t.Errorf("offering %s lists plans but no storage price, want at least one: the monthly estimate prices the storage above a plan's included storage per GiB, from the same offering",
 				text.Quote(o.Name))
 		}
 
