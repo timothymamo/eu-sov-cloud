@@ -1319,7 +1319,9 @@ func TestAmountString(t *testing.T) {
 // pricedOffering is an offering with plans and storage prices whose input is
 // deliberately unsorted and repeated: New must return the plans sorted by name,
 // each price's regions sorted and de-duplicated, and the prices sorted by their
-// first region with the every-region price first.
+// first region with the every-region price first. Its storage prices are
+// region-scoped, one of them repeated, so a test can change a storage region in
+// place as well as a plan price's (ADR 0024).
 func pricedOffering() catalog.Offering {
 	return catalog.Offering{
 		Name:         "Example Compute",
@@ -1345,7 +1347,8 @@ func pricedOffering() catalog.Offering {
 			},
 		},
 		StoragePrices: []catalog.Price{
-			{Amount: 400, Currency: catalog.EUR},
+			{Amount: 400, Currency: catalog.EUR, Regions: []string{"nl-ams", "nl-ams"}},
+			{Amount: 450, Currency: catalog.EUR, Regions: []string{"fr-par"}},
 		},
 	}
 }
@@ -1378,7 +1381,8 @@ func pricedOfferingNormalised() catalog.Offering {
 			},
 		},
 		StoragePrices: []catalog.Price{
-			{Amount: 400, Currency: catalog.EUR},
+			{Amount: 450, Currency: catalog.EUR, Regions: []string{"fr-par"}},
+			{Amount: 400, Currency: catalog.EUR, Regions: []string{"nl-ams"}},
 		},
 	}
 }
@@ -1785,23 +1789,18 @@ func TestNewDefaultRegion(t *testing.T) {
 	}
 }
 
-// The catalog is immutable: mutating the slices handed to New, or what Offerings
-// and OfferingsFor return, must not reach the catalog. Plans, their prices and a
-// price's regions are part of that copy (ADR 0024).
 // tamperPricedOffering breaks every plan, price and storage price reachable
 // through off, so a catalog that hands out a list it shares with its input or
-// its result shows the change. It walks the lists instead of indexing a plan: the
-// plans come back sorted by name, and a plan with an every-region price holds no
-// region to change (ADR 0024).
+// its result shows the change. It changes each region in place and never
+// replaces a region slice: a slice the catalog shares but a test replaces is
+// never written to, so a shallow copy would go unnoticed, and a storage price's
+// regions deserve the same proof as a plan price's (ADR 0024). It walks the
+// lists instead of indexing a plan: the plans come back sorted by name.
 func tamperPricedOffering(t *testing.T, off *catalog.Offering) {
 	t.Helper()
 
 	if len(off.Plans) == 0 {
 		t.Fatal("the offering sells no plan to tamper with")
-	}
-
-	if len(off.StoragePrices) == 0 {
-		t.Fatal("the offering publishes no storage price to tamper with")
 	}
 
 	for i := range off.Plans {
@@ -1816,10 +1815,32 @@ func tamperPricedOffering(t *testing.T, off *catalog.Offering) {
 		}
 	}
 
-	off.StoragePrices[0].Amount = 1
-	off.StoragePrices[0].Regions = []string{"tampered"}
+	if len(off.StoragePrices) == 0 {
+		t.Fatal("the offering publishes no storage price to tamper with")
+	}
+
+	regions := 0
+
+	for i := range off.StoragePrices {
+		off.StoragePrices[i].Amount = 1
+
+		for k := range off.StoragePrices[i].Regions {
+			off.StoragePrices[i].Regions[k] = "tampered"
+
+			regions++
+		}
+	}
+
+	// A fixture whose storage prices are all every-region prices would leave the
+	// loop above with nothing to change, so the test would pin nothing.
+	if regions == 0 {
+		t.Fatal("the offering's storage prices hold no region to tamper with")
+	}
 }
 
+// The catalog is immutable: mutating the slices handed to New, or what Offerings
+// and OfferingsFor return, must not reach the catalog. Plans, their prices and a
+// price's regions are part of that copy (ADR 0024).
 func TestPlansAndPricesAreCopied(t *testing.T) {
 	t.Parallel()
 

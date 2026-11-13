@@ -924,6 +924,25 @@ func TestParseErrors(t *testing.T) {
 			wantQuoted: []string{"offerings[0].plans[0].memoryGiB", "-0.000"},
 		},
 		{
+			// -0 is refused whatever the number holds: the sign on a zero integer
+			// is as meaningless as one on a decimal, and a reader that read it as 0
+			// would drop the sign without a word (ADR 0024).
+			name:         "vcpus written as -0",
+			data:         docIn(t, pricedDocument, `"vcpus": 2,`, `"vcpus": -0,`),
+			wantErr:      []error{snapshot.ErrDecode},
+			wantNotErr:   []error{catalog.ErrInvalidPlan},
+			wantQuoted:   []string{"offerings[0].plans[0].vcpus", "-0"},
+			wantContains: []string{"the number"},
+		},
+		{
+			name:         "included storage written as -0",
+			data:         docIn(t, pricedDocument, `"storageGiB": 20,`, `"storageGiB": -0,`),
+			wantErr:      []error{snapshot.ErrDecode},
+			wantNotErr:   []error{catalog.ErrInvalidPlan},
+			wantQuoted:   []string{"offerings[0].plans[0].storageGiB", "-0"},
+			wantContains: []string{"the number"},
+		},
+		{
 			// The amount is held as a count of ten-thousandths, so an amount whose
 			// count does not fit an int64 is refused even though its integer part
 			// alone would.
@@ -955,6 +974,14 @@ func TestParseErrors(t *testing.T) {
 			wantNotErr:   []error{snapshot.ErrDecode},
 			wantQuoted:   []string{"EC-2-4"},
 			wantContains: []string{"vcpus"},
+		},
+		{
+			name:         "negative included storage reaches the domain",
+			data:         docIn(t, pricedDocument, `"storageGiB": 20,`, `"storageGiB": -1,`),
+			wantErr:      []error{catalog.ErrInvalidPlan},
+			wantNotErr:   []error{snapshot.ErrDecode},
+			wantQuoted:   []string{"EC-2-4"},
+			wantContains: []string{"storageGiB"},
 		},
 		{
 			name:         "negative price amount reaches the domain",
