@@ -2,10 +2,10 @@ package probe
 
 import "os/exec"
 
-func mk[T any]() *T {
-	return new(T)
-}
+// mk is a generic type, not a function, so this file has nothing for the
+// generic rule to refuse and the type argument alone is the finding (P2).
+type mk[T any] struct{}
 
 func cmdTypeArgument() {
-	_ = mk[exec.Cmd]()
+	_ = mk[exec.Cmd]{}
 }

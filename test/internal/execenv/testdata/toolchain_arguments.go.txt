@@ -6,8 +6,9 @@ import (
 	"path/filepath"
 )
 
-// These are the shapes the e2e tier runs: flags the exemption refuses none of,
-// and positional arguments the source builds at run time.
+// These are the shapes the e2e tier runs: flags the allow-list admits
+// (-trimpath, -o and -deps), literal and not, and positional arguments the
+// source builds at run time.
 func toolchainArguments(ctx context.Context, binaryPath string) error {
 	build := exec.Command("go", "build", "-trimpath", "-o", binaryPath, filepath.Join("..", "..", "cmd", "x"))
 	if out, err := build.CombinedOutput(); err != nil {
@@ -18,4 +19,11 @@ func toolchainArguments(ctx context.Context, binaryPath string) error {
 	list := exec.CommandContext(ctx, "go", "list", "-deps", "./cmd/x")
 	_, err := list.Output()
 	return err
+}
+
+// Every flag written out as a literal is one of the allow-list's, so this call
+// keeps the exemption as the ones above do.
+func toolchainLiteralFlags() error {
+	build := exec.Command("go", "build", "-trimpath", "-o", "out", "./cmd/x")
+	return build.Run()
 }

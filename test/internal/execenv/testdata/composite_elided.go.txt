@@ -2,10 +2,10 @@ package probe
 
 import "os/exec"
 
-// The element literals elide their type: the slice and the map name exec.Cmd,
-// so each element builds a command of its own, with no Env key, however little
-// the literal itself writes. An element whose Env key holds a composite
-// literal is accepted, as the literal that names the type is.
+// The element literals elide their type: the slice and the map name a type
+// that holds exec.Cmd, and no composite type holds a command (P2), so each of
+// these three is refused at its type expression, the third one though its
+// element writes an Env.
 func compositeElided() {
 	_ = []*exec.Cmd{{Path: "/bin/sh"}}
 	_ = map[string]*exec.Cmd{"sh": {Path: "/bin/sh"}}

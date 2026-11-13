@@ -27,19 +27,36 @@ import (
 // what the child prints can reach a t.Log call or a golden file. The exemption
 // is keyed on the name and the subcommand, both string literals, so a `go run`
 // or a `go env` call is let through by nothing; the checker itself takes the
-// exemption away from a call with a spread argument, or with a literal argument
-// that is, or starts with, -toolexec, --toolexec, -exec, --exec, -overlay or
-// --overlay, which hand the go command's environment to a program the argument
-// names. A resulting argument the source builds at run time (an output path, a
-// package) keeps the exemption, so an argument that holds one of those flags
-// without being a literal is left to review, as the e2e-no-env forbidigo group
-// leaves its own gaps.
+// exemption away from a call with a spread argument (issue #195 round 4). A
+// resulting argument the source builds at run time (an output path, a package)
+// keeps the exemption, so an argument that holds a flag without being a literal
+// is left to review, as the e2e-no-env forbidigo group leaves its own gaps.
 var e2eToolchainCommands = []string{"go build", "go list"}
 
+// e2eToolchainFlags is the allow-list of flags an exempt command may carry:
+// after the subcommand, every literal argument that starts with "-" must be one
+// of these, or the exemption is lost (issue #195 round 4). The three are the
+// flags the tier passes today, and each keeps the go command from handing its
+// environment to a program the argument names: -trimpath and -o build a binary,
+// and -deps lists the packages it needs. A flag the go command gains later, or
+// one of the many that run another program with that environment (-ldflags with
+// -extld, -toolexec, -exec, -overlay, -C, -pgo, -compiler, ...), is refused
+// until review adds it here on purpose.
+var e2eToolchainFlags = []string{"-trimpath", "-o", "-deps"}
+
 // e2eExecExempt reports whether the e2e tier may start the command named name
-// with its first argument sub and no Env of its own (e2eToolchainCommands).
-func e2eExecExempt(name, sub string) bool {
-	return slices.Contains(e2eToolchainCommands, name+" "+sub)
+// with its first argument sub, no Env of its own and the literal arguments
+// flags after the subcommand (e2eToolchainCommands, e2eToolchainFlags).
+func e2eExecExempt(name, sub string, flags []string) bool {
+	if !slices.Contains(e2eToolchainCommands, name+" "+sub) {
+		return false
+	}
+	for _, flag := range flags {
+		if strings.HasPrefix(flag, "-") && !slices.Contains(e2eToolchainFlags, flag) {
+			return false
+		}
+	}
+	return true
 }
 
 // TestE2ETestsSetExecEnv holds every test/e2e _test.go file to the rule that a

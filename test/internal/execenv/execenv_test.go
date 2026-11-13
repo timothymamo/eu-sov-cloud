@@ -3,6 +3,8 @@ package execenv_test
 import (
 	"os"
 	"path/filepath"
+	"slices"
+	"strings"
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
@@ -31,30 +33,47 @@ import (
 // Its message is not pinned, only that it says something, so the wording can
 // change without touching a probe.
 //
-// One shape yields one finding, at the earliest statement a reader fixes, even
-// where two rules of the checker meet on it: an exec.Cmd composite literal with
-// no Env is refused once as a literal and once as the command type it names,
-// and the probe expects the one finding. An Env assigned a value that inherits
-// the environment is a finding at the assignment and leaves the command's Env
-// unset, so a run after it is a finding too.
+// A shape yields at most one finding per line, at the earliest statement a
+// reader fixes, even where two rules of the checker meet on it: an exec.Cmd
+// composite literal with no Env is refused once as a literal and once as the
+// command type it names, and the probe expects the one finding. An Env assigned
+// a value that inherits the environment is a finding at the assignment and
+// leaves the command's Env unset, so a run after it is a finding too, on its own
+// line.
 
 // noExemption refuses no command name, the exemption function of a caller that
 // lets nothing inherit the environment.
-func noExemption(string, string) bool { return false }
+func noExemption(string, string, []string) bool { return false }
 
-// nameOnlyExemption admits every command named go, whatever its subcommand, so
-// a probe shows that a subcommand the source does not write as a literal is
-// exempt by nothing.
-func nameOnlyExemption(name, _ string) bool { return name == "go" }
+// nameOnlyExemption admits every command named go, whatever its subcommand and
+// flags, so a probe shows that a subcommand the source does not write as a
+// literal is exempt by nothing.
+func nameOnlyExemption(name, _ string, _ []string) bool { return name == "go" }
+
+// toolchainFlags is the allow-list of the go command's flags an exempt call may
+// carry (P4), the same list test/lint's e2eToolchainFlags is: after the
+// subcommand, every literal argument that starts with "-" must be one of these,
+// or the exemption is lost. A flag the go command gains later is refused until
+// it is added here on purpose.
+var toolchainFlags = []string{"-trimpath", "-o", "-deps"}
 
 // toolchainExemption admits the go toolchain's two commands whose calls in the
 // e2e tier inherit the environment because the go command needs it (`go build`
-// and `go list`), keyed on the name and the subcommand after it, as test/lint's
-// rule is. `go run` and `go env` print or hand on that environment, so they are
-// no part of it, and neither is a name or a subcommand the source builds at run
-// time.
-func toolchainExemption(name, sub string) bool {
-	return name == "go" && (sub == "build" || sub == "list")
+// and `go list`), keyed on the name and the subcommand after it, and only while
+// every literal argument after the subcommand that starts with "-" is one of
+// toolchainFlags, as test/lint's rule is. `go run` and `go env` print or hand on
+// that environment, so they are no part of it, and neither is a name or a
+// subcommand the source builds at run time.
+func toolchainExemption(name, sub string, flags []string) bool {
+	if name != "go" || (sub != "build" && sub != "list") {
+		return false
+	}
+	for _, flag := range flags {
+		if strings.HasPrefix(flag, "-") && !slices.Contains(toolchainFlags, flag) {
+			return false
+		}
+	}
+	return true
 }
 
 func TestCheckExecEnv(t *testing.T) {
@@ -63,7 +82,7 @@ func TestCheckExecEnv(t *testing.T) {
 	tests := []struct {
 		name   string
 		probe  string
-		exempt func(name, sub string) bool
+		exempt func(name, sub string, flags []string) bool
 		want   []execenv.Finding
 		// wantErr is set for a probe that does not parse: both checkers read
 		// the file as Go and return the parse error.
@@ -175,13 +194,13 @@ func TestCheckExecEnv(t *testing.T) {
 			probe: "composite_env.go.txt",
 		},
 		{
-			// The element literal writes no type of its own: the slice and
-			// the map name exec.Cmd, so each element is a command with no Env
-			// key, and one whose Env key holds a composite literal is
-			// accepted as the literal that names the type is.
-			name:  "an elided-type exec.Cmd literal in an exec.Cmd slice or map with no Env is refused",
+			// No composite type holds a command (P2), so the slice and the
+			// map are refused at their type expression, and an element
+			// literal that writes an Env proves nothing about the type that
+			// holds it.
+			name:  "a slice or map of *exec.Cmd is refused, an elided-type element literal no finding of its own",
 			probe: "composite_elided.go.txt",
-			want:  find("composite_elided.go.txt", 10, 11),
+			want:  find("composite_elided.go.txt", 10, 11, 12),
 		},
 		{
 			// A zero value of exec.Cmd is never followed, so no Env is ever
@@ -230,6 +249,22 @@ func TestCheckExecEnv(t *testing.T) {
 			want:  find("cmd_type_argument.go.txt", 10),
 		},
 		{
+			// P2 narrows the exception to a whole declared type: the pointer
+			// is refused as the element or key of a composite type, on the
+			// right of a type declaration and as a type argument, at the type
+			// expression a reader fixes.
+			name:  "a composite type holding *exec.Cmd, a type declaration on it and a type argument of it are refused",
+			probe: "cmd_composite_types.go.txt",
+			want:  find("cmd_composite_types.go.txt", 10, 11, 12, 13, 14, 16, 17, 24),
+		},
+		{
+			// P6: the tier declares no generic function, and one would build a
+			// command the check does not follow.
+			name:  "a generic function in a file that imports os/exec is refused, at its declaration",
+			probe: "generic.go.txt",
+			want:  find("generic.go.txt", 9),
+		},
+		{
 			// new(exec.Cmd) is one of the shapes the type rule covers, and it
 			// is one finding, not one for the call and one for the type.
 			name:  "new(exec.Cmd) is refused",
@@ -259,9 +294,12 @@ func TestCheckExecEnv(t *testing.T) {
 			want:  find("helper_argument.go.txt", 6),
 		},
 		{
-			name:  "a command stored in a slice element is refused at the construction",
+			// The result type, the literal's type and the construction the
+			// literal holds are three lines, each refused in its own right:
+			// no composite type holds a command (P2).
+			name:  "a command stored in a slice element is refused, the result type and the literal's type too",
 			probe: "slice_element.go.txt",
-			want:  find("slice_element.go.txt", 6),
+			want:  find("slice_element.go.txt", 8, 9, 10),
 		},
 		{
 			name:  "a command assigned to a struct field is refused at the construction",
@@ -312,6 +350,17 @@ func TestCheckExecEnv(t *testing.T) {
 			name:  "Env assigned a nil variable is refused at the assignment and at the run",
 			probe: "env_nil_variable.go.txt",
 			want:  find("env_nil_variable.go.txt", 9, 10),
+		},
+		{
+			// P1: every assignment to an Env field is proven, whatever the
+			// receiver, a command the check follows or not, and whatever the
+			// shape of the value: a dereference of the command, an alias, a
+			// value copy, a parameter, a struct field, a type-switch variable,
+			// a range statement, an unpaired call and a reslice one by one, and
+			// an Env key of another struct's literal too.
+			name:  "every Env assignment is refused unless its value is proven, whatever the receiver",
+			probe: "env_receiver.go.txt",
+			want:  find("env_receiver.go.txt", 15, 22, 28, 33, 43, 51, 58, 69, 75, 85),
 		},
 		{
 			name:  "Env assigned a dereferenced pointer to a nil slice is refused at the assignment and at the run",
@@ -370,6 +419,29 @@ func TestCheckExecEnv(t *testing.T) {
 			// whose return expression is an accepted literal.
 			name:  "an Env that a helper of the same file returns as a literal is accepted",
 			probe: "env_helper.go.txt",
+		},
+		{
+			// P5: the declaration is what a reader fixes, and a helper that
+			// could hand back a zero value proves nothing, so the assignment
+			// that reads it and the run after it are refused as an unproven Env
+			// and an unset one.
+			name:  "a helper with a named result or a defer proves no Env and is refused at its declaration",
+			probe: "env_helper_shapes.go.txt",
+			want:  find("env_helper_shapes.go.txt", 12, 17, 24, 25, 28, 29),
+		},
+		{
+			// The accepted counterparts of env_receiver.go.txt: the same
+			// receivers with the values the e2e tier writes.
+			name:  "a proven Env assigned through any receiver is accepted",
+			probe: "env_receiver_accepted.go.txt",
+		},
+		{
+			// P3: a selector Command or CommandContext that is no call names a
+			// function the check cannot follow, which hands back a fresh command
+			// with a nil Env wherever it is called.
+			name:  "exec.Command and exec.CommandContext as a function value are refused",
+			probe: "exec_function_value.go.txt",
+			want:  find("exec_function_value.go.txt", 10, 15, 18),
 		},
 		{
 			// The accepted gap: the checker follows the source, not the
@@ -493,6 +565,16 @@ func TestCheckExecEnv(t *testing.T) {
 			probe:  "toolchain_spread.go.txt",
 			exempt: toolchainExemption,
 			want:   find("toolchain_spread.go.txt", 9),
+		},
+		{
+			// P4: the exemption is an allow-list, so any flag it does not name
+			// takes it away: a -ldflags that names another linker and its
+			// -extld, apart or with =, a -C that runs the go command elsewhere
+			// and a -pgo that reads a profile.
+			name:   "a flag the allow-list does not name takes the exemption away",
+			probe:  "toolchain_flags.go.txt",
+			exempt: toolchainExemption,
+			want:   find("toolchain_flags.go.txt", 13, 18, 23, 28),
 		},
 		{
 			name:    "a source that does not parse is an error, not a finding",

@@ -1,0 +1,23 @@
+package probe
+
+import "os/exec"
+
+// exec.Command and exec.CommandContext hand back a fresh command whose Env is
+// nil, so a use of either that is no call is refused: the check cannot tell
+// what the program it becomes builds, nor whether Env is ever set on it (P3).
+
+func execCommandValue() error {
+	ec := exec.Command
+	d := ec("sh")
+	return d.Run()
+}
+
+var execCommandContextValue = exec.CommandContext
+
+func execCommandArgument() {
+	run(exec.Command)
+}
+
+func run(c any) {
+	_ = c
+}

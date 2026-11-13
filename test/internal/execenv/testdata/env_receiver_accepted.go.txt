@@ -1,0 +1,37 @@
+package probe
+
+import "os/exec"
+
+// The accepted counterparts of env_receiver.go.txt: a receiver the check does
+// not follow takes a proven Env value as any other receiver does, an Env key
+// of another struct's literal too, and the e2e tier's own forms are the ones
+// it writes (an empty literal, an append of one).
+
+type envAcceptedHolder struct {
+	cmd *exec.Cmd
+}
+
+func envFieldAccepted(s *envAcceptedHolder) {
+	s.cmd.Env = []string{}
+}
+
+func envDerefAccepted(cmd *exec.Cmd) {
+	(*cmd).Env = []string{"PATH=/usr/bin"}
+}
+
+func envAppendAccepted(cmd *exec.Cmd, env []string) {
+	cmd.Env = append([]string{}, env...)
+}
+
+func envValueCopyAccepted(cmd *exec.Cmd) {
+	v := *cmd
+	v.Env = []string{}
+}
+
+type envAcceptedSettings struct {
+	Env []string
+}
+
+func envKeyAccepted() {
+	_ = envAcceptedSettings{Env: []string{}}
+}

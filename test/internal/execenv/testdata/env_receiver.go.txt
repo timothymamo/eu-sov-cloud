@@ -1,0 +1,86 @@
+package probe
+
+import "os/exec"
+
+// Every assignment to an Env field is proven, whatever the receiver: a command
+// the check follows, a dereferenced command, a parameter, an alias, a value
+// copy, a field of another struct and a type-switch variable are alike (P1).
+// Each shape is one finding, at the line a reader fixes.
+
+// A dereferenced receiver is the command itself, after its Env was set, and
+// the value assigned here is still one the check cannot prove is not nil.
+func envDerefReceiver() {
+	cmd := exec.Command("sh")
+	cmd.Env = []string{}
+	(*cmd).Env = nil
+}
+
+// An alias of a command the check does not follow: the parameter was never
+// followed, so no rule about followed commands reaches this assignment.
+func envAliasParameter(cmd *exec.Cmd) {
+	c2 := cmd
+	c2.Env = nil
+}
+
+// A value copy of a command: the struct itself, not the pointer.
+func envValueCopy(cmd *exec.Cmd) {
+	v := *cmd
+	v.Env = nil
+}
+
+// A helper that takes a command and gives it a nil Env, then runs it.
+func envNilParameter(c *exec.Cmd) {
+	c.Env = nil
+	_ = c.Run()
+}
+
+// A command held in another struct's field.
+type envHolder struct {
+	c *exec.Cmd
+}
+
+func envFieldReceiver(s *envHolder) {
+	s.c.Env = nil
+}
+
+// A type-switch variable is no variable the check declares, and takes no
+// unproven Env either.
+func envTypeSwitch(v any) {
+	switch c := v.(type) {
+	case *exec.Cmd:
+		c.Env = nil
+	}
+}
+
+// A range statement assigns its value to an .Env selector: the value comes
+// from the range, which no rule proves, so the statement is a finding.
+func envRange(cmd *exec.Cmd) {
+	for _, cmd.Env = range [][]string{nil} {
+	}
+}
+
+// An unpaired assignment hands the Env one of a call's several results, which
+// the check does not pair with it.
+func pair() ([]string, error) {
+	return nil, nil
+}
+
+func envUnpaired(cmd *exec.Cmd) {
+	cmd.Env, _ = pair()
+}
+
+// A reslice of an Env is a value of its own, and one the check cannot prove is
+// not nil: the field is read and written afresh.
+func envReslice(cmd *exec.Cmd) {
+	cmd.Env = cmd.Env[:0:0]
+}
+
+// An Env key, as an assignment to the field, must hold a proven value in a
+// composite literal of any type, not only one of exec.Cmd.
+type envSettings struct {
+	Env []string
+}
+
+func envKeyAnyStruct() {
+	_ = envSettings{Env: nil}
+}
