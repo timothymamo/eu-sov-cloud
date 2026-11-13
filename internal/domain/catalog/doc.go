@@ -30,8 +30,9 @@
 // in a region the offering is not in, and two prices of one list that apply to
 // the same region (a price with no region applies to every one). It keeps each
 // offering's plans sorted by name and every price list sorted by first region,
-// the every-region price first, and a snapshot's default region as given. A zero Catalog has not been validated; later layers only
-// receive catalogs built by New.
+// the every-region price first, and a snapshot's default region as given. A
+// zero Catalog has not been validated; later layers only receive catalogs built
+// by New.
 //
 // The target is the display name reports show (for example Scaleway), not a CLI
 // key: choosing an adapter from a key is the composition root's job.

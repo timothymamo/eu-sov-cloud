@@ -22,11 +22,11 @@
 // replicas only on the Advanced one) and Block Storage 3-AZ Regional Classic.
 //
 // catalog.json is a target catalog snapshot of schema version 2, the format
-// every target with an embedded snapshot shares (ADR 0007, ADR 0024). Source.Catalog and
-// Regions read it through the shared reader, snapshot.Parse in
-// internal/adapter/target/snapshot, which defines the format, its strictness
-// and its errors; Regions returns the snapshot's declared EU region list. This
-// package adds only the name of the embedded file to an error.
+// every target with an embedded snapshot shares (ADR 0007, ADR 0024).
+// Source.Catalog and Regions read it through the shared reader, snapshot.Parse
+// in internal/adapter/target/snapshot, which defines the format, its
+// strictness and its errors; Regions returns the snapshot's declared EU region
+// list. This package adds only the name of the embedded file to an error.
 //
 // To refresh the snapshot: put every source you fetch, the ovh/ovhcloud-docs
 // clone and any page downloaded to read offline, in a scratch directory

@@ -1,8 +1,9 @@
 // Package snapshot reads a target catalog snapshot: the dated JSON document,
 // schema version 2, that a target adapter embeds to describe what its target
-// offers in the EU regions it declares (ADR 0007, ADR 0024). Every target adapter with an
-// embedded snapshot reads it through Parse, so the format, its strictness and its
-// errors are the same for every target and are pinned once, here.
+// offers in the EU regions it declares (ADR 0007, ADR 0024). Every target
+// adapter with an embedded snapshot reads it through Parse, so the format, its
+// strictness and its errors are the same for every target and are pinned once,
+// here.
 //
 // A snapshot holds the target's display name, the source URL and retrieval date
 // (retrievedOn, YYYY-MM-DD) of its data, the EU regions it declares, its
@@ -24,9 +25,8 @@
 // as it words them for the inventory file reader too. This package keeps the
 // format's own decisions: its keys, every one required; null refused
 // everywhere; the size cap; the schema version it reads, 2; the number
-// grammar; the checks after
-// the walk; and its sentinels. Parse refuses a document, with an error,
-// unless all of these hold, checked in this order:
+// grammar; the checks after the walk; and its sentinels. Parse refuses a
+// document, with an error, unless all of these hold, checked in this order:
 //
 //   - it is at most MaxDocumentBytes long, checked before anything else;
 //   - it starts with no byte order mark, UTF-8 or UTF-16, which is refused by
@@ -61,19 +61,19 @@
 // word.
 //
 // Every error is one line and wraps ErrDecode, ErrSchemaVersion,
-// ErrUndeclaredDefaultRegion, ErrUndeclaredRegion or the error of catalog.New. A problem the token walk
-// finds, other than a missing top-level key, is placed by line and column (both
-// from 1, the column in characters), and so are a byte that is not UTF-8,
-// malformed JSON and data after the first JSON value. The other errors carry no
-// position: they name the value by its path (offerings[1].regions[0]) or its
-// name, or speak of the whole document. These are the size cap, a byte order
-// mark, a document that is empty, cut short or not an object, the schema
-// version, a missing top-level key, and the checks after the walk: retrievedOn,
-// the declared regions, the default region, an undeclared offering region and
-// catalog.New. Values
-// from the document are shown through text.Quote, and the text of encoding/json
-// and time.Parse errors is never passed on. Errors name neither the input nor
-// any target: the adapter that embeds the document does.
+// ErrUndeclaredDefaultRegion, ErrUndeclaredRegion or the error of catalog.New.
+// A problem the token walk finds, other than a missing top-level key, is placed
+// by line and column (both from 1, the column in characters), and so are a byte
+// that is not UTF-8, malformed JSON and data after the first JSON value. The
+// other errors carry no position: they name the value by its path
+// (offerings[1].regions[0]) or its name, or speak of the whole document. These
+// are the size cap, a byte order mark, a document that is empty, cut short or
+// not an object, the schema version, a missing top-level key, and the checks
+// after the walk: retrievedOn, the declared regions, the default region, an
+// undeclared offering region and catalog.New. Values from the document are
+// shown through text.Quote, and the text of encoding/json and time.Parse errors
+// is never passed on. Errors name neither the input nor any target: the adapter
+// that embeds the document does.
 //
 // Parse takes the whole document in memory, and MaxDocumentBytes caps what it
 // decodes, not what a caller reads. A caller that ever reads a snapshot from a

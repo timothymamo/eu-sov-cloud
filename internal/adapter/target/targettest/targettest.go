@@ -28,7 +28,8 @@ type Expectations struct {
 	// least one offering.
 	Categories []taxonomy.Category
 	// DefaultRegion is the region the catalog's snapshot must name as the one
-	// estimates use when the user names none. It must be one of Regions.
+	// estimates use when the user names none. Check reports a default-region
+	// violation when the snapshot's default region is not one of Regions.
 	DefaultRegion string
 }
 
