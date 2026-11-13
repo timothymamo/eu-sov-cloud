@@ -49,11 +49,26 @@ var (
 	documentationPrefixNet = netip.MustParsePrefix(documentationPrefix)
 )
 
+// allowedHostnames are the domain names a sample may carry. A GCP inventory
+// names a resource by its Cloud Asset Inventory asset type, and an asset type is
+// the service's public API host name plus the resource type
+// (compute.googleapis.com/Instance, sqladmin.googleapis.com/Instance). Those host
+// names are public provider vocabulary, identical in every account, so they
+// identify no customer data; every other real domain would.
+var allowedHostnames = []string{
+	"example.com",
+	".example.com",
+	".example",
+	"googleapis.com",
+	".googleapis.com",
+}
+
 // TestSamplesAreSanitised pins CLAUDE.md rule 2 for the samples: no sample may
 // carry real identifiers, so every 12-digit account ID is 123456789012, every
-// IPv4 address is in 192.0.2.0/24, and every domain name ends in example.com
-// or .example. A person copies these files into their own demo, so they read
-// as documentation values only.
+// IPv4 address is in 192.0.2.0/24, and every domain name is a documentation
+// name (example.com or .example) or a provider API host name (googleapis.com,
+// allowedHostname). A person copies these files into their own demo, so they
+// read as documentation values only.
 func TestSamplesAreSanitised(t *testing.T) {
 	t.Parallel()
 
@@ -132,8 +147,8 @@ func checkIPv4(t *testing.T, name, text string) {
 	}
 }
 
-// checkHostnames fails on every domain name that does not end in example.com
-// or .example.
+// checkHostnames fails on every domain name the samples may not carry
+// (allowedHostname).
 func checkHostnames(t *testing.T, name, text string) {
 	t.Helper()
 
@@ -153,13 +168,60 @@ func checkHostnames(t *testing.T, name, text string) {
 			continue
 		}
 
-		if candidate == "example.com" ||
-			strings.HasSuffix(candidate, ".example.com") ||
-			strings.HasSuffix(candidate, ".example") {
+		if allowedHostname(candidate) {
 			continue
 		}
 
-		t.Errorf("%s: %q looks like a domain name but does not end in example.com or .example (CLAUDE.md rule 2)",
-			name, candidate)
+		t.Errorf("%s: %q looks like a domain name but is neither a documentation name (example.com, .example) nor a provider API host name (%s) (CLAUDE.md rule 2)",
+			name, candidate, strings.Join(allowedHostnames, ", "))
+	}
+}
+
+// allowedHostname reports whether candidate, a name shaped like a domain name,
+// is one a sample may carry: a documentation domain or a provider's public API
+// host name.
+func allowedHostname(candidate string) bool {
+	for _, allowed := range allowedHostnames {
+		if candidate == strings.TrimPrefix(allowed, ".") ||
+			strings.HasPrefix(allowed, ".") && strings.HasSuffix(candidate, allowed) {
+			return true
+		}
+	}
+
+	return false
+}
+
+// TestAllowedHostname pins which names the sanitisation check lets through: the
+// documentation domains and the provider API host names a resource type is
+// built from (compute.googleapis.com/Instance), and nothing else. The rule is a
+// deny list narrowed by an allow list, so a real customer domain, a lookalike of
+// an allowed one and any other provider-looking host still fails.
+func TestAllowedHostname(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name      string
+		candidate string
+		want      bool
+	}{
+		{name: "documentation domain", candidate: "example.com", want: true},
+		{name: "name under the documentation domain", candidate: "shop.example.com", want: true},
+		{name: "reserved documentation TLD", candidate: "shop.example", want: true},
+		{name: "GCP compute asset type host", candidate: "compute.googleapis.com", want: true},
+		{name: "GCP SQL asset type host", candidate: "sqladmin.googleapis.com", want: true},
+		{name: "real customer domain", candidate: "shop.acme.io", want: false},
+		{name: "lookalike of an allowed domain", candidate: "notgoogleapis.com", want: false},
+		{name: "allowed domain as a prefix", candidate: "googleapis.com.acme.io", want: false},
+		{name: "other Google host name", candidate: "storage.cloud.google.com", want: false},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			if got := allowedHostname(tc.candidate); got != tc.want {
+				t.Errorf("allowedHostname(%q) = %v, want %v", tc.candidate, got, tc.want)
+			}
+		})
 	}
 }
