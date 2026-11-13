@@ -99,10 +99,10 @@ read on 2026-11-13. "The prices page" below is <https://www.ovhcloud.com/en-ie/p
   guide bills it as "100 GB × 30 days × 24 hours × 2 nodes" for a two-node service, since every node
   holds the data. So the snapshot's storage price is **per GiB of the service's data, for the whole
   service at its tier's node count**: that price × the tier's nodes × 730. An inventory's storage size
-  for a database is its data size, so the storage price is not multiplied by the count again. The page's own data behind each storage line also carries
-  a monthly figure that the page does not display (€0.25, €0.37 and €0.44 a month per node) and that is
-  not the displayed hourly price × 730; the displayed hourly price, which the guide calls the source of
-  truth, is the one used.
+  for a database is its data size, so the storage price is not multiplied by the count again. The page's
+  own data behind each storage line also carries a monthly figure that the page does not display (€0.25,
+  €0.37 and €0.44 a month per node) and that is not the displayed hourly price × 730; the displayed
+  hourly price, which the guide calls the source of truth, is the one used.
 - **Managed Kubernetes.** The page prices only the control plane; worker nodes are Public Cloud
   instances "billed at standard price". A Kubernetes plan is therefore a worker node flavour at its
   *Instances* price, with the flavours the Kubernetes regions page offers. The Free plan's control plane
