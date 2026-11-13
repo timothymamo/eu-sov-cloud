@@ -139,10 +139,9 @@
 // import of reflect or unsafe, one finding per import line. No array, slice,
 // map or chan element type is a *exec.Cmd, so no elided literal can build one;
 // a command reaches a struct field only through a use the check vouches for.
-// The proven Env
-// values are a composite literal, a make, an append of one, and a call to a
-// helper of the same file, with no named result and no defer, that returns
-// one. The exemption the test declares (e2eToolchainCommands) is keyed on the
+// The proven Env values are a composite literal, a make, an append of one, and
+// a call to a helper of the same file, with no named result and no defer, that
+// returns one. The exemption the test declares (e2eToolchainCommands) is keyed on the
 // name and the subcommand, both literals: `go build` and `go list`, which need
 // that environment and print none of it, and only while every literal flag
 // after the subcommand is one of the allow-list e2eToolchainFlags (-trimpath,
@@ -151,7 +150,8 @@
 // exemption away too. Four gaps are accepted and left to review: the rule
 // follows the source, not the flow (an Env assigned in a branch that never
 // runs, or in a closure, counts); a path built at run time; a command built in,
-// or handed to, another package (a decoder such as json.Unmarshal writing Env
+// or handed to, another file or package (a decoder such as json.Unmarshal, or
+// a helper of a sibling file that imports reflect but not os/exec, writing Env
 // through a command that escaped into it); and a non-literal toolchain
 // argument that holds a flag, alongside which a Dir set on an exempt command
 // keeps the exemption, the go command then reading that directory's go.mod

@@ -53,9 +53,10 @@
 // file that imports os/exec, an import of reflect or unsafe is refused at its
 // import line, one finding per line: reflection can build a command with a nil
 // Env (reflect.New) or reset a followed command's Env (FieldByName("Env")),
-// and unsafe reaches the Env field by offset, both out of the check's sight. A
-// file that imports no os/exec builds no command, and its reflect or unsafe
-// import is no finding. A finding names the line a reader fixes, and
+// and unsafe reaches the Env field by offset, both out of the check's sight.
+// The refusal is per file: a file that imports no os/exec has its reflect or
+// unsafe import pass, and a command handed to it from a sibling file falls
+// under the third gap below. A finding names the line a reader fixes, and
 // says nothing about how far the child's output travels, which no source
 // check can see.
 //
@@ -77,9 +78,10 @@
 //     e2e-no-env group accepts its embedded-type gap.
 //   - Paths built at run time are beyond CheckEnvironLiterals, a rule of
 //     literals (below).
-//   - A command built in, or handed to, another package is out of the file's
-//     sight: a decoder such as json.Unmarshal may write Env through a command
-//     that has escaped into it.
+//   - A command built in, or handed to, another file or package is out of the
+//     file's sight: a decoder such as json.Unmarshal, or a helper of a sibling
+//     file of test/e2e that imports reflect but not os/exec, may write Env
+//     through a command that has escaped into it.
 //   - A non-literal argument to an exempt toolchain command that holds a flag
 //     keeps the exemption: only literals are checked against the allow-list.
 //     A Dir set on an exempt command keeps the exemption too: the go command

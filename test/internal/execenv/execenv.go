@@ -86,7 +86,8 @@ var runMethods = map[string]bool{
 // well: an embedded *exec.Cmd field; the address of any Env field; a generic
 // function declaration; a blank or dot import of os/exec; and, in a file that
 // imports os/exec, an import of reflect or unsafe, which reach a command's Env
-// out of the check's sight.
+// out of the check's sight. That refusal is per file, as is the whole check: a
+// command built in, or handed to, another file or package is out of its sight.
 //
 // exempt is handed the command name, the first argument of exec.Command and the
 // second of exec.CommandContext, sub, the argument after it, when both are
@@ -112,7 +113,7 @@ func CheckExecEnv(filename string, src []byte, exempt func(name, sub string, fla
 		helpers:  map[*ast.FuncDecl]bool{},
 	}
 	if !c.imports(file) {
-		return c.findings, nil
+		return oneFindingPerLine(c.findings), nil
 	}
 	c.info = resolve(fset, file)
 	c.funcDecls = funcDecls(c.info, file)
