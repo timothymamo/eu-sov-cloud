@@ -1,5 +1,5 @@
 {
-  "count": 12,
+  "count": 13,
   "data": [
     {
       "id": "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg-shop/providers/Microsoft.DBforPostgreSQL/flexibleServers/psql-shop",
@@ -162,8 +162,17 @@
         "1"
       ],
       "properties": null
+    },
+    {
+      "id": "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg-shop/providers/Microsoft.BareMetalInfrastructure/bareMetalInstances/shop-baremetal-1",
+      "name": "shop-baremetal-1",
+      "type": "microsoft.baremetalinfrastructure/baremetalinstances",
+      "kind": "",
+      "location": "westeurope",
+      "zones": null,
+      "properties": null
     }
   ],
   "skip_token": null,
-  "total_records": 22
+  "total_records": 23
 }

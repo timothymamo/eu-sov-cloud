@@ -20,6 +20,11 @@
     "location": "europe-west1"
   },
   {
+    "name": "//baremetalsolution.googleapis.com/projects/example-project/locations/europe-west1/instances/shop-baremetal-1",
+    "assetType": "baremetalsolution.googleapis.com/Instance",
+    "location": "europe-west1"
+  },
+  {
     "name": "//compute.googleapis.com/projects/example-project/zones/europe-west1-b/disks/shop-web-1",
     "assetType": "compute.googleapis.com/Disk",
     "location": "europe-west1-b"

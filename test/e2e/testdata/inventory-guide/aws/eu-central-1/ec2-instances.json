@@ -160,6 +160,31 @@
           ]
         }
       ]
+    },
+    {
+      "Instances": [
+        {
+          "InstanceId": "i-0123456789abcdef6",
+          "InstanceType": "m5.metal",
+          "State": {
+            "Name": "running"
+          },
+          "Placement": {
+            "AvailabilityZone": "eu-central-1a"
+          },
+          "BlockDeviceMappings": [],
+          "NetworkInterfaces": [
+            {
+              "Ipv6AddressCount": 0
+            }
+          ],
+          "Tags": [
+            {
+              "Key": "Name"
+            }
+          ]
+        }
+      ]
     }
   ]
 }

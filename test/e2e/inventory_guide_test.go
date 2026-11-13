@@ -50,15 +50,100 @@ type inventoryGuideCase struct {
 	// *.inventory.json: a real inventory describes someone's infrastructure,
 	// while this one is a sanitised fixture and has to be committed.
 	golden string
+	// bareMetal is the recorded bare-metal server of this source: the resource
+	// the program has to classify compute.baremetal, never compute.vm (ADR 0023).
+	bareMetal bareMetalServer
+	// present are resources the inventory has to hold, by ID, with this category
+	// and rawType.
+	present []resourceFact
+	// absent are resource IDs the program has to leave out altogether: a managed
+	// Kubernetes cluster stands for its nodes.
+	absent []string
+	// absentRawTypes are raw types no resource of this source may carry.
+	absentRawTypes []string
+}
+
+// bareMetalServer is the bare-metal server one source's recorded output holds.
+// Every provider spells it differently, so the case names the ID and the raw
+// type the guide's program writes for it.
+type bareMetalServer struct {
+	// id is the short ID the program writes for the server.
+	id string
+	// rawType is the source's own type for it.
+	rawType string
+}
+
+// resourceFact is what the inventory has to say about one resource, by ID. The
+// assertions on a resourceFact are separate from the golden file on purpose: a
+// careless -update rewrites the golden alone, so it must not be able to accept
+// a mapping away.
+type resourceFact struct {
+	id       string
+	rawType  string
+	category string
 }
 
 // inventoryGuides returns the sources the guide covers. A source added to the
 // guide gets a row here, its fixtures and a golden file.
 func inventoryGuides() []inventoryGuideCase {
 	return []inventoryGuideCase{
-		{source: "aws", pattern: inventoryGuideDir + "/aws/*/*.json", golden: "aws.inventory.golden"},
-		{source: "gcp", pattern: inventoryGuideDir + "/gcp/*.json", golden: "gcp.inventory.golden"},
-		{source: "azure", pattern: inventoryGuideDir + "/azure/*.json", golden: "azure.inventory.golden"},
+		{
+			source:    "aws",
+			pattern:   inventoryGuideDir + "/aws/*/*.json",
+			golden:    "aws.inventory.golden",
+			bareMetal: bareMetalServer{id: "i-0123456789abcdef6", rawType: "AWS::EC2::Instance"},
+			present: []resourceFact{
+				// An Aurora cluster is covered by its instances, which
+				// rds describe-db-instances lists.
+				{id: "shop-aurora-1", rawType: "AWS::RDS::DBInstance", category: "database.postgresql"},
+				// A volume that outlives its node is a persistent volume and
+				// stays: only the node's own root volume is left out.
+				{id: "vol-0123456789abcdef6", rawType: "AWS::EC2::Volume", category: "storage.block"},
+			},
+			// The EKS nodes, the Auto Scaling groups that run them and their
+			// root volumes.
+			absent: []string{
+				"i-0123456789abcdef4",
+				"i-0123456789abcdef5",
+				"vol-0123456789abcdef4",
+				"vol-0123456789abcdef5",
+				"eks-shop-eks-default-00000000-0000-0000-0000-000000000000",
+				"shop-eks-self-managed",
+			},
+			absentRawTypes: []string{"AWS::RDS::DBCluster"},
+		},
+		{
+			source:    "gcp",
+			pattern:   inventoryGuideDir + "/gcp/*.json",
+			golden:    "gcp.inventory.golden",
+			bareMetal: bareMetalServer{id: "shop-baremetal-1", rawType: "baremetalsolution.googleapis.com/Instance"},
+			// A node pool's managed instance group, and a node with its disk,
+			// labelled goog-gke-node.
+			absent: []string{
+				"gke-shop-gke-default-pool-0a1b2c3d-grp",
+				"gke-shop-gke-default-pool-0a1b2c3d-x1y2",
+			},
+		},
+		{
+			source:    "azure",
+			pattern:   inventoryGuideDir + "/azure/*.json",
+			golden:    "azure.inventory.golden",
+			bareMetal: bareMetalServer{id: "shop-baremetal-1", rawType: "Microsoft.BareMetalInfrastructure/bareMetalInstances"},
+			present: []resourceFact{
+				// A storage queue is a queue; a Service Bus topic publishes and
+				// subscribes, which no taxonomy category covers.
+				{id: "shop-thumbnail-jobs", rawType: "Microsoft.Storage/storageAccounts/queueServices/queues", category: "messaging.queue"},
+				{id: "sb-shop-order-events", rawType: "Microsoft.ServiceBus/namespaces/topics", category: "unclassified"},
+				// A persistent volume in the node resource group holds data and
+				// stays: only what AKS manages for the cluster is left out.
+				{id: "pvc-00000000-0000-0000-0000-000000000000", rawType: "Microsoft.Compute/disks", category: "storage.block"},
+			},
+			// The cluster's node scale set and its load balancer.
+			absent: []string{
+				"aks-system-12345678-vmss",
+				"kubernetes",
+			},
+		},
 	}
 }
 
@@ -69,6 +154,7 @@ func inventoryGuides() []inventoryGuideCase {
 // against this list, not against the golden file it was written from.
 func taxonomyCategories() []string {
 	return []string{
+		"compute.baremetal",
 		"compute.vm",
 		"storage.block",
 		"storage.object",
@@ -82,14 +168,28 @@ func taxonomyCategories() []string {
 
 // inventoryDoc is the part of a schema version 1 inventory this file checks.
 type inventoryDoc struct {
-	SchemaVersion int    `json:"schemaVersion"`
-	Source        string `json:"source"`
-	Resources     []struct {
-		ID       string `json:"id"`
-		RawType  string `json:"rawType"`
-		Category string `json:"category"`
-		Region   string `json:"region"`
-	} `json:"resources"`
+	SchemaVersion int                 `json:"schemaVersion"`
+	Source        string              `json:"source"`
+	Resources     []inventoryResource `json:"resources"`
+}
+
+// inventoryResource is the part of one resource this file checks.
+type inventoryResource struct {
+	ID       string `json:"id"`
+	RawType  string `json:"rawType"`
+	Category string `json:"category"`
+	Region   string `json:"region"`
+}
+
+// findResource returns the resource with id, and whether the inventory holds it.
+func findResource(doc inventoryDoc, id string) (inventoryResource, bool) {
+	for _, resource := range doc.Resources {
+		if resource.ID == id {
+			return resource, true
+		}
+	}
+
+	return inventoryResource{}, false
 }
 
 // jqPath returns the path of the jq every release target has installed. A test
@@ -112,7 +212,9 @@ func jqPath(t *testing.T) string {
 // target without an error. The assertions beyond the golden file are the
 // guide's promises that a careless -update must not be able to accept away: the
 // document's schema version and source, every taxonomy category the fixtures
-// cover, an unclassified resource that keeps its rawType, and short IDs only.
+// cover, the bare-metal server of each source (ADR 0023), the resources the
+// program has to leave out or classify a particular way, an unclassified
+// resource that keeps its rawType, and short IDs only.
 func TestInventoryGuidePrograms(t *testing.T) {
 	t.Parallel()
 
@@ -152,6 +254,10 @@ func TestInventoryGuidePrograms(t *testing.T) {
 			}
 
 			assertCategories(t, tc.source, doc)
+			assertBareMetal(t, tc.source, doc, tc.bareMetal)
+			assertPresent(t, tc.source, doc, tc.present)
+			assertAbsent(t, tc.source, doc, tc.absent)
+			assertNoRawTypes(t, tc.source, doc, tc.absentRawTypes)
 			assertUnclassifiedKeepsRawType(t, tc.source, doc)
 			assertShortIDs(t, tc.source, doc)
 
@@ -231,6 +337,89 @@ func assertCategories(t *testing.T, source string, doc inventoryDoc) {
 
 	if diff := cmp.Diff(want, got); diff != "" {
 		t.Errorf("%s: the inventory's categories do not cover the fixture (-want +got):\n%s", source, diff)
+	}
+}
+
+// assertBareMetal fails unless the inventory holds the recorded bare-metal
+// server, by ID, as compute.baremetal with the source's raw type. A bare-metal
+// server is not a virtual machine (ADR 0023): moving to it changes how the
+// resource is provisioned, sized, snapshotted and billed, so classifying it
+// compute.vm assesses it against hosts that cannot replace it.
+func assertBareMetal(t *testing.T, source string, doc inventoryDoc, want bareMetalServer) {
+	t.Helper()
+
+	resource, ok := findResource(doc, want.id)
+	if !ok {
+		t.Errorf("%s: the inventory holds no resource %q; the recorded bare-metal server is missing",
+			source, want.id)
+
+		return
+	}
+
+	if resource.Category != "compute.baremetal" {
+		t.Errorf("%s: bare-metal server %q has category %q, want %q",
+			source, want.id, resource.Category, "compute.baremetal")
+	}
+
+	if resource.RawType != want.rawType {
+		t.Errorf("%s: bare-metal server %q has rawType %q, want %q",
+			source, want.id, resource.RawType, want.rawType)
+	}
+}
+
+// assertPresent fails unless the inventory holds each fact's resource, by ID,
+// with its category and raw type.
+func assertPresent(t *testing.T, source string, doc inventoryDoc, wants []resourceFact) {
+	t.Helper()
+
+	for _, want := range wants {
+		resource, ok := findResource(doc, want.id)
+		if !ok {
+			t.Errorf("%s: the inventory holds no resource %q", source, want.id)
+
+			continue
+		}
+
+		if resource.Category != want.category {
+			t.Errorf("%s: resource %q has category %q, want %q",
+				source, want.id, resource.Category, want.category)
+		}
+
+		if resource.RawType != want.rawType {
+			t.Errorf("%s: resource %q has rawType %q, want %q",
+				source, want.id, resource.RawType, want.rawType)
+		}
+	}
+}
+
+// assertAbsent fails when the inventory holds any of the IDs. The nodes of a
+// managed Kubernetes cluster are left out, the cluster stands for them: an
+// inventory that lists them assesses every node as a machine of its own.
+func assertAbsent(t *testing.T, source string, doc inventoryDoc, ids []string) {
+	t.Helper()
+
+	for _, id := range ids {
+		resource, ok := findResource(doc, id)
+		if !ok {
+			continue
+		}
+
+		t.Errorf("%s: the inventory holds %q (%s, %s), want it left out: a Kubernetes cluster stands for its nodes",
+			source, id, resource.RawType, resource.Category)
+	}
+}
+
+// assertNoRawTypes fails when a resource carries one of the raw types. The
+// entries name a resource that another, listed resource covers: a cluster is
+// assessed per instance, so listing it too would count it twice.
+func assertNoRawTypes(t *testing.T, source string, doc inventoryDoc, rawTypes []string) {
+	t.Helper()
+
+	for _, resource := range doc.Resources {
+		if slices.Contains(rawTypes, resource.RawType) {
+			t.Errorf("%s: resource %q has rawType %q, want none: another resource covers it",
+				source, resource.ID, resource.RawType)
+		}
 	}
 }
 
