@@ -1,8 +1,8 @@
 {
   "schemaVersion": 2,
   "target": "OVHcloud",
-  "sourceURL": "https://www.ovhcloud.com/en/public-cloud/regions-availability/",
-  "retrievedOn": "2026-11-11",
+  "sourceURL": "https://www.ovhcloud.com/en-ie/public-cloud/prices/",
+  "retrievedOn": "2026-11-13",
   "regions": ["GRA", "LIM", "MIL", "PAR", "RBX", "SBG", "WAW"],
   "defaultRegion": "GRA",
   "offerings": [
@@ -12,7 +12,7 @@
       "capabilities": ["snapshots"],
       "regions": ["GRA", "LIM", "RBX", "SBG", "WAW"],
       "plans": [],
-      "storagePrices": []
+      "storagePrices": [{ "amount": 0.0431, "currency": "EUR", "regions": [] }]
     },
     {
       "name": "Block Storage 3-AZ Regional Classic",
@@ -20,7 +20,7 @@
       "capabilities": ["zone-high-availability"],
       "regions": ["MIL", "PAR"],
       "plans": [],
-      "storagePrices": []
+      "storagePrices": [{ "amount": 0.0431, "currency": "EUR", "regions": [] }]
     },
     {
       "name": "Block Storage LUKS",
@@ -43,7 +43,36 @@
       "categories": ["compute.vm"],
       "capabilities": ["ipv6", "snapshots"],
       "regions": ["GRA", "LIM", "MIL", "PAR", "RBX", "SBG", "WAW"],
-      "plans": [],
+      "plans": [
+        { "name": "b2-7", "vcpus": 2, "memoryGiB": 7, "storageGiB": 50, "prices": [{ "amount": 51.757, "currency": "EUR", "regions": ["GRA", "LIM", "RBX", "SBG", "WAW"] }] },
+        { "name": "b2-15", "vcpus": 4, "memoryGiB": 15, "storageGiB": 100, "prices": [{ "amount": 97.966, "currency": "EUR", "regions": ["GRA", "LIM", "RBX", "SBG", "WAW"] }] },
+        { "name": "b2-30", "vcpus": 8, "memoryGiB": 30, "storageGiB": 200, "prices": [{ "amount": 198.195, "currency": "EUR", "regions": ["GRA", "LIM", "RBX", "SBG", "WAW"] }] },
+        { "name": "b2-60", "vcpus": 16, "memoryGiB": 60, "storageGiB": 400, "prices": [{ "amount": 383.98, "currency": "EUR", "regions": ["GRA", "LIM", "RBX", "SBG", "WAW"] }] },
+        { "name": "b2-120", "vcpus": 32, "memoryGiB": 120, "storageGiB": 400, "prices": [{ "amount": 754.09, "currency": "EUR", "regions": ["GRA", "LIM", "RBX", "SBG", "WAW"] }] },
+        { "name": "b3-8", "vcpus": 2, "memoryGiB": 8, "storageGiB": 0, "prices": [{ "amount": 37.376, "currency": "EUR", "regions": [] }] },
+        { "name": "b3-16", "vcpus": 4, "memoryGiB": 16, "storageGiB": 0, "prices": [{ "amount": 74.679, "currency": "EUR", "regions": [] }] },
+        { "name": "b3-32", "vcpus": 8, "memoryGiB": 32, "storageGiB": 0, "prices": [{ "amount": 149.358, "currency": "EUR", "regions": [] }] },
+        { "name": "b3-64", "vcpus": 16, "memoryGiB": 64, "storageGiB": 0, "prices": [{ "amount": 298.716, "currency": "EUR", "regions": [] }] },
+        { "name": "b3-128", "vcpus": 32, "memoryGiB": 128, "storageGiB": 0, "prices": [{ "amount": 597.87, "currency": "EUR", "regions": [] }] },
+        { "name": "b3-256", "vcpus": 64, "memoryGiB": 256, "storageGiB": 0, "prices": [{ "amount": 1195.01, "currency": "EUR", "regions": [] }] },
+        { "name": "b3-512", "vcpus": 128, "memoryGiB": 512, "storageGiB": 0, "prices": [{ "amount": 2390.02, "currency": "EUR", "regions": [] }] },
+        { "name": "b3-640", "vcpus": 160, "memoryGiB": 640, "storageGiB": 0, "prices": [{ "amount": 2987.16, "currency": "EUR", "regions": [] }] },
+        { "name": "c3-4", "vcpus": 2, "memoryGiB": 4, "storageGiB": 0, "prices": [{ "amount": 33.361, "currency": "EUR", "regions": [] }] },
+        { "name": "c3-8", "vcpus": 4, "memoryGiB": 8, "storageGiB": 0, "prices": [{ "amount": 66.649, "currency": "EUR", "regions": [] }] },
+        { "name": "c3-16", "vcpus": 8, "memoryGiB": 16, "storageGiB": 0, "prices": [{ "amount": 133.225, "currency": "EUR", "regions": [] }] },
+        { "name": "c3-32", "vcpus": 16, "memoryGiB": 32, "storageGiB": 0, "prices": [{ "amount": 266.45, "currency": "EUR", "regions": [] }] },
+        { "name": "c3-64", "vcpus": 32, "memoryGiB": 64, "storageGiB": 0, "prices": [{ "amount": 532.973, "currency": "EUR", "regions": [] }] },
+        { "name": "c3-128", "vcpus": 64, "memoryGiB": 128, "storageGiB": 0, "prices": [{ "amount": 1066.53, "currency": "EUR", "regions": [] }] },
+        { "name": "c3-256", "vcpus": 128, "memoryGiB": 256, "storageGiB": 0, "prices": [{ "amount": 2132.33, "currency": "EUR", "regions": [] }] },
+        { "name": "c3-320", "vcpus": 160, "memoryGiB": 320, "storageGiB": 0, "prices": [{ "amount": 2665.23, "currency": "EUR", "regions": [] }] },
+        { "name": "r3-16", "vcpus": 2, "memoryGiB": 16, "storageGiB": 0, "prices": [{ "amount": 48.399, "currency": "EUR", "regions": [] }] },
+        { "name": "r3-32", "vcpus": 4, "memoryGiB": 32, "storageGiB": 0, "prices": [{ "amount": 96.652, "currency": "EUR", "regions": [] }] },
+        { "name": "r3-64", "vcpus": 8, "memoryGiB": 64, "storageGiB": 0, "prices": [{ "amount": 193.304, "currency": "EUR", "regions": [] }] },
+        { "name": "r3-128", "vcpus": 16, "memoryGiB": 128, "storageGiB": 0, "prices": [{ "amount": 386.90, "currency": "EUR", "regions": [] }] },
+        { "name": "r3-256", "vcpus": 32, "memoryGiB": 256, "storageGiB": 0, "prices": [{ "amount": 773.07, "currency": "EUR", "regions": [] }] },
+        { "name": "r3-512", "vcpus": 64, "memoryGiB": 512, "storageGiB": 0, "prices": [{ "amount": 1546.14, "currency": "EUR", "regions": [] }] },
+        { "name": "r3-1024", "vcpus": 128, "memoryGiB": 1024, "storageGiB": 0, "prices": [{ "amount": 3092.28, "currency": "EUR", "regions": [] }] }
+      ],
       "storagePrices": []
     },
     {
@@ -51,7 +80,36 @@
       "categories": ["kubernetes.managed"],
       "capabilities": ["autoscaling"],
       "regions": ["GRA", "LIM", "RBX", "SBG", "WAW"],
-      "plans": [],
+      "plans": [
+        { "name": "b2-7", "vcpus": 2, "memoryGiB": 7, "storageGiB": 50, "prices": [{ "amount": 51.757, "currency": "EUR", "regions": [] }] },
+        { "name": "b2-15", "vcpus": 4, "memoryGiB": 15, "storageGiB": 100, "prices": [{ "amount": 97.966, "currency": "EUR", "regions": [] }] },
+        { "name": "b2-30", "vcpus": 8, "memoryGiB": 30, "storageGiB": 200, "prices": [{ "amount": 198.195, "currency": "EUR", "regions": [] }] },
+        { "name": "b2-60", "vcpus": 16, "memoryGiB": 60, "storageGiB": 400, "prices": [{ "amount": 383.98, "currency": "EUR", "regions": [] }] },
+        { "name": "b2-120", "vcpus": 32, "memoryGiB": 120, "storageGiB": 400, "prices": [{ "amount": 754.09, "currency": "EUR", "regions": [] }] },
+        { "name": "b3-8", "vcpus": 2, "memoryGiB": 8, "storageGiB": 0, "prices": [{ "amount": 37.376, "currency": "EUR", "regions": ["GRA", "LIM", "WAW"] }] },
+        { "name": "b3-16", "vcpus": 4, "memoryGiB": 16, "storageGiB": 0, "prices": [{ "amount": 74.679, "currency": "EUR", "regions": ["GRA", "LIM", "WAW"] }] },
+        { "name": "b3-32", "vcpus": 8, "memoryGiB": 32, "storageGiB": 0, "prices": [{ "amount": 149.358, "currency": "EUR", "regions": ["GRA", "LIM", "WAW"] }] },
+        { "name": "b3-64", "vcpus": 16, "memoryGiB": 64, "storageGiB": 0, "prices": [{ "amount": 298.716, "currency": "EUR", "regions": ["GRA", "LIM", "WAW"] }] },
+        { "name": "b3-128", "vcpus": 32, "memoryGiB": 128, "storageGiB": 0, "prices": [{ "amount": 597.87, "currency": "EUR", "regions": ["GRA", "LIM", "WAW"] }] },
+        { "name": "b3-256", "vcpus": 64, "memoryGiB": 256, "storageGiB": 0, "prices": [{ "amount": 1195.01, "currency": "EUR", "regions": ["GRA", "LIM", "WAW"] }] },
+        { "name": "b3-512", "vcpus": 128, "memoryGiB": 512, "storageGiB": 0, "prices": [{ "amount": 2390.02, "currency": "EUR", "regions": ["GRA", "LIM", "WAW"] }] },
+        { "name": "b3-640", "vcpus": 160, "memoryGiB": 640, "storageGiB": 0, "prices": [{ "amount": 2987.16, "currency": "EUR", "regions": ["GRA", "LIM", "WAW"] }] },
+        { "name": "c3-4", "vcpus": 2, "memoryGiB": 4, "storageGiB": 0, "prices": [{ "amount": 33.361, "currency": "EUR", "regions": ["GRA", "LIM", "WAW"] }] },
+        { "name": "c3-8", "vcpus": 4, "memoryGiB": 8, "storageGiB": 0, "prices": [{ "amount": 66.649, "currency": "EUR", "regions": ["GRA", "LIM", "WAW"] }] },
+        { "name": "c3-16", "vcpus": 8, "memoryGiB": 16, "storageGiB": 0, "prices": [{ "amount": 133.225, "currency": "EUR", "regions": ["GRA", "LIM", "WAW"] }] },
+        { "name": "c3-32", "vcpus": 16, "memoryGiB": 32, "storageGiB": 0, "prices": [{ "amount": 266.45, "currency": "EUR", "regions": ["GRA", "LIM", "WAW"] }] },
+        { "name": "c3-64", "vcpus": 32, "memoryGiB": 64, "storageGiB": 0, "prices": [{ "amount": 532.973, "currency": "EUR", "regions": ["GRA", "LIM", "WAW"] }] },
+        { "name": "c3-128", "vcpus": 64, "memoryGiB": 128, "storageGiB": 0, "prices": [{ "amount": 1066.53, "currency": "EUR", "regions": ["GRA", "LIM", "WAW"] }] },
+        { "name": "c3-256", "vcpus": 128, "memoryGiB": 256, "storageGiB": 0, "prices": [{ "amount": 2132.33, "currency": "EUR", "regions": ["GRA", "LIM", "WAW"] }] },
+        { "name": "c3-320", "vcpus": 160, "memoryGiB": 320, "storageGiB": 0, "prices": [{ "amount": 2665.23, "currency": "EUR", "regions": ["GRA", "LIM", "WAW"] }] },
+        { "name": "r3-16", "vcpus": 2, "memoryGiB": 16, "storageGiB": 0, "prices": [{ "amount": 48.399, "currency": "EUR", "regions": ["GRA", "LIM", "WAW"] }] },
+        { "name": "r3-32", "vcpus": 4, "memoryGiB": 32, "storageGiB": 0, "prices": [{ "amount": 96.652, "currency": "EUR", "regions": ["GRA", "LIM", "WAW"] }] },
+        { "name": "r3-64", "vcpus": 8, "memoryGiB": 64, "storageGiB": 0, "prices": [{ "amount": 193.304, "currency": "EUR", "regions": ["GRA", "LIM", "WAW"] }] },
+        { "name": "r3-128", "vcpus": 16, "memoryGiB": 128, "storageGiB": 0, "prices": [{ "amount": 386.90, "currency": "EUR", "regions": ["GRA", "LIM", "WAW"] }] },
+        { "name": "r3-256", "vcpus": 32, "memoryGiB": 256, "storageGiB": 0, "prices": [{ "amount": 773.07, "currency": "EUR", "regions": ["GRA", "LIM", "WAW"] }] },
+        { "name": "r3-512", "vcpus": 64, "memoryGiB": 512, "storageGiB": 0, "prices": [{ "amount": 1546.14, "currency": "EUR", "regions": ["GRA", "LIM", "WAW"] }] },
+        { "name": "r3-1024", "vcpus": 128, "memoryGiB": 1024, "storageGiB": 0, "prices": [{ "amount": 3092.28, "currency": "EUR", "regions": ["GRA", "LIM", "WAW"] }] }
+      ],
       "storagePrices": []
     },
     {
@@ -59,7 +117,31 @@
       "categories": ["kubernetes.managed"],
       "capabilities": ["autoscaling", "zone-high-availability"],
       "regions": ["MIL", "PAR"],
-      "plans": [],
+      "plans": [
+        { "name": "b3-8", "vcpus": 2, "memoryGiB": 8, "storageGiB": 0, "prices": [{ "amount": 37.376, "currency": "EUR", "regions": [] }] },
+        { "name": "b3-16", "vcpus": 4, "memoryGiB": 16, "storageGiB": 0, "prices": [{ "amount": 74.679, "currency": "EUR", "regions": [] }] },
+        { "name": "b3-32", "vcpus": 8, "memoryGiB": 32, "storageGiB": 0, "prices": [{ "amount": 149.358, "currency": "EUR", "regions": [] }] },
+        { "name": "b3-64", "vcpus": 16, "memoryGiB": 64, "storageGiB": 0, "prices": [{ "amount": 298.716, "currency": "EUR", "regions": [] }] },
+        { "name": "b3-128", "vcpus": 32, "memoryGiB": 128, "storageGiB": 0, "prices": [{ "amount": 597.87, "currency": "EUR", "regions": [] }] },
+        { "name": "b3-256", "vcpus": 64, "memoryGiB": 256, "storageGiB": 0, "prices": [{ "amount": 1195.01, "currency": "EUR", "regions": [] }] },
+        { "name": "b3-512", "vcpus": 128, "memoryGiB": 512, "storageGiB": 0, "prices": [{ "amount": 2390.02, "currency": "EUR", "regions": [] }] },
+        { "name": "b3-640", "vcpus": 160, "memoryGiB": 640, "storageGiB": 0, "prices": [{ "amount": 2987.16, "currency": "EUR", "regions": [] }] },
+        { "name": "c3-4", "vcpus": 2, "memoryGiB": 4, "storageGiB": 0, "prices": [{ "amount": 33.361, "currency": "EUR", "regions": [] }] },
+        { "name": "c3-8", "vcpus": 4, "memoryGiB": 8, "storageGiB": 0, "prices": [{ "amount": 66.649, "currency": "EUR", "regions": [] }] },
+        { "name": "c3-16", "vcpus": 8, "memoryGiB": 16, "storageGiB": 0, "prices": [{ "amount": 133.225, "currency": "EUR", "regions": [] }] },
+        { "name": "c3-32", "vcpus": 16, "memoryGiB": 32, "storageGiB": 0, "prices": [{ "amount": 266.45, "currency": "EUR", "regions": [] }] },
+        { "name": "c3-64", "vcpus": 32, "memoryGiB": 64, "storageGiB": 0, "prices": [{ "amount": 532.973, "currency": "EUR", "regions": [] }] },
+        { "name": "c3-128", "vcpus": 64, "memoryGiB": 128, "storageGiB": 0, "prices": [{ "amount": 1066.53, "currency": "EUR", "regions": [] }] },
+        { "name": "c3-256", "vcpus": 128, "memoryGiB": 256, "storageGiB": 0, "prices": [{ "amount": 2132.33, "currency": "EUR", "regions": [] }] },
+        { "name": "c3-320", "vcpus": 160, "memoryGiB": 320, "storageGiB": 0, "prices": [{ "amount": 2665.23, "currency": "EUR", "regions": [] }] },
+        { "name": "r3-16", "vcpus": 2, "memoryGiB": 16, "storageGiB": 0, "prices": [{ "amount": 48.399, "currency": "EUR", "regions": [] }] },
+        { "name": "r3-32", "vcpus": 4, "memoryGiB": 32, "storageGiB": 0, "prices": [{ "amount": 96.652, "currency": "EUR", "regions": [] }] },
+        { "name": "r3-64", "vcpus": 8, "memoryGiB": 64, "storageGiB": 0, "prices": [{ "amount": 193.304, "currency": "EUR", "regions": [] }] },
+        { "name": "r3-128", "vcpus": 16, "memoryGiB": 128, "storageGiB": 0, "prices": [{ "amount": 386.90, "currency": "EUR", "regions": [] }] },
+        { "name": "r3-256", "vcpus": 32, "memoryGiB": 256, "storageGiB": 0, "prices": [{ "amount": 773.07, "currency": "EUR", "regions": [] }] },
+        { "name": "r3-512", "vcpus": 64, "memoryGiB": 512, "storageGiB": 0, "prices": [{ "amount": 1546.14, "currency": "EUR", "regions": [] }] },
+        { "name": "r3-1024", "vcpus": 128, "memoryGiB": 1024, "storageGiB": 0, "prices": [{ "amount": 3092.28, "currency": "EUR", "regions": [] }] }
+      ],
       "storagePrices": []
     },
     {
@@ -67,87 +149,195 @@
       "categories": ["database.mysql"],
       "capabilities": ["encryption-at-rest", "point-in-time-restore"],
       "regions": ["GRA", "LIM", "RBX", "SBG", "WAW"],
-      "plans": [],
-      "storagePrices": []
+      "plans": [
+        { "name": "Essential DB1-4", "vcpus": 2, "memoryGiB": 4, "storageGiB": 80, "prices": [{ "amount": 54.458, "currency": "EUR", "regions": ["GRA", "LIM", "SBG", "WAW"] }] },
+        { "name": "Essential DB1-7", "vcpus": 2, "memoryGiB": 7, "storageGiB": 160, "prices": [{ "amount": 107.821, "currency": "EUR", "regions": ["GRA", "LIM", "SBG", "WAW"] }] },
+        { "name": "Essential DB1-15", "vcpus": 4, "memoryGiB": 15, "storageGiB": 320, "prices": [{ "amount": 216.664, "currency": "EUR", "regions": ["GRA", "LIM", "SBG", "WAW"] }] },
+        { "name": "Essential DB1-30", "vcpus": 8, "memoryGiB": 30, "storageGiB": 640, "prices": [{ "amount": 435.591, "currency": "EUR", "regions": ["GRA", "LIM", "SBG", "WAW"] }] },
+        { "name": "Discovery B3-4", "vcpus": 1, "memoryGiB": 4, "storageGiB": 80, "prices": [{ "amount": 75.4674, "currency": "EUR", "regions": [] }] },
+        { "name": "Discovery B3-8", "vcpus": 2, "memoryGiB": 8, "storageGiB": 160, "prices": [{ "amount": 143.226, "currency": "EUR", "regions": [] }] },
+        { "name": "Discovery B3-16", "vcpus": 4, "memoryGiB": 16, "storageGiB": 320, "prices": [{ "amount": 286.379, "currency": "EUR", "regions": [] }] },
+        { "name": "Discovery B3-32", "vcpus": 8, "memoryGiB": 32, "storageGiB": 640, "prices": [{ "amount": 572.758, "currency": "EUR", "regions": [] }] },
+        { "name": "Discovery B3-64", "vcpus": 16, "memoryGiB": 64, "storageGiB": 1280, "prices": [{ "amount": 1145.443, "currency": "EUR", "regions": [] }] },
+        { "name": "Discovery B3-128", "vcpus": 32, "memoryGiB": 128, "storageGiB": 2560, "prices": [{ "amount": 2290.886, "currency": "EUR", "regions": [] }] },
+        { "name": "Discovery B3-256", "vcpus": 64, "memoryGiB": 256, "storageGiB": 5120, "prices": [{ "amount": 4581.699, "currency": "EUR", "regions": [] }] }
+      ],
+      "storagePrices": [{ "amount": 0.292, "currency": "EUR", "regions": [] }]
     },
     {
       "name": "Managed MySQL Multi-node",
       "categories": ["database.mysql"],
       "capabilities": ["encryption-at-rest", "node-high-availability", "point-in-time-restore"],
       "regions": ["GRA", "LIM", "RBX", "SBG", "WAW"],
-      "plans": [],
-      "storagePrices": []
+      "plans": [
+        { "name": "Business DB1-4", "vcpus": 2, "memoryGiB": 4, "storageGiB": 80, "prices": [{ "amount": 138.554, "currency": "EUR", "regions": ["GRA", "LIM", "SBG", "WAW"] }] },
+        { "name": "Business DB1-7", "vcpus": 2, "memoryGiB": 7, "storageGiB": 160, "prices": [{ "amount": 277.254, "currency": "EUR", "regions": ["GRA", "LIM", "SBG", "WAW"] }] },
+        { "name": "Business DB1-15", "vcpus": 4, "memoryGiB": 15, "storageGiB": 320, "prices": [{ "amount": 554.362, "currency": "EUR", "regions": ["GRA", "LIM", "SBG", "WAW"] }] },
+        { "name": "Business DB1-30", "vcpus": 8, "memoryGiB": 30, "storageGiB": 640, "prices": [{ "amount": 1111.06, "currency": "EUR", "regions": ["GRA", "LIM", "SBG", "WAW"] }] },
+        { "name": "Business DB1-60", "vcpus": 16, "memoryGiB": 60, "storageGiB": 1280, "prices": [{ "amount": 2224.164, "currency": "EUR", "regions": ["GRA", "LIM", "SBG", "WAW"] }] },
+        { "name": "Business DB1-120", "vcpus": 32, "memoryGiB": 120, "storageGiB": 2560, "prices": [{ "amount": 4450.664, "currency": "EUR", "regions": ["GRA", "LIM", "SBG", "WAW"] }] },
+        { "name": "Production B3-8", "vcpus": 2, "memoryGiB": 8, "storageGiB": 160, "prices": [{ "amount": 325.58, "currency": "EUR", "regions": [] }] },
+        { "name": "Production B3-16", "vcpus": 4, "memoryGiB": 16, "storageGiB": 320, "prices": [{ "amount": 651.306, "currency": "EUR", "regions": [] }] },
+        { "name": "Production B3-32", "vcpus": 8, "memoryGiB": 32, "storageGiB": 640, "prices": [{ "amount": 1302.612, "currency": "EUR", "regions": [] }] },
+        { "name": "Production B3-64", "vcpus": 16, "memoryGiB": 64, "storageGiB": 1280, "prices": [{ "amount": 2605.224, "currency": "EUR", "regions": [] }] },
+        { "name": "Production B3-128", "vcpus": 32, "memoryGiB": 128, "storageGiB": 2560, "prices": [{ "amount": 5210.448, "currency": "EUR", "regions": [] }] },
+        { "name": "Production B3-256", "vcpus": 64, "memoryGiB": 256, "storageGiB": 5120, "prices": [{ "amount": 10421.042, "currency": "EUR", "regions": [] }] }
+      ],
+      "storagePrices": [{ "amount": 0.876, "currency": "EUR", "regions": [] }]
     },
     {
       "name": "Managed MySQL Multi-node 3-AZ",
       "categories": ["database.mysql"],
       "capabilities": ["encryption-at-rest", "point-in-time-restore", "zone-high-availability"],
       "regions": ["MIL", "PAR"],
-      "plans": [],
-      "storagePrices": []
+      "plans": [
+        { "name": "Production B3-8", "vcpus": 2, "memoryGiB": 8, "storageGiB": 160, "prices": [{ "amount": 344.852, "currency": "EUR", "regions": [] }] },
+        { "name": "Production B3-16", "vcpus": 4, "memoryGiB": 16, "storageGiB": 320, "prices": [{ "amount": 689.558, "currency": "EUR", "regions": [] }] },
+        { "name": "Production B3-32", "vcpus": 8, "memoryGiB": 32, "storageGiB": 640, "prices": [{ "amount": 1379.262, "currency": "EUR", "regions": [] }] },
+        { "name": "Production B3-64", "vcpus": 16, "memoryGiB": 64, "storageGiB": 1280, "prices": [{ "amount": 2758.524, "currency": "EUR", "regions": [] }] },
+        { "name": "Production B3-128", "vcpus": 32, "memoryGiB": 128, "storageGiB": 2560, "prices": [{ "amount": 5517.048, "currency": "EUR", "regions": [] }] },
+        { "name": "Production B3-256", "vcpus": 64, "memoryGiB": 256, "storageGiB": 5120, "prices": [{ "amount": 11033.95, "currency": "EUR", "regions": [] }] }
+      ],
+      "storagePrices": [{ "amount": 0.876, "currency": "EUR", "regions": [] }]
     },
     {
       "name": "Managed MySQL Multi-node Advanced",
       "categories": ["database.mysql"],
       "capabilities": ["encryption-at-rest", "node-high-availability", "point-in-time-restore", "read-replicas"],
       "regions": ["GRA", "LIM", "RBX", "SBG", "WAW"],
-      "plans": [],
-      "storagePrices": []
+      "plans": [
+        { "name": "Enterprise DB1-4", "vcpus": 2, "memoryGiB": 4, "storageGiB": 80, "prices": [{ "amount": 211.116, "currency": "EUR", "regions": ["GRA", "LIM", "SBG", "WAW"] }] },
+        { "name": "Enterprise DB1-7", "vcpus": 2, "memoryGiB": 7, "storageGiB": 160, "prices": [{ "amount": 415.881, "currency": "EUR", "regions": ["GRA", "LIM", "SBG", "WAW"] }] },
+        { "name": "Enterprise DB1-15", "vcpus": 4, "memoryGiB": 15, "storageGiB": 320, "prices": [{ "amount": 831.543, "currency": "EUR", "regions": ["GRA", "LIM", "SBG", "WAW"] }] },
+        { "name": "Enterprise DB1-30", "vcpus": 8, "memoryGiB": 30, "storageGiB": 640, "prices": [{ "amount": 1666.59, "currency": "EUR", "regions": ["GRA", "LIM", "SBG", "WAW"] }] },
+        { "name": "Enterprise DB1-60", "vcpus": 16, "memoryGiB": 60, "storageGiB": 1280, "prices": [{ "amount": 3336.246, "currency": "EUR", "regions": ["GRA", "LIM", "SBG", "WAW"] }] },
+        { "name": "Enterprise DB1-120", "vcpus": 32, "memoryGiB": 120, "storageGiB": 2560, "prices": [{ "amount": 6675.996, "currency": "EUR", "regions": ["GRA", "LIM", "SBG", "WAW"] }] },
+        { "name": "Advanced B3-8", "vcpus": 2, "memoryGiB": 8, "storageGiB": 160, "prices": [{ "amount": 526.476, "currency": "EUR", "regions": [] }] },
+        { "name": "Advanced B3-16", "vcpus": 4, "memoryGiB": 16, "storageGiB": 320, "prices": [{ "amount": 1052.952, "currency": "EUR", "regions": [] }] },
+        { "name": "Advanced B3-32", "vcpus": 8, "memoryGiB": 32, "storageGiB": 640, "prices": [{ "amount": 2105.904, "currency": "EUR", "regions": [] }] },
+        { "name": "Advanced B3-64", "vcpus": 16, "memoryGiB": 64, "storageGiB": 1280, "prices": [{ "amount": 4211.808, "currency": "EUR", "regions": [] }] },
+        { "name": "Advanced B3-128", "vcpus": 32, "memoryGiB": 128, "storageGiB": 2560, "prices": [{ "amount": 8423.616, "currency": "EUR", "regions": [] }] },
+        { "name": "Advanced B3-256", "vcpus": 64, "memoryGiB": 256, "storageGiB": 5120, "prices": [{ "amount": 16847.232, "currency": "EUR", "regions": [] }] }
+      ],
+      "storagePrices": [{ "amount": 1.533, "currency": "EUR", "regions": [] }]
     },
     {
       "name": "Managed MySQL Multi-node Advanced 3-AZ",
       "categories": ["database.mysql"],
       "capabilities": ["encryption-at-rest", "point-in-time-restore", "read-replicas", "zone-high-availability"],
       "regions": ["MIL", "PAR"],
-      "plans": [],
-      "storagePrices": []
+      "plans": [
+        { "name": "Advanced B3-8", "vcpus": 2, "memoryGiB": 8, "storageGiB": 160, "prices": [{ "amount": 557.355, "currency": "EUR", "regions": [] }] },
+        { "name": "Advanced B3-16", "vcpus": 4, "memoryGiB": 16, "storageGiB": 320, "prices": [{ "amount": 1114.929, "currency": "EUR", "regions": [] }] },
+        { "name": "Advanced B3-32", "vcpus": 8, "memoryGiB": 32, "storageGiB": 640, "prices": [{ "amount": 2229.858, "currency": "EUR", "regions": [] }] },
+        { "name": "Advanced B3-64", "vcpus": 16, "memoryGiB": 64, "storageGiB": 1280, "prices": [{ "amount": 4459.497, "currency": "EUR", "regions": [] }] },
+        { "name": "Advanced B3-128", "vcpus": 32, "memoryGiB": 128, "storageGiB": 2560, "prices": [{ "amount": 8919.213, "currency": "EUR", "regions": [] }] },
+        { "name": "Advanced B3-256", "vcpus": 64, "memoryGiB": 256, "storageGiB": 5120, "prices": [{ "amount": 17838.207, "currency": "EUR", "regions": [] }] }
+      ],
+      "storagePrices": [{ "amount": 1.533, "currency": "EUR", "regions": [] }]
     },
     {
       "name": "Managed PostgreSQL",
       "categories": ["database.postgresql"],
       "capabilities": ["encryption-at-rest", "point-in-time-restore"],
       "regions": ["GRA", "LIM", "RBX", "SBG", "WAW"],
-      "plans": [],
-      "storagePrices": []
+      "plans": [
+        { "name": "Essential DB1-4", "vcpus": 2, "memoryGiB": 4, "storageGiB": 80, "prices": [{ "amount": 54.458, "currency": "EUR", "regions": ["GRA", "LIM", "SBG", "WAW"] }] },
+        { "name": "Essential DB1-7", "vcpus": 2, "memoryGiB": 7, "storageGiB": 160, "prices": [{ "amount": 107.821, "currency": "EUR", "regions": ["GRA", "LIM", "SBG", "WAW"] }] },
+        { "name": "Essential DB1-15", "vcpus": 4, "memoryGiB": 15, "storageGiB": 320, "prices": [{ "amount": 216.664, "currency": "EUR", "regions": ["GRA", "LIM", "SBG", "WAW"] }] },
+        { "name": "Essential DB1-30", "vcpus": 8, "memoryGiB": 30, "storageGiB": 640, "prices": [{ "amount": 435.591, "currency": "EUR", "regions": ["GRA", "LIM", "SBG", "WAW"] }] },
+        { "name": "Discovery B3-4", "vcpus": 1, "memoryGiB": 4, "storageGiB": 80, "prices": [{ "amount": 75.4674, "currency": "EUR", "regions": [] }] },
+        { "name": "Discovery B3-8", "vcpus": 2, "memoryGiB": 8, "storageGiB": 160, "prices": [{ "amount": 143.226, "currency": "EUR", "regions": [] }] },
+        { "name": "Discovery B3-16", "vcpus": 4, "memoryGiB": 16, "storageGiB": 320, "prices": [{ "amount": 286.379, "currency": "EUR", "regions": [] }] },
+        { "name": "Discovery B3-32", "vcpus": 8, "memoryGiB": 32, "storageGiB": 640, "prices": [{ "amount": 572.758, "currency": "EUR", "regions": [] }] },
+        { "name": "Discovery B3-64", "vcpus": 16, "memoryGiB": 64, "storageGiB": 1280, "prices": [{ "amount": 1145.443, "currency": "EUR", "regions": [] }] },
+        { "name": "Discovery B3-128", "vcpus": 32, "memoryGiB": 128, "storageGiB": 2560, "prices": [{ "amount": 2290.886, "currency": "EUR", "regions": [] }] },
+        { "name": "Discovery B3-256", "vcpus": 64, "memoryGiB": 256, "storageGiB": 5120, "prices": [{ "amount": 4581.699, "currency": "EUR", "regions": [] }] }
+      ],
+      "storagePrices": [{ "amount": 0.292, "currency": "EUR", "regions": [] }]
     },
     {
       "name": "Managed PostgreSQL Multi-node",
       "categories": ["database.postgresql"],
       "capabilities": ["encryption-at-rest", "node-high-availability", "point-in-time-restore"],
       "regions": ["GRA", "LIM", "RBX", "SBG", "WAW"],
-      "plans": [],
-      "storagePrices": []
+      "plans": [
+        { "name": "Business DB1-4", "vcpus": 2, "memoryGiB": 4, "storageGiB": 80, "prices": [{ "amount": 138.554, "currency": "EUR", "regions": ["GRA", "LIM", "SBG", "WAW"] }] },
+        { "name": "Business DB1-7", "vcpus": 2, "memoryGiB": 7, "storageGiB": 160, "prices": [{ "amount": 277.254, "currency": "EUR", "regions": ["GRA", "LIM", "SBG", "WAW"] }] },
+        { "name": "Business DB1-15", "vcpus": 4, "memoryGiB": 15, "storageGiB": 320, "prices": [{ "amount": 554.362, "currency": "EUR", "regions": ["GRA", "LIM", "SBG", "WAW"] }] },
+        { "name": "Business DB1-30", "vcpus": 8, "memoryGiB": 30, "storageGiB": 640, "prices": [{ "amount": 1111.06, "currency": "EUR", "regions": ["GRA", "LIM", "SBG", "WAW"] }] },
+        { "name": "Business DB1-60", "vcpus": 16, "memoryGiB": 60, "storageGiB": 1280, "prices": [{ "amount": 2224.164, "currency": "EUR", "regions": ["GRA", "LIM", "SBG", "WAW"] }] },
+        { "name": "Business DB1-120", "vcpus": 32, "memoryGiB": 120, "storageGiB": 2560, "prices": [{ "amount": 4450.664, "currency": "EUR", "regions": ["GRA", "LIM", "SBG", "WAW"] }] },
+        { "name": "Production B3-8", "vcpus": 2, "memoryGiB": 8, "storageGiB": 160, "prices": [{ "amount": 325.58, "currency": "EUR", "regions": [] }] },
+        { "name": "Production B3-16", "vcpus": 4, "memoryGiB": 16, "storageGiB": 320, "prices": [{ "amount": 651.306, "currency": "EUR", "regions": [] }] },
+        { "name": "Production B3-32", "vcpus": 8, "memoryGiB": 32, "storageGiB": 640, "prices": [{ "amount": 1302.612, "currency": "EUR", "regions": [] }] },
+        { "name": "Production B3-64", "vcpus": 16, "memoryGiB": 64, "storageGiB": 1280, "prices": [{ "amount": 2605.224, "currency": "EUR", "regions": [] }] },
+        { "name": "Production B3-128", "vcpus": 32, "memoryGiB": 128, "storageGiB": 2560, "prices": [{ "amount": 5210.448, "currency": "EUR", "regions": [] }] },
+        { "name": "Production B3-256", "vcpus": 64, "memoryGiB": 256, "storageGiB": 5120, "prices": [{ "amount": 10421.042, "currency": "EUR", "regions": [] }] }
+      ],
+      "storagePrices": [{ "amount": 0.876, "currency": "EUR", "regions": [] }]
     },
     {
       "name": "Managed PostgreSQL Multi-node 3-AZ",
       "categories": ["database.postgresql"],
       "capabilities": ["encryption-at-rest", "point-in-time-restore", "zone-high-availability"],
       "regions": ["MIL", "PAR"],
-      "plans": [],
-      "storagePrices": []
+      "plans": [
+        { "name": "Production B3-8", "vcpus": 2, "memoryGiB": 8, "storageGiB": 160, "prices": [{ "amount": 344.852, "currency": "EUR", "regions": [] }] },
+        { "name": "Production B3-16", "vcpus": 4, "memoryGiB": 16, "storageGiB": 320, "prices": [{ "amount": 689.558, "currency": "EUR", "regions": [] }] },
+        { "name": "Production B3-32", "vcpus": 8, "memoryGiB": 32, "storageGiB": 640, "prices": [{ "amount": 1379.262, "currency": "EUR", "regions": [] }] },
+        { "name": "Production B3-64", "vcpus": 16, "memoryGiB": 64, "storageGiB": 1280, "prices": [{ "amount": 2758.524, "currency": "EUR", "regions": [] }] },
+        { "name": "Production B3-128", "vcpus": 32, "memoryGiB": 128, "storageGiB": 2560, "prices": [{ "amount": 5517.048, "currency": "EUR", "regions": [] }] },
+        { "name": "Production B3-256", "vcpus": 64, "memoryGiB": 256, "storageGiB": 5120, "prices": [{ "amount": 11033.95, "currency": "EUR", "regions": [] }] }
+      ],
+      "storagePrices": [{ "amount": 0.876, "currency": "EUR", "regions": [] }]
     },
     {
       "name": "Managed PostgreSQL Multi-node Advanced",
       "categories": ["database.postgresql"],
       "capabilities": ["encryption-at-rest", "node-high-availability", "point-in-time-restore", "read-replicas"],
       "regions": ["GRA", "LIM", "RBX", "SBG", "WAW"],
-      "plans": [],
-      "storagePrices": []
+      "plans": [
+        { "name": "Enterprise DB1-4", "vcpus": 2, "memoryGiB": 4, "storageGiB": 80, "prices": [{ "amount": 211.116, "currency": "EUR", "regions": ["GRA", "LIM", "SBG", "WAW"] }] },
+        { "name": "Enterprise DB1-7", "vcpus": 2, "memoryGiB": 7, "storageGiB": 160, "prices": [{ "amount": 415.881, "currency": "EUR", "regions": ["GRA", "LIM", "SBG", "WAW"] }] },
+        { "name": "Enterprise DB1-15", "vcpus": 4, "memoryGiB": 15, "storageGiB": 320, "prices": [{ "amount": 831.543, "currency": "EUR", "regions": ["GRA", "LIM", "SBG", "WAW"] }] },
+        { "name": "Enterprise DB1-30", "vcpus": 8, "memoryGiB": 30, "storageGiB": 640, "prices": [{ "amount": 1666.59, "currency": "EUR", "regions": ["GRA", "LIM", "SBG", "WAW"] }] },
+        { "name": "Enterprise DB1-60", "vcpus": 16, "memoryGiB": 60, "storageGiB": 1280, "prices": [{ "amount": 3336.246, "currency": "EUR", "regions": ["GRA", "LIM", "SBG", "WAW"] }] },
+        { "name": "Enterprise DB1-120", "vcpus": 32, "memoryGiB": 120, "storageGiB": 2560, "prices": [{ "amount": 6675.996, "currency": "EUR", "regions": ["GRA", "LIM", "SBG", "WAW"] }] },
+        { "name": "Advanced B3-8", "vcpus": 2, "memoryGiB": 8, "storageGiB": 160, "prices": [{ "amount": 526.476, "currency": "EUR", "regions": [] }] },
+        { "name": "Advanced B3-16", "vcpus": 4, "memoryGiB": 16, "storageGiB": 320, "prices": [{ "amount": 1052.952, "currency": "EUR", "regions": [] }] },
+        { "name": "Advanced B3-32", "vcpus": 8, "memoryGiB": 32, "storageGiB": 640, "prices": [{ "amount": 2105.904, "currency": "EUR", "regions": [] }] },
+        { "name": "Advanced B3-64", "vcpus": 16, "memoryGiB": 64, "storageGiB": 1280, "prices": [{ "amount": 4211.808, "currency": "EUR", "regions": [] }] },
+        { "name": "Advanced B3-128", "vcpus": 32, "memoryGiB": 128, "storageGiB": 2560, "prices": [{ "amount": 8423.616, "currency": "EUR", "regions": [] }] },
+        { "name": "Advanced B3-256", "vcpus": 64, "memoryGiB": 256, "storageGiB": 5120, "prices": [{ "amount": 16847.232, "currency": "EUR", "regions": [] }] }
+      ],
+      "storagePrices": [{ "amount": 1.533, "currency": "EUR", "regions": [] }]
     },
     {
       "name": "Managed PostgreSQL Multi-node Advanced 3-AZ",
       "categories": ["database.postgresql"],
       "capabilities": ["encryption-at-rest", "point-in-time-restore", "read-replicas", "zone-high-availability"],
       "regions": ["MIL", "PAR"],
-      "plans": [],
-      "storagePrices": []
+      "plans": [
+        { "name": "Advanced B3-8", "vcpus": 2, "memoryGiB": 8, "storageGiB": 160, "prices": [{ "amount": 557.355, "currency": "EUR", "regions": [] }] },
+        { "name": "Advanced B3-16", "vcpus": 4, "memoryGiB": 16, "storageGiB": 320, "prices": [{ "amount": 1114.929, "currency": "EUR", "regions": [] }] },
+        { "name": "Advanced B3-32", "vcpus": 8, "memoryGiB": 32, "storageGiB": 640, "prices": [{ "amount": 2229.858, "currency": "EUR", "regions": [] }] },
+        { "name": "Advanced B3-64", "vcpus": 16, "memoryGiB": 64, "storageGiB": 1280, "prices": [{ "amount": 4459.497, "currency": "EUR", "regions": [] }] },
+        { "name": "Advanced B3-128", "vcpus": 32, "memoryGiB": 128, "storageGiB": 2560, "prices": [{ "amount": 8919.213, "currency": "EUR", "regions": [] }] },
+        { "name": "Advanced B3-256", "vcpus": 64, "memoryGiB": 256, "storageGiB": 5120, "prices": [{ "amount": 17838.207, "currency": "EUR", "regions": [] }] }
+      ],
+      "storagePrices": [{ "amount": 1.533, "currency": "EUR", "regions": [] }]
     },
     {
       "name": "Metal Instances",
       "categories": ["compute.baremetal"],
       "capabilities": ["ipv6", "snapshots"],
       "regions": ["GRA", "LIM", "SBG", "WAW"],
-      "plans": [],
+      "plans": [
+        { "name": "bm-s1", "vcpus": 4, "memoryGiB": 32, "storageGiB": 1920, "prices": [{ "amount": 365.00, "currency": "EUR", "regions": [] }] },
+        { "name": "bm-m1", "vcpus": 8, "memoryGiB": 64, "storageGiB": 1920, "prices": [{ "amount": 620.50, "currency": "EUR", "regions": [] }] },
+        { "name": "bm-l1", "vcpus": 16, "memoryGiB": 128, "storageGiB": 1920, "prices": [{ "amount": 1058.50, "currency": "EUR", "regions": [] }] }
+      ],
       "storagePrices": []
     },
     {
@@ -156,7 +346,7 @@
       "capabilities": ["encryption-at-rest", "node-high-availability", "object-versioning"],
       "regions": ["GRA", "LIM", "RBX", "SBG", "WAW"],
       "plans": [],
-      "storagePrices": []
+      "storagePrices": [{ "amount": 0.0071, "currency": "EUR", "regions": [] }]
     },
     {
       "name": "Object Storage 3-AZ",
@@ -164,7 +354,7 @@
       "capabilities": ["encryption-at-rest", "object-versioning", "zone-high-availability"],
       "regions": ["MIL", "PAR"],
       "plans": [],
-      "storagePrices": []
+      "storagePrices": [{ "amount": 0.014, "currency": "EUR", "regions": [] }]
     }
   ]
 }

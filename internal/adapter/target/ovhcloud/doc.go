@@ -3,10 +3,12 @@
 // target, and it passes the contract suite in internal/adapter/target/targettest.
 //
 // The catalog is an embedded, dated snapshot, catalog.json (//go:embed),
-// compiled by hand from OVHcloud's public regions page, product pages and
-// documentation. The adapter makes no network calls and needs no credentials.
-// SOURCES.md records where each offering, capability and region comes from, and
-// the licence of each source.
+// compiled by hand from OVHcloud's public price list, regions page, product
+// pages and documentation. Its plans and prices are monthly EUR list prices
+// excluding VAT, converted from OVHcloud's hourly prices at 730 hours (ADR
+// 0024). The adapter makes no network calls and needs no credentials.
+// SOURCES.md records where each offering, capability, region, plan and price
+// comes from, and the licence of each source.
 //
 // The snapshot covers OVHcloud Public Cloud only, in the regions OVHcloud has
 // in EU member states, with one region code per location as the regions page
