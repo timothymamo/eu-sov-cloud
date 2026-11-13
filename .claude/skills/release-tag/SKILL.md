@@ -171,14 +171,32 @@ moves or deletes a tag.
    archives artifact's retention), "Re-run failed jobs" (`gh run rerun <id> --failed`) re-runs
    `attest-archives` or `publish` on the same draft and archives; after that, or when the draft itself
    is wrong, a full re-run (`gh run rerun <id>`) rebuilds the draft (`replace_existing_draft`) with new
-   archives and a new attestation, and rebuilds and re-pushes the images under the same tags. Until it
-   is published, the images of the draft release are public already (ADR 0015). Then check the release
-   again from the top of this step.
+   archives and a new attestation, and rebuilds and re-pushes the images under the same tags. A
+   `--failed` re-run does not re-run the successful `latest` job, so it reuses the first attempt's
+   `latest` decision (issue #173). `publish` refuses a stale `true` when a higher release is already
+   GitHub's "Latest" (`GitHub's latest release is <tag>, higher than <this tag>: the latest decision
+   is stale, ...`) and leaves the draft. When that "Latest" is a pre-release tag (`vX.Y.Z-rc.N`, which
+   `sort -V` ranks above `vX.Y.Z`), someone un-flagged its release by hand: tell the maintainer to mark
+   it a pre-release again (or set the correct "Latest") and re-run the release run. The images'
+   `latest` tag has no such guard. So when a higher release tag has been merged into `main` since the
+   first attempt, always tell the maintainer to re-run the whole run (`gh run rerun <id>`, without
+   `--failed`), which runs `latest` again. Until it is published, the images of the draft release are
+   public already (ADR 0015). Then check the release again from the top of this step.
    Report the result of the run's `verify-archives` job, "Verify the published archives", the
    independent check of every published archive and `checksums.txt` against their digests and their
-   build provenance:
+   build provenance, and of GitHub's "Latest" release, which must follow the same highest-release rule
+   as the images' `latest` tag (issue #173, ADR 0015). The run's `latest` job decides it once, and
+   both the images and `publish` follow that one output; `verify-archives` reads the highest release
+   tag again on its own, as an independent check, and fails a pre-release that is GitHub's "Latest"
+   without any condition:
    `gh run view <id> --json jobs --jq '.jobs[] | select(.name == "Verify the published archives") | .conclusion'`.
-   It must be `success`; a failure is a failed release, handled as a failed `verify` below.
+   It must be `success`; a failure is a failed release, handled as a failed `verify` below. When the
+   highest release tag merged into `main` has no published release yet, it skips the "Latest" check
+   and passes with the notice `the release of <higher tag> is not published yet, ...`. Read its
+   notices from its annotations exactly as for `verify` below (its job id by the name "Verify the
+   published archives"), and act on each the same way. Confirm GitHub's "Latest" yourself too:
+   `gh api repos/timothymamo/shift2eu/releases/latest --jq '.tag_name'` must be the highest `vX.Y.Z`
+   tag merged into `main` once its release is published, never an older line's patch.
    Report the result of the run's `verify` job too, the independent check of both published images
    on a fresh GitHub-hosted runner (issue #99, ADR 0015). Find it by its name, "Verify the published
    images", which `check.ReleaseWorkflow` pins:
@@ -197,9 +215,17 @@ moves or deletes a tag.
    `gh run list --workflow release.yml --branch <higher tag> --json status,conclusion,databaseId`.
    If it has one, report the notice and that run. If it has none, or only a failed or cancelled one,
    report the higher tag as stray or unpublished, with that output, and stop: while it stays
-   unpublished, `verify` checks `latest` for no older release and the image jobs' stamp holds `latest`
-   back. Removing the tag or re-running its release is the maintainer's decision; never delete or
-   move a pushed tag yourself, and do not re-run its release unasked. `verify` runs after the
+   unpublished, `verify` checks `latest` for no older release, and the `latest` job decides
+   `latest=false` for every later release, so it holds back both the images' `latest` tag and
+   GitHub's "Latest" release (an accepted consequence, ADR 0015). Give the maintainer the two
+   recoveries and let them decide which: re-run the higher tag's failed release run
+   (`gh run rerun <its run id>`, or, for a run that was replaced in the concurrency group and never
+   ran, re-run the release for that tag), so its release is published and becomes "Latest"; or
+   delete the stray tag (`git push origin --delete <higher tag>`, then the local copy), so the next
+   release is the highest again. The same notice from `verify-archives`, `the release of <higher
+   tag> is not published yet, ...`, is handled the same way. Removing the tag or re-running its
+   release is the maintainer's decision; never delete or move a pushed tag yourself, and do not
+   re-run its release unasked. `verify` runs after the
    images are published, so it detects a bad release, it does not prevent one. A failed `verify` job is
    a failed release: report it with the failed step's log (`gh run view <id> --log-failed`) and stop. Do
    not re-run it to get past the failure, and do not count the VM check below as a substitute for it.
