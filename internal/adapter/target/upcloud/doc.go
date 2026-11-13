@@ -11,8 +11,8 @@
 // region of the catalog is an UpCloud zone, one data centre such as de-fra1;
 // only zones in EU member states are declared.
 //
-// catalog.json is a target catalog snapshot of schema version 1, the format
-// every target with an embedded snapshot shares (ADR 0007). Source.Catalog and
+// catalog.json is a target catalog snapshot of schema version 2, the format
+// every target with an embedded snapshot shares (ADR 0007, ADR 0024). Source.Catalog and
 // Regions read it through the shared reader, snapshot.Parse in
 // internal/adapter/target/snapshot, which defines the format, its strictness
 // and its errors; Regions returns the snapshot's declared EU zone list. This
