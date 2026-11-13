@@ -1,13 +1,34 @@
 target: Scaleway
 sourceURL: https://www.scaleway.com/en/docs/
 retrievedOn: 2026-11-11
+defaultRegion: fr-par
 Block Storage | storage.block | snapshots | fr-par, it-mil, nl-ams, pl-waw
+  plans: -
+  storage prices: -
 Elastic Metal | compute.baremetal | ipv6 | fr-par, nl-ams, pl-waw
+  plans: -
+  storage prices: -
 Instances | compute.vm | ipv6, snapshots | fr-par, it-mil, nl-ams, pl-waw
+  plans: -
+  storage prices: -
 Kubernetes Kapsule | kubernetes.managed | autoscaling | fr-par, it-mil, nl-ams, pl-waw
+  plans: -
+  storage prices: -
 Kubernetes Kapsule Dedicated | kubernetes.managed | autoscaling, node-high-availability | fr-par, nl-ams, pl-waw
+  plans: -
+  storage prices: -
 Managed Database for PostgreSQL and MySQL | database.mysql, database.postgresql | encryption-at-rest, read-replicas, snapshots | fr-par, nl-ams, pl-waw
+  plans: -
+  storage prices: -
 Managed Database for PostgreSQL and MySQL High Availability | database.mysql, database.postgresql | encryption-at-rest, node-high-availability, read-replicas, snapshots | fr-par, nl-ams, pl-waw
+  plans: -
+  storage prices: -
 Object Storage | storage.object | encryption-at-rest, object-versioning | fr-par, it-mil, nl-ams, pl-waw
+  plans: -
+  storage prices: -
 Queues | messaging.queue | dead-letter-queue | fr-par, nl-ams
+  plans: -
+  storage prices: -
 Serverless Functions | serverless.function | autoscaling | fr-par, nl-ams, pl-waw
+  plans: -
+  storage prices: -
