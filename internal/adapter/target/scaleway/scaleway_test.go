@@ -1,5 +1,6 @@
 // Package scaleway_test pins the Scaleway catalog adapter: the target contract in
-// internal/adapter/target/targettest, the snapshot header the catalog reports, a
+// internal/adapter/target/targettest, the snapshot header the catalog reports, the
+// plans and prices the snapshot records and the default region they estimate in, a
 // golden change detector for the parsed catalog, the declared EU regions, that a
 // cancelled run reads nothing, and the verdicts PRD 14 asks of the data: high
 // availability scoped to a node or a zone, one offering per tier, and a
@@ -90,12 +91,14 @@ func TestCatalogSnapshotHeader(t *testing.T) {
 
 	snapshot := catalogOf(t).Snapshot()
 
-	const wantSourceURL = "https://www.scaleway.com/en/docs/"
+	// The prices page: it carries the monthly EUR amounts the snapshot records, and
+	// it becomes the source once plans and prices are in it (ADR 0024).
+	const wantSourceURL = "https://www.scaleway.com/en/pricing/"
 	if snapshot.SourceURL != wantSourceURL {
 		t.Errorf("Snapshot().SourceURL = %s, want %s", text.Quote(snapshot.SourceURL), text.Quote(wantSourceURL))
 	}
 
-	wantRetrievedOn := time.Date(2026, time.November, 11, 0, 0, 0, 0, time.UTC)
+	wantRetrievedOn := time.Date(2026, time.November, 13, 0, 0, 0, 0, time.UTC)
 	if !snapshot.RetrievedOn.Equal(wantRetrievedOn) {
 		t.Errorf("Snapshot().RetrievedOn = %s, want %s",
 			snapshot.RetrievedOn.Format(time.RFC3339), wantRetrievedOn.Format(time.RFC3339))
@@ -106,32 +109,146 @@ func TestCatalogSnapshotHeader(t *testing.T) {
 	}
 }
 
-// TestCatalogDefaultRegionAndNoPlansYet pins what milestone 2 gives the snapshot
-// before its pricing milestone (ADR 0024): the provisional default region
-// estimates use when the user names none, and no plan or price recorded yet. The
-// pricing milestone that adds either updates this test and the SOURCES.md section
-// beside the snapshot.
-func TestCatalogDefaultRegionAndNoPlansYet(t *testing.T) {
+// TestCatalogPlansAndPrices pins PRD #190 milestone 4: the snapshot records what an
+// estimate needs (ADR 0024). Every offering of a category priced by plan sells at
+// least one plan, every offering of a category priced per GiB of storage lists at
+// least one storage price, every price is a positive monthly amount in EUR, and
+// every offering available in the default region can be priced there, so an
+// estimate for that region never borrows another region's price and never reads a
+// missing price as zero. leftOut names the offerings the two coverage rules below
+// are waived for, with the reason, because Scaleway publishes no price for them.
+func TestCatalogPlansAndPrices(t *testing.T) {
 	t.Parallel()
 
 	cat := catalogOf(t)
 
+	// The region estimates use when the user names none (ADR 0024): Paris is the
+	// region hosting every offering of the snapshot, and the existing default.
 	const wantRegion = "fr-par"
 	if got := cat.Snapshot().DefaultRegion; got != wantRegion {
 		t.Errorf("Snapshot().DefaultRegion = %s, want %s", text.Quote(got), text.Quote(wantRegion))
 	}
 
+	// planCategories are the categories PRD #190 prices by plan: a server or a
+	// managed cluster runs on one, and so does a managed database node.
+	planCategories := []taxonomy.Category{
+		taxonomy.ComputeVM,
+		taxonomy.ComputeBareMetal,
+		taxonomy.KubernetesManaged,
+		taxonomy.DatabasePostgreSQL,
+		taxonomy.DatabaseMySQL,
+	}
+
+	// storageCategories are the categories PRD #190 prices per GiB of storage
+	// kept: block volumes, objects, and the storage a managed database uses.
+	storageCategories := []taxonomy.Category{
+		taxonomy.StorageBlock,
+		taxonomy.StorageObject,
+		taxonomy.DatabasePostgreSQL,
+		taxonomy.DatabaseMySQL,
+	}
+
+	// leftOut exempts an offering from the two coverage rules, never from the
+	// price rules, and gives the reason. An entry is a finding to explain in this
+	// test and in SOURCES.md, not a way past a refresh.
+	leftOut := map[string]string{}
+
 	for _, o := range cat.Offerings() {
-		if len(o.Plans) != 0 {
-			t.Errorf("offering %s lists %d plans, want none until its pricing milestone",
-				text.Quote(o.Name), len(o.Plans))
+		reason, exempt := leftOut[o.Name]
+		if exempt {
+			t.Logf("offering %s is left out of the plan and storage-price rules: %s", text.Quote(o.Name), reason)
 		}
 
-		if len(o.StoragePrices) != 0 {
-			t.Errorf("offering %s lists %d storage prices, want none until its pricing milestone",
-				text.Quote(o.Name), len(o.StoragePrices))
+		if !exempt && servesAny(o, planCategories) && len(o.Plans) == 0 {
+			t.Errorf("offering %s serves a category priced by plan but lists no plan, want at least one",
+				text.Quote(o.Name))
+		}
+
+		if !exempt && servesAny(o, storageCategories) && len(o.StoragePrices) == 0 {
+			t.Errorf("offering %s serves a category priced per GiB of storage but lists no storage price, want at least one",
+				text.Quote(o.Name))
+		}
+
+		for _, p := range o.Plans {
+			for i, price := range p.Prices {
+				checkPrice(t, o, fmt.Sprintf("plan %s prices[%d]", text.Quote(p.Name), i), price)
+			}
+
+			if slices.Contains(o.Regions, wantRegion) && !anyPriceAppliesIn(p.Prices, wantRegion) {
+				t.Errorf("offering %s plan %s lists no price for the default region %s, want one applying there: its prices apply to %s",
+					text.Quote(o.Name), text.Quote(p.Name), text.Quote(wantRegion), regionsListed(p.Prices))
+			}
+		}
+
+		for i, price := range o.StoragePrices {
+			checkPrice(t, o, fmt.Sprintf("storagePrices[%d]", i), price)
+		}
+
+		if slices.Contains(o.Regions, wantRegion) && len(o.StoragePrices) > 0 && !anyPriceAppliesIn(o.StoragePrices, wantRegion) {
+			t.Errorf("offering %s lists storage prices but none for the default region %s, want one applying there: they apply to %s",
+				text.Quote(o.Name), text.Quote(wantRegion), regionsListed(o.StoragePrices))
 		}
 	}
+}
+
+// checkPrice pins what every price of the snapshot must be, wherever it appears: a
+// positive monthly amount in EUR, applying only to regions its offering is
+// available in (ADR 0024). where names the price inside its offering.
+func checkPrice(t *testing.T, o catalog.Offering, where string, price catalog.Price) {
+	t.Helper()
+
+	if price.Currency != catalog.EUR {
+		t.Errorf("offering %s %s: currency = %s, want %s",
+			text.Quote(o.Name), where, text.Quote(price.Currency), text.Quote(catalog.EUR))
+	}
+
+	if price.Amount <= 0 {
+		t.Errorf("offering %s %s: amount = %s, want more than 0: a price is never zero for unknown",
+			text.Quote(o.Name), where, price.Amount)
+	}
+
+	for _, region := range price.Regions {
+		if !slices.Contains(o.Regions, region) {
+			t.Errorf("offering %s %s: applies to region %s, want one of the offering's regions %v",
+				text.Quote(o.Name), where, text.Quote(region), o.Regions)
+		}
+	}
+}
+
+// servesAny reports whether o serves one of categories.
+func servesAny(o catalog.Offering, categories []taxonomy.Category) bool {
+	for _, c := range categories {
+		if slices.Contains(o.Categories, c) {
+			return true
+		}
+	}
+
+	return false
+}
+
+// anyPriceAppliesIn reports whether one of prices applies in region: a price that
+// lists no region applies to every region of its offering (ADR 0024).
+func anyPriceAppliesIn(prices []catalog.Price, region string) bool {
+	return slices.ContainsFunc(prices, func(p catalog.Price) bool {
+		return len(p.Regions) == 0 || slices.Contains(p.Regions, region)
+	})
+}
+
+// regionsListed formats the regions prices apply to, one entry per price, for an
+// error message.
+func regionsListed(prices []catalog.Price) string {
+	listed := make([]string, len(prices))
+	for i, p := range prices {
+		if len(p.Regions) == 0 {
+			listed[i] = "every region"
+
+			continue
+		}
+
+		listed[i] = strings.Join(p.Regions, ", ")
+	}
+
+	return strings.Join(listed, "; ")
 }
 
 // TestCatalogGolden pins the whole parsed catalog against a hand-written golden
