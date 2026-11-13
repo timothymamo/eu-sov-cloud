@@ -9,12 +9,13 @@ describes the same small web shop as it might run on one source:
 | [`gcp/`](gcp/) | GCP | 14 |
 | [`azure/`](azure/) | Azure | 11 |
 
-The shop has web VMs (one of them a scaling group), on GCP a bare-metal search server, a data volume, an object storage bucket with
-versioning, a PostgreSQL database with point-in-time restore, read replicas and zone high
-availability, a MySQL database, a managed Kubernetes cluster, a function, an order queue with a
-dead-letter queue, and a CDN and a DNS zone that `shift2eu` does not classify (`unclassified`, with
-their `rawType`). Together the samples use every taxonomy category and every capability, and give
-every fit (direct, partial, none) on at least one target, so a report shows all its sections.
+The shop has web VMs (one of them a scaling group), on GCP a bare-metal search server, a data
+volume, an object storage bucket with versioning, a PostgreSQL database with point-in-time restore,
+read replicas and zone high availability, a MySQL database, a managed Kubernetes cluster, a
+function, an order queue with a dead-letter queue, and a CDN and a DNS zone that `shift2eu` does
+not classify (`unclassified`, with their `rawType`). Together the samples use every taxonomy
+category and every capability, and give every fit (direct, partial, none) on at least one target,
+so a report shows all its sections.
 
 **Everything here is made up.** The names are invented; the only account ID, address range and
 domain a sample may use are the documentation values `123456789012`, `192.0.2.0/24` and

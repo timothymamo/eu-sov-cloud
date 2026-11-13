@@ -74,6 +74,9 @@ without inventing a preference.
 - An inventory file written before this change stays valid: its `compute.vm` resources keep their
   meaning for virtual machines. One that classified a dedicated server as `compute.vm` should be
   regenerated with `compute.baremetal`.
+- The reverse does not hold: an inventory that uses `compute.baremetal` needs this release or later.
+  An older CLI or server binary rejects it with "unknown taxonomy category", as ADR 0006 specifies
+  for any unknown category, so an HTTP API client must talk to a server of this release or later.
 - PRD #2's open question on a product-preference order per category is closed: the name tie-break
   stays, and the only ties left are between tiers of one product. ADR 0011's consequence "More
   offerings and more ties" stands, and no longer needs a preference order to revisit.
