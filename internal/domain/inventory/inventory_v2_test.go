@@ -12,6 +12,7 @@ package inventory_test
 
 import (
 	"errors"
+	"math"
 	"strings"
 	"testing"
 
@@ -671,6 +672,105 @@ func TestNewRejectsVersion2Fields(t *testing.T) {
 			resources: second(withWorkload(vm("aa-second"), "shop ")),
 			wantErr:   text.ErrInvalid,
 			wantPath:  "resources[1].workload",
+		},
+		// The JSON reader cannot produce NaN or an infinity - 1e999 is refused
+		// while the document is walked - but a source adapter calls New with the
+		// numbers its SDK reports. The range checks are written so that NaN, which
+		// compares false with everything, and both infinities are refused, and
+		// these rows keep them that way: a rewrite as the natural-looking
+		// "n <= 0 || n > limit" would let NaN through silently.
+		{
+			name:      "vcpus of NaN",
+			resources: second(withSize(vm("aa-second"), inventory.Size{VCPUs: ptr(math.NaN())})),
+			wantErr:   inventory.ErrInvalidSize,
+			wantPath:  "resources[1].size.vcpus",
+		},
+		{
+			name:      "vcpus of positive infinity",
+			resources: second(withSize(vm("aa-second"), inventory.Size{VCPUs: ptr(math.Inf(1))})),
+			wantErr:   inventory.ErrInvalidSize,
+			wantPath:  "resources[1].size.vcpus",
+		},
+		{
+			name:      "vcpus of negative infinity",
+			resources: second(withSize(vm("aa-second"), inventory.Size{VCPUs: ptr(math.Inf(-1))})),
+			wantErr:   inventory.ErrInvalidSize,
+			wantPath:  "resources[1].size.vcpus",
+		},
+		{
+			name:      "memoryGiB of NaN",
+			resources: second(withSize(vm("aa-second"), inventory.Size{MemoryGiB: ptr(math.NaN())})),
+			wantErr:   inventory.ErrInvalidSize,
+			wantPath:  "resources[1].size.memoryGiB",
+		},
+		{
+			name:      "memoryGiB of positive infinity",
+			resources: second(withSize(vm("aa-second"), inventory.Size{MemoryGiB: ptr(math.Inf(1))})),
+			wantErr:   inventory.ErrInvalidSize,
+			wantPath:  "resources[1].size.memoryGiB",
+		},
+		{
+			name:      "memoryGiB of negative infinity",
+			resources: second(withSize(vm("aa-second"), inventory.Size{MemoryGiB: ptr(math.Inf(-1))})),
+			wantErr:   inventory.ErrInvalidSize,
+			wantPath:  "resources[1].size.memoryGiB",
+		},
+		{
+			name:      "storageGiB of NaN",
+			resources: second(withSize(vm("aa-second"), inventory.Size{StorageGiB: ptr(math.NaN())})),
+			wantErr:   inventory.ErrInvalidSize,
+			wantPath:  "resources[1].size.storageGiB",
+		},
+		{
+			name:      "storageGiB of positive infinity",
+			resources: second(withSize(vm("aa-second"), inventory.Size{StorageGiB: ptr(math.Inf(1))})),
+			wantErr:   inventory.ErrInvalidSize,
+			wantPath:  "resources[1].size.storageGiB",
+		},
+		{
+			name:      "storageGiB of negative infinity",
+			resources: second(withSize(vm("aa-second"), inventory.Size{StorageGiB: ptr(math.Inf(-1))})),
+			wantErr:   inventory.ErrInvalidSize,
+			wantPath:  "resources[1].size.storageGiB",
+		},
+		{
+			name:      "hoursPerMonth of NaN",
+			resources: second(withUsage(vm("aa-second"), inventory.Usage{HoursPerMonth: ptr(math.NaN())})),
+			wantErr:   inventory.ErrInvalidUsage,
+			wantPath:  "resources[1].usage.hoursPerMonth",
+		},
+		{
+			name:      "hoursPerMonth of positive infinity",
+			resources: second(withUsage(vm("aa-second"), inventory.Usage{HoursPerMonth: ptr(math.Inf(1))})),
+			wantErr:   inventory.ErrInvalidUsage,
+			wantPath:  "resources[1].usage.hoursPerMonth",
+		},
+		{
+			name:      "hoursPerMonth of negative infinity",
+			resources: second(withUsage(vm("aa-second"), inventory.Usage{HoursPerMonth: ptr(math.Inf(-1))})),
+			wantErr:   inventory.ErrInvalidUsage,
+			wantPath:  "resources[1].usage.hoursPerMonth",
+		},
+		{
+			name: "cost amount of NaN",
+			resources: second(withCost(vm("aa-second"),
+				inventory.Cost{Amount: ptr(math.NaN()), Currency: "EUR"})),
+			wantErr:  inventory.ErrInvalidCost,
+			wantPath: "resources[1].monthlyCost.amount",
+		},
+		{
+			name: "cost amount of positive infinity",
+			resources: second(withCost(vm("aa-second"),
+				inventory.Cost{Amount: ptr(math.Inf(1)), Currency: "EUR"})),
+			wantErr:  inventory.ErrInvalidCost,
+			wantPath: "resources[1].monthlyCost.amount",
+		},
+		{
+			name: "cost amount of negative infinity",
+			resources: second(withCost(vm("aa-second"),
+				inventory.Cost{Amount: ptr(math.Inf(-1)), Currency: "EUR"})),
+			wantErr:  inventory.ErrInvalidCost,
+			wantPath: "resources[1].monthlyCost.amount",
 		},
 	}
 
