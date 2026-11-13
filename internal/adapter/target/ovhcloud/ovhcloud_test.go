@@ -113,7 +113,9 @@ func TestCatalogSnapshotHeader(t *testing.T) {
 
 	snapshot := catalogOf(t).Snapshot()
 
-	const wantSourceURL = "https://www.ovhcloud.com/en/public-cloud/prices/"
+	// The English EUR edition of the prices page: the /en/ edition shows USD and
+	// this one excludes VAT, so an estimate is in the currency ADR 0024 expects.
+	const wantSourceURL = "https://www.ovhcloud.com/en-ie/public-cloud/prices/"
 	if snapshot.SourceURL != wantSourceURL {
 		t.Errorf("Snapshot().SourceURL = %s, want %s", text.Quote(snapshot.SourceURL), text.Quote(wantSourceURL))
 	}
@@ -142,8 +144,9 @@ func TestCatalogPlansAndPrices(t *testing.T) {
 
 	cat := catalogOf(t)
 
-	// The region estimates use when the user names none: it hosts more of the
-	// snapshot's offerings than any other OVHcloud region.
+	// The region estimates use when the user names none: it is among the regions
+	// hosting the most of the snapshot's offerings (12, tied with LIM and SBG,
+	// against 11 in RBX and WAW and 9 in PAR and MIL) and is the existing default.
 	const wantRegion = "GRA"
 	if got := cat.Snapshot().DefaultRegion; got != wantRegion {
 		t.Errorf("Snapshot().DefaultRegion = %s, want %s", text.Quote(got), text.Quote(wantRegion))
@@ -169,10 +172,12 @@ func TestCatalogPlansAndPrices(t *testing.T) {
 	}
 
 	// leftOut exempts an offering from the two coverage rules, never from the
-	// price rules, and gives the reason. It is empty: every priced offering has a
-	// public list price. An entry is a finding to explain in this test and in
-	// SOURCES.md, not a way past a refresh.
-	leftOut := map[string]string{}
+	// price rules, and gives the reason. An entry is a finding to explain in this
+	// test and in SOURCES.md, not a way past a refresh.
+	leftOut := map[string]string{
+		"Block Storage LUKS":       "OVHcloud publishes no price for encrypted (LUKS) volumes; the prices page lists only the unencrypted classes",
+		"Block Storage LUKS Zonal": "OVHcloud publishes no price for encrypted (LUKS) volumes; the prices page lists only the unencrypted classes",
+	}
 
 	for _, o := range cat.Offerings() {
 		reason, exempt := leftOut[o.Name]
