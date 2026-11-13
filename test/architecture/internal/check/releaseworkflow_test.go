@@ -225,7 +225,10 @@ const publishJobHead = `  # The release is published last (issue #156): GoReleas
   # to a draft, so nothing can be added to or replaced in the release once it is
   # public, and this job alone publishes it, after the archives are attested.
   # It reads the draft before it publishes it, and holds contents: write and
-  # nothing else: nothing in it can sign, push or attest.
+  # nothing else: nothing in it can sign, push or attest. It checks out the
+  # whole history, as the image jobs do, to decide whether the tag is the
+  # highest release tag on main, and moves GitHub's "Latest" release by that
+  # decision alone, as the images' latest tag is (issue #173).
   publish:
     name: Publish the release
     needs: [test, goreleaser, attest-archives]
@@ -235,13 +238,23 @@ const publishJobHead = `  # The release is published last (issue #156): GoReleas
     steps:
 `
 
-// publishSteps are the publish job's steps (issues #156, #163): the attested
-// checksums.txt out of the archives workflow artifact, and the one step that
-// checks the draft release's assets against it and publishes exactly that
-// draft, by the id the API listed it with. The tag and the token come through
-// env:, and every gh command is given the repository in its own arguments,
-// since the job checks nothing out.
+// publishSteps are the publish job's steps (issues #156, #163, #173): the whole
+// history, which the latest decision in the publishing step reads origin/main
+// from as the image jobs' stamp does; the attested checksums.txt out of the
+// archives workflow artifact; and the one step that checks the draft release's
+// assets against it and publishes exactly that draft, by the id the API listed
+// it with, with GitHub's "Latest" release moved by that decision alone. The
+// tag and the token come through env:, and every gh command is given the
+// repository in its own arguments, so none reads it from a git remote.
 var publishSteps = []string{
+	`      # The whole history, with every branch: the latest decision in the step
+      # below reads origin/main from it, as the image jobs' stamp does (issue
+      # #173). No repository code runs here.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+`,
 	`      # The checksums.txt the attest-archives job attested, from the workflow
       # artifact it attests (issue #156): what is published must be exactly what
       # was attested, and this file is the list of it.
@@ -258,13 +271,28 @@ var publishSteps = []string{
       # else is never published. A draft is not readable by its tag, so the
       # API's list of the releases is read, and the draft is published by the id
       # that list gives it, in this one step: publishing by tag would let gh
-      # resolve a published release, or a swapped draft, in its place.
+      # resolve a published release, or a swapped draft, in its place. It also
+      # decides GitHub's "Latest" here, from the highest release tag the image
+      # jobs' stamp decides the images' latest tag from (issue #173).
       - name: Check the draft's assets and publish it
         env:
           TAG: ${{ github.ref_name }}
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
+          # Whether this tag is the highest release tag on main, decided as the
+          # image jobs' stamp decides it: the release tags merged into main, in
+          # the same filter, sort and pick, so GitHub's "Latest" release and
+          # the images' latest tag name the same version (ADR 0015, issue #173).
+          # fetch-depth: 0 brings origin/main; the step refuses a checkout
+          # without it rather than publish a release with latest false.
+          git rev-parse --verify --quiet refs/remotes/origin/main > /dev/null || {
+            echo "origin/main is missing from the checkout" >&2
+            exit 1
+          }
+          highest="$(git tag -l 'v*.*.*' --merged refs/remotes/origin/main | sed -nE '/^v[0-9]+\.[0-9]+\.[0-9]+$/p' | sort -V | tail -n 1)"
+          latest=false
+          if [ "$TAG" = "$highest" ]; then latest=true; fi
           tmp="$(mktemp -d)"
           # A draft release is not readable by its tag. The API lists it among
           # the releases, with draft: true, and gives every asset the digest of
@@ -314,15 +342,21 @@ var publishSteps = []string{
             echo "the draft release's checksums.txt is not the one this run attested" >&2
             exit 1
           fi
-          # The draft this job read and checked, and no other.
-          gh api -X PATCH "repos/timothymamo/shift2eu/releases/$id" -F draft=false
+          # The draft this job read and checked, and no other, published with
+          # GitHub's "Latest" release moved by the same rule as the images'
+          # latest tag: true only for the highest release tag on main, so a
+          # patch on an older line is published without taking it over (issue
+          # #173).
+          gh api -X PATCH "repos/timothymamo/shift2eu/releases/$id" -F draft=false -F make_latest="$latest"
 `,
 }
 
 // publishByID is the command the publish job publishes with: the draft it just
 // checked, by the id the API listed it with, and never by its tag, which gh
-// resolves to a published release before a draft (issues #156, #163).
-const publishByID = `gh api -X PATCH "repos/timothymamo/shift2eu/releases/$id" -F draft=false`
+// resolves to a published release before a draft (issues #156, #163), with
+// GitHub's "Latest" release moved by the stamp's own highest decision, so the
+// release and both images' latest tag move together (issue #173).
+const publishByID = `gh api -X PATCH "repos/timothymamo/shift2eu/releases/$id" -F draft=false -F make_latest="$latest"`
 
 // publishByTagStep is the publication the second review of issue #163 refused:
 // a step of its own, after the check, that resolves the tag again, so a release
@@ -345,14 +379,17 @@ const publishExistingReleaseCheck = `          if [ "$(jq --arg tag "$TAG" 'add 
 `
 
 // verifyArchivesJobHead is the verify-archives job up to its steps: the
-// independent check of what the published release carries (issue #163), on a
-// fresh runner after publish, with read-only access to the release and to the
-// repository's attestations, no OIDC token and no checkout.
+// independent check of what the published release carries (issue #163) and of
+// GitHub's "Latest" release (issue #173), on a fresh runner after publish, with
+// read-only access to the release and to the repository's attestations, no
+// OIDC token and no checkout.
 const verifyArchivesJobHead = `  # A fresh runner that verifies what the published release carries (issue
   # #163): it downloads every asset of the release, checks that the release is
   # published and holds exactly checksums.txt and the files it lists, checks
   # their digests and verifies each of them against the build provenance this
-  # workflow made for this tag and commit. Read-only: contents: read and
+  # workflow made for this tag and commit. It runs after publish, so it is the
+  # job that checks GitHub's "Latest" release against the highest release tag
+  # merged into main (issue #173). Read-only: contents: read and
   # attestations: read, no OIDC token and nothing it can write, and no
   # checkout, so no repository code runs.
   verify-archives:
@@ -367,8 +404,10 @@ const verifyArchivesJobHead = `  # A fresh runner that verifies what the publish
 
 // verifyArchivesSteps are the verify-archives job's steps: every asset of the
 // release, the check that it is published and holds exactly checksums.txt and
-// the files that file lists, their digests, and the provenance of every one of
-// them (docs/guide/verify-releases.md).
+// the files that file lists, their digests, the provenance of every one of
+// them (docs/guide/verify-releases.md), and the check that GitHub's "Latest"
+// release names the highest release tag merged into main, the version the
+// images' latest tag names (issue #173).
 var verifyArchivesSteps = []string{
 	`      # Every asset of the release, not the patterns the workflow expects to
       # find: what is checked is what was published. gh is given the repository
@@ -421,6 +460,92 @@ var verifyArchivesSteps = []string{
               --signer-workflow timothymamo/shift2eu/.github/workflows/release.yml \
               --source-ref "refs/tags/$TAG" --source-digest "$GITHUB_SHA" --deny-self-hosted-runners
           done
+`,
+	`      # GitHub's "Latest" release, which releases/latest/download/... serves, is
+      # the most recently published release rather than the highest version, so
+      # a patch on an older line would take it over (issue #173). It must name
+      # the highest release tag merged into main, the version the images' latest
+      # tag names: the same filter, sort and pick the image jobs' stamp makes,
+      # read by ancestry here as the verify job reads it, from the public
+      # repository into a bare repository of this job's own, so no checkout runs
+      # and no repository code runs. A higher tag whose release is not published
+      # yet has no release to check against, so a notice says so and this run
+      # does not check it, as the image latest check does.
+      - name: Check GitHub's latest release
+        env:
+          TAG: ${{ github.ref_name }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          git init -q tags
+          git -C tags fetch -q --filter=tree:0 --no-tags https://github.com/timothymamo/shift2eu.git '+refs/heads/main:refs/remotes/origin/main' '+refs/tags/v*:refs/tags/v*'
+          highest="$(git -C tags tag -l 'v*.*.*' --merged refs/remotes/origin/main | sed -nE '/^v[0-9]+\.[0-9]+\.[0-9]+$/p' | sort -V | tail -n 1)"
+          if [ -z "$highest" ]; then
+            echo "no release tag is merged into main, so GitHub's latest release cannot be checked" >&2
+            exit 1
+          fi
+          # published reports whether the release of a tag is published: only
+          # the API's 404, its answer for a tag it holds no release for (a draft
+          # is not published and has none), is an unpublished release; any other
+          # answer, a 5xx, a rate limit, a failed login or a missing gh, is
+          # printed and fails the step.
+          published() {
+            err="$(mktemp)"
+            if gh api "repos/timothymamo/shift2eu/releases/tags/$1" > /dev/null 2> "$err"; then
+              rm -f "$err"
+              return 0
+            fi
+            if grep -qF -e "HTTP 404" "$err"; then
+              rm -f "$err"
+              return 1
+            fi
+            echo "the release of $1 could not be read:" >&2
+            cat "$err" >&2
+            rm -f "$err"
+            return 2
+          }
+          # latest_tag prints the tag GitHub calls its latest release, or
+          # nothing when the repository publishes none.
+          latest_tag() {
+            err="$(mktemp)"
+            if out="$(gh api "repos/timothymamo/shift2eu/releases/latest" --jq '.tag_name' 2> "$err")"; then
+              printf '%s\n' "$out"
+              rm -f "$err"
+              return 0
+            fi
+            if grep -qF -e "HTTP 404" "$err"; then
+              rm -f "$err"
+              return 0
+            fi
+            echo "GitHub's latest release could not be read:" >&2
+            cat "$err" >&2
+            rm -f "$err"
+            return 1
+          }
+          latest="$(latest_tag)"
+          if [ "$highest" = "$TAG" ]; then
+            if [ "$latest" != "$TAG" ]; then
+              echo "GitHub's latest release is '$latest', not $TAG, the highest release tag" >&2
+              exit 1
+            fi
+          else
+            rc=0
+            published "$highest" || rc=$?
+            case "$rc" in
+              0)
+                if [ "$latest" = "$TAG" ]; then
+                  echo "GitHub's latest release is $TAG, which is not the highest release tag, $highest" >&2
+                  exit 1
+                fi
+                ;;
+              1)
+                echo "::notice::the release of $highest is not published yet, so this run does not check GitHub's latest release"
+                ;;
+              *)
+                exit 1
+                ;;
+            esac
+          fi
 `,
 }
 
@@ -1225,8 +1350,12 @@ func beforeStep(t *testing.T, steps []string, head, step string) []string {
 // job checks nothing out and runs sigstore's and GitHub's actions alone; and
 // the verify job reads only the registry and the attestations, compares each
 // tag to the digest this run built, and applies the release rule to the
-// release tags merged into main. The probes are the steps the reviews and
-// audits of issues #40, #72 and #99 found a lexical check let through.
+// release tags merged into main. The publish job moves GitHub's "Latest"
+// release by that same rule, from the image jobs' stamp's own decision, and
+// verify-archives, the job after it, checks that GitHub's "Latest" release and
+// the images' latest tag name the same version (issue #173). The probes are the
+// steps the reviews and audits of issues #40, #72 and #99 found a lexical check
+// let through.
 func TestReleaseWorkflow(t *testing.T) {
 	t.Parallel()
 
@@ -1406,6 +1535,27 @@ func TestReleaseWorkflow(t *testing.T) {
 		{name: "the publish job needing the attestation job only", workflow: in("publish", "    needs: [test, goreleaser, attest-archives]\n", "    needs: [attest-archives]\n"), wantIn: "needs"},
 		{name: "another permission for the publish job", workflow: in("publish", "      contents: write # publish the draft release\n", "      contents: write # publish the draft release\n      packages: write # push\n"), wantIn: "packages"},
 		{name: "no contents: write for the publish job", workflow: in("publish", "      contents: write # publish the draft release\n", ""), wantIn: "contents"},
+		// GitHub's "Latest" release follows the images' latest tag (issue
+		// #173): the publish job takes the highest release tag on main from the
+		// image jobs' stamp's own command line, and sends make_latest from that
+		// decision alone: never omitted, never a constant, so publishing a patch
+		// on an older line does not take GitHub's "Latest" over.
+		{name: "the publish step without make_latest", workflow: in("publish", ` -F make_latest="$latest"`, ""), wantIn: `make_latest=\"$latest\"`},
+		{name: "the publish step with make_latest always true", workflow: in("publish", `-F make_latest="$latest"`, `-F make_latest=true`), wantIn: `make_latest=\"$latest\"`},
+		{name: "the publish step with make_latest always false", workflow: in("publish", `-F make_latest="$latest"`, `-F make_latest=false`), wantIn: `make_latest=\"$latest\"`},
+		{name: "the publish step with make_latest from an expression", workflow: in("publish", `-F make_latest="$latest"`, `-F make_latest=${{ github.ref_name }}`), wantIn: "holds a ${{ }} expression"},
+		{name: "the publish step without the latest decision", workflow: in("publish", "\n          latest=false\n          if [ \"$TAG\" = \"$highest\" ]; then latest=true; fi", ""), wantIn: "want the check and publication of the draft: run is"},
+		{name: "the publish step with latest always", workflow: in("publish", "          latest=false\n", "          latest=true\n"), wantIn: "want the check and publication of the draft: run is"},
+		// The highest is the stamp's, byte for byte: the release tags merged
+		// into main, in the same filter, sort and pick, so a stray tag off main
+		// cannot hold GitHub's "Latest" back and a lexical sort cannot pick
+		// another tag.
+		{name: "the publish step counting every tag, not only those merged into main", workflow: in("publish", "git tag -l 'v*.*.*' --merged refs/remotes/origin/main", "git tag -l 'v*.*.*'"), wantIn: "--merged refs/remotes/origin/main"},
+		{name: "the publish step counting the tags of another branch", workflow: in("publish", "--merged refs/remotes/origin/main", "--merged refs/heads/main"), wantIn: "--merged refs/remotes/origin/main"},
+		{name: "the publish step sorting the tags without sort -V", workflow: in("publish", "| sort -V | tail -n 1", "| sort | tail -n 1"), wantIn: "sort -V"},
+		{name: "the publish step without the pre-release filter", workflow: in("publish", `| sed -nE '/^v[0-9]+\.[0-9]+\.[0-9]+$/p'`, ""), wantIn: `sed -nE '/^v[0-9]+\.[0-9]+\.[0-9]+$/p'`},
+		{name: "the publish step without the origin/main guard", workflow: in("publish", "          git rev-parse --verify --quiet refs/remotes/origin/main > /dev/null || {\n            echo \"origin/main is missing from the checkout\" >&2\n            exit 1\n          }\n", ""), wantIn: "want the check and publication of the draft: run is"},
+		{name: "the publish job without the whole history", workflow: in("publish", "          fetch-depth: 0\n", ""), wantIn: "fetch-depth"},
 		// The publication itself (issues #156, #163): the publish job publishes
 		// the draft it checked, by the id the API listed it with, and a tag that
 		// already holds a published release is refused.
@@ -1422,14 +1572,14 @@ func TestReleaseWorkflow(t *testing.T) {
 		// the ones that file lists, its checksums.txt the attested one, and a
 		// tag with a release already published is refused rather than published
 		// again (reviewer S2 and auditor 1, issue #163).
-		{name: "no check and publication of the draft", workflow: steps("publish", withoutStep(t, publishSteps, "name: Check the draft's assets and publish it")), wantIn: "holds 1 steps, want exactly 2"},
-		{name: "the attested checksums.txt not downloaded before publishing", workflow: steps("publish", withoutStep(t, publishSteps, "actions/download-artifact@")), wantIn: "holds 1 steps, want exactly 2"},
-		{name: "the publication before the download of checksums.txt", workflow: steps("publish", swappedSteps(t, publishSteps, "actions/download-artifact@", "name: Check the draft's assets and publish it")), wantIn: "steps: step 1"},
+		{name: "no check and publication of the draft", workflow: steps("publish", withoutStep(t, publishSteps, "name: Check the draft's assets and publish it")), wantIn: "holds 2 steps, want exactly 3"},
+		{name: "the attested checksums.txt not downloaded before publishing", workflow: steps("publish", withoutStep(t, publishSteps, "actions/download-artifact@")), wantIn: "holds 2 steps, want exactly 3"},
+		{name: "the publication before the download of checksums.txt", workflow: steps("publish", swappedSteps(t, publishSteps, "actions/download-artifact@", "name: Check the draft's assets and publish it")), wantIn: "steps: step 2"},
 		{name: "publish without the check that the tag holds no published release", workflow: in("publish", publishExistingReleaseCheck, ""), wantIn: "already publishes a release for $TAG"},
 		{name: "a draft check of the names alone", workflow: in("publish", "          # Every asset's digest is the one checksums.txt lists: the bytes the\n          # attestation covers are the bytes that are published.\n          while read -r hash name; do printf 'sha256:%s %s\\n' \"$hash\" \"$name\"; done < checksums.txt | sort > \"$tmp/attested-digests.txt\"\n", ""), wantIn: "the draft release for $TAG holds an asset whose digest checksums.txt does not list"},
 		{name: "a draft check that trusts the draft's checksums.txt", workflow: in("publish", "            echo \"the draft release's checksums.txt is not the one this run attested\" >&2\n", "            echo \"the draft release's checksums.txt is the attested one\" >&2\n"), wantIn: "the draft release's checksums.txt is not the one this run attested"},
-		{name: "a separate publish step by tag", workflow: steps("publish", slices.Concat(publishSteps, []string{publishByTagStep})), wantIn: "holds 3 steps, want exactly 2"},
-		{name: "an extra step in the publish job", workflow: steps("publish", beforeStep(t, publishSteps, "      - name: Check the draft's assets and publish it", "run: ./scripts/prepare.sh")), wantIn: "holds 3 steps, want exactly 2"},
+		{name: "a separate publish step by tag", workflow: steps("publish", slices.Concat(publishSteps, []string{publishByTagStep})), wantIn: "holds 4 steps, want exactly 3"},
+		{name: "an extra step in the publish job", workflow: steps("publish", beforeStep(t, publishSteps, "      - name: Check the draft's assets and publish it", "run: ./scripts/prepare.sh")), wantIn: "holds 4 steps, want exactly 3"},
 		{name: "the publish step in the goreleaser job", workflow: steps("goreleaser", beforeStep(t, goreleaserSteps, "      - uses: actions/upload-artifact@", "name: Check the draft's assets and publish it\n        run: "+publishByID)), wantIn: "jobs: goreleaser: steps holds 6 steps, want exactly 5"},
 		{name: "the publish step in the test job", workflow: inTestJob("name: Check the draft's assets and publish it\n        run: " + publishByID), wantIn: "holds 5 steps, want exactly 4"},
 
@@ -1927,7 +2077,7 @@ func TestReleaseWorkflow(t *testing.T) {
 		// or one the release never got, fails here rather than pass unverified.
 		{name: "the release's file set not checked", workflow: in("verify-archives", "            echo \"the release of $TAG does not hold what checksums.txt lists:\" >&2\n", "            echo \"the release of $TAG holds exactly checksums.txt and its files\" >&2\n"), wantIn: "the release of $TAG does not hold what checksums.txt lists"},
 		{name: "a release left a draft", workflow: in("verify-archives", "            echo \"the release of $TAG is still a draft, so it was never published\" >&2\n", "            echo \"the release of $TAG is published\" >&2\n"), wantIn: "the release of $TAG is still a draft, so it was never published"},
-		{name: "the verification without set -euo pipefail", workflow: in("verify-archives", "        run: |\n          set -euo pipefail\n", "        run: |\n"), wantIn: `want exactly "set -euo pipefail`},
+		{name: "the verification without set -euo pipefail", workflow: in("verify-archives", "        run: |\n          set -euo pipefail\n          if [", "        run: |\n          if ["), wantIn: `want exactly "set -euo pipefail`},
 		{name: "the digests not checked", workflow: in("verify-archives", "          sha256sum -c checksums.txt\n", ""), wantIn: "sha256sum -c checksums.txt"},
 		{name: "a verification of another repository", workflow: in("verify-archives", `gh attestation verify "$subject" --repo timothymamo/shift2eu`, `gh attestation verify "$subject" --repo example/shift2eu`), wantIn: "--repo timothymamo/shift2eu"},
 		{name: "the verification without the signer workflow", workflow: in("verify-archives", "--signer-workflow timothymamo/shift2eu/.github/workflows/release.yml", "--signer-workflow example/repo/.github/workflows/other.yml"), wantIn: "--signer-workflow timothymamo/shift2eu/.github/workflows/release.yml"},
@@ -1946,6 +2096,23 @@ func TestReleaseWorkflow(t *testing.T) {
 		// in.
 		{name: "the file set read without the dotfiles", workflow: in("verify-archives", "          ls -A | sort > \"$tmp/downloaded.txt\"\n", "          ls -1 | sort > \"$tmp/downloaded.txt\"\n"), wantIn: "ls -A | sort"},
 		{name: "the subjects read without the dotfiles", workflow: in("verify-archives", "          shopt -s dotglob\n", ""), wantIn: "shopt -s dotglob"},
+
+		// GitHub's "Latest" release is checked by the job that runs after
+		// publish, against the same highest release tag the images' latest tag
+		// follows (issue #173): a release that is not the highest must not be
+		// GitHub's "Latest", and while the highest release tag has no release
+		// yet the check is skipped with a notice, as the image latest check
+		// skips it.
+		{name: "no check of GitHub's latest release", workflow: steps("verify-archives", withoutStep(t, verifyArchivesSteps, "name: Check GitHub's latest release")), wantIn: "holds 2 steps, want exactly 3"},
+		{name: "the latest release not compared to the tag", workflow: in("verify-archives", `echo "GitHub's latest release is '$latest', not $TAG, the highest release tag"`, `echo "GitHub's latest release is $latest"`), wantIn: "GitHub's latest release is '$latest', not $TAG, the highest release tag"},
+		{name: "the latest release not refused for a tag that is not the highest", workflow: in("verify-archives", `echo "GitHub's latest release is $TAG, which is not the highest release tag, $highest"`, `echo "GitHub's latest release is $TAG"`), wantIn: "is not the highest release tag"},
+		{name: "the latest check without the notice for a highest release not published yet", workflow: in("verify-archives", `echo "::notice::the release of $highest is not published yet, so this run does not check GitHub's latest release"`, `echo "the release of $highest is not published yet"`), wantIn: "::notice::"},
+		{name: "the latest check counting every tag, not only those merged into main", workflow: in("verify-archives", "git -C tags tag -l 'v*.*.*' --merged refs/remotes/origin/main", "git -C tags tag -l 'v*.*.*'"), wantIn: "--merged refs/remotes/origin/main"},
+		{name: "the latest check sorting the tags without sort -V", workflow: in("verify-archives", "| sort -V | tail -n 1", "| sort | tail -n 1"), wantIn: "sort -V"},
+		{name: "the latest check without the pre-release filter", workflow: in("verify-archives", `| sed -nE '/^v[0-9]+\.[0-9]+\.[0-9]+$/p'`, ""), wantIn: `sed -nE '/^v[0-9]+\.[0-9]+\.[0-9]+$/p'`},
+		{name: "the latest check without the guard on an empty highest", workflow: in("verify-archives", "          if [ -z \"$highest\" ]; then\n            echo \"no release tag is merged into main, so GitHub's latest release cannot be checked\" >&2\n            exit 1\n          fi\n", ""), wantIn: `want exactly "set -euo pipefail`},
+		{name: "the latest release read from another repository", workflow: in("verify-archives", `gh api "repos/timothymamo/shift2eu/releases/latest"`, `gh api "repos/example/shift2eu/releases/latest"`), wantIn: "repos/timothymamo/shift2eu/releases/latest"},
+		{name: "the latest check reading any failed read as an unpublished release", workflow: in("verify-archives", "            if grep -qF -e \"HTTP 404\" \"$err\"; then\n              rm -f \"$err\"\n              return 1\n            fi\n", "            if true; then\n              rm -f \"$err\"\n              return 1\n            fi\n"), wantIn: "HTTP 404"},
 
 		{name: "an empty document", workflow: "", wantIn: "release workflow"},
 	}
