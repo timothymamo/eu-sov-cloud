@@ -1,0 +1,6 @@
+package probe
+
+// environComment names /proc/self/environ in a comment, which is no literal.
+func environComment() string {
+	return "/proc/self/status"
+}

@@ -130,6 +130,64 @@
 // not, TestDocPackageSymlinkProbe on a symlinked directory it builds in a
 // temporary directory, and TestDocSourceProblems and TestDocTrees pin its
 // helpers.
+//
+// TestE2ETestsSetExecEnv and TestTestTreeNamesNoProcEnviron close what the
+// e2e tier's two rules above cannot see (issue #195). The e2e _test.go files
+// start children, so depguard cannot keep os/exec from them, and e2e-no-env
+// refuses the one call that dumps the environment but no command built with a
+// nil Env, which inherits all of it: the agents' keys and tokens live there,
+// and the child's output can reach a t.Log call or a golden file.
+// TestE2ETestsSetExecEnv runs execenv.CheckExecEnv over every _test.go file
+// under test/e2e, walked recursively so a sub-package the tier grows is
+// scanned too, testdata directories skipped. The rule fails closed: apart
+// from the four gaps below, a shape it cannot follow is a finding. It follows
+// a command only when exec.Command or exec.CommandContext builds it as the
+// whole right-hand side of a declaration in a function (`ident :=` or
+// `var ident =`), and refuses every other construction, exec.Command or
+// exec.CommandContext used as a function value, a followed name rebound to
+// anything else, every use of the command before its Env is set (a run call,
+// an alias, an argument, a method value or expression, a capture in a
+// function literal), an Env assigned, through any receiver or as an Env key
+// of any composite literal, a value it cannot prove is not nil, an Env
+// assigned after the command was aliased, stored, passed, captured or
+// deferred, the address of an Env field, every exec.Cmd type expression not
+// under a `*`, a *exec.Cmd anywhere but as the whole type of a struct field,
+// a parameter, a result, a var, a type assertion or a type-switch case, an
+// embedded *exec.Cmd, an exec.Cmd composite literal without a proven Env, a
+// generic function, a blank or dot import of os/exec, and, beside os/exec, an
+// import of reflect or unsafe, one finding per import line. No array, slice,
+// map or chan element type is a *exec.Cmd, so no elided literal can build one;
+// a command reaches a struct field only through a use the check vouches for.
+// The proven Env values are a composite literal, a make, an append of one, and
+// a call to a helper of the same file, with no named result and no defer, that
+// returns one. The exemption the test declares (e2eToolchainCommands) is keyed on the
+// name and the subcommand, both literals: `go build` and `go list`, which need
+// that environment and print none of it, and only while every literal flag
+// after the subcommand is one of the allow-list e2eToolchainFlags (-trimpath,
+// -o and -deps). A run chained to its construction is never exempt, and a
+// spread argument and a Path or Args assigned on the command take the
+// exemption away too. Four gaps are accepted and left to review: the rule
+// follows the source, not the flow (an Env assigned in a branch that never
+// runs, or in a closure, counts); a path built at run time; a command built in,
+// or handed to, another file or package (a decoder such as json.Unmarshal, or
+// a helper of a sibling file that imports reflect but not os/exec, writing Env
+// through a command that escaped into it); and a non-literal toolchain
+// argument that holds a flag, alongside which a Dir set on an exempt command
+// keeps the exemption, the go command then reading that directory's go.mod
+// and go.work.
+// TestTestTreeNamesNoProcEnviron runs execenv.CheckEnvironLiterals over every
+// Go file under test/, testdata directories included and no file left out,
+// which reads the same environment without a child at all, in two tiers:
+// under test/e2e, which holds no fixture literals, a literal with a proc or
+// dev/fd path segment is refused (execenv.EnvironmentPathIn, the matcher it
+// shares with TestRootsAndCLINameNoEnvironmentPath); elsewhere a literal whose
+// cleaned value is a /proc/.../environ path is. The matcher's own test reads
+// the paths it pins from a JSON file under test/internal/execenv/testdata. A
+// path built at run time (filepath.Join, concatenation, fmt.Sprintf,
+// os.DirFS("/proc").Open) is beyond a rule of literals and left to review, and
+// in test/e2e to forbidigo's e2e-no-env. Both checkers and their probes are in
+// test/internal/execenv, whose probes are .go.txt files, so this scan never
+// meets a refused literal it planted itself.
 // TestTestsNoProcessStateProbe (testdata/testsprocessstate) runs the forbidigo
 // group tests-no-process-state (issue #153) on t.Setenv, t.Chdir, os.Setenv,
 // os.Unsetenv, os.Clearenv, os.Chdir, syscall.Unsetenv, syscall.Clearenv and

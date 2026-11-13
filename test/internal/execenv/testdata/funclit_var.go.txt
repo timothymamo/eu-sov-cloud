@@ -1,0 +1,8 @@
+package probe
+
+import "os/exec"
+
+var funclitVar = func() error {
+	cmd := exec.Command("sh")
+	return cmd.Run()
+}

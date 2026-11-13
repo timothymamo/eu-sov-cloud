@@ -1,0 +1,13 @@
+package probe
+
+import "os/exec"
+
+func envNil() {
+	cmd := exec.Command("sh")
+	cmd.Env = nil
+	_ = cmd.Run()
+
+	script := exec.Command("sh")
+	script.Env = []string(nil)
+	_ = script.Run()
+}

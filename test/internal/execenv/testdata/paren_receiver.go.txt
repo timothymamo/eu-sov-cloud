@@ -1,0 +1,8 @@
+package probe
+
+import "os/exec"
+
+func parenReceiver() error {
+	cmd := exec.Command("sh")
+	return (cmd).Run()
+}

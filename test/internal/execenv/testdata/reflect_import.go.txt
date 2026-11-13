@@ -1,0 +1,18 @@
+package probe
+
+import (
+	"os/exec"
+	"reflect"
+)
+
+// Reflection reaches a command's fields by name, out of the check's sight: a
+// nil-Env command built with reflect.New, or the Env reset here, is no shape
+// the four accepted gaps cover, and the reflection is what makes it possible.
+// In a file that imports os/exec, an import of reflect is a finding at the
+// import line, a sibling of the generic-function rule (P6). No test/e2e file
+// imports reflect today.
+
+func reflectEnv(cmd *exec.Cmd) {
+	cmd.Env = []string{}
+	reflect.ValueOf(cmd).Elem().FieldByName("Env").Set(reflect.ValueOf([]string{"PATH=/usr/bin"}))
+}

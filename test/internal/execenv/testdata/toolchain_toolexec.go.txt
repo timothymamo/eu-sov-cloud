@@ -1,0 +1,16 @@
+package probe
+
+import "os/exec"
+
+// -toolexec hands the go command's own environment to an arbitrary program it
+// starts, so the exemption covers no such argument, in either form.
+func toolchainToolexec() error {
+	build := exec.Command("go", "build", "-toolexec", "sh -c env", "./cmd/x")
+	return build.Run()
+}
+
+func toolchainToolexecEqual() error {
+	list := exec.Command("go", "list", "--toolexec=sh -c env")
+	_, err := list.Output()
+	return err
+}

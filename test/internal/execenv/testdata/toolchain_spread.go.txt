@@ -1,0 +1,10 @@
+package probe
+
+import "os/exec"
+
+// A spread tail is argument values the source does not write, one of them a
+// -toolexec or -overlay, so the exemption covers no such call.
+func toolchainSpread(args []string) error {
+	build := exec.Command("go", "build", args...)
+	return build.Run()
+}

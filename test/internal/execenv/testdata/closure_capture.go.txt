@@ -1,0 +1,8 @@
+package probe
+
+import "os/exec"
+
+func closureCapture() {
+	cmd := exec.Command("sh")
+	defer func() { _ = cmd.Run() }()
+}

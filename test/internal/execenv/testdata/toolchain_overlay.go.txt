@@ -1,0 +1,16 @@
+package probe
+
+import "os/exec"
+
+// -overlay reads a file the source names, with the environment of the go
+// command, so the exemption covers no such argument.
+func toolchainOverlay() error {
+	build := exec.Command("go", "build", "-overlay", "overlay.json", "./cmd/x")
+	return build.Run()
+}
+
+func toolchainOverlayEqual() error {
+	list := exec.Command("go", "list", "--overlay=overlay.json")
+	_, err := list.Output()
+	return err
+}

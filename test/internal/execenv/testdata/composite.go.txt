@@ -1,0 +1,9 @@
+package probe
+
+import "os/exec"
+
+func composite() {
+	_ = exec.Cmd{Path: "/bin/sh"}
+	_ = &exec.Cmd{Path: "/bin/sh"}
+	_ = exec.Cmd{Path: "/bin/sh", Env: nil}
+}

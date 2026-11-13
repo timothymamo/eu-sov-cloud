@@ -1,0 +1,9 @@
+package probe
+
+import "os/exec"
+
+func argsReassigned() error {
+	cmd := exec.Command("go", "list", "-deps", "./cmd/x")
+	cmd.Args = []string{"go", "env"}
+	return cmd.Run()
+}

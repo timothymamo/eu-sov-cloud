@@ -1,0 +1,11 @@
+package probe
+
+import "os/exec"
+
+type holder struct {
+	cmd *exec.Cmd
+}
+
+func fieldTarget(h *holder) {
+	h.cmd = exec.Command("sh")
+}

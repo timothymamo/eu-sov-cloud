@@ -9,13 +9,14 @@ import (
 	"go/token"
 	"os"
 	"path/filepath"
-	"regexp"
 	"slices"
 	"strconv"
 	"strings"
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
+
+	"github.com/timothymamo/shift2eu/test/internal/execenv"
 )
 
 // compositionRootDirs are the two composition roots (issue #111): cmd/shift2eu
@@ -768,48 +769,11 @@ func main() { run(nil) }
 	}
 }
 
-// environmentPathLiterals are the path segments that hold every environment
-// variable of this process: its own /proc entry, where the environ file sits, the
-// /proc entries of every other process, and /dev/fd, the descriptor directory,
-// whose numbers include the one environ is. Reading one dumps the environment,
-// credentials included (CLAUDE.md rule 3), and no forbidigo group can say so: the
-// call is os.ReadFile, or io.ReadAll over an os.Open, and its argument is a
-// string.
-//
-// Each is written without its leading slash and matched as a whole path segment,
-// at the start of a literal value or after a "/" and ending the value or before a
-// "/": the directory itself is as much a way in as a file below it, which
-// os.DirFS("/proc").Open("self/environ"), os.Open("/dev/fd") and
-// os.OpenRoot("/proc") all do (the auditor's finding L-1), while a value that
-// only ends in such a segment (myproc/self/environ, /procfs) is no such path. The
-// segment form is also why os.DirFS("/") with fs.ReadFile("proc/self/environ"), a
-// path relative to the root, names the same file as "/proc/self/environ" (the
-// round-2 review's finding L-C).
-var environmentPathLiterals = []string{"proc", "dev/fd"}
-
-// environmentPathSegment matches one of environmentPathLiterals as a whole path
-// segment of a literal value. It is built from that list, so an entry added there
-// is matched without a second edit, and its entries hold no
-// regular-expression metacharacter.
-var environmentPathSegment = regexp.MustCompile(`(?:^|/)(` + strings.Join(environmentPathLiterals, "|") + `)(?:/|$)`)
-
-// environmentPathIn returns the entry of environmentPathLiterals that value
-// names, written as it is matched, and whether it names one: an entry matches as
-// a path segment, so a value that only ends in one (myproc/self/environ) is no
-// match.
-func environmentPathIn(value string) (string, bool) {
-	match := environmentPathSegment.FindStringSubmatch(value)
-	if match == nil {
-		return "", false
-	}
-
-	return match[1], true
-}
-
 // environmentPathProblems returns what is wrong with the string literals of src,
-// the content of the Go file at rel, one line each: a literal that holds one of
-// environmentPathLiterals names the environment of a process, which a
-// composition root, and the package it hands the work to, never read, its tests
+// the content of the Go file at rel, one line each: a literal with a path segment
+// execenv.EnvironmentPathIn matches (proc or dev/fd, the matcher this check shares
+// with the e2e tier's since issue #195) names the environment of a process, which
+// a composition root, and the package it hands the work to, never read, its tests
 // included. It reads a literal as the compiler does, so a raw and a quoted string
 // are read alike; a path assembled from parts at run time, such as
 // filepath.Join("/proc", "self", "environ"), is beyond a check of literals. What
@@ -834,7 +798,7 @@ func environmentPathProblems(rel string, src []byte) ([]string, error) {
 		if err != nil {
 			return true // a literal the parser read and the compiler refuses
 		}
-		if path, ok := environmentPathIn(value); ok {
+		if path, ok := execenv.EnvironmentPathIn(value); ok {
 			problems = append(problems, fmt.Sprintf("%s:%d: the string literal %s holds %q, which names every environment variable of this process, credentials included; a composition root, and the package it hands the work to, read the named variable they need and nothing else", rel, fset.Position(lit.Pos()).Line, lit.Value, path))
 		}
 		return true

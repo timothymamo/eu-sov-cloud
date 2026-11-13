@@ -1,0 +1,22 @@
+package probe
+
+import (
+	"io"
+	"os/exec"
+)
+
+type serverRun struct {
+	cmd *exec.Cmd
+}
+
+func structAfterEnv() *serverRun {
+	cmd := exec.Command("/bin/sh")
+	cmd.Env = []string{"PATH=/usr/bin"}
+	cmd.Stdout = io.Discard
+
+	s := &serverRun{cmd: cmd}
+
+	go func() { _ = cmd.Wait() }()
+
+	return s
+}

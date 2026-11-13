@@ -1,0 +1,17 @@
+package probe
+
+import (
+	"os/exec"
+	"unsafe"
+)
+
+// unsafe reaches a command's fields by offset, out of the check's sight: the
+// Env field written here is one the check never proves. In a file that imports
+// os/exec, an import of unsafe is a finding at the import line, a sibling of
+// the generic-function rule (P6). No test/e2e file imports unsafe today.
+
+func unsafeEnv(cmd *exec.Cmd) {
+	cmd.Env = []string{}
+	field := unsafe.Pointer(uintptr(unsafe.Pointer(cmd)) + unsafe.Offsetof(cmd.Env))
+	*(*[]string)(field) = nil
+}

@@ -1,0 +1,13 @@
+package probe
+
+import "os/exec"
+
+// other is a command this file did not build: rebinding a followed name to it
+// leaves the name holding a command the check never saw. The rebinding itself
+// is the finding, the run after it being no command the check can follow.
+func rebindNonCommand(other *exec.Cmd) error {
+	cmd := exec.Command("sh")
+	cmd.Env = []string{"PATH=/usr/bin"}
+	cmd = other
+	return cmd.Run()
+}

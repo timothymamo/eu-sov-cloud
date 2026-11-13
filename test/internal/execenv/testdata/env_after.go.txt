@@ -1,0 +1,10 @@
+package probe
+
+import "os/exec"
+
+func envAfter() error {
+	cmd := exec.Command("x")
+	err := cmd.Run()
+	cmd.Env = []string{"PATH=/usr/bin"}
+	return err
+}

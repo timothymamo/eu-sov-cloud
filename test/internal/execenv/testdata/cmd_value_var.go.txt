@@ -1,0 +1,8 @@
+package probe
+
+import "os/exec"
+
+func cmdValueVar() {
+	var c exec.Cmd
+	_ = c
+}

@@ -1,0 +1,13 @@
+package probe
+
+import "os/exec"
+
+func shadowing() error {
+	cmd := exec.Command("sh")
+	{
+		cmd := exec.Command("sh")
+		cmd.Env = []string{"PATH=/usr/bin"}
+		_ = cmd.Run()
+	}
+	return cmd.Run()
+}

@@ -1,0 +1,12 @@
+package probe
+
+import "os/exec"
+
+// The address of an Env field is a finding wherever it appears, though the
+// command's own Env is set and its run is accepted.
+func envAddress() error {
+	cmd := exec.Command("sh")
+	cmd.Env = []string{"PATH=/usr/bin"}
+	_ = &cmd.Env
+	return cmd.Run()
+}
