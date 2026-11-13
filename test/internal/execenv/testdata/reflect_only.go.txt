@@ -1,0 +1,11 @@
+package probe
+
+import "reflect"
+
+// The rule is about commands, not about reflecting over values in general: a
+// file that imports no os/exec builds and runs no command, so it has nothing
+// for the reflect import rule to refuse and is accepted.
+
+func fieldName(v any) string {
+	return reflect.ValueOf(v).Elem().FieldByName("Name").String()
+}

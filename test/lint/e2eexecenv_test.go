@@ -30,7 +30,10 @@ import (
 // exemption away from a call with a spread argument (issue #195 round 4). A
 // resulting argument the source builds at run time (an output path, a package)
 // keeps the exemption, so an argument that holds a flag without being a literal
-// is left to review, as the e2e-no-env forbidigo group leaves its own gaps.
+// is left to review, as the e2e-no-env forbidigo group leaves its own gaps. A Dir
+// set on an exempt command keeps the exemption too: the go command then reads
+// that directory's go.mod and go.work, and that is left to review, like a
+// non-literal argument holding a flag.
 var e2eToolchainCommands = []string{"go build", "go list"}
 
 // e2eToolchainFlags is the allow-list of flags an exempt command may carry:

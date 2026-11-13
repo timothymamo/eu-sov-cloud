@@ -265,6 +265,33 @@ func TestCheckExecEnv(t *testing.T) {
 			want:  find("generic.go.txt", 9),
 		},
 		{
+			// Reflection and unsafe reach a command's Env out of the check's
+			// sight, so in a file that imports os/exec each import is a
+			// finding at its import line, as a blank or dot import of os/exec
+			// is.
+			name:  "a file importing os/exec and reflect is refused at the reflect import",
+			probe: "reflect_import.go.txt",
+			want:  find("reflect_import.go.txt", 5),
+		},
+		{
+			name:  "a file importing os/exec and unsafe is refused at the unsafe import",
+			probe: "unsafe_import.go.txt",
+			want:  find("unsafe_import.go.txt", 5),
+		},
+		{
+			// One finding per line: a grouped import holding both is refused
+			// at each import line, not once for the group.
+			name:  "a grouped import holding both is refused at each import line",
+			probe: "reflect_unsafe_import.go.txt",
+			want:  find("reflect_unsafe_import.go.txt", 5, 6),
+		},
+		{
+			// The rule is about commands, and this file builds none: it
+			// imports no os/exec, so its reflection is nothing to refuse.
+			name:  "a file importing reflect without os/exec is accepted",
+			probe: "reflect_only.go.txt",
+		},
+		{
 			// new(exec.Cmd) is one of the shapes the type rule covers, and it
 			// is one finding, not one for the call and one for the type.
 			name:  "new(exec.Cmd) is refused",
