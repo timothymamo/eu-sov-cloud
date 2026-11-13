@@ -13,7 +13,7 @@ import (
 )
 
 // The fixture below is .github/workflows/release.yml in parts: the top level,
-// then the twelve jobs, each with the comments and keys above its steps
+// then the thirteen jobs, each with the comments and keys above its steps
 // (releaseJob.head) and its steps in order. Rendering it rebuilds the file byte
 // for byte, so a case changes one part and leaves the rest exactly as the
 // release has it, comments included: the check must tolerate a full-line
@@ -40,15 +40,17 @@ concurrency:
   group: release
   cancel-in-progress: false
 
-# The steps of all twelve jobs are a closed list that test/architecture holds
+# The steps of all thirteen jobs are a closed list that test/architecture holds
 # (check.ReleaseWorkflow): add no step, run: or env: here without changing it.
 # The server-image, server-sbom and server-sign jobs publish the HTTP API's
 # image, ghcr.io/timothymamo/shift2eu-server (PRD #103), exactly as image, sbom
 # and sign publish the CLI's: jobs of their own rather than a matrix, as a
 # matrix job's outputs keep one leg's digest only, and each job keeps its own
-# least privilege. goreleaser hands the archives on, attest-archives attests
-# them, publish alone publishes the draft release, and verify-archives checks
-# what it published (issues #156, #163).
+# least privilege. latest alone decides, once per run, whether the tag is the
+# highest release tag on main, so the images' latest tag and GitHub's "Latest"
+# release cannot disagree. goreleaser hands the archives on, attest-archives
+# attests them, publish alone publishes the draft release, and verify-archives
+# checks what it published (issues #156, #163, #173).
 jobs:
 `
 
@@ -91,6 +93,60 @@ var testSteps = []string{
 `,
 	`      - name: Test
         run: make test
+`,
+}
+
+// latestJobHead is the latest job up to its steps: the one job of the run that
+// decides whether the tag is the highest release tag on main, which the images'
+// latest tag and GitHub's "Latest" release both follow (issue #173).
+const latestJobHead = `  # Decides, once per run, whether the tag is the highest release tag on main:
+  # the one decision the images' latest tag and GitHub's "Latest" release both
+  # follow, so a tag pushed while the run is in flight cannot leave them
+  # disagreeing (issue #173). Git, sed and sort alone, and read-only: no
+  # repository code runs, the whole history brings origin/main, and the token
+  # is not kept.
+  latest:
+    name: Latest
+    needs: test
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read # check out the repository
+    outputs:
+      latest: ${{ steps.decide.outputs.latest }}
+    steps:
+`
+
+// latestSteps are the latest job's steps: the whole history, and the one step
+// that reads the release tags merged into main and writes latest, true only for
+// the highest of them.
+var latestSteps = []string{
+	`      # The whole history, with every branch: the decision below needs
+      # origin/main. No repository code runs here, so the token is not kept.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+`,
+	`      # The release tags merged into main, pre-releases left out, by version
+      # order: only the highest of them moves the images' latest tag and
+      # GitHub's "Latest" release, so a patch on an older line moves neither,
+      # and a stray tag off main (one the guard refused and nobody deleted)
+      # cannot hold them back. The step refuses a checkout without origin/main:
+      # the run shell is bash -e without pipefail, so the pipeline would
+      # otherwise leave highest empty and latest false without failing.
+      - name: Decide whether the tag is the highest release tag on main
+        id: decide
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          git rev-parse --verify --quiet refs/remotes/origin/main > /dev/null || {
+            echo "origin/main is missing from the checkout" >&2
+            exit 1
+          }
+          highest="$(git tag -l 'v*.*.*' --merged refs/remotes/origin/main | sed -nE '/^v[0-9]+\.[0-9]+\.[0-9]+$/p' | sort -V | tail -n 1)"
+          latest=false
+          if [ "$TAG" = "$highest" ]; then latest=true; fi
+          echo "latest=$latest" >> "$GITHUB_OUTPUT"
 `,
 }
 
@@ -225,36 +281,28 @@ const publishJobHead = `  # The release is published last (issue #156): GoReleas
   # to a draft, so nothing can be added to or replaced in the release once it is
   # public, and this job alone publishes it, after the archives are attested.
   # It reads the draft before it publishes it, and holds contents: write and
-  # nothing else: nothing in it can sign, push or attest. It checks out the
-  # whole history, as the image jobs do, to decide whether the tag is the
-  # highest release tag on main, and moves GitHub's "Latest" release by that
-  # decision alone, as the images' latest tag is (issue #173).
+  # nothing else: nothing in it can sign, push or attest. It checks nothing out
+  # and runs no repository code: whether the tag is the highest release tag on
+  # main is the latest job's one decision, by which it moves GitHub's "Latest"
+  # release, as the images' latest tag follows it (issue #173).
   publish:
     name: Publish the release
-    needs: [test, goreleaser, attest-archives]
+    needs: [test, goreleaser, attest-archives, latest]
     runs-on: ubuntu-latest
     permissions:
       contents: write # publish the draft release
     steps:
 `
 
-// publishSteps are the publish job's steps (issues #156, #163, #173): the whole
-// history, which the latest decision in the publishing step reads origin/main
-// from as the image jobs' stamp does; the attested checksums.txt out of the
-// archives workflow artifact; and the one step that checks the draft release's
-// assets against it and publishes exactly that draft, by the id the API listed
-// it with, with GitHub's "Latest" release moved by that decision alone. The
-// tag and the token come through env:, and every gh command is given the
-// repository in its own arguments, so none reads it from a git remote.
+// publishSteps are the publish job's steps (issues #156, #163, #173): the
+// attested checksums.txt out of the archives workflow artifact, and the one step
+// that checks the draft release's assets against it and publishes exactly that
+// draft, by the id the API listed it with, with GitHub's "Latest" release moved
+// by the latest job's decision alone, through env: and never pasted into the
+// script. The tag, that decision and the token come through env:, and every gh
+// command is given the repository in its own arguments, so none reads it from a
+// git remote. No checkout: this job runs no repository code.
 var publishSteps = []string{
-	`      # The whole history, with every branch: the latest decision in the step
-      # below reads origin/main from it, as the image jobs' stamp does (issue
-      # #173). No repository code runs here.
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          fetch-depth: 0
-          persist-credentials: false
-`,
 	`      # The checksums.txt the attest-archives job attested, from the workflow
       # artifact it attests (issue #156): what is published must be exactly what
       # was attested, and this file is the list of it.
@@ -271,28 +319,27 @@ var publishSteps = []string{
       # else is never published. A draft is not readable by its tag, so the
       # API's list of the releases is read, and the draft is published by the id
       # that list gives it, in this one step: publishing by tag would let gh
-      # resolve a published release, or a swapped draft, in its place. It also
-      # decides GitHub's "Latest" here, from the highest release tag the image
-      # jobs' stamp decides the images' latest tag from (issue #173).
+      # resolve a published release, or a swapped draft, in its place. GitHub's
+      # "Latest" release is moved by the latest job's one decision, and nothing
+      # but true or false publishes (issue #173).
       - name: Check the draft's assets and publish it
         env:
           TAG: ${{ github.ref_name }}
+          LATEST: ${{ needs.latest.outputs.latest }}
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
-          # Whether this tag is the highest release tag on main, decided as the
-          # image jobs' stamp decides it: the release tags merged into main, in
-          # the same filter, sort and pick, so GitHub's "Latest" release and
-          # the images' latest tag name the same version (ADR 0015, issue #173).
-          # fetch-depth: 0 brings origin/main; the step refuses a checkout
-          # without it rather than publish a release with latest false.
-          git rev-parse --verify --quiet refs/remotes/origin/main > /dev/null || {
-            echo "origin/main is missing from the checkout" >&2
-            exit 1
-          }
-          highest="$(git tag -l 'v*.*.*' --merged refs/remotes/origin/main | sed -nE '/^v[0-9]+\.[0-9]+\.[0-9]+$/p' | sort -V | tail -n 1)"
-          latest=false
-          if [ "$TAG" = "$highest" ]; then latest=true; fi
+          # Whether this tag is the highest release tag on main is the latest
+          # job's decision, made once for both images and for this release: the
+          # step refuses anything but the two values it can hold, rather than
+          # publish a release with a make_latest nobody decided (issue #173).
+          case "$LATEST" in
+            true|false) ;;
+            *)
+              echo "latest is '$LATEST', want true or false" >&2
+              exit 1
+              ;;
+          esac
           tmp="$(mktemp -d)"
           # A draft release is not readable by its tag. The API lists it among
           # the releases, with draft: true, and gives every asset the digest of
@@ -343,20 +390,19 @@ var publishSteps = []string{
             exit 1
           fi
           # The draft this job read and checked, and no other, published with
-          # GitHub's "Latest" release moved by the same rule as the images'
-          # latest tag: true only for the highest release tag on main, so a
-          # patch on an older line is published without taking it over (issue
-          # #173).
-          gh api -X PATCH "repos/timothymamo/shift2eu/releases/$id" -F draft=false -f make_latest="$latest"
+          # GitHub's "Latest" release moved by the latest job's one decision:
+          # true only for the highest release tag on main, so a patch on an
+          # older line is published without taking it over (issue #173).
+          gh api -X PATCH "repos/timothymamo/shift2eu/releases/$id" -F draft=false -f make_latest="$LATEST"
 `,
 }
 
 // publishByID is the command the publish job publishes with: the draft it just
 // checked, by the id the API listed it with, and never by its tag, which gh
 // resolves to a published release before a draft (issues #156, #163), with
-// GitHub's "Latest" release moved by the stamp's own highest decision, so the
+// GitHub's "Latest" release moved by the latest job's one decision, so the
 // release and both images' latest tag move together (issue #173).
-const publishByID = `gh api -X PATCH "repos/timothymamo/shift2eu/releases/$id" -F draft=false -f make_latest="$latest"`
+const publishByID = `gh api -X PATCH "repos/timothymamo/shift2eu/releases/$id" -F draft=false -f make_latest="$LATEST"`
 
 // publishByTagStep is the publication the second review of issue #163 refused:
 // a step of its own, after the check, that resolves the tag again, so a release
@@ -367,6 +413,16 @@ const publishByTagStep = `      - name: Publish the draft release
           TAG: ${{ github.ref_name }}
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: gh release edit "$TAG" --repo timothymamo/shift2eu --draft=false
+`
+
+// latestGuard is the latest job's refusal of a checkout without origin/main:
+// the highest release tag is read in a pipeline, and the run shell has no
+// pipefail, so without the guard a failed git would leave highest empty and
+// latest false without failing the step.
+const latestGuard = `          git rev-parse --verify --quiet refs/remotes/origin/main > /dev/null || {
+            echo "origin/main is missing from the checkout" >&2
+            exit 1
+          }
 `
 
 // publishExistingReleaseCheck is the publish script's refusal of a tag that
@@ -389,9 +445,10 @@ const verifyArchivesJobHead = `  # A fresh runner that verifies what the publish
   # their digests and verifies each of them against the build provenance this
   # workflow made for this tag and commit. It runs after publish, so it is the
   # job that checks GitHub's "Latest" release against the highest release tag
-  # merged into main (issue #173). Read-only: contents: read and
-  # attestations: read, no OIDC token and nothing it can write, and no
-  # checkout, so no repository code runs.
+  # merged into main (issue #173): a pre-release is never that release, whatever
+  # the highest is and whether its own release is published yet. Read-only:
+  # contents: read and attestations: read, no OIDC token and nothing it can
+  # write, and no checkout, so no repository code runs.
   verify-archives:
     name: Verify the published archives
     needs: publish
@@ -405,9 +462,9 @@ const verifyArchivesJobHead = `  # A fresh runner that verifies what the publish
 // verifyArchivesSteps are the verify-archives job's steps: every asset of the
 // release, the check that it is published and holds exactly checksums.txt and
 // the files that file lists, their digests, the provenance of every one of
-// them (docs/guide/verify-releases.md), and the check that GitHub's "Latest"
-// release names the highest release tag merged into main, the version the
-// images' latest tag names (issue #173).
+// them (docs/guide/verify-releases.md), and the check of GitHub's "Latest"
+// release: never a pre-release, and otherwise the highest release tag merged
+// into main, the version the images' latest tag names (issue #173).
 var verifyArchivesSteps = []string{
 	`      # Every asset of the release, not the patterns the workflow expects to
       # find: what is checked is what was published. gh is given the repository
@@ -523,6 +580,18 @@ var verifyArchivesSteps = []string{
             return 1
           }
           latest="$(latest_tag)"
+          # A pre-release is never GitHub's "Latest" release, whatever the
+          # highest release tag is, and without a condition: while the highest
+          # release tag's own release is still unpublished the check below is
+          # skipped with a notice, which must not let a pre-release through.
+          case "$TAG" in
+            *-*)
+              if [ "$latest" = "$TAG" ]; then
+                echo "GitHub's latest release is $TAG, a pre-release, and a pre-release is never the latest release" >&2
+                exit 1
+              fi
+              ;;
+          esac
           if [ "$highest" = "$TAG" ]; then
             if [ "$latest" != "$TAG" ]; then
               echo "GitHub's latest release is '$latest', not $TAG, the highest release tag" >&2
@@ -558,10 +627,11 @@ const imageJobHead = `  # Builds and pushes the container image to GHCR (ADR 001
   # nothing more: no OIDC token, so nothing in it can sign. It builds from the
   # Dockerfile with the build arguments GoReleaser stamps into the release
   # binaries, and carries no build cache in: BuildKit starts empty on a fresh
-  # runner.
+  # runner. It tags latest by the latest job's one decision alone, so its latest
+  # and GitHub's "Latest" release name the same version (issue #173).
   image:
     name: Container image
-    needs: [test, goreleaser]
+    needs: [test, goreleaser, latest]
     runs-on: ubuntu-latest
     permissions:
       contents: read # check out the repository
@@ -571,43 +641,32 @@ const imageJobHead = `  # Builds and pushes the container image to GHCR (ADR 001
     steps:
 `
 
-// imageSteps are the image job's steps: the build arguments GoReleaser stamps
-// and the latest decision, a build of two platforms from an empty BuildKit,
-// pushed, without BuildKit's own provenance or SBOM, tagged by the stamp's
-// latest.
+// imageSteps are the image job's steps: the build arguments GoReleaser stamps,
+// a build of two platforms from an empty BuildKit, pushed, without BuildKit's
+// own provenance or SBOM, tagged latest by the latest job's decision alone.
 var imageSteps = []string{
 	`      # The whole history and every tag, as GoReleaser checks it out: git picks
-      # the length of a short commit from the number of objects it holds.
+      # the length of a short commit from the number of objects it holds, so the
+      # stamp reads the commit as GoReleaser does.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
           persist-credentials: false
 `,
 	`      # The values GoReleaser stamps into the release binaries: .Version (the
-      # tag without its v), .ShortCommit and .CommitDate (RFC 3339, UTC). And
-      # whether the tag is the highest release tag on main, pre-releases left
-      # out: only that tag moves latest, so a patch to an older line does not,
-      # and a stray tag off main (one the guard refused and nobody deleted)
-      # cannot hold latest back. fetch-depth: 0 brings origin/main; the step
-      # fails without it, as the test job's guard does, rather than let the
-      # pipeline below (no pipefail) leave highest empty and latest false.
+      # tag without its v), .ShortCommit and .CommitDate (RFC 3339, UTC).
+      # Whether the tag is the latest release is not decided here: the latest
+      # job decides it once, and metadata-action reads that output, so the image
+      # and GitHub's "Latest" release cannot disagree (issue #173).
       - name: Build arguments, as GoReleaser stamps them
         id: stamp
         env:
           TAG: ${{ github.ref_name }}
         run: |
-          git rev-parse --verify --quiet refs/remotes/origin/main > /dev/null || {
-            echo "origin/main is missing from the checkout" >&2
-            exit 1
-          }
-          highest="$(git tag -l 'v*.*.*' --merged refs/remotes/origin/main | sed -nE '/^v[0-9]+\.[0-9]+\.[0-9]+$/p' | sort -V | tail -n 1)"
-          latest=false
-          if [ "$TAG" = "$highest" ]; then latest=true; fi
           {
             echo "version=${TAG#v}"
             echo "commit=$(git rev-parse --short HEAD)"
             echo "date=$(TZ=UTC git log -1 --format=%cd --date=format-local:%Y-%m-%dT%H:%M:%SZ)"
-            echo "latest=$latest"
           } >> "$GITHUB_OUTPUT"
 `,
 	`      # No QEMU: the builder stage cross-compiles and the final stage runs
@@ -631,7 +690,7 @@ var imageSteps = []string{
         uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6.2.0
         with:
           images: ghcr.io/timothymamo/shift2eu
-          flavor: latest=${{ steps.stamp.outputs.latest }}
+          flavor: latest=${{ needs.latest.outputs.latest }}
           tags: |
             type=semver,pattern={{raw}}
             type=semver,pattern={{major}}.{{minor}},enable=${{ !contains(github.ref_name, '-') }}
@@ -767,10 +826,11 @@ var signSteps = []string{
 // serverImageJobHead is the server-image job: the image job for the HTTP API's image, built from the
 // Dockerfile's server stage, up to its steps:.
 const serverImageJobHead = `  # The image job for the HTTP API's image: the Dockerfile's server stage
-  # (--target server), with the same stamp, tags and build settings.
+  # (--target server), with the same stamp, tags and build settings, and latest
+  # from the latest job's one decision as the CLI image has it.
   server-image:
     name: Container image (shift2eu-server)
-    needs: [test, goreleaser]
+    needs: [test, goreleaser, latest]
     runs-on: ubuntu-latest
     permissions:
       contents: read # check out the repository
@@ -793,18 +853,10 @@ var serverImageSteps = []string{
         env:
           TAG: ${{ github.ref_name }}
         run: |
-          git rev-parse --verify --quiet refs/remotes/origin/main > /dev/null || {
-            echo "origin/main is missing from the checkout" >&2
-            exit 1
-          }
-          highest="$(git tag -l 'v*.*.*' --merged refs/remotes/origin/main | sed -nE '/^v[0-9]+\.[0-9]+\.[0-9]+$/p' | sort -V | tail -n 1)"
-          latest=false
-          if [ "$TAG" = "$highest" ]; then latest=true; fi
           {
             echo "version=${TAG#v}"
             echo "commit=$(git rev-parse --short HEAD)"
             echo "date=$(TZ=UTC git log -1 --format=%cd --date=format-local:%Y-%m-%dT%H:%M:%SZ)"
-            echo "latest=$latest"
           } >> "$GITHUB_OUTPUT"
 `,
 	`      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
@@ -823,7 +875,7 @@ var serverImageSteps = []string{
         uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6.2.0
         with:
           images: ghcr.io/timothymamo/shift2eu-server
-          flavor: latest=${{ steps.stamp.outputs.latest }}
+          flavor: latest=${{ needs.latest.outputs.latest }}
           tags: |
             type=semver,pattern={{raw}}
             type=semver,pattern={{major}}.{{minor}},enable=${{ !contains(github.ref_name, '-') }}
@@ -1194,6 +1246,7 @@ func releaseWorkflowFixture() releaseFixture {
 		top: releaseWorkflowTop,
 		jobs: []releaseJob{
 			{key: "test", head: testJobHead, steps: testSteps},
+			{key: "latest", head: latestJobHead, steps: latestSteps},
 			{key: "goreleaser", head: goreleaserJobHead, steps: goreleaserSteps},
 			{key: "attest-archives", head: attestArchivesJobHead, steps: attestArchivesSteps},
 			{key: "publish", head: publishJobHead, steps: publishSteps},
@@ -1342,7 +1395,7 @@ func beforeStep(t *testing.T, steps []string, head, step string) []string {
 }
 
 // TestReleaseWorkflow pins what the release workflow may say. It is read as a
-// closed schema: the top-level keys, the twelve jobs, their keys and their steps
+// closed schema: the top-level keys, the thirteen jobs, their keys and their steps
 // are fixed, so no step runs repository code, sets the go command's environment
 // or swaps the goreleaser document before goreleaser runs; only a commit on
 // main is released; the publishing privileges stay split over three jobs, so
@@ -1350,12 +1403,14 @@ func beforeStep(t *testing.T, steps []string, head, step string) []string {
 // job checks nothing out and runs sigstore's and GitHub's actions alone; and
 // the verify job reads only the registry and the attestations, compares each
 // tag to the digest this run built, and applies the release rule to the
-// release tags merged into main. The publish job moves GitHub's "Latest"
-// release by that same rule, from the image jobs' stamp's own decision, and
-// verify-archives, the job after it, checks that GitHub's "Latest" release and
-// the images' latest tag name the same version (issue #173). The probes are the
-// steps the reviews and audits of issues #40, #72 and #99 found a lexical check
-// let through.
+// release tags merged into main. The latest job decides once per run whether
+// the tag is the highest release tag on main; both image jobs tag latest by
+// that one output, and the publish job moves GitHub's "Latest" release by it,
+// so a tag pushed while the run is in flight cannot leave them disagreeing;
+// verify-archives, the job after publish, reads the highest itself and checks
+// GitHub's "Latest" release against it, and never accepts a pre-release there
+// (issue #173). The probes are the steps the reviews and audits of issues #40,
+// #72 and #99 found a lexical check let through.
 func TestReleaseWorkflow(t *testing.T) {
 	t.Parallel()
 
@@ -1494,8 +1549,8 @@ func TestReleaseWorkflow(t *testing.T) {
 		{name: "a workflow-level env", workflow: strings.Replace(releaseWorkflow, "jobs:\n", "env:\n  SNEAKY: x\njobs:\n", 1), wantIn: `key "env"`},
 		{name: "a workflow-level defaults", workflow: strings.Replace(releaseWorkflow, "jobs:\n", "defaults:\n  run:\n    shell: bash\njobs:\n", 1), wantIn: `key "defaults"`},
 		{name: "a sixth job", workflow: releaseWorkflow + "  other:\n    runs-on: ubuntu-latest\n", wantIn: `key "other"`},
-		{name: "a job-level env", workflow: in("image", "    needs: [test, goreleaser]\n", "    needs: [test, goreleaser]\n    env:\n      SNEAKY: x\n"), wantIn: `key "env"`},
-		{name: "a container", workflow: in("image", "    needs: [test, goreleaser]\n", "    needs: [test, goreleaser]\n    container: golang\n"), wantIn: `key "container"`},
+		{name: "a job-level env", workflow: in("image", "    needs: [test, goreleaser, latest]\n", "    needs: [test, goreleaser, latest]\n    env:\n      SNEAKY: x\n"), wantIn: `key "env"`},
+		{name: "a container", workflow: in("image", "    needs: [test, goreleaser, latest]\n", "    needs: [test, goreleaser, latest]\n    container: golang\n"), wantIn: `key "container"`},
 		{name: "no needs on goreleaser", workflow: in("goreleaser", "    needs: test\n", ""), wantIn: `no "needs"`},
 		{name: "goreleaser needs another job", workflow: in("goreleaser", "    needs: test\n", "    needs: image\n"), wantIn: "needs"},
 		{name: "write permission at the top", workflow: strings.Replace(releaseWorkflow, "permissions: {}", "permissions:\n  contents: write", 1), wantIn: "permissions"},
@@ -1529,34 +1584,32 @@ func TestReleaseWorkflow(t *testing.T) {
 		// and no other job publishes it (ADR 0015).
 		{name: "no publish job", workflow: release.withoutJob(t, "publish"), wantIn: `no "publish"`},
 		{name: "the publish job on another runner", workflow: in("publish", "    runs-on: ubuntu-latest\n", "    runs-on: ubuntu-24.04\n"), wantIn: "runs-on"},
-		{name: "the publish job without needs", workflow: in("publish", "    needs: [test, goreleaser, attest-archives]\n", ""), wantIn: `no "needs"`},
-		{name: "the publish job not needing the attestation job", workflow: in("publish", "    needs: [test, goreleaser, attest-archives]\n", "    needs: [test, goreleaser]\n"), wantIn: "needs"},
-		{name: "the publish job needing the attestation job first", workflow: in("publish", "    needs: [test, goreleaser, attest-archives]\n", "    needs: [attest-archives, test, goreleaser]\n"), wantIn: "needs"},
-		{name: "the publish job needing the attestation job only", workflow: in("publish", "    needs: [test, goreleaser, attest-archives]\n", "    needs: [attest-archives]\n"), wantIn: "needs"},
+		{name: "the publish job without needs", workflow: in("publish", "    needs: [test, goreleaser, attest-archives, latest]\n", ""), wantIn: `no "needs"`},
+		{name: "the publish job not needing the attestation job", workflow: in("publish", "    needs: [test, goreleaser, attest-archives, latest]\n", "    needs: [test, goreleaser, latest]\n"), wantIn: "jobs: publish: needs is"},
+		{name: "the publish job needing the attestation job first", workflow: in("publish", "    needs: [test, goreleaser, attest-archives, latest]\n", "    needs: [attest-archives, test, goreleaser, latest]\n"), wantIn: "jobs: publish: needs is"},
+		{name: "the publish job needing the attestation job only", workflow: in("publish", "    needs: [test, goreleaser, attest-archives, latest]\n", "    needs: [attest-archives]\n"), wantIn: "jobs: publish: needs is"},
+		{name: "the publish job not needing the latest job", workflow: in("publish", "    needs: [test, goreleaser, attest-archives, latest]\n", "    needs: [test, goreleaser, attest-archives]\n"), wantIn: `jobs: publish: needs is ["test" "goreleaser" "attest-archives"], want exactly ["test" "goreleaser" "attest-archives" "latest"]`},
 		{name: "another permission for the publish job", workflow: in("publish", "      contents: write # publish the draft release\n", "      contents: write # publish the draft release\n      packages: write # push\n"), wantIn: "packages"},
 		{name: "no contents: write for the publish job", workflow: in("publish", "      contents: write # publish the draft release\n", ""), wantIn: "contents"},
 		// GitHub's "Latest" release follows the images' latest tag (issue
-		// #173): the publish job takes the highest release tag on main from the
-		// image jobs' stamp's own command line, and sends make_latest from that
-		// decision alone: never omitted, never a constant, so publishing a patch
-		// on an older line does not take GitHub's "Latest" over.
-		{name: "the publish step without make_latest", workflow: in("publish", ` -f make_latest="$latest"`, ""), wantIn: `-f make_latest=\"$latest\"`},
-		{name: "the publish step with make_latest always true", workflow: in("publish", `-f make_latest="$latest"`, `-f make_latest=true`), wantIn: `-f make_latest=\"$latest\"`},
-		{name: "the publish step with make_latest always false", workflow: in("publish", `-f make_latest="$latest"`, `-f make_latest=false`), wantIn: `-f make_latest=\"$latest\"`},
-		{name: "the publish step with make_latest from an expression", workflow: in("publish", `-f make_latest="$latest"`, `-f make_latest=${{ github.ref_name }}`), wantIn: "holds a ${{ }} expression"},
-		{name: "the publish step sending make_latest as a typed field", workflow: in("publish", `-f make_latest="$latest"`, `-F make_latest="$latest"`), wantIn: `-f make_latest=\"$latest\"`},
-		{name: "the publish step without the latest decision", workflow: in("publish", "\n          latest=false\n          if [ \"$TAG\" = \"$highest\" ]; then latest=true; fi", ""), wantIn: "want the check and publication of the draft: run is"},
-		{name: "the publish step with latest always", workflow: in("publish", "          latest=false\n", "          latest=true\n"), wantIn: "want the check and publication of the draft: run is"},
-		// The highest is the stamp's, byte for byte: the release tags merged
-		// into main, in the same filter, sort and pick, so a stray tag off main
-		// cannot hold GitHub's "Latest" back and a lexical sort cannot pick
-		// another tag.
-		{name: "the publish step counting every tag, not only those merged into main", workflow: in("publish", "git tag -l 'v*.*.*' --merged refs/remotes/origin/main", "git tag -l 'v*.*.*'"), wantIn: "--merged refs/remotes/origin/main"},
-		{name: "the publish step counting the tags of another branch", workflow: in("publish", "--merged refs/remotes/origin/main", "--merged refs/heads/main"), wantIn: "--merged refs/remotes/origin/main"},
-		{name: "the publish step sorting the tags without sort -V", workflow: in("publish", "| sort -V | tail -n 1", "| sort | tail -n 1"), wantIn: "sort -V"},
-		{name: "the publish step without the pre-release filter", workflow: in("publish", `| sed -nE '/^v[0-9]+\.[0-9]+\.[0-9]+$/p'`, ""), wantIn: `sed -nE '/^v[0-9]+\\.[0-9]+\\.[0-9]+$/p'`},
-		{name: "the publish step without the origin/main guard", workflow: in("publish", "          git rev-parse --verify --quiet refs/remotes/origin/main > /dev/null || {\n            echo \"origin/main is missing from the checkout\" >&2\n            exit 1\n          }\n", ""), wantIn: "want the check and publication of the draft: run is"},
-		{name: "the publish job without the whole history", workflow: in("publish", "          fetch-depth: 0\n", ""), wantIn: "fetch-depth"},
+		// #173): the publish job sends make_latest from the latest job's one
+		// decision, through env: and never pasted into the script, and never
+		// omitted and never a constant, so publishing a patch on an older line
+		// does not take GitHub's "Latest" over. Only exactly true or false
+		// publishes.
+		{name: "the publish step without make_latest", workflow: in("publish", ` -f make_latest="$LATEST"`, ""), wantIn: "want the check and publication of the draft: run is"},
+		{name: "the publish step with make_latest always true", workflow: in("publish", `-f make_latest="$LATEST"`, `-f make_latest=true`), wantIn: "want the check and publication of the draft: run is"},
+		{name: "the publish step with make_latest always false", workflow: in("publish", `-f make_latest="$LATEST"`, `-f make_latest=false`), wantIn: "want the check and publication of the draft: run is"},
+		{name: "the publish step with make_latest from github.ref_name", workflow: in("publish", `-f make_latest="$LATEST"`, `-f make_latest=${{ github.ref_name }}`), wantIn: "want the check and publication of the draft: run holds a ${{ }} expression"},
+		{name: "the publish step sending make_latest as a typed field", workflow: in("publish", `-f make_latest="$LATEST"`, `-F make_latest="$LATEST"`), wantIn: "want the check and publication of the draft: run is"},
+		{name: "the publish step without the true or false guard on LATEST", workflow: in("publish", `          case "$LATEST" in
+            true|false) ;;
+            *)
+              echo "latest is '$LATEST', want true or false" >&2
+              exit 1
+              ;;
+          esac
+`, ""), wantIn: "want the check and publication of the draft: run is"},
 		// The publication itself (issues #156, #163): the publish job publishes
 		// the draft it checked, by the id the API listed it with, and a tag that
 		// already holds a published release is refused.
@@ -1565,24 +1618,61 @@ func TestReleaseWorkflow(t *testing.T) {
 		{name: "the publication by tag instead of by the checked draft's id", workflow: in("publish", publishByID, `gh release edit "$TAG" --repo timothymamo/shift2eu --draft=false`), wantIn: "releases/$id"},
 		{name: "the publication of another release", workflow: in("publish", "releases/$id", "releases/tags/latest"), wantIn: "releases/$id"},
 		{name: "the publication of another repository", workflow: in("publish", "repos/timothymamo/shift2eu/releases/$id", "repos/example/shift2eu/releases/$id"), wantIn: "repos/timothymamo/shift2eu/releases/$id"},
-		{name: "the publish job's tag pasted into the script", workflow: in("publish", "-F draft=false", "-F name=${{ github.ref_name }}"), wantIn: "holds a ${{ }} expression"},
-		{name: "the publish job without the token from env", workflow: in("publish", "          TAG: ${{ github.ref_name }}\n          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}\n        run: |\n          set -euo pipefail\n", "          TAG: ${{ github.ref_name }}\n        run: |\n          set -euo pipefail\n"), wantIn: "env holds"},
+		{name: "the publish job's tag pasted into the script", workflow: in("publish", "-F draft=false", "-F name=${{ github.ref_name }}"), wantIn: "want the check and publication of the draft: run holds a ${{ }} expression"},
+		{name: "the publish job without the token from env", workflow: in("publish", "          TAG: ${{ github.ref_name }}\n          LATEST: ${{ needs.latest.outputs.latest }}\n          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}\n        run: |\n          set -euo pipefail\n", "          TAG: ${{ github.ref_name }}\n          LATEST: ${{ needs.latest.outputs.latest }}\n        run: |\n          set -euo pipefail\n"), wantIn: "env holds"},
+		{name: "the publish job without the latest decision from env", workflow: in("publish", "          LATEST: ${{ needs.latest.outputs.latest }}\n", ""), wantIn: "env holds"},
 		// An immutable release locks its assets when it is published (issue
 		// #156), so the draft is checked against the attested checksums.txt in
 		// the same step that publishes it: its asset names and digests must be
 		// the ones that file lists, its checksums.txt the attested one, and a
 		// tag with a release already published is refused rather than published
 		// again (reviewer S2 and auditor 1, issue #163).
-		{name: "no check and publication of the draft", workflow: steps("publish", withoutStep(t, publishSteps, "name: Check the draft's assets and publish it")), wantIn: "holds 2 steps, want exactly 3"},
-		{name: "the attested checksums.txt not downloaded before publishing", workflow: steps("publish", withoutStep(t, publishSteps, "actions/download-artifact@")), wantIn: "holds 2 steps, want exactly 3"},
-		{name: "the publication before the download of checksums.txt", workflow: steps("publish", swappedSteps(t, publishSteps, "actions/download-artifact@", "name: Check the draft's assets and publish it")), wantIn: "steps: step 2"},
+		{name: "no check and publication of the draft", workflow: steps("publish", withoutStep(t, publishSteps, "name: Check the draft's assets and publish it")), wantIn: "jobs: publish: steps holds 1 steps, want exactly 2"},
+		{name: "the attested checksums.txt not downloaded before publishing", workflow: steps("publish", withoutStep(t, publishSteps, "actions/download-artifact@")), wantIn: "jobs: publish: steps holds 1 steps, want exactly 2"},
+		{name: "the publication before the download of checksums.txt", workflow: steps("publish", swappedSteps(t, publishSteps, "actions/download-artifact@", "name: Check the draft's assets and publish it")), wantIn: "jobs: publish: steps: step 1"},
 		{name: "publish without the check that the tag holds no published release", workflow: in("publish", publishExistingReleaseCheck, ""), wantIn: "already publishes a release for $TAG"},
 		{name: "a draft check of the names alone", workflow: in("publish", "          # Every asset's digest is the one checksums.txt lists: the bytes the\n          # attestation covers are the bytes that are published.\n          while read -r hash name; do printf 'sha256:%s %s\\n' \"$hash\" \"$name\"; done < checksums.txt | sort > \"$tmp/attested-digests.txt\"\n", ""), wantIn: "the draft release for $TAG holds an asset whose digest checksums.txt does not list"},
 		{name: "a draft check that trusts the draft's checksums.txt", workflow: in("publish", "            echo \"the draft release's checksums.txt is not the one this run attested\" >&2\n", "            echo \"the draft release's checksums.txt is the attested one\" >&2\n"), wantIn: "the draft release's checksums.txt is not the one this run attested"},
-		{name: "a separate publish step by tag", workflow: steps("publish", slices.Concat(publishSteps, []string{publishByTagStep})), wantIn: "holds 4 steps, want exactly 3"},
-		{name: "an extra step in the publish job", workflow: steps("publish", beforeStep(t, publishSteps, "      - name: Check the draft's assets and publish it", "run: ./scripts/prepare.sh")), wantIn: "holds 4 steps, want exactly 3"},
+		{name: "a separate publish step by tag", workflow: steps("publish", slices.Concat(publishSteps, []string{publishByTagStep})), wantIn: "jobs: publish: steps holds 3 steps, want exactly 2"},
+		{name: "an extra step in the publish job", workflow: steps("publish", beforeStep(t, publishSteps, "      - name: Check the draft's assets and publish it", "run: ./scripts/prepare.sh")), wantIn: "jobs: publish: steps holds 3 steps, want exactly 2"},
+		{name: "the publish job checking the repository out again", workflow: steps("publish", beforeStep(t, publishSteps, "      - uses: actions/download-artifact@", "uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1\n        with:\n          fetch-depth: 0\n          persist-credentials: false")), wantIn: "jobs: publish: steps holds 3 steps, want exactly 2"},
 		{name: "the publish step in the goreleaser job", workflow: steps("goreleaser", beforeStep(t, goreleaserSteps, "      - uses: actions/upload-artifact@", "name: Check the draft's assets and publish it\n        run: "+publishByID)), wantIn: "jobs: goreleaser: steps holds 6 steps, want exactly 5"},
 		{name: "the publish step in the test job", workflow: inTestJob("name: Check the draft's assets and publish it\n        run: " + publishByID), wantIn: "holds 5 steps, want exactly 4"},
+
+		// Whether the tag is the highest release tag on main is decided once per
+		// run, in a job of its own (issue #173), which both image jobs and the
+		// publish job read. There the decision cannot be made twice from two
+		// checkouts at two moments of one run, so a tag pushed in between cannot
+		// leave the images' latest tag and GitHub's "Latest" release naming
+		// different versions. The job checks the repository out read-only, runs
+		// git, sed and sort alone, and holds the decision as its only output.
+		{name: "no latest job", workflow: release.withoutJob(t, "latest"), wantIn: `holds no "latest"`},
+		{name: "the latest job on another runner", workflow: in("latest", "    runs-on: ubuntu-latest\n", "    runs-on: ubuntu-24.04\n"), wantIn: "jobs: latest: runs-on is"},
+		{name: "the latest job without needs", workflow: in("latest", "    needs: test\n", ""), wantIn: `jobs: latest holds no "needs"`},
+		{name: "the latest job not needing the tests", workflow: in("latest", "    needs: test\n", "    needs: goreleaser\n"), wantIn: "jobs: latest: needs is"},
+		{name: "the latest job deciding after the images are built", workflow: in("latest", "    needs: test\n", "    needs: [test, goreleaser]\n"), wantIn: "jobs: latest: needs is"},
+		{name: "contents: write for the latest job", workflow: in("latest", "      contents: read # check out the repository\n", "      contents: write # check out the repository\n"), wantIn: "jobs: latest: permissions: contents is"},
+		{name: "packages: write for the latest job", workflow: in("latest", "      contents: read # check out the repository\n", "      contents: read # check out the repository\n      packages: write # push\n"), wantIn: `jobs: latest: permissions holds the key "packages"`},
+		{name: "no contents: read for the latest job", workflow: in("latest", "      contents: read # check out the repository\n", ""), wantIn: "jobs: latest: permissions is empty, want exactly contents: read"},
+		{name: "the latest job without its output", workflow: in("latest", "    outputs:\n      latest: ${{ steps.decide.outputs.latest }}\n", ""), wantIn: `jobs: latest holds no "outputs"`},
+		{name: "another latest output", workflow: in("latest", "      latest: ${{ steps.decide.outputs.latest }}\n", "      latest: ${{ steps.decide.outputs.highest }}\n"), wantIn: "jobs: latest: outputs: latest is"},
+		{name: "the latest job keeping the credentials", workflow: in("latest", "          persist-credentials: false\n", "          persist-credentials: true\n"), wantIn: "jobs: latest: steps: step 1"},
+		{name: "the latest job without the whole history", workflow: in("latest", "          fetch-depth: 0\n", ""), wantIn: "jobs: latest: steps: step 1"},
+		{name: "an extra step in the latest job", workflow: steps("latest", beforeStep(t, latestSteps, "      - name: Decide whether the tag is the highest release tag on main", "run: ./scripts/prepare.sh")), wantIn: "jobs: latest: steps holds 3 steps, want exactly 2"},
+		{name: "a missing step in the latest job", workflow: steps("latest", withoutStep(t, latestSteps, "name: Decide whether the tag is the highest release tag on main")), wantIn: "jobs: latest: steps holds 1 steps, want exactly 2"},
+		{name: "the latest check without the origin/main guard", workflow: in("latest", latestGuard, ""), wantIn: "want the decision of the latest release: run is"},
+		{name: "the latest check whose guard does not exit", workflow: in("latest", "            exit 1\n", "            exit 0\n"), wantIn: "want the decision of the latest release: run is"},
+		// Only the highest release tag on main moves latest, in the same filter,
+		// sort and pick the verify jobs read independently: without the ancestry
+		// filter a stray tag off main would hold latest back, without the
+		// pre-release filter a pre-release would take it, and a lexical sort
+		// would pick another tag.
+		{name: "the latest check counting every tag, not only those merged into main", workflow: in("latest", "git tag -l 'v*.*.*' --merged refs/remotes/origin/main", "git tag -l 'v*.*.*'"), wantIn: "want the decision of the latest release: run is"},
+		{name: "the latest check counting the tags of another branch", workflow: in("latest", "--merged refs/remotes/origin/main", "--merged refs/heads/main"), wantIn: "want the decision of the latest release: run is"},
+		{name: "the latest check sorting the tags without sort -V", workflow: in("latest", "| sort -V | tail -n 1", "| sort | tail -n 1"), wantIn: "want the decision of the latest release: run is"},
+		{name: "the latest check without the pre-release filter", workflow: in("latest", `| sed -nE '/^v[0-9]+\.[0-9]+\.[0-9]+$/p'`, ""), wantIn: "want the decision of the latest release: run is"},
+		{name: "the latest check with latest always", workflow: in("latest", "          latest=false\n", "          latest=true\n"), wantIn: "want the decision of the latest release: run is"},
+		{name: "the latest check with the decision pasted into the script", workflow: in("latest", `if [ "$TAG" = "$highest" ]; then latest=true; fi`, `if [ "${{ github.ref_name }}" = "$highest" ]; then latest=true; fi`), wantIn: "want the decision of the latest release: run holds a ${{ }} expression"},
 
 		// The jobs are a closed list: the image that publishes, the SBOM that
 		// reads, the sign job that signs.
@@ -1590,11 +1680,12 @@ func TestReleaseWorkflow(t *testing.T) {
 		{name: "no sbom job", workflow: release.withoutJob(t, "sbom"), wantIn: `no "sbom"`},
 		{name: "no sign job", workflow: release.withoutJob(t, "sign"), wantIn: `no "sign"`},
 
-		// Publishing waits for the release: the image job needs the tests and
-		// goreleaser, the SBOM job the image, the sign job both the image and
-		// its SBOM.
-		{name: "the image job needing only the tests", workflow: in("image", "    needs: [test, goreleaser]\n", "    needs: [test]\n"), wantIn: "needs"},
-		{name: "the image job needing goreleaser first", workflow: in("image", "    needs: [test, goreleaser]\n", "    needs: [goreleaser, test]\n"), wantIn: "needs"},
+		// Publishing waits for the release: the image job needs the tests,
+		// goreleaser and the latest decision, the SBOM job the image, the sign job
+		// both the image and its SBOM.
+		{name: "the image job needing only the tests", workflow: in("image", "    needs: [test, goreleaser, latest]\n", "    needs: [test]\n"), wantIn: "jobs: image: needs is"},
+		{name: "the image job needing goreleaser first", workflow: in("image", "    needs: [test, goreleaser, latest]\n", "    needs: [goreleaser, test, latest]\n"), wantIn: "jobs: image: needs is"},
+		{name: "the latest job not needed by the image job", workflow: in("image", "    needs: [test, goreleaser, latest]\n", "    needs: [test, goreleaser]\n"), wantIn: `jobs: image: needs is ["test" "goreleaser"], want exactly ["test" "goreleaser" "latest"]`},
 		{name: "the sbom job needing the sign job", workflow: in("sbom", "    needs: image\n", "    needs: sign\n"), wantIn: "needs"},
 		{name: "the sign job needing only the image", workflow: in("sign", "    needs: [image, sbom]\n", "    needs: [image]\n"), wantIn: "needs"},
 		{name: "the sign job needing the tests too", workflow: in("sign", "    needs: [image, sbom]\n", "    needs: [image, sbom, test]\n"), wantIn: "needs"},
@@ -1603,8 +1694,8 @@ func TestReleaseWorkflow(t *testing.T) {
 		// write, and no OIDC token or attestation scope, so nothing in it can
 		// sign.
 		{name: "the image job on another runner", workflow: in("image", "    runs-on: ubuntu-latest\n", "    runs-on: ubuntu-24.04\n"), wantIn: "runs-on"},
-		{name: "the image job without needs", workflow: in("image", "    needs: [test, goreleaser]\n", ""), wantIn: `no "needs"`},
-		{name: "a job-level if on the image job", workflow: in("image", "    needs: [test, goreleaser]\n", "    needs: [test, goreleaser]\n    if: true\n"), wantIn: `key "if"`},
+		{name: "the image job without needs", workflow: in("image", "    needs: [test, goreleaser, latest]\n", ""), wantIn: `no "needs"`},
+		{name: "a job-level if on the image job", workflow: in("image", "    needs: [test, goreleaser, latest]\n", "    needs: [test, goreleaser, latest]\n    if: true\n"), wantIn: `key "if"`},
 		{name: "contents: write for the image job", workflow: in("image", "      contents: read # check out the repository\n", "      contents: write # check out the repository\n"), wantIn: "contents"},
 		{name: "id-token: write for the image job", workflow: in("image", "      packages: write # push the image to ghcr.io\n", "      packages: write # push the image to ghcr.io\n      id-token: write # sign\n"), wantIn: "id-token"},
 		{name: "attestations: write for the image job", workflow: in("image", "      packages: write # push the image to ghcr.io\n", "      packages: write # push the image to ghcr.io\n      attestations: write # store them\n"), wantIn: "attestations"},
@@ -1652,34 +1743,44 @@ func TestReleaseWorkflow(t *testing.T) {
 		{name: "BuildKit's SBOM on", workflow: in("image", "          sbom: false\n", "          sbom: true\n"), wantIn: "with: sbom"},
 		{name: "a build argument from git", workflow: in("image", "            VERSION=${{ steps.stamp.outputs.version }}\n", "            VERSION=$(git describe --tags)\n"), wantIn: "build-args"},
 
-		// The stamp: the arguments GoReleaser stamps, the tag through env:, and
-		// the latest decision from the highest release tag.
-		{name: "an extra stamp env", workflow: in("image", "          TAG: ${{ github.ref_name }}\n", "          TAG: ${{ github.ref_name }}\n          REF: ${{ github.ref }}\n"), wantIn: "env holds"},
-		{name: "a stamp without the latest decision", workflow: in("image", "\n          if [ \"$TAG\" = \"$highest\" ]; then latest=true; fi", ""), wantIn: "run is"},
-		{name: "a stamp with latest always", workflow: in("image", `echo "latest=$latest"`, `echo "latest=true"`), wantIn: "latest=$latest"},
-		{name: "a stamp that does not sort the tags by version", workflow: in("image", `| sed -nE '/^v[0-9]+\.[0-9]+\.[0-9]+$/p'`, ""), wantIn: "sed -nE"},
-		// The stamp refuses a checkout without origin/main, as the test job's
-		// guard does: the run shell is bash -e without pipefail, so a failing
-		// git tag --merged in the pipeline below would otherwise leave highest
-		// empty and latest false without failing the step (ADR 0015).
+		// The stamp: the arguments GoReleaser stamps and the tag through env:.
+		// Whether the tag is the latest release is the latest job's one decision
+		// (issue #173), so the stamp neither reads the highest release tag nor
+		// writes latest: a stamp that did either could disagree with GitHub's
+		// "Latest" release, and with the other image.
+		{name: "an extra stamp env", workflow: in("image", "          TAG: ${{ github.ref_name }}\n", "          TAG: ${{ github.ref_name }}\n          REF: ${{ github.ref }}\n"), wantIn: "want the stamp of the build arguments: env holds"},
 		{
-			name: "a stamp without the origin/main guard",
-			workflow: in("image", `          git rev-parse --verify --quiet refs/remotes/origin/main > /dev/null || {
-            echo "origin/main is missing from the checkout" >&2
-            exit 1
-          }
-`, ""),
+			name: "the image's stamp still computing the highest release tag",
+			workflow: in("image", `          } >> "$GITHUB_OUTPUT"
+`, `          highest="$(git tag -l 'v*.*.*' --merged refs/remotes/origin/main | sed -nE '/^v[0-9]+\.[0-9]+\.[0-9]+$/p' | sort -V | tail -n 1)"
+          } >> "$GITHUB_OUTPUT"
+`),
 			wantIn: "want the stamp of the build arguments: run is",
 		},
 		{
-			name:     "a stamp whose guard does not exit",
-			workflow: in("image", "            exit 1\n", "            exit 0\n"),
-			wantIn:   "want the stamp of the build arguments: run is",
+			name: "the image's stamp writing its own latest",
+			workflow: in("image", `          } >> "$GITHUB_OUTPUT"
+`, `          echo "latest=true" >> "$GITHUB_OUTPUT"
+          } >> "$GITHUB_OUTPUT"
+`),
+			wantIn: "want the stamp of the build arguments: run is",
 		},
-		// Only the tags on main count: a stray tag off main could otherwise
-		// hold latest back (ADR 0015).
-		{name: "a stamp counting every tag, not only those on main", workflow: in("image", "git tag -l 'v*.*.*' --merged refs/remotes/origin/main", "git tag -l 'v*.*.*'"), wantIn: "--merged refs/remotes/origin/main"},
-		{name: "a stamp counting the tags of another branch", workflow: in("image", "--merged refs/remotes/origin/main", "--merged refs/heads/main"), wantIn: "--merged refs/remotes/origin/main"},
+		{
+			name: "the server image's stamp still computing the highest release tag",
+			workflow: in("server-image", `          } >> "$GITHUB_OUTPUT"
+`, `          highest="$(git tag -l 'v*.*.*' --merged refs/remotes/origin/main | sed -nE '/^v[0-9]+\.[0-9]+\.[0-9]+$/p' | sort -V | tail -n 1)"
+          } >> "$GITHUB_OUTPUT"
+`),
+			wantIn: "want the stamp of the build arguments: run is",
+		},
+		{
+			name: "the server image's stamp writing its own latest",
+			workflow: in("server-image", `          } >> "$GITHUB_OUTPUT"
+`, `          echo "latest=true" >> "$GITHUB_OUTPUT"
+          } >> "$GITHUB_OUTPUT"
+`),
+			wantIn: "want the stamp of the build arguments: run is",
+		},
 		{
 			name:     "an interpolation inside a run script",
 			workflow: in("image", `            echo "version=${TAG#v}"`+"\n", `            echo "version=${{ github.ref_name }}"`+"\n"),
@@ -1703,11 +1804,11 @@ func TestReleaseWorkflow(t *testing.T) {
 		{name: "another user", workflow: in("image", "          username: ${{ github.actor }}\n", "          username: someone\n"), wantIn: "username"},
 		{name: "another image name", workflow: in("image", "          images: ghcr.io/timothymamo/shift2eu\n", "          images: ghcr.io/example/shift2eu\n"), wantIn: "images"},
 
-		// latest comes from the stamp step's output alone: no literal, no
-		// other step, no latest=auto.
-		{name: "latest from another step", workflow: in("image", "          flavor: latest=${{ steps.stamp.outputs.latest }}\n", "          flavor: latest=${{ steps.latest.outputs.highest }}\n"), wantIn: "flavor"},
-		{name: "latest always", workflow: in("image", "          flavor: latest=${{ steps.stamp.outputs.latest }}\n", "          flavor: latest=true\n"), wantIn: "flavor"},
-		{name: "latest=auto", workflow: in("image", "          flavor: latest=${{ steps.stamp.outputs.latest }}\n", "          flavor: latest=auto\n"), wantIn: "flavor"},
+		// latest comes from the latest job's one decision alone: no literal, no
+		// other step, no latest=auto, and not the stamp's own output again.
+		{name: "latest from the stamp again", workflow: in("image", "          flavor: latest=${{ needs.latest.outputs.latest }}\n", "          flavor: latest=${{ steps.stamp.outputs.latest }}\n"), wantIn: "want docker/metadata-action: with: flavor is"},
+		{name: "latest always", workflow: in("image", "          flavor: latest=${{ needs.latest.outputs.latest }}\n", "          flavor: latest=true\n"), wantIn: "want docker/metadata-action: with: flavor is"},
+		{name: "latest=auto", workflow: in("image", "          flavor: latest=${{ needs.latest.outputs.latest }}\n", "          flavor: latest=auto\n"), wantIn: "want docker/metadata-action: with: flavor is"},
 
 		// The literal blocks the image job's tags, build arguments and stamp
 		// script are: a line a YAML reader keeps as content (a # line, a blank
@@ -1793,11 +1894,13 @@ func TestReleaseWorkflow(t *testing.T) {
 		{name: "the server image built from another stage", workflow: in("server-image", "          target: server\n", "          target: build\n"), wantIn: "with: target"},
 		{name: "a target on the CLI image", workflow: in("image", "          context: .\n", "          context: .\n          target: server\n"), wantIn: `key "target"`},
 		{name: "the server image tagged as the CLI", workflow: in("server-image", "          images: ghcr.io/timothymamo/shift2eu-server\n", "          images: ghcr.io/timothymamo/shift2eu\n"), wantIn: "images"},
-		{name: "the server image tagged latest always", workflow: in("server-image", "          flavor: latest=${{ steps.stamp.outputs.latest }}\n", "          flavor: latest=true\n"), wantIn: "flavor"},
+		{name: "the server image tagged latest always", workflow: in("server-image", "          flavor: latest=${{ needs.latest.outputs.latest }}\n", "          flavor: latest=true\n"), wantIn: "want docker/metadata-action: with: flavor is"},
+		{name: "the server image's latest from its own stamp", workflow: in("server-image", "          flavor: latest=${{ needs.latest.outputs.latest }}\n", "          flavor: latest=${{ steps.stamp.outputs.latest }}\n"), wantIn: "want docker/metadata-action: with: flavor is"},
 		{name: "the server image with BuildKit's provenance on", workflow: in("server-image", "          provenance: false\n", "          provenance: true\n"), wantIn: "with: provenance"},
 		{name: "the server image job without its digest output", workflow: in("server-image", "    outputs:\n      digest: ${{ steps.build.outputs.digest }}\n", ""), wantIn: `no "outputs"`},
 		{name: "id-token: write for the server image job", workflow: in("server-image", "      packages: write # push the image to ghcr.io\n", "      packages: write # push the image to ghcr.io\n      id-token: write # sign\n"), wantIn: "id-token"},
-		{name: "the server image job needing only the tests", workflow: in("server-image", "    needs: [test, goreleaser]\n", "    needs: [test]\n"), wantIn: "needs"},
+		{name: "the server image job needing only the tests", workflow: in("server-image", "    needs: [test, goreleaser, latest]\n", "    needs: [test]\n"), wantIn: "jobs: server-image: needs is"},
+		{name: "the latest job not needed by the server image job", workflow: in("server-image", "    needs: [test, goreleaser, latest]\n", "    needs: [test, goreleaser]\n"), wantIn: `jobs: server-image: needs is ["test" "goreleaser"], want exactly ["test" "goreleaser" "latest"]`},
 		{name: "the server SBOM read by tag", workflow: in("server-sbom", "image: registry:ghcr.io/timothymamo/shift2eu-server@${{ needs.server-image.outputs.digest }}", "image: registry:ghcr.io/timothymamo/shift2eu-server:latest"), wantIn: "with: image"},
 		{name: "the server SBOM read from the CLI's digest", workflow: in("server-sbom", "@${{ needs.server-image.outputs.digest }}", "@${{ needs.image.outputs.digest }}"), wantIn: "with: image"},
 		{name: "the server SBOM uploaded under the CLI's artifact name", workflow: in("server-sbom", "          name: server-sbom\n", "          name: sbom\n"), wantIn: "name"},
@@ -2078,7 +2181,7 @@ func TestReleaseWorkflow(t *testing.T) {
 		// or one the release never got, fails here rather than pass unverified.
 		{name: "the release's file set not checked", workflow: in("verify-archives", "            echo \"the release of $TAG does not hold what checksums.txt lists:\" >&2\n", "            echo \"the release of $TAG holds exactly checksums.txt and its files\" >&2\n"), wantIn: "the release of $TAG does not hold what checksums.txt lists"},
 		{name: "a release left a draft", workflow: in("verify-archives", "            echo \"the release of $TAG is still a draft, so it was never published\" >&2\n", "            echo \"the release of $TAG is published\" >&2\n"), wantIn: "the release of $TAG is still a draft, so it was never published"},
-		{name: "the verification without set -euo pipefail", workflow: in("verify-archives", "        run: |\n          set -euo pipefail\n          if [", "        run: |\n          if ["), wantIn: `want exactly "set -euo pipefail`},
+		{name: "the verification without set -euo pipefail", workflow: in("verify-archives", "        run: |\n          set -euo pipefail\n          if [", "        run: |\n          if ["), wantIn: "want the archives' verification: run is"},
 		{name: "the digests not checked", workflow: in("verify-archives", "          sha256sum -c checksums.txt\n", ""), wantIn: "sha256sum -c checksums.txt"},
 		{name: "a verification of another repository", workflow: in("verify-archives", `gh attestation verify "$subject" --repo timothymamo/shift2eu`, `gh attestation verify "$subject" --repo example/shift2eu`), wantIn: "--repo timothymamo/shift2eu"},
 		{name: "the verification without the signer workflow", workflow: in("verify-archives", "--signer-workflow timothymamo/shift2eu/.github/workflows/release.yml", "--signer-workflow example/repo/.github/workflows/other.yml"), wantIn: "--signer-workflow timothymamo/shift2eu/.github/workflows/release.yml"},
@@ -2099,21 +2202,62 @@ func TestReleaseWorkflow(t *testing.T) {
 		{name: "the subjects read without the dotfiles", workflow: in("verify-archives", "          shopt -s dotglob\n", ""), wantIn: "shopt -s dotglob"},
 
 		// GitHub's "Latest" release is checked by the job that runs after
-		// publish, against the same highest release tag the images' latest tag
-		// follows (issue #173): a release that is not the highest must not be
-		// GitHub's "Latest", and while the highest release tag has no release
-		// yet the check is skipped with a notice, as the image latest check
-		// skips it.
-		{name: "no check of GitHub's latest release", workflow: steps("verify-archives", withoutStep(t, verifyArchivesSteps, "name: Check GitHub's latest release")), wantIn: "holds 2 steps, want exactly 3"},
-		{name: "the latest release not compared to the tag", workflow: in("verify-archives", `echo "GitHub's latest release is '$latest', not $TAG, the highest release tag"`, `echo "GitHub's latest release is $latest"`), wantIn: "GitHub's latest release is '$latest', not $TAG, the highest release tag"},
-		{name: "the latest release not refused for a tag that is not the highest", workflow: in("verify-archives", `echo "GitHub's latest release is $TAG, which is not the highest release tag, $highest"`, `echo "GitHub's latest release is $TAG"`), wantIn: "is not the highest release tag"},
-		{name: "the latest check without the notice for a highest release not published yet", workflow: in("verify-archives", `echo "::notice::the release of $highest is not published yet, so this run does not check GitHub's latest release"`, `echo "the release of $highest is not published yet"`), wantIn: "::notice::"},
-		{name: "the latest check counting every tag, not only those merged into main", workflow: in("verify-archives", "git -C tags tag -l 'v*.*.*' --merged refs/remotes/origin/main", "git -C tags tag -l 'v*.*.*'"), wantIn: "--merged refs/remotes/origin/main"},
-		{name: "the latest check sorting the tags without sort -V", workflow: in("verify-archives", "| sort -V | tail -n 1", "| sort | tail -n 1"), wantIn: "sort -V"},
-		{name: "the latest check without the pre-release filter", workflow: in("verify-archives", `| sed -nE '/^v[0-9]+\.[0-9]+\.[0-9]+$/p'`, ""), wantIn: `sed -nE '/^v[0-9]+\\.[0-9]+\\.[0-9]+$/p'`},
-		{name: "the latest check without the guard on an empty highest", workflow: in("verify-archives", "          if [ -z \"$highest\" ]; then\n            echo \"no release tag is merged into main, so GitHub's latest release cannot be checked\" >&2\n            exit 1\n          fi\n", ""), wantIn: `want exactly "set -euo pipefail`},
-		{name: "the latest release read from another repository", workflow: in("verify-archives", `gh api "repos/timothymamo/shift2eu/releases/latest"`, `gh api "repos/example/shift2eu/releases/latest"`), wantIn: "repos/timothymamo/shift2eu/releases/latest"},
-		{name: "the latest check reading any failed read as an unpublished release", workflow: in("verify-archives", "            if grep -qF -e \"HTTP 404\" \"$err\"; then\n              rm -f \"$err\"\n              return 1\n            fi\n", "            if true; then\n              rm -f \"$err\"\n              return 1\n            fi\n"), wantIn: "HTTP 404"},
+		// publish, against its own independent reading of the highest release
+		// tag, which the images' latest tag follows (issue #173): a release that
+		// is not the highest must not be GitHub's "Latest", a pre-release never
+		// is one, and while the highest release tag has no release yet the check
+		// is skipped with a notice, as the image latest check skips it. Each case
+		// below names the step whose run it changes: a run mismatch prints the
+		// whole script, so only the step tells the cases apart.
+		{name: "no check of GitHub's latest release", workflow: steps("verify-archives", withoutStep(t, verifyArchivesSteps, "name: Check GitHub's latest release")), wantIn: "jobs: verify-archives: steps holds 2 steps, want exactly 3"},
+		{name: "the latest release not compared to the tag", workflow: in("verify-archives", `echo "GitHub's latest release is '$latest', not $TAG, the highest release tag"`, `echo "GitHub's latest release is $latest"`), wantIn: "want the check of GitHub's latest release: run is"},
+		{name: "the latest release not refused for a tag that is not the highest", workflow: in("verify-archives", `echo "GitHub's latest release is $TAG, which is not the highest release tag, $highest"`, `echo "GitHub's latest release is $TAG"`), wantIn: "want the check of GitHub's latest release: run is"},
+		{name: "the latest check without the notice for a highest release not published yet", workflow: in("verify-archives", `echo "::notice::the release of $highest is not published yet, so this run does not check GitHub's latest release"`, `echo "the release of $highest is not published yet"`), wantIn: "want the check of GitHub's latest release: run is"},
+		{name: "the latest check counting every tag, not only those merged into main", workflow: in("verify-archives", "git -C tags tag -l 'v*.*.*' --merged refs/remotes/origin/main", "git -C tags tag -l 'v*.*.*'"), wantIn: "want the check of GitHub's latest release: run is"},
+		{name: "the latest check sorting the tags without sort -V", workflow: in("verify-archives", "| sort -V | tail -n 1", "| sort | tail -n 1"), wantIn: "want the check of GitHub's latest release: run is"},
+		{name: "the latest check without the pre-release filter", workflow: in("verify-archives", `| sed -nE '/^v[0-9]+\.[0-9]+\.[0-9]+$/p'`, ""), wantIn: "want the check of GitHub's latest release: run is"},
+		{name: "the latest check without the guard on an empty highest", workflow: in("verify-archives", "          if [ -z \"$highest\" ]; then\n            echo \"no release tag is merged into main, so GitHub's latest release cannot be checked\" >&2\n            exit 1\n          fi\n", ""), wantIn: "want the check of GitHub's latest release: run is"},
+		{name: "the latest release read from another repository", workflow: in("verify-archives", `gh api "repos/timothymamo/shift2eu/releases/latest"`, `gh api "repos/example/shift2eu/releases/latest"`), wantIn: "want the check of GitHub's latest release: run is"},
+		{name: "the latest check reading any failed read as an unpublished release", workflow: in("verify-archives", "            if grep -qF -e \"HTTP 404\" \"$err\"; then\n              rm -f \"$err\"\n              return 1\n            fi\n", "            if true; then\n              rm -f \"$err\"\n              return 1\n            fi\n"), wantIn: "want the check of GitHub's latest release: run is"},
+		// A pre-release is never GitHub's "Latest" release, and the check is
+		// unconditional (reviewer B2, issue #173): while the highest release
+		// tag's own release is unpublished the rest of the step is skipped with
+		// a notice, which must not let a pre-release through as "Latest".
+		{
+			name: "the latest check without the pre-release check",
+			workflow: in("verify-archives", `          case "$TAG" in
+            *-*)
+              if [ "$latest" = "$TAG" ]; then
+                echo "GitHub's latest release is $TAG, a pre-release, and a pre-release is never the latest release" >&2
+                exit 1
+              fi
+              ;;
+          esac
+`, ""),
+			wantIn: "want the check of GitHub's latest release: run is",
+		},
+		{
+			name: "the pre-release check only while the highest release is published",
+			workflow: in("verify-archives", `          case "$TAG" in
+            *-*)
+              if [ "$latest" = "$TAG" ]; then
+                echo "GitHub's latest release is $TAG, a pre-release, and a pre-release is never the latest release" >&2
+                exit 1
+              fi
+              ;;
+          esac
+`, `          published "$highest" || true
+          if [ "$TAG" = "$latest" ]; then
+            case "$TAG" in
+              *-*)
+                echo "GitHub's latest release is $TAG, a pre-release, and a pre-release is never the latest release" >&2
+                exit 1
+                ;;
+            esac
+          fi
+`),
+			wantIn: "want the check of GitHub's latest release: run is",
+		},
 
 		{name: "an empty document", workflow: "", wantIn: "release workflow"},
 	}
