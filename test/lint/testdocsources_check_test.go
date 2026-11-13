@@ -90,7 +90,7 @@ func globDir(glob string) (string, bool) {
 	return dir, true
 }
 
-// docPath is one entry of the walk filesUnder performs.
+// docPath is one entry of the walk docEntries performs.
 type docPath struct {
 	rel     string // slash-separated path relative to the walked root
 	symlink bool   // fs.DirEntry.Type()&fs.ModeSymlink != 0

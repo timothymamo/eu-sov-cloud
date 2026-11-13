@@ -2,7 +2,6 @@ package lint_test
 
 import (
 	"fmt"
-	"io/fs"
 	"os"
 	"path"
 	"path/filepath"
@@ -77,20 +76,22 @@ func docSymlinkLine(rel, dir string) string {
 // would carry such a file in from outside the walk, which reads the link and
 // not what an import of it compiles.
 //
-// It walks the module root with skipDir, the walk of scanSources, so a testdata
-// directory, a directory whose name starts with . or _ and the root of another
-// module are left out as the go command leaves them out of ./...: a non-Go file
-// under testdata is no source of the held package, so a .s file there is a
-// fixture, as in testdata/docsources/mod below. A package there is still built
-// when it is imported by path, which this check does not cover (a follow-up to
-// #194).
+// It walks the module root with docEntries, the walk of the paths themselves, so
+// a testdata directory, a directory whose name starts with . or _ and the root
+// of another module are left out as the go command leaves them out of ./...: a
+// non-Go file under testdata is no source of the held package, so a .s file
+// there is a fixture, as in testdata/docsources/mod below. A package there is
+// still built when it is imported by path, which this check does not cover (a
+// follow-up to #194). A symlink is no such file: docEntries still reads every
+// one of them, testdata, _x and .x directories included, because an import
+// follows a link whatever directory it sits in.
 func TestDocPackagesHoldNoNonGoSource(t *testing.T) {
 	t.Parallel()
 
 	root := moduleRoot(t)
 	held, takenOut := docTreesOf(t, root)
 
-	entries := filesUnder(t, root, skipDir)
+	entries := docEntriesOf(t, root)
 	if len(entries) == 0 {
 		t.Fatalf("no file under %s", root)
 	}
@@ -102,9 +103,7 @@ func TestDocPackagesHoldNoNonGoSource(t *testing.T) {
 	// A tree the rule holds that the walk never reached would pass for the
 	// wrong reason: the check would hold nothing there.
 	for _, dir := range held {
-		if !slices.ContainsFunc(entries, func(e docPath) bool {
-			return strings.HasPrefix(e.rel, dir+"/")
-		}) {
+		if !slices.ContainsFunc(entries, func(e docPath) bool { return underDir(e.rel, dir) }) {
 			t.Errorf("the walk of %s found no file under %s, a tree %s holds", root, dir, docRule)
 		}
 	}
@@ -113,9 +112,10 @@ func TestDocPackagesHoldNoNonGoSource(t *testing.T) {
 // TestDocPackageNonGoSourceProbe runs the check over the probe tree
 // testdata/docsources/mod, laid out as the repository's test directory is: an
 // assembly file under test/e2e must be refused, and the one under
-// test/e2e/testdata, which is no source of the held package, must not be. The
-// repository holds no such file, so without the probe nothing would prove the
-// check bites (the pin of issue #194).
+// test/e2e/testdata, which is no source of the held package, must not even
+// reach the check, as the walk of the module root leaves that directory out.
+// The repository holds no such file, so without the probe nothing would prove
+// the check bites (the pin of issue #194).
 func TestDocPackageNonGoSourceProbe(t *testing.T) {
 	t.Parallel()
 
@@ -123,14 +123,19 @@ func TestDocPackageNonGoSourceProbe(t *testing.T) {
 	held, takenOut := docTreesOf(t, root)
 
 	const dir = "test/lint/testdata/docsources/mod"
-	entries := filesUnder(t, filepath.Join(root, filepath.FromSlash(dir)), nil)
+	entries := docEntriesOf(t, filepath.Join(root, filepath.FromSlash(dir)))
 
-	// The probe holds both fixtures: one the check refuses, one it must let
-	// through, so a walk that read nothing would fail here rather than pass.
-	for _, want := range []string{"test/e2e/probe_amd64.s", "test/e2e/testdata/probe_amd64.s"} {
-		if !slices.ContainsFunc(entries, func(e docPath) bool { return e.rel == want && !e.symlink }) {
-			t.Fatalf("the probe %s holds no %s", dir, want)
-		}
+	// The probe holds both fixtures, one the check refuses and one the walk
+	// must leave out with its testdata directory, so a walk that read nothing
+	// would fail here rather than pass.
+	if !slices.ContainsFunc(entries, func(e docPath) bool {
+		return e.rel == "test/e2e/probe_amd64.s" && !e.symlink
+	}) {
+		t.Fatalf("the probe %s holds no test/e2e/probe_amd64.s, only %v", dir, entries)
+	}
+	if slices.ContainsFunc(entries, func(e docPath) bool { return e.rel == "test/e2e/testdata/probe_amd64.s" }) {
+		t.Fatalf("the walk of %s read test/e2e/testdata/probe_amd64.s, a file under a testdata "+
+			"directory the go command leaves out of ./...: %v", dir, entries)
 	}
 
 	want := []string{docSourceLine("test/e2e/probe_amd64.s", "test/e2e")}
@@ -173,7 +178,7 @@ func TestDocPackageSymlinkProbe(t *testing.T) {
 		t.Skipf("this platform holds no symlink: %v", err)
 	}
 
-	entries := filesUnder(t, root, nil)
+	entries := docEntriesOf(t, root)
 
 	// The walk records the link as a symlink rather than following it, and the
 	// source at the other end stays outside every held tree.
@@ -312,13 +317,57 @@ func TestDocSourceProblems(t *testing.T) {
 			// A file under testdata is left out of ./... and no source of the
 			// held package, but an import of a path that reaches it through a
 			// symlink still compiles: the exemption of a file there is no
-			// exemption of a link to it.
+			// exemption of a link to it. This case pins docSourceProblems on
+			// entries the walk must hand it, not the walk itself: docEntries
+			// is what keeps reading testdata directories for symlinks
+			// (TestDocEntries and TestDocPackageSkippedDirSymlinkProbe).
 			name:     "a symlink under a testdata directory is refused too",
 			symlinks: []string{"test/e2e/testdata/probe", "test/e2e/testdata"},
 			want: []string{
 				docSymlinkLine("test/e2e/testdata/probe", "test/e2e"),
 				docSymlinkLine("test/e2e/testdata", "test/e2e"),
 			},
+		},
+		{
+			// The whole held tree is a link. underDir("test/e2e",
+			// "test/e2e") is false, so a check of what lies under a tree
+			// passes it, and the reach check of
+			// TestDocPackagesHoldNoNonGoSource would be the only thing to
+			// fail, naming no symlink at all.
+			name:     "a symlink that is a held tree",
+			symlinks: []string{"test/e2e"},
+			want:     []string{docSymlinkLine("test/e2e", "test/e2e")},
+		},
+		{
+			// An ancestor of a held tree is no file under it either, yet
+			// every path under the link is a link. The first held tree the
+			// entry is an ancestor of names the refusal.
+			name:     "a symlink that is an ancestor of a held tree",
+			symlinks: []string{"test"},
+			want:     []string{docSymlinkLine("test", "test/e2e")},
+		},
+		{
+			// Only a symlink is refused for its own path: an entry that is
+			// no link and carries no non-Go source extension passes, whatever
+			// its name.
+			name:  "a non-symlink entry equal to a held tree",
+			files: []string{"test/e2e", "test"},
+		},
+		{
+			// test/e2e2 holds no path of test/e2e, so it is no tree of it and
+			// no ancestor of it.
+			name:     "a symlink that only starts with a held tree",
+			symlinks: []string{"test/e2e2"},
+		},
+		{
+			// A taken-out tree refuses nothing, and its ancestors are no
+			// reason to refuse a link either: the whole-tree rule counts the
+			// trees the rule holds, in both directions, and test/slow is an
+			// ancestor of test/slow/fixtures only.
+			name:     "a symlink that is an ancestor of only a tree the rule takes out",
+			held:     []string{"test/e2e"},
+			takenOut: []string{"test/slow/fixtures"},
+			symlinks: []string{"test/slow"},
 		},
 		{
 			name:     "a symlink under a tree the rule takes out is no tree",
@@ -495,44 +544,212 @@ func docTreesOf(t *testing.T, root string) (held, takenOut []string) {
 	return held, takenOut
 }
 
-// filesUnder returns the entries of every file under dir, in the lexical order
-// of fs.WalkDir, leaving out the directories skip reports (none when skip is
-// nil) and reading no file: the slash-separated path of the entry relative to
-// dir, and whether it is a symlink, which the walk reports and does not follow
-// and which only the entry type tells, since a link carries no extension.
-// walkGoFiles reads the Go files of a tree; this is the walk of the paths
-// themselves, which is what a check of the files beside them needs (issue #194).
-func filesUnder(t *testing.T, dir string, skip func(r *os.Root, rel, name string) (bool, error)) []docPath {
-	t.Helper()
+// TestDocEntries pins docEntries, the walk TestDocPackagesHoldNoNonGoSource,
+// the probes and TestDocPackageSkippedDirSymlinkProbe read: the files the go
+// command's ./... pattern reaches, which skipDir leaves out of ./... (a
+// testdata directory, a directory whose name starts with . or _, the root of
+// another module), and, beside them, every symlink the tree holds at any depth,
+// testdata, _ and . directories included. A non-Go file under testdata is no
+// source of a held package, but a symlink there is one: an import of its path
+// follows it and the toolchain builds the source it finds, so the exemptions of
+// ./... reach the extension rule and no symlink (issue #194).
+func TestDocEntries(t *testing.T) {
+	t.Parallel()
 
-	r, err := os.OpenRoot(dir)
-	if err != nil {
+	const elsewhere = "elsewhere"
+
+	tests := []struct {
+		name     string
+		files    map[string]string // content by slash-separated path
+		symlinks map[string]string // target by slash-separated path
+		want     []docPath
+	}{
+		{
+			name: "the files the go command's ./... pattern reaches",
+			files: map[string]string{
+				"test/e2e/doc.go":                   "package e2e\n",
+				"test/e2e/testdata/inventory.json":  "{}\n",
+				"test/lint/probe.sh":                "#!/bin/sh\n",
+				"test/e2e/mytestdata/probe_amd64.s": "\n",
+				"testdata/probe.s":                  "\n",
+				"_x/probe.go":                       "package x\n",
+				".x/probe.go":                       "package x\n",
+			},
+			want: []docPath{
+				{rel: "test/e2e/doc.go"},
+				{rel: "test/e2e/mytestdata/probe_amd64.s"},
+				{rel: "test/lint/probe.sh"},
+			},
+		},
+		{
+			// A symlink is no file any extension tells, and the walk reads
+			// the link rather than what it points at: no entry of elsewhere
+			// stands under test/e2e/x, and elsewhere's own files appear at
+			// their own paths.
+			name: "a symlink is recorded and not followed",
+			files: map[string]string{
+				"test/e2e/doc.go":        "package e2e\n",
+				"elsewhere/a/x.go":       "package a\n",
+				elsewhere + "/x_amd64.s": "\n",
+			},
+			symlinks: map[string]string{"test/e2e/x": "../../" + elsewhere},
+			want: []docPath{
+				{rel: "elsewhere/a/x.go"},
+				{rel: "elsewhere/x_amd64.s"},
+				{rel: "test/e2e/doc.go"},
+				{rel: "test/e2e/x", symlink: true},
+			},
+		},
+		{
+			// The pin of the gap: a symlink under a directory ./... leaves
+			// out is still a path an import follows, so the walk reads it,
+			// at any depth, while the files beside it stay left out.
+			name: "a symlink inside a directory ./... leaves out",
+			files: map[string]string{
+				"test/e2e/testdata/inventory.json":    "{}\n",
+				"test/e2e/_x/probe.go":                "package x\n",
+				"test/e2e/.x/probe.go":                "package x\n",
+				"test/e2e/testdata/held/fixtures/a.c": "\n",
+			},
+			symlinks: map[string]string{
+				"test/e2e/testdata/p":               "../../../" + elsewhere,
+				"test/e2e/_x/p":                     "../../../" + elsewhere,
+				"test/e2e/.x/p":                     "../../../" + elsewhere,
+				"test/e2e/testdata/held/fixtures/p": "../../../../" + elsewhere,
+				"testdata/p":                        "../" + elsewhere,
+				"_x/p":                              "../" + elsewhere,
+				".x/p":                              "../" + elsewhere,
+			},
+			want: []docPath{
+				{rel: ".x/p", symlink: true},
+				{rel: "_x/p", symlink: true},
+				{rel: "test/e2e/.x/p", symlink: true},
+				{rel: "test/e2e/_x/p", symlink: true},
+				{rel: "test/e2e/testdata/held/fixtures/p", symlink: true},
+				{rel: "test/e2e/testdata/p", symlink: true},
+				{rel: "testdata/p", symlink: true},
+			},
+		},
+		{
+			// The root of another module is no tree of this one, and ./...
+			// stops there: neither its files nor a symlink under it is a
+			// source of a package this module's rule holds.
+			name: "nothing under the root of another module",
+			files: map[string]string{
+				"test/e2e/doc.go":                "package e2e\n",
+				"test/e2e/vendored/go.mod":       "module example.com/vendored\n",
+				"test/e2e/vendored/x_amd64.s":    "\n",
+				"test/e2e/vendored/testdata/x.c": "\n",
+			},
+			symlinks: map[string]string{
+				"test/e2e/vendored/p":             "../../../" + elsewhere,
+				"test/e2e/vendored/testdata/p.go": "../../../../" + elsewhere,
+			},
+			want: []docPath{{rel: "test/e2e/doc.go"}},
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			root := t.TempDir()
+			for rel, content := range tc.files {
+				p := filepath.Join(root, filepath.FromSlash(rel))
+				if err := os.MkdirAll(filepath.Dir(p), 0o750); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.WriteFile(p, []byte(content), 0o600); err != nil {
+					t.Fatal(err)
+				}
+			}
+			for rel, target := range tc.symlinks {
+				p := filepath.Join(root, filepath.FromSlash(rel))
+				if err := os.MkdirAll(filepath.Dir(p), 0o750); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.Symlink(filepath.FromSlash(target), p); err != nil {
+					t.Skipf("this platform holds no symlink: %v", err)
+				}
+			}
+
+			if diff := cmp.Diff(tc.want, docEntriesOf(t, root),
+				cmpopts.EquateEmpty(), cmpopts.EquateComparable(docPath{})); diff != "" {
+				t.Errorf("docEntries() mismatch (-want +got):\n%s", diff)
+			}
+		})
+	}
+}
+
+// TestDocPackageSkippedDirSymlinkProbe pins the same gap at the level the check
+// runs at: a symlink under a REAL testdata directory of a held tree, and one
+// under a _x and a .x directory beside it, must reach docSourceProblems and be
+// refused. The walk of the module root leaves those directories out for the
+// extension rule only, so a check that walked them out whole would never see
+// the link, while an import of its path follows it and the toolchain builds the
+// source at the other end (the reviewer's S1 and the auditor's first finding on
+// issue #194).
+//
+// The fixture is built in a temporary directory rather than committed, because
+// a symlink does not survive as a symlink everywhere a checkout lands, and a
+// harness that resolved it would hide the very shape the check refuses.
+func TestDocPackageSkippedDirSymlinkProbe(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	const elsewhere = "elsewhere"
+
+	for _, dir := range []string{"test/e2e/testdata", "test/e2e/_x", "test/e2e/.x", elsewhere} {
+		if err := os.MkdirAll(filepath.Join(root, filepath.FromSlash(dir)), 0o750); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := os.WriteFile(filepath.Join(root, elsewhere, "x_amd64.s"),
+		[]byte("// what an import of test/e2e/testdata/p compiles\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	defer r.Close()
 
-	var entries []docPath
-	err = fs.WalkDir(r.FS(), ".", func(rel string, d fs.DirEntry, err error) error {
-		if err != nil {
-			return err
+	// The order the walk reads them in: .x before _x before testdata.
+	dirs := []string{"test/e2e/.x", "test/e2e/_x", "test/e2e/testdata"}
+	for _, dir := range dirs {
+		link := filepath.Join(root, filepath.FromSlash(dir), "p")
+		if err := os.Symlink(filepath.Join("..", "..", "..", elsewhere), link); err != nil {
+			t.Skipf("this platform holds no symlink: %v", err)
 		}
-		if d.IsDir() {
-			if rel == "." || skip == nil {
-				return nil
-			}
-			skipped, err := skip(r, rel, d.Name())
-			if err != nil || !skipped {
-				return err
-			}
+	}
 
-			return fs.SkipDir
+	entries := docEntriesOf(t, root)
+	if !slices.ContainsFunc(entries, func(e docPath) bool {
+		return e.rel == elsewhere+"/x_amd64.s" && !e.symlink
+	}) {
+		t.Fatalf("the walk of %s read no %s/x_amd64.s, only %v", root, elsewhere, entries)
+	}
+
+	want := make([]string, 0, len(dirs))
+	for _, dir := range dirs {
+		rel := dir + "/p"
+		if !slices.ContainsFunc(entries, func(e docPath) bool { return e.rel == rel && e.symlink }) {
+			t.Fatalf("the walk of %s read no symlink %s, only %v", root, rel, entries)
 		}
-		entries = append(entries, docPath{rel: rel, symlink: d.Type()&fs.ModeSymlink != 0})
+		want = append(want, docSymlinkLine(rel, "test/e2e"))
+	}
 
-		return nil
-	})
+	if diff := cmp.Diff(want, docSourceProblems(entries, []string{"test/e2e"}, nil),
+		cmpopts.EquateEmpty()); diff != "" {
+		t.Errorf("docSourceProblems() on the skipped-directory symlink probe mismatch (-want +got):\n%s", diff)
+	}
+}
+
+// docEntriesOf returns the entries docEntries reads from the directory tree at
+// root, failing the test on a walk error: the seam the checks of this file read
+// the paths themselves through, rather than a walk kept here that could drift
+// from the one they run.
+func docEntriesOf(t *testing.T, root string) []docPath {
+	t.Helper()
+
+	entries, err := docEntries(os.DirFS(root))
 	if err != nil {
-		t.Fatalf("walk %s: %v", dir, err)
+		t.Fatalf("docEntries(%s): %v", root, err)
 	}
 
 	return entries
