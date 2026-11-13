@@ -96,9 +96,24 @@ var (
 	ErrOverlappingPrices = errors.New("overlapping prices")
 )
 
+// regionSet holds an offering's regions, each once, so a price region is
+// looked up in constant time however many regions the offering lists or
+// repeats (ADR 0024).
+type regionSet map[string]struct{}
+
+// newRegionSet returns the set of regions.
+func newRegionSet(regions []string) regionSet {
+	set := make(regionSet, len(regions))
+	for _, r := range regions {
+		set[r] = struct{}{}
+	}
+
+	return set
+}
+
 // normalisePlans checks the plans of an offering available in regions, in input
 // order, and returns a copy of them sorted by name, nil when empty.
-func normalisePlans(plans []Plan, regions []string) ([]Plan, error) {
+func normalisePlans(plans []Plan, regions regionSet) ([]Plan, error) {
 	seen := make(map[string]struct{}, len(plans))
 	out := make([]Plan, 0, len(plans))
 
@@ -137,7 +152,7 @@ func normalisePlans(plans []Plan, regions []string) ([]Plan, error) {
 
 // normalisePlan checks the numbers and prices of a plan with a valid name and
 // returns a copy of it with its prices normalised.
-func normalisePlan(p Plan, regions []string) (Plan, error) {
+func normalisePlan(p Plan, regions regionSet) (Plan, error) {
 	switch {
 	case p.VCPUs < 1:
 		return Plan{}, fmt.Errorf("%w: vcpus %d, want at least 1", ErrInvalidPlan, p.VCPUs)
@@ -174,7 +189,7 @@ func normalisePlan(p Plan, regions []string) (Plan, error) {
 // available in regions, and returns a copy of it with each price's regions
 // sorted, de-duplicated and nil when empty, sorted by first region with the
 // every-region price first, and nil when empty.
-func normalisePrices(list string, prices []Price, regions []string) ([]Price, error) {
+func normalisePrices(list string, prices []Price, regions regionSet) ([]Price, error) {
 	out := make([]Price, 0, len(prices))
 	// owner maps a region to the index of the first price that applies to it.
 	owner := make(map[string]int)
@@ -251,7 +266,7 @@ func firstOwned(owner map[string]int) string {
 // normalisePrice checks one price of an offering available in regions and
 // returns a copy of it with its regions sorted, de-duplicated and nil when
 // empty.
-func normalisePrice(p Price, regions []string) (Price, error) {
+func normalisePrice(p Price, regions regionSet) (Price, error) {
 	if p.Amount < 0 {
 		return Price{}, fmt.Errorf("%w: amount %s, want at least 0", ErrInvalidPrice, p.Amount)
 	}
@@ -273,7 +288,7 @@ func normalisePrice(p Price, regions []string) (Price, error) {
 			return Price{}, fmt.Errorf("%w: regions[%d]: %w", ErrInvalidPrice, i, err)
 		}
 
-		if !slices.Contains(regions, r) {
+		if _, ok := regions[r]; !ok {
 			return Price{}, fmt.Errorf("%w: region %s is not a region of the offering", ErrPriceRegion, text.Quote(r))
 		}
 	}

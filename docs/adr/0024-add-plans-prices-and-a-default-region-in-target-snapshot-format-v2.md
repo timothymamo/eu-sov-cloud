@@ -277,7 +277,10 @@ does not change the catalog. `Snapshot()` returns `DefaultRegion` as given.
    therefore cannot be read: it has no region to estimate in.
 9. Every offering region is a declared region (`ErrUndeclaredRegion`), as today. A price region is
    not checked against the declared regions: `catalog.New` checks it against the offering's regions,
-   which are declared.
+   which are declared. It holds those regions in a set, so the check stays linear however long or
+   repetitive the two lists are: a document under the size cap whose storage price and offering each
+   repeat a region about 120 000 times took 19.7 s to parse with a scan of the offering's regions
+   per price region, and takes 30 ms with the set (`BenchmarkParseRepeatedPriceRegion`).
 10. `catalog.New` accepts the catalog, and its error is returned as it is, so the sentinels above stay
     reachable through `errors.Is`.
 

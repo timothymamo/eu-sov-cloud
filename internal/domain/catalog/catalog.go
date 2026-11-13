@@ -631,12 +631,14 @@ func normalise(o Offering) (Offering, error) {
 		}
 	}
 
-	plans, err := normalisePlans(o.Plans, o.Regions)
+	regions := newRegionSet(o.Regions)
+
+	plans, err := normalisePlans(o.Plans, regions)
 	if err != nil {
 		return Offering{}, err
 	}
 
-	storagePrices, err := normalisePrices("storagePrices", o.StoragePrices, o.Regions)
+	storagePrices, err := normalisePrices("storagePrices", o.StoragePrices, regions)
 	if err != nil {
 		return Offering{}, err
 	}
