@@ -26,7 +26,9 @@ updates, deletes or tags anything. Where a provider's inventory service must be 
 
 An inventory is a JSON object with a version, the source and a list of resources.
 [ADR 0006](../adr/0006-json-inventory-file-format-v1.md) records the format in full; the reader is
-strict, so a misspelt key or an unknown value is an error, never ignored.
+strict, so a misspelt key or an unknown value is an error, never ignored. This guide builds version 1;
+schema version 2, which adds sizes, usage, workloads, relations and cost, is recorded in
+[ADR 0025](../adr/0025-json-inventory-file-format-v2.md).
 
 ```json
 {
