@@ -111,6 +111,16 @@
 // its patterns. TestE2EImportsProbe (testdata/e2eimports) runs depguard on the
 // e2e tier (issue #185): a non-test file importing os/exec, unsafe or os/user is
 // refused by test-docs-are-pure, and a _test.go file importing os/exec is not.
+// An import list says nothing of a file that needs no import: an assembly file
+// beside a bodyless Go func can issue a raw system call. So
+// TestDocPackagesHoldNoNonGoSource (issue #194) refuses every non-Go source the
+// Go toolchain builds beside a package (assembly, C, C++, Objective-C, Fortran,
+// SWIG and .syso objects) in the trees test-docs-are-pure holds, which docTrees
+// reads from the rule's files: list in .golangci.yml with test/internal/yamlread;
+// a testdata directory is no package source, so its files are left out.
+// TestDocPackageNonGoSourceProbe runs the check on testdata/docsources/mod,
+// whose test/e2e/probe_amd64.s must be refused and test/e2e/testdata copy must
+// not, and TestDocSourceProblems and TestDocTrees pin its helpers.
 // TestTestsNoProcessStateProbe (testdata/testsprocessstate) runs the forbidigo
 // group tests-no-process-state (issue #153) on t.Setenv, t.Chdir, os.Setenv,
 // os.Unsetenv, os.Clearenv, os.Chdir, syscall.Unsetenv, syscall.Clearenv and
