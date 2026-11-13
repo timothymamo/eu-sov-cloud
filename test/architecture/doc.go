@@ -135,7 +135,10 @@
 // cannot import is left out); TestEveryOsAllowingRuleHasAnEnvironmentGroup fails
 // for a package whose strict rule allows os but which no forbidigo group in
 // scope holds to the nine os reads (Getenv, LookupEnv, ExpandEnv, Environ,
-// StartProcess, UserHomeDir, UserConfigDir, UserCacheDir, TempDir); and
+// StartProcess, UserHomeDir, UserConfigDir, UserCacheDir, TempDir), and since
+// issue #167 for one whose rule allows syscall but is not held to the syscall
+// reads (Getenv, Environ, Exec, ForkExec, StartProcess and the raw system
+// calls), $gostd counting as allowing both; and
 // TestNoPackageIsHeldOnlyByAGostdRule fails for such a package whose only
 // holding strict rules allow $gostd, and so os/exec, syscall and unsafe, unless
 // gostdOnlyExempt (empty) names it with a reason. That last one found test/e2e:

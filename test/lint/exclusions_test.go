@@ -20,7 +20,7 @@ import (
 // linters.settings.forbidigo). The tags of the two composition-root groups,
 // compositionRootTags, are pinned by what their rules select instead of by the
 // text of a path regexp, in TestCompositionRootExclusions.
-var forbidigoTags = []string{"cloud-read-only", "domain-is-pure", testutilNoEnvTag, cliNoEnvOrProcessTag, httpapiTestsNoEnvOrProcessTag, inventoryFileNoEnvTag, testsNoProcessStateTag}
+var forbidigoTags = []string{"cloud-read-only", "domain-is-pure", testutilNoEnvTag, cliNoEnvOrProcessTag, httpapiTestsNoEnvOrProcessTag, inventoryFileNoEnvTag, e2eNoEnvTag, testsNoProcessStateTag}
 
 // exclusionRule is one rule of linters.exclusions.rules in .golangci.yml.
 type exclusionRule struct {
@@ -110,6 +110,12 @@ func TestForbidigoExclusionsDropOneGroup(t *testing.T) {
 		// _test.go files too, as cli-no-env-or-process holds the CLI's.
 		inventoryFileNoEnvTag: {
 			{"path-except": `^internal/adapter/source/inventoryfile/`, "text": groupText(inventoryFileNoEnvTag)},
+		},
+		// The e2e tier (issue #167): one rule, for every path outside
+		// test/e2e/, so the group holds there and nowhere else, _test.go
+		// files included.
+		e2eNoEnvTag: {
+			{"path-except": `^test/e2e/`, "text": groupText(e2eNoEnvTag)},
 		},
 		// Every test that belongs to this project (issue #153): one rule, for
 		// the two test binaries that deliberately set the go command's own

@@ -72,6 +72,8 @@ var httpapiTestsNoEnvOrProcessRefused = []rootName{
 	{"syscall", "syscall.SyscallN"},
 	{"syscall", "syscall.RawSyscall"},
 	{"syscall", "syscall.RawSyscall6"},
+	{"syscall", "syscall.AllThreadsSyscall"},
+	{"syscall", "syscall.AllThreadsSyscall6"},
 	{"syscall", "syscall.SYS_EXECVE"},
 	{"syscall", "syscall.SYS_CLONE"},
 }

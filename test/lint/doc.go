@@ -104,6 +104,10 @@
 // environment reads, home, config, cache and temp lookups and os.StartProcess
 // must each be refused, and TestInventoryFileNoEnvForbidigoPatterns pins its
 // pattern.
+// TestE2ENoEnvProbe (testdata/e2enoenv) runs the forbidigo group e2e-no-env
+// (issue #167) on the e2e tier, whose os and syscall environment reads, process
+// starts and raw system calls must each be refused while os/exec stays allowed,
+// and TestE2ENoEnvForbidigoPatterns pins its patterns.
 // TestTestsNoProcessStateProbe (testdata/testsprocessstate) runs the forbidigo
 // group tests-no-process-state (issue #153) on t.Setenv, t.Chdir, os.Setenv,
 // os.Unsetenv, os.Clearenv, os.Chdir, syscall.Unsetenv, syscall.Clearenv and
