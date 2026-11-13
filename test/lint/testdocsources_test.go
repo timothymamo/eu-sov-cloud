@@ -223,10 +223,10 @@ var docSourceTakenOut = []string{"test/architecture/internal"}
 // TestDocPackagesHoldNoNonGoSource and TestDocPackageNonGoSourceProbe, on the
 // entries a walk hands it (docPath): every extension of the toolchain's non-Go
 // sources, a symlink of any name and extension, the files that are neither and
-// pass, the testdata directory whose files are left out of ./... and no source
-// of the held package, the tree the rule takes out, and the trees it does not
-// hold, whose files are no concern of this rule. Each refusal is one line, in
-// the order the walk handed the entries over.
+// pass, the testdata, _ and . directories whose files are left out of ./... and
+// no source of the held package, the tree the rule takes out, and the trees it
+// does not hold, whose files are no concern of this rule. Each refusal is one
+// line, in the order the walk handed the entries over.
 func TestDocSourceProblems(t *testing.T) {
 	t.Parallel()
 
@@ -274,6 +274,23 @@ func TestDocSourceProblems(t *testing.T) {
 				"test/e2e/testdata/probe_amd64.s",
 				"test/e2e/runs/testdata/deep/probe.c",
 			},
+		},
+		{
+			// The testdata, _ and . exemption of ./... is one exemption, and
+			// this check takes it whole: a non-Go file under any of those
+			// directories is no source of the held package, as the comment of
+			// docSourceProblems says. docEntries drops those files before they
+			// reach the check, so the cases below hand them over directly, as
+			// a check that kept its own walk would (the reviewer's N1).
+			name:  "a non-Go file under a testdata, _ or . directory is exempt",
+			files: []string{"test/e2e/testdata/a.s", "test/e2e/_x/a.s", "test/e2e/.x/a.s"},
+		},
+		{
+			// A symlink is the exception the exemption does not reach: an
+			// import of the path follows it whatever directory it sits in.
+			name:     "a symlink under a _ directory is refused",
+			symlinks: []string{"test/e2e/_x/p"},
+			want:     []string{docSymlinkLine("test/e2e/_x/p", "test/e2e")},
 		},
 		{
 			name:  "a directory that only starts with testdata is no testdata directory",
@@ -548,7 +565,8 @@ func docTreesOf(t *testing.T, root string) (held, takenOut []string) {
 // the probes and TestDocPackageSkippedDirSymlinkProbe read: the files the go
 // command's ./... pattern reaches, which skipDir leaves out of ./... (a
 // testdata directory, a directory whose name starts with . or _, the root of
-// another module), and, beside them, every symlink the tree holds at any depth,
+// another module, which is a go.mod regular file and no directory of that
+// name), and, beside them, every symlink the tree holds at any depth,
 // testdata, _ and . directories included. A non-Go file under testdata is no
 // source of a held package, but a symlink there is one: an import of its path
 // follows it and the toolchain builds the source it finds, so the exemptions of
@@ -646,6 +664,22 @@ func TestDocEntries(t *testing.T) {
 				"test/e2e/vendored/testdata/p.go": "../../../../" + elsewhere,
 			},
 			want: []docPath{{rel: "test/e2e/doc.go"}},
+		},
+		{
+			// Only a go.mod regular file is the root of another module, as the
+			// go command's own search reads it, so a DIRECTORY named go.mod
+			// hides no subtree: ./... still reaches the package beside it, and
+			// the file it holds under that name. The walk must read the
+			// directory's contents and its siblings, not skip them.
+			name: "a directory named go.mod is no module root",
+			files: map[string]string{
+				"test/e2e/sub/x_amd64.s":   "\n",
+				"test/e2e/sub/go.mod/keep": "\n",
+			},
+			want: []docPath{
+				{rel: "test/e2e/sub/go.mod/keep"},
+				{rel: "test/e2e/sub/x_amd64.s"},
+			},
 		},
 	}
 
