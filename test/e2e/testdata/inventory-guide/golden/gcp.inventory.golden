@@ -22,6 +22,12 @@
       ]
     },
     {
+      "id": "shop-baremetal-1",
+      "rawType": "baremetalsolution.googleapis.com/Instance",
+      "category": "compute.baremetal",
+      "region": "europe-west1"
+    },
+    {
       "id": "shop-catalog-mysql",
       "rawType": "sqladmin.googleapis.com/Instance",
       "category": "database.mysql",

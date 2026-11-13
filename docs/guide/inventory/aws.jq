@@ -99,6 +99,8 @@ def inventory($source):
 | [
     # EC2 instances. One launched by an Auto Scaling group is left out: the group
     # stands for it. A Kubernetes node is left out: its cluster stands for it.
+    # An instance of a bare-metal instance type (*.metal) is a dedicated
+    # physical server, compute.baremetal (ADR 0023); any other is compute.vm.
     ($docs[] | .Reservations? // empty | .[].Instances[]?
       | select(.State.Name != "terminated" and .State.Name != "shutting-down")
       | select([.Tags[]?.Key] | index("aws:autoscaling:groupName") | not)
@@ -106,7 +108,7 @@ def inventory($source):
       | {
           id: .InstanceId,
           rawType: "AWS::EC2::Instance",
-          category: "compute.vm",
+          category: (if (.InstanceType // "") | endswith(".metal") then "compute.baremetal" else "compute.vm" end),
           region: (.Placement.AvailabilityZone | zone_region),
           capabilities: [
             cap("ipv6"; any(.NetworkInterfaces[]?;

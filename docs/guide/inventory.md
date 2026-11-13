@@ -55,7 +55,9 @@ strict, so a misspelt key or an unknown value is an error, never ignored.
 | `resources[].region` | no | The source region; absent for a global resource |
 | `resources[].capabilities` | no | Capabilities the resource depends on, below |
 
-The **taxonomy categories** are the only bridge between a source and a target: `compute.vm`,
+The **taxonomy categories** are the only bridge between a source and a target: `compute.vm` (a
+virtual machine), `compute.baremetal` (a dedicated physical server, with no hypervisor; see
+[ADR 0023](../adr/0023-separate-bare-metal-servers-from-virtual-machines-in-the-taxonomy.md)),
 `kubernetes.managed`, `storage.object`, `storage.block`, `database.postgresql`, `database.mysql`,
 `serverless.function` and `messaging.queue`. A resource that fits none of them is `unclassified`
 and keeps its `rawType`: it then shows up in the report as a blocker on every target, instead of
@@ -176,7 +178,7 @@ out="inventories/aws/$AWS_REGION"
 mkdir -p "$out"
 
 aws ec2 describe-instances --output json --query '{Reservations: Reservations[].{Instances: Instances[].{
-  InstanceId: InstanceId, State: {Name: State.Name},
+  InstanceId: InstanceId, InstanceType: InstanceType, State: {Name: State.Name},
   Placement: {AvailabilityZone: Placement.AvailabilityZone},
   BlockDeviceMappings: BlockDeviceMappings[].{Ebs: {VolumeId: Ebs.VolumeId}},
   NetworkInterfaces: NetworkInterfaces[].{Ipv6AddressCount: length(Ipv6Addresses || `[]`)},
@@ -254,7 +256,8 @@ The `rawType` is the resource's AWS CloudFormation type.
 
 | `rawType` | Category | Read from |
 |---|---|---|
-| `AWS::EC2::Instance` | `compute.vm` | `ec2 describe-instances` |
+| `AWS::EC2::Instance`, a `*.metal` instance type (such as `m5.metal`) | `compute.baremetal` | `ec2 describe-instances` |
+| `AWS::EC2::Instance`, any other instance type | `compute.vm` | `ec2 describe-instances` |
 | `AWS::AutoScaling::AutoScalingGroup` | `compute.vm` | `autoscaling describe-auto-scaling-groups` |
 | `AWS::EC2::Volume` | `storage.block` | `ec2 describe-volumes` |
 | `AWS::S3::Bucket` | `storage.object` | `s3api list-buckets` |
@@ -281,13 +284,17 @@ Left out:
   cluster level, as more instances in other zones, which the instance does not report: add
   `read-replicas` or `zone-high-availability` by hand when the cluster has them.
 
+An Auto Scaling group is always `compute.vm`: the guide does not read its launch template, so a
+group of `*.metal` instances is classified as a group of virtual machines. Change its category to
+`compute.baremetal` by hand if it runs bare-metal instances.
+
 An EKS cluster's node groups are matched to it by name and region, so a cluster of the same name in
 another region gets none of their capabilities.
 
 | Category | Capability | When |
 |---|---|---|
-| `compute.vm` (instance) | `ipv6` | a network interface has an IPv6 address |
-| `compute.vm` (instance) | `snapshots` | one of its volumes has a snapshot you own |
+| `compute.vm` or `compute.baremetal` (instance) | `ipv6` | a network interface has an IPv6 address |
+| `compute.vm` or `compute.baremetal` (instance) | `snapshots` | one of its volumes has a snapshot you own |
 | `compute.vm` (Auto Scaling group) | `autoscaling` | `MaxSize` is greater than `MinSize` |
 | `compute.vm` (Auto Scaling group) | `zone-high-availability` | it spans two or more availability zones |
 | `storage.block` | `encryption-at-rest` | `Encrypted` is true |
@@ -329,7 +336,8 @@ Without `config.json`, the inventory holds only the resources the service calls 
 
 Prefer these roles on the project, each of which reads configuration only:
 
-- `roles/cloudasset.viewer` (Cloud Asset Inventory);
+- `roles/cloudasset.viewer` (Cloud Asset Inventory, which also lists Bare Metal Solution servers:
+  no Bare Metal Solution role is needed, as the program reads nothing more about them);
 - `roles/compute.viewer` (instances, managed instance groups, snapshots);
 - `roles/cloudsql.viewer` (Cloud SQL instances);
 - `roles/container.clusterViewer` (GKE clusters);
@@ -393,6 +401,7 @@ The `rawType` is the resource's Cloud Asset Inventory asset type.
 |---|---|
 | `compute.googleapis.com/Instance` | `compute.vm` |
 | `compute.googleapis.com/InstanceGroupManager` | `compute.vm` |
+| `baremetalsolution.googleapis.com/Instance` (Bare Metal Solution) | `compute.baremetal` |
 | `compute.googleapis.com/Disk` | `storage.block` |
 | `storage.googleapis.com/Bucket` | `storage.object` |
 | `sqladmin.googleapis.com/Instance`, `databaseVersion` `POSTGRES_*` | `database.postgresql` |
@@ -521,6 +530,7 @@ Graph writes types in lower case).
 |---|---|
 | `Microsoft.Compute/virtualMachines` | `compute.vm` |
 | `Microsoft.Compute/virtualMachineScaleSets` | `compute.vm` |
+| `Microsoft.BareMetalInfrastructure/bareMetalInstances` (BareMetal Infrastructure) | `compute.baremetal` |
 | `Microsoft.Compute/disks` | `storage.block` |
 | `Microsoft.Storage/storageAccounts` (not kind `FileStorage`) | `storage.object` |
 | `Microsoft.Storage/storageAccounts`, kind `FileStorage` | `unclassified` |

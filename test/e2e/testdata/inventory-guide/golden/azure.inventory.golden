@@ -122,6 +122,12 @@
       ]
     },
     {
+      "id": "shop-baremetal-1",
+      "rawType": "Microsoft.BareMetalInfrastructure/bareMetalInstances",
+      "category": "compute.baremetal",
+      "region": "westeurope"
+    },
+    {
       "id": "shop-thumbnail-jobs",
       "rawType": "Microsoft.Storage/storageAccounts/queueServices/queues",
       "category": "messaging.queue",

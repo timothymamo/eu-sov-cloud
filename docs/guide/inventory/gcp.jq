@@ -113,6 +113,10 @@ def details(f; k): map(select(f)) | INDEX(k);
           cap("autoscaling"; $groups[$key].status.autoscaler? != null),
           cap("zone-high-availability"; .name | test("/regions/"))
         ]}
+      elif .assetType == "baremetalsolution.googleapis.com/Instance" then
+        # A Bare Metal Solution server: a dedicated physical server
+        # (ADR 0023).
+        $base + {category: "compute.baremetal"}
       elif .assetType == "compute.googleapis.com/Disk" then
         # Google Cloud encrypts all data at rest.
         $base + {category: "storage.block", capabilities: [

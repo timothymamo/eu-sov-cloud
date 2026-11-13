@@ -4,6 +4,7 @@
       "Instances": [
         {
           "InstanceId": "i-0123456789abcdef0",
+          "InstanceType": "m5.large",
           "State": {
             "Name": "running"
           },
@@ -30,6 +31,7 @@
         },
         {
           "InstanceId": "i-0123456789abcdef1",
+          "InstanceType": "m5.large",
           "State": {
             "Name": "stopped"
           },
@@ -60,6 +62,7 @@
       "Instances": [
         {
           "InstanceId": "i-0123456789abcdef2",
+          "InstanceType": "m5.large",
           "State": {
             "Name": "running"
           },
@@ -76,6 +79,7 @@
         },
         {
           "InstanceId": "i-0123456789abcdef3",
+          "InstanceType": "m5.large",
           "State": {
             "Name": "terminated"
           },
@@ -92,6 +96,7 @@
       "Instances": [
         {
           "InstanceId": "i-0123456789abcdef4",
+          "InstanceType": "m5.large",
           "State": {
             "Name": "running"
           },
@@ -127,6 +132,7 @@
         },
         {
           "InstanceId": "i-0123456789abcdef5",
+          "InstanceType": "m5.large",
           "State": {
             "Name": "running"
           },

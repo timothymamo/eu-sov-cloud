@@ -155,6 +155,10 @@ def child_types:
             cap("autoscaling"; $id | IN($autoscaled[])),
             cap("zone-high-availability"; (.zones // []) | length >= 2)
           ]}
+        elif $t == "microsoft.baremetalinfrastructure/baremetalinstances" then
+          # A BareMetal Infrastructure instance: a dedicated physical server
+          # (ADR 0023).
+          $base + {category: "compute.baremetal"}
         elif $t == "microsoft.compute/disks" then
           # Azure encrypts every managed disk at rest.
           $base + {category: "storage.block", capabilities: [
