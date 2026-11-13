@@ -8,30 +8,55 @@
 // environment of this process"; whatever the child prints from it can reach a
 // t.Log call or a golden file. It fails closed: it follows a command only when
 // exec.Command or exec.CommandContext builds it as the whole right-hand side
-// of `ident :=`, `ident =` or `var ident =` inside a function, keyed by the
-// variable that identifier declares (go/types, with every import an empty
-// package), so a shadowing name cannot mask it. Until an Env that is not nil,
-// nor []string(nil), is assigned to it, the command may only have fields
-// assigned (`ident.<Field> = ...`); a Run, Start, Output or CombinedOutput
-// call, an alias, an argument, a method value or expression and a capture in a
-// function literal are each a finding. Also refused: a construction bound any
-// other way (a call argument, a composite element, a struct field, a chained
-// call), an exec.Cmd composite literal or new(exec.Cmd) with no Env, and a
-// blank or dot import of os/exec, which hides the commands the check follows.
-// A finding names the line a reader fixes, and says nothing about how far the
-// child's output travels, which no source check can see.
+// of a statement inside a function that declares the name it binds
+// (`ident :=` or `var ident =`), keyed by the variable that identifier
+// declares (go/types, with every import an empty package), so a shadowing name
+// cannot mask it. A construction bound any other way (to a name that exists
+// already or is declared in another file, a call argument, a composite
+// element, a struct field, a chained run) is a finding, and so is a followed
+// name rebound to anything but a new construction.
+//
+// Until its Env is set, the command may only have fields assigned
+// (`ident.<Field> = ...`); a Run, Start, Output or CombinedOutput call, an
+// alias, an argument, a method value or expression and a capture in a function
+// literal are each a finding. Env is set only by a value the check proves is
+// not nil: a composite literal, a make call, an append of such a value, or a
+// call to a function of the same file whose every return is one of those. Any
+// other value (nil, []string(nil), a variable, *new([]string), a multi-value
+// call) is a finding and leaves Env unset. Once the command has been aliased,
+// stored, passed, captured, deferred or handed to a go statement, any Env
+// assigned to it is a finding, and the address of any Env field is a finding
+// wherever it appears.
+//
+// Every type expression naming exec.Cmd that is not the operand of a `*` is
+// refused (a value variable, field, array, embedded field, alias, defined
+// type, type argument, new(exec.Cmd)), as is an embedded *exec.Cmd: a command
+// value no exec.Command built has a nil Env. The one exception is an exec.Cmd
+// composite literal whose Env key holds a proven value. A *exec.Cmd field,
+// parameter, result or var is accepted, since a nil pointer runs nothing. A
+// blank or dot import of os/exec, which hides the commands the check follows,
+// is refused too. A finding names the line a reader fixes, and says nothing
+// about how far the child's output travels, which no source check can see.
 //
 // The caller's exempt function is handed the command name and the argument
 // after it, both only when they are string literals; a command it admits may
-// run with no Env, directly or chained to its construction. test/lint admits
-// `go build` and `go list`, which need the environment and print none of it.
-// Assigning Path or Args to an exempt command takes the exemption away.
+// run with no Env, once bound to a variable (a run chained to the construction
+// is always refused). test/lint admits `go build` and `go list`, which need
+// the environment and print none of it. The exemption is lost by a spread
+// argument, by a literal argument that is or starts with -toolexec,
+// --toolexec, -exec, --exec, -overlay or --overlay, and by assigning Path or
+// Args.
 //
-// Two gaps are accepted. The check follows the source, not the flow: an Env
-// assigned anywhere before a use counts, in a branch that never runs too
-// (`if false { cmd.Env = ... }`), as forbidigo's e2e-no-env group accepts its
-// embedded-type gap; review holds the rest. And a command built in another
-// package is out of the file's sight.
+// Four gaps are accepted, and review holds them:
+//   - Flow-insensitivity: the check follows the source, not the flow, so an
+//     Env assigned anywhere before a use counts, in a branch that never runs
+//     (`if false { cmd.Env = ... }`) or in a closure too, as forbidigo's
+//     e2e-no-env group accepts its embedded-type gap.
+//   - Paths built at run time are beyond CheckEnvironLiterals, a rule of
+//     literals (below).
+//   - A command built in another package is out of the file's sight.
+//   - A non-literal argument to an exempt toolchain command that holds one of
+//     the flags above keeps the exemption: only literals are read.
 //
 // CheckEnvironLiterals refuses the string literals of a file that name the
 // environment of a process, which reads it without starting a child, under one
@@ -47,9 +72,9 @@
 // and in test/e2e forbidigo's e2e-no-env.
 //
 // EnvironmentPathIn is the segment matcher both test/lint's composition-root
-// rule and the e2e tier share. Its test, environmentpath_test.go, pins paths
-// as bare values, so it is the one file TestTestTreeNamesNoProcEnviron leaves
-// out by name (test/lint's environPathsPinnedBy).
+// rule and the e2e tier share. Its test, environmentpath_test.go, reads the
+// paths it pins from a JSON file under testdata, so it holds no path literal
+// and TestTestTreeNamesNoProcEnviron scans it like every other Go file.
 //
 // test/lint runs both rules over the repository, in TestE2ETestsSetExecEnv,
 // which walks test/e2e recursively, and TestTestTreeNamesNoProcEnviron; their
