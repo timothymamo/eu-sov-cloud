@@ -158,8 +158,9 @@ var noExecRefused = []rootRefused{
 	{rootName{"syscall", "syscall.NewLazyDLL"}, "composition-root-no-exec: "},
 	{rootName{"syscall", "syscall.LoadLibrary"}, "composition-root-no-exec: "},
 	{rootName{"syscall", "syscall.GetProcAddress"}, "composition-root-no-exec: "},
-	// A raw system call starts a process where the kernel call does, and the
-	// syscall.SYS_* numbers are what an exec call is made of.
+	// A raw system call starts a process where the kernel call does, the
+	// all-threads forms reach every thread as it does, and the syscall.SYS_*
+	// numbers are what an exec call is made of.
 	{rootName{"syscall", "syscall.Syscall"}, "composition-root-no-exec: "},
 	{rootName{"syscall", "syscall.Syscall6"}, "composition-root-no-exec: "},
 	{rootName{"syscall", "syscall.Syscall9"}, "composition-root-no-exec: "},
@@ -169,6 +170,8 @@ var noExecRefused = []rootRefused{
 	{rootName{"syscall", "syscall.SyscallN"}, "composition-root-no-exec: "},
 	{rootName{"syscall", "syscall.RawSyscall"}, "composition-root-no-exec: "},
 	{rootName{"syscall", "syscall.RawSyscall6"}, "composition-root-no-exec: "},
+	{rootName{"syscall", "syscall.AllThreadsSyscall"}, "composition-root-no-exec: "},
+	{rootName{"syscall", "syscall.AllThreadsSyscall6"}, "composition-root-no-exec: "},
 	{rootName{"syscall", "syscall.SYS_EXECVE"}, "composition-root-no-exec: "},
 	{rootName{"syscall", "syscall.SYS_CLONE"}, "composition-root-no-exec: "},
 	// Package unsafe takes a pointer apart, which is how a raw system call is

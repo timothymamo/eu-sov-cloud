@@ -59,6 +59,7 @@ var e2eNoEnvRefused = []rootName{
 	{"syscall", "syscall.Syscall6"},
 	{"syscall", "syscall.Syscall9"},
 	{"syscall", "syscall.SyscallN"},
+	{"syscall", "syscall.SYS_EXECVE"},
 }
 
 // e2eNoEnvAllowed are names no e2e-no-env entry may refuse: what the e2e tests
