@@ -246,7 +246,11 @@ const latestEnv = "LATEST: ${{ needs.latest.outputs.latest }}"
 // checkout, so no repository code runs beside contents: write; GitHub's own
 // download of the archives' workflow artifact, for the checksums.txt the
 // attest-archives job attested; and one step that refuses a latest decision
-// other than exactly true or false, reads the API's list of the releases,
+// other than exactly true or false, refuses, while that decision is true, to
+// take GitHub's "Latest" release from a release higher than the tag (a
+// partial re-run, gh run rerun --failed, does not re-run the latest job and
+// can hand it a stale decision; only the API's 404 is no latest release, any
+// other failed read fails the step), reads the API's list of the releases,
 // since a draft is not readable by its tag, refuses a tag that already holds
 // a published release, checks that the tag's one draft holds exactly that
 // file and the files it lists, each with the digest it records, and
@@ -278,6 +282,32 @@ var publishSteps = []releaseStep{
 			`    exit 1`,
 			`    ;;`,
 			`esac`,
+			`# A partial re-run of this release run (gh run rerun --failed) does`,
+			`# not re-run the successful latest job, so a decision made by that`,
+			`# job's first attempt can reach this step after GitHub's "Latest"`,
+			`# release has moved on: taking it over from a higher release is`,
+			`# refused, before anything is read for the check below or published,`,
+			`# and the release stays a draft (issue #173).`,
+			`if [ "$LATEST" = true ]; then`,
+			`  err="$(mktemp)"`,
+			`  if current="$(gh api "repos/` + releaseRepo + `/releases/latest" --jq '.tag_name' 2> "$err")"; then`,
+			`    rm -f "$err"`,
+			`  elif grep -qF -e "HTTP 404" "$err"; then`,
+			`    # The repository publishes no latest release yet: the first`,
+			`    # release has nothing to take "Latest" over from.`,
+			`    current=""`,
+			`    rm -f "$err"`,
+			`  else`,
+			`    echo "GitHub's latest release could not be read:" >&2`,
+			`    cat "$err" >&2`,
+			`    rm -f "$err"`,
+			`    exit 1`,
+			`  fi`,
+			`  if [ -n "$current" ] && [ "$current" != "$TAG" ] && [ "$(printf '%s\n%s\n' "$TAG" "$current" | sort -V | tail -n 1)" = "$current" ]; then`,
+			`    echo "GitHub's latest release is $current, higher than $TAG: the latest decision is stale, re-run the whole release run rather than its failed jobs" >&2`,
+			`    exit 1`,
+			`  fi`,
+			`fi`,
 			`tmp="$(mktemp -d)"`,
 			`# A draft release is not readable by its tag. The API lists it among`,
 			`# the releases, with draft: true, and gives every asset the digest of`,
@@ -962,17 +992,18 @@ var releaseJobs = func() []releaseJob {
 //     publish [test, goreleaser, attest-archives, latest]; an image job
 //     [test, goreleaser, latest]; an sbom job its image job; a sign job [its
 //     image job, its sbom job], in that order; verify [image, sign,
-//     server-image, server-sign]; verify-archives publish), latest an outputs: of exactly its decide step's latest, and
-//     an image job an outputs: of exactly its build's digest, so no
-//     job-level env:, container:, if: or other key;
+//     server-image, server-sign]; verify-archives publish), latest an
+//     outputs: of exactly its decide step's latest, and an image job an
+//     outputs: of exactly its build's digest, so no job-level env:,
+//     container:, if: or other key;
 //   - the permissions are exactly contents: read for test and for latest;
-//     contents: write for goreleaser and for publish; id-token: write, attestations: write
-//     and contents: read for attest-archives; contents: read and packages:
-//     write for an image job; packages: read for an sbom job; packages:
-//     write, id-token: write and attestations: write for a sign job;
-//     packages: read and attestations: read for verify, and contents: read
-//     and attestations: read for verify-archives, so no OIDC token and
-//     nothing either can write;
+//     contents: write for goreleaser and for publish; id-token: write,
+//     attestations: write and contents: read for attest-archives; contents:
+//     read and packages: write for an image job; packages: read for an sbom
+//     job; packages: write, id-token: write and attestations: write for a
+//     sign job; packages: read and attestations: read for verify, and
+//     contents: read and attestations: read for verify-archives, so no OIDC
+//     token and nothing either can write;
 //   - the test job's steps are exactly actions/checkout of the whole history,
 //     the guard that the tagged commit is on main (an exact run: script),
 //     actions/setup-go and make test; the goreleaser job's exactly
@@ -1051,10 +1082,9 @@ var releaseJobs = func() []releaseJob {
 //     tag_name) against the highest release tag, read as the verify job's tag
 //     rule reads it, independently of the latest job, refusing an empty one:
 //     never the tag if it is a pre-release, whatever else holds; the tag if
-//     it is the highest, not
-//     the tag if the highest's release is published, a ::notice:: and no
-//     check while the API answers 404 for it, and any other answer a failure
-//     (issue #173);
+//     it is the highest, not the tag if the highest's release is published,
+//     a ::notice:: and no check while the API answers 404 for it, and any
+//     other answer a failure (issue #173);
 //   - every step holds exactly the keys listed (name, id, uses, with, env,
 //     run), in that order of steps, each action pinned by commit, each with:
 //     key and value, env: line and run: command as listed. A run: command is

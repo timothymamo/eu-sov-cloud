@@ -224,7 +224,9 @@ jobs:
       # that list gives it, in this one step: publishing by tag would let gh
       # resolve a published release, or a swapped draft, in its place. GitHub's
       # "Latest" release is moved by the latest job's one decision, and nothing
-      # but true or false publishes (issue #173).
+      # but true or false publishes; a decision that is already stale, made by a
+      # first attempt while "Latest" has since moved to a higher release, takes
+      # nothing over (issue #173).
       - name: Check the draft's assets and publish it
         env:
           TAG: ${{ github.ref_name }}
@@ -243,6 +245,32 @@ jobs:
               exit 1
               ;;
           esac
+          # A partial re-run of this release run (gh run rerun --failed) does
+          # not re-run the successful latest job, so a decision made by that
+          # job's first attempt can reach this step after GitHub's "Latest"
+          # release has moved on: taking it over from a higher release is
+          # refused, before anything is read for the check below or published,
+          # and the release stays a draft (issue #173).
+          if [ "$LATEST" = true ]; then
+            err="$(mktemp)"
+            if current="$(gh api "repos/timothymamo/shift2eu/releases/latest" --jq '.tag_name' 2> "$err")"; then
+              rm -f "$err"
+            elif grep -qF -e "HTTP 404" "$err"; then
+              # The repository publishes no latest release yet: the first
+              # release has nothing to take "Latest" over from.
+              current=""
+              rm -f "$err"
+            else
+              echo "GitHub's latest release could not be read:" >&2
+              cat "$err" >&2
+              rm -f "$err"
+              exit 1
+            fi
+            if [ -n "$current" ] && [ "$current" != "$TAG" ] && [ "$(printf '%s\n%s\n' "$TAG" "$current" | sort -V | tail -n 1)" = "$current" ]; then
+              echo "GitHub's latest release is $current, higher than $TAG: the latest decision is stale, re-run the whole release run rather than its failed jobs" >&2
+              exit 1
+            fi
+          fi
           tmp="$(mktemp -d)"
           # A draft release is not readable by its tag. The API lists it among
           # the releases, with draft: true, and gives every asset the digest of
