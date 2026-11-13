@@ -152,7 +152,10 @@ jobs:
   # to a draft, so nothing can be added to or replaced in the release once it is
   # public, and this job alone publishes it, after the archives are attested.
   # It reads the draft before it publishes it, and holds contents: write and
-  # nothing else: nothing in it can sign, push or attest.
+  # nothing else: nothing in it can sign, push or attest. It checks out the
+  # whole history, as the image jobs do, to decide whether the tag is the
+  # highest release tag on main, and moves GitHub's "Latest" release by that
+  # decision alone, as the images' latest tag is (issue #173).
   publish:
     name: Publish the release
     needs: [test, goreleaser, attest-archives]
@@ -160,6 +163,13 @@ jobs:
     permissions:
       contents: write # publish the draft release
     steps:
+      # The whole history, with every branch: the latest decision in the step
+      # below reads origin/main from it, as the image jobs' stamp does (issue
+      # #173). No repository code runs here.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
       # The checksums.txt the attest-archives job attested, from the workflow
       # artifact it attests (issue #156): what is published must be exactly what
       # was attested, and this file is the list of it.
@@ -175,13 +185,28 @@ jobs:
       # else is never published. A draft is not readable by its tag, so the
       # API's list of the releases is read, and the draft is published by the id
       # that list gives it, in this one step: publishing by tag would let gh
-      # resolve a published release, or a swapped draft, in its place.
+      # resolve a published release, or a swapped draft, in its place. It also
+      # decides GitHub's "Latest" here, from the highest release tag the image
+      # jobs' stamp decides the images' latest tag from (issue #173).
       - name: Check the draft's assets and publish it
         env:
           TAG: ${{ github.ref_name }}
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
+          # Whether this tag is the highest release tag on main, decided as the
+          # image jobs' stamp decides it: the release tags merged into main, in
+          # the same filter, sort and pick, so GitHub's "Latest" release and
+          # the images' latest tag name the same version (ADR 0015, issue #173).
+          # fetch-depth: 0 brings origin/main; the step refuses a checkout
+          # without it rather than publish a release with latest false.
+          git rev-parse --verify --quiet refs/remotes/origin/main > /dev/null || {
+            echo "origin/main is missing from the checkout" >&2
+            exit 1
+          }
+          highest="$(git tag -l 'v*.*.*' --merged refs/remotes/origin/main | sed -nE '/^v[0-9]+\.[0-9]+\.[0-9]+$/p' | sort -V | tail -n 1)"
+          latest=false
+          if [ "$TAG" = "$highest" ]; then latest=true; fi
           tmp="$(mktemp -d)"
           # A draft release is not readable by its tag. The API lists it among
           # the releases, with draft: true, and gives every asset the digest of
@@ -231,8 +256,12 @@ jobs:
             echo "the draft release's checksums.txt is not the one this run attested" >&2
             exit 1
           fi
-          # The draft this job read and checked, and no other.
-          gh api -X PATCH "repos/timothymamo/shift2eu/releases/$id" -F draft=false
+          # The draft this job read and checked, and no other, published with
+          # GitHub's "Latest" release moved by the same rule as the images'
+          # latest tag: true only for the highest release tag on main, so a
+          # patch on an older line is published without taking it over (issue
+          # #173).
+          gh api -X PATCH "repos/timothymamo/shift2eu/releases/$id" -F draft=false -f make_latest="$latest"
 
   # Builds and pushes the container image to GHCR (ADR 0015), after GoReleaser
   # uploads the draft release: a failed GoReleaser publishes no image, but the
@@ -743,7 +772,9 @@ jobs:
   # #163): it downloads every asset of the release, checks that the release is
   # published and holds exactly checksums.txt and the files it lists, checks
   # their digests and verifies each of them against the build provenance this
-  # workflow made for this tag and commit. Read-only: contents: read and
+  # workflow made for this tag and commit. It runs after publish, so it is the
+  # job that checks GitHub's "Latest" release against the highest release tag
+  # merged into main (issue #173). Read-only: contents: read and
   # attestations: read, no OIDC token and nothing it can write, and no
   # checkout, so no repository code runs.
   verify-archives:
@@ -804,3 +835,88 @@ jobs:
               --signer-workflow timothymamo/shift2eu/.github/workflows/release.yml \
               --source-ref "refs/tags/$TAG" --source-digest "$GITHUB_SHA" --deny-self-hosted-runners
           done
+      # GitHub's "Latest" release, which releases/latest/download/... serves, is
+      # the most recently published release rather than the highest version, so
+      # a patch on an older line would take it over (issue #173). It must name
+      # the highest release tag merged into main, the version the images' latest
+      # tag names: the same filter, sort and pick the image jobs' stamp makes,
+      # read by ancestry here as the verify job reads it, from the public
+      # repository into a bare repository of this job's own, so no checkout runs
+      # and no repository code runs. A higher tag whose release is not published
+      # yet has no release to check against, so a notice says so and this run
+      # does not check it, as the image latest check does.
+      - name: Check GitHub's latest release
+        env:
+          TAG: ${{ github.ref_name }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          git init -q tags
+          git -C tags fetch -q --filter=tree:0 --no-tags https://github.com/timothymamo/shift2eu.git '+refs/heads/main:refs/remotes/origin/main' '+refs/tags/v*:refs/tags/v*'
+          highest="$(git -C tags tag -l 'v*.*.*' --merged refs/remotes/origin/main | sed -nE '/^v[0-9]+\.[0-9]+\.[0-9]+$/p' | sort -V | tail -n 1)"
+          if [ -z "$highest" ]; then
+            echo "no release tag is merged into main, so GitHub's latest release cannot be checked" >&2
+            exit 1
+          fi
+          # published reports whether the release of a tag is published: only
+          # the API's 404, its answer for a tag it holds no release for (a draft
+          # is not published and has none), is an unpublished release; any other
+          # answer, a 5xx, a rate limit, a failed login or a missing gh, is
+          # printed and fails the step.
+          published() {
+            err="$(mktemp)"
+            if gh api "repos/timothymamo/shift2eu/releases/tags/$1" > /dev/null 2> "$err"; then
+              rm -f "$err"
+              return 0
+            fi
+            if grep -qF -e "HTTP 404" "$err"; then
+              rm -f "$err"
+              return 1
+            fi
+            echo "the release of $1 could not be read:" >&2
+            cat "$err" >&2
+            rm -f "$err"
+            return 2
+          }
+          # latest_tag prints the tag GitHub calls its latest release, or
+          # nothing when the repository publishes none.
+          latest_tag() {
+            err="$(mktemp)"
+            if out="$(gh api "repos/timothymamo/shift2eu/releases/latest" --jq '.tag_name' 2> "$err")"; then
+              printf '%s\n' "$out"
+              rm -f "$err"
+              return 0
+            fi
+            if grep -qF -e "HTTP 404" "$err"; then
+              rm -f "$err"
+              return 0
+            fi
+            echo "GitHub's latest release could not be read:" >&2
+            cat "$err" >&2
+            rm -f "$err"
+            return 1
+          }
+          latest="$(latest_tag)"
+          if [ "$highest" = "$TAG" ]; then
+            if [ "$latest" != "$TAG" ]; then
+              echo "GitHub's latest release is '$latest', not $TAG, the highest release tag" >&2
+              exit 1
+            fi
+          else
+            rc=0
+            published "$highest" || rc=$?
+            case "$rc" in
+              0)
+                if [ "$latest" = "$TAG" ]; then
+                  echo "GitHub's latest release is $TAG, which is not the highest release tag, $highest" >&2
+                  exit 1
+                fi
+                ;;
+              1)
+                echo "::notice::the release of $highest is not published yet, so this run does not check GitHub's latest release"
+                ;;
+              *)
+                exit 1
+                ;;
+            esac
+          fi

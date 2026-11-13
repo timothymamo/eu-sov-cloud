@@ -51,7 +51,9 @@
 // attest-archives job that attests every archive, the document and
 // checksums.txt with GitHub build provenance and cannot write the repository;
 // a publish job, contents: write alone, that publishes the draft last (issues
-// #156, #163); and, for each of the two images, the
+// #156, #163), GitHub's "Latest" release only when the tag is the highest
+// release tag on main, by the same line the image jobs decide the images'
+// latest tag by (issue #173); and, for each of the two images, the
 // CLI's and the HTTP API's (PRD #103), an image job that builds and pushes the
 // image and can do nothing more, an sbom job that can only read the registry,
 // and a sign job, the only one with an OIDC token, that signs and attests the
@@ -60,7 +62,8 @@
 // OIDC token and no checkout, that verifies both published images by digest
 // and the tag rule (issue #99), and a verify-archives job beside it, as
 // read-only, that verifies the published archives' digests and attestations
-// (issue #163). WorkflowPrivileges keeps every other
+// (issue #163) and that GitHub's "Latest" release follows the highest release
+// tag (issue #173). WorkflowPrivileges keeps every other
 // workflow from publishing: no packages, id-token or attestations write, no
 // write-all, no trigger a tag runs (push of tags, create, release,
 // workflow_run), and a top-level permissions: always. DryRunMirrorsRelease
