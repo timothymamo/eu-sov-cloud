@@ -267,8 +267,9 @@ func hostileCatalog(t *testing.T) catalog.Catalog {
 	t.Helper()
 
 	cat, err := catalog.New(hostileTarget, catalog.Snapshot{
-		SourceURL:   hostileSourceURL,
-		RetrievedOn: time.Date(2026, 11, 2, 0, 30, 0, 0, time.FixedZone("CET", 60*60)),
+		SourceURL:     hostileSourceURL,
+		RetrievedOn:   time.Date(2026, 11, 2, 0, 30, 0, 0, time.FixedZone("CET", 60*60)),
+		DefaultRegion: "fr-par",
 	}, []catalog.Offering{
 		{
 			Name:         hostileTarget,

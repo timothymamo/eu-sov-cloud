@@ -113,8 +113,9 @@ func fixtureCatalog(t *testing.T, key string) catalog.Catalog {
 	}
 
 	cat, err := catalog.New(fixture.name, catalog.Snapshot{
-		SourceURL:   fixture.sourceURL,
-		RetrievedOn: fixture.retrieved,
+		SourceURL:     fixture.sourceURL,
+		RetrievedOn:   fixture.retrieved,
+		DefaultRegion: "r1",
 	}, []catalog.Offering{{
 		Name:       fixture.name + " Virtual Machine",
 		Categories: []taxonomy.Category{taxonomy.ComputeVM},

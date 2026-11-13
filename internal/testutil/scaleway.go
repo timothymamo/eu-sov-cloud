@@ -16,11 +16,13 @@ const (
 	scalewaySourceURL = "https://www.scaleway.com/en/pricing/"
 )
 
-// ScalewaySnapshot is where and when the Scaleway fixture catalog was taken.
+// ScalewaySnapshot is where and when the Scaleway fixture catalog was taken, and
+// the region its estimates use when the user names none.
 func ScalewaySnapshot() catalog.Snapshot {
 	return catalog.Snapshot{
-		SourceURL:   scalewaySourceURL,
-		RetrievedOn: time.Date(2026, 11, 1, 0, 0, 0, 0, time.UTC),
+		SourceURL:     scalewaySourceURL,
+		RetrievedOn:   time.Date(2026, 11, 1, 0, 0, 0, 0, time.UTC),
+		DefaultRegion: "fr-par",
 	}
 }
 

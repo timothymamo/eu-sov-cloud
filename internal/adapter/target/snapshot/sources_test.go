@@ -27,6 +27,9 @@ const (
 	sourcesFileName  = "SOURCES.md"
 	licencesHeading  = "## Licences of the sources"
 	offeringsHeading = "## Offerings"
+	// defaultRegionHeading is the section that names the region estimates use
+	// when the user names none, and why it is that region (ADR 0024).
+	defaultRegionHeading = "## Default region"
 )
 
 // requiredSnapshots are the snapshots the rule is known to apply to today: every
@@ -104,6 +107,8 @@ func checkSnapshotSources(t *testing.T, catalogPath string) {
 
 	lines := strings.Split(string(sources), "\n")
 
+	checkDefaultRegionSection(t, sourcesPath, lines, document.Catalog.Snapshot().DefaultRegion)
+
 	if licences, ok := section(lines, licencesHeading); !ok {
 		t.Errorf("%s: no %q section: every source must state its licence", sourcesPath, licencesHeading)
 	} else if !hasContent(licences) {
@@ -177,6 +182,60 @@ func checkSnapshotSources(t *testing.T, catalogPath string) {
 					sourcesPath, text.Quote(offering.Name), text.Quote(region))
 			}
 		}
+
+		// Every price the snapshot stores is cited in the offering's own section:
+		// the plan by its name exactly as the catalog holds it, and the amount as
+		// Amount.String renders it, so a price in SOURCES.md and a price in
+		// catalog.json can be compared as text (ADR 0024).
+		var prices []catalog.Price
+
+		for _, plan := range offering.Plans {
+			if _, ok := spans[plan.Name]; !ok {
+				t.Errorf("%s: offering %s: plan %s has no code span in its section, so its price is untraceable",
+					sourcesPath, text.Quote(offering.Name), text.Quote(plan.Name))
+			}
+
+			prices = append(prices, plan.Prices...)
+		}
+
+		prices = append(prices, offering.StoragePrices...)
+
+		for _, price := range prices {
+			amount := price.Amount.String()
+
+			if _, ok := spans[amount]; !ok {
+				t.Errorf("%s: offering %s: price %s has no code span in its section, so the amount is untraceable",
+					sourcesPath, text.Quote(offering.Name), text.Quote(amount))
+			}
+		}
+	}
+}
+
+// checkDefaultRegionSection checks the snapshot's "## Default region" section:
+// it exists, is not blank, and names the default region as a code span, so a
+// reader can see which region estimates use and, from the prose around it, why
+// (ADR 0024).
+func checkDefaultRegionSection(t *testing.T, sourcesPath string, lines []string, defaultRegion string) {
+	t.Helper()
+
+	body, ok := section(lines, defaultRegionHeading)
+	if !ok {
+		t.Errorf("%s: no %q section: estimates need to say which region they use by default",
+			sourcesPath, defaultRegionHeading)
+
+		return
+	}
+
+	if !hasContent(body) {
+		t.Errorf("%s: the %q section is blank: it must name the default region and why it is the default",
+			sourcesPath, defaultRegionHeading)
+
+		return
+	}
+
+	if _, ok := codeSpans(body)[defaultRegion]; !ok {
+		t.Errorf("%s: the %q section does not name the default region %s as a code span",
+			sourcesPath, defaultRegionHeading, text.Quote(defaultRegion))
 	}
 }
 
@@ -263,5 +322,79 @@ func codeSpans(lines []string) map[string]struct{} {
 func hasContent(lines []string) bool {
 	return slices.ContainsFunc(lines, func(line string) bool {
 		return strings.TrimSpace(line) != ""
+	})
+}
+
+// TestSourcesHelpers pins the two pure rules the SOURCES.md check is built from,
+// on invented Markdown that no snapshot holds: a section is the body under a
+// second-level heading, up to the next one, and a code span is the text between
+// single backticks on one line. They are what makes a plan name and a price
+// amount citable, and the default region nameable (ADR 0024), so a change to
+// either helper is a change to the rule every snapshot's sources follow.
+func TestSourcesHelpers(t *testing.T) {
+	t.Parallel()
+
+	invented := []string{
+		"# Sources",
+		"",
+		defaultRegionHeading,
+		"",
+		"Estimates use `fr-par`, because it is the target's first-listed region.",
+		"",
+		offeringsHeading,
+		"",
+		"### Example Compute",
+		"",
+		"Plan `EC-2-4` costs `12.50` EUR a month; a GiB of storage costs `0.04`.",
+		"",
+		licencesHeading,
+		"",
+		"MIT.",
+	}
+
+	t.Run("default region section", func(t *testing.T) {
+		t.Parallel()
+
+		body, ok := section(invented, defaultRegionHeading)
+		if !ok {
+			t.Fatalf("section(%q) found no section in the invented sources", defaultRegionHeading)
+		}
+
+		if !hasContent(body) {
+			t.Errorf("section(%q) is blank, want the region and why it is the default", defaultRegionHeading)
+		}
+
+		if _, ok := codeSpans(body)["fr-par"]; !ok {
+			t.Errorf("section(%q) has no `fr-par` code span, want the default region named in one", defaultRegionHeading)
+		}
+
+		// A section ends at the next second-level heading, so the offering's code
+		// spans are not mistaken for the default region section's.
+		if _, ok := codeSpans(body)["EC-2-4"]; ok {
+			t.Errorf("section(%q) reaches into the next section, want it to stop at the next `## ` heading",
+				defaultRegionHeading)
+		}
+
+		if _, ok := section(invented, "## No such heading"); ok {
+			t.Error("section() found a heading the invented sources do not have")
+		}
+	})
+
+	t.Run("code spans", func(t *testing.T) {
+		t.Parallel()
+
+		spans := codeSpans([]string{"Plan `EC-2-4` costs `12.50`, or `13.0125` where prices differ; `0.04` per GiB."})
+
+		for _, want := range []string{"EC-2-4", "12.50", "13.0125", "0.04"} {
+			if _, ok := spans[want]; !ok {
+				t.Errorf("codeSpans() has no %s span, want every code span on the line", text.Quote(want))
+			}
+		}
+
+		// An amount is cited as Amount.String renders it, trailing zeros kept:
+		// the span is 12.50, never the 12.5 the document writes.
+		if _, ok := spans["12.5"]; ok {
+			t.Error("codeSpans() found a `12.5` span, want the amount cited as Amount.String renders it")
+		}
 	})
 }
