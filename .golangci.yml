@@ -1948,11 +1948,24 @@ linters:
         # e2e-is-black-box, allows $gostd, which test/architecture's
         # TestEveryOsAllowingRuleHasAnEnvironmentGroup reads as allowing os
         # and syscall both, so test/e2e is held by a group that refuses the
-        # reads of both. os/exec, which builds and runs the binary, unsafe
-        # and os/user stay allowed by e2e-is-black-box; narrowing that allow
-        # list is issue #166's. Its production file, doc.go, is held to
-        # errors$ by test-docs-are-pure as well, so the group is defence in
-        # depth there.
+        # reads of both. The exec.Cmd entry (issue #185) refuses Environ,
+        # which hands a child the whole environment of the test process. Its
+        # limit: a method promoted through an embedded *exec.Cmd (type w
+        # struct{ *exec.Cmd }; w{cmd}.Environ()) is rendered under the
+        # embedding type and is not refused. The entry is defence in depth
+        # for $test, since the non-test files cannot import os/exec. The
+        # _test.go files keep $gostd to build and run the binary with
+        # os/exec. The runs of the binary (run and the server helpers) set
+        # cmd.Env; the go build calls in TestMain and the go list -deps calls
+        # leave Env nil and inherit the environment, which the go toolchain
+        # needs. A nil Env in a _test.go file is not refused: issue #185
+        # leaves $test as it is, and issue #195 follows it up. In the
+        # non-test files, doc.go today, test-docs-are-pure refuses os/exec,
+        # unsafe and os/user at the import (TestE2EImportsProbe and
+        # test/architecture's depguard pin hold it), so an exec.Cmd with a
+        # nil Env, which inherits the whole environment, cannot be written
+        # there through an import. An assembly file needs no import (issue
+        # #194). The group is defence in depth there.
         # Scope: every file under test/e2e/, _test.go files included; its
         # exclusion rule drops it everywhere else.
         - pattern: '^os\.(?:Getenv|LookupEnv|ExpandEnv|Environ|StartProcess|UserHomeDir|UserConfigDir|UserCacheDir|TempDir)$'
@@ -1961,6 +1974,9 @@ linters:
         - pattern: '^syscall\.(?:Getenv|GetEnvironmentVariable|Environ|Exec|ForkExec|StartProcess|CreateProcess|CreateProcessAsUser|GetEnvironmentStrings|LoadDLL|MustLoadDLL|NewLazyDLL|LoadLibrary|GetProcAddress|(?:(?:AllThreads|Raw)?Syscall(?:6|9|12|15|18|N)?|SYS_\w+))$'
           pkg: '^syscall$'
           msg: 'e2e-no-env: the e2e tier reads no environment variable, starts or replaces no process, loads no library and makes no raw system call through os or syscall, where credentials live; it runs the binary with os/exec (CLAUDE.md rule 3)'
+        - pattern: '^exec\.Cmd\.Environ$'
+          pkg: '^os/exec$'
+          msg: 'e2e-no-env: a command hands its child the whole environment of the test process, where credentials live; set cmd.Env to the variables the binary needs (CLAUDE.md rule 3)'
     gosec:
       excludes:
         - G104 # unchecked errors are already reported by errcheck
