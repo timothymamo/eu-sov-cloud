@@ -1151,10 +1151,11 @@ func underDir(rel, dir string) bool {
 }
 
 // TestReleaseWorkflowIsClosed pins that the release is closed to what the
-// check lists: the workflow holds exactly the nine jobs the check knows, test,
-// goreleaser, and image, sbom, sign and verify for the two images (server-image,
-// server-sbom and server-sign for the HTTP API's, PRD #103), with exactly their
-// steps, so goreleaser
+// check lists: the workflow holds exactly the twelve jobs the check knows, test,
+// goreleaser, attest-archives and publish (issues #156, #163), image, sbom, sign
+// and verify for the two images (server-image, server-sbom and server-sign for
+// the HTTP API's, PRD #103), and verify-archives, with exactly their steps, so
+// goreleaser
 // runs with exactly release --clean after no repository code and with no
 // environment of its own for the go command, only a commit on main is released,
 // and the publishing privileges stay split: the image job publishes what it
@@ -1204,7 +1205,8 @@ func TestReleaseArchivesHoldOneBinary(t *testing.T) {
 }
 
 // TestRCTagsArePreReleases pins how .goreleaser.yaml publishes the GitHub
-// release: release.prerelease: auto and nothing else, so a tag with a
+// release: release.draft: true, so the release is published last, by
+// release.yml (issue #156), and release.prerelease: auto, so a tag with a
 // pre-release suffix (v0.1.0-rc.2) is a GitHub pre-release and never the
 // latest release, as it gets no X.Y and no latest image tag (issue #92, ADR
 // 0015).

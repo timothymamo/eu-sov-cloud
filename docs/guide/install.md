@@ -25,7 +25,9 @@ only the one you need. The `shift2eu-server_*` archives start with the first rel
 `v0.2.0` and earlier shipped the CLI only. The binaries are static and need nothing else:
 [Assess an inventory](assess.md) shows how to run `shift2eu`, and [Run the HTTP API](http-api.md)
 `shift2eu-server`. [Verify a release](verify-releases.md#verify-an-archive) shows how to check an
-archive against `checksums.txt`, which detects a corrupted download but not a tampered release.
+archive against `checksums.txt`, which detects a corrupted download, and against the build provenance
+the release workflow attests for it, which detects a tampered release (from the first release after
+`v0.3.0`).
 
 ## The images
 

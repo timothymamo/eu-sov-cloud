@@ -43,16 +43,22 @@
 // StrayReleaseFiles and ReleaseWorkflow pin that the release builds what the
 // check lists: no other goreleaser document, go.work or vendor at the root that
 // git could commit, and a release workflow read as a closed schema of one
-// release at a time and nine jobs: the tests, behind the guard that the
-// tagged commit is on main; a goreleaser job that runs no repository code and
-// sets no environment for the go command; and, for each of the two images, the
+// release at a time and twelve jobs: the tests, behind the guard that the
+// tagged commit is on main; a goreleaser job that runs no repository code,
+// sets no environment for the go command, uploads to a draft release and hands
+// the archives on as a workflow artifact; an attest-archives job that attests
+// every archive and checksums.txt with GitHub build provenance and cannot
+// write the repository; a publish job, contents: write alone, that publishes
+// the draft last (issues #156, #163); and, for each of the two images, the
 // CLI's and the HTTP API's (PRD #103), an image job that builds and pushes the
 // image and can do nothing more, an sbom job that can only read the registry,
 // and a sign job, the only one with an OIDC token, that signs and attests the
 // image by digest with sigstore's and GitHub's actions alone; and a verify job
 // on a fresh runner, read-only to the registry and the attestations, with no
 // OIDC token and no checkout, that verifies both published images by digest
-// and the tag rule (issue #99). WorkflowPrivileges keeps every other
+// and the tag rule (issue #99), and a verify-archives job beside it, as
+// read-only, that verifies the published archives' digests and attestations
+// (issue #163). WorkflowPrivileges keeps every other
 // workflow from publishing: no packages, id-token or attestations write, no
 // write-all, no trigger a tag runs (push of tags, create, release,
 // workflow_run), and a top-level permissions: always. DryRunMirrorsRelease
@@ -103,7 +109,9 @@
 // unreviewed, and one package at the repository root.
 //
 // GitHubRelease holds the release section of .goreleaser.yaml to exactly
-// prerelease: auto, so a pre-release tag is a GitHub pre-release and never the
+// draft: true and prerelease: auto, optionally with replace_existing_draft:
+// true, so every asset is uploaded to a draft that release.yml publishes last
+// (issue #156), and a pre-release tag is a GitHub pre-release and never the
 // latest release (issue #92).
 //
 // GoReleaserArchives and DryRunVerifiesArchives hold the release to shipping

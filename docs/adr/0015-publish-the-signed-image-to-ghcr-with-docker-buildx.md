@@ -7,6 +7,9 @@
   #142): the release App creates the tags, and the `v*` tag ruleset is split in two (Consequences);
   since issue #157 that App is the release-tag App, the only App that bypasses `Release tag creation`.
   Amended by issue #147: each binary ships in release archives of its own (Consequences).
+  Amended by issues #156 and #163: GoReleaser uploads to a draft that a job of its own publishes last,
+  after the archives and `checksums.txt` are attested, and a `verify-archives` job verifies them
+  (Consequences).
 - Date: 2026-11-11
 
 ## Context
@@ -302,3 +305,104 @@ attestations, pushed to the registry beside the image.
   holds exactly its own binary and otherwise only `LICENSE`, `README.md` and Markdown pages under
   `docs/`, every built platform has one archive of each and `checksums.txt` matches every archive. The
   script builds into a temporary directory, so a local run leaves `dist/` alone.
+- Amended by issues #156 and #163: the release is published last, into a release whose assets cannot
+  change once it is public, and its archives are attested and verified like the images.
+  - **Draft, then publish.** GitHub's release immutability (Settings, General, Releases) locks a
+    release's tag and assets when it is published, so every asset must be uploaded before then.
+    GoReleaser v2.20.1, the version `release.yml` pins, already creates every GitHub release as a draft,
+    uploads to it and undrafts it as its last step (`PublishRelease`), and fails fast on an existing
+    immutable release for the tag; with `release.draft: true` it skips that last step and leaves the
+    draft. `.goreleaser.yaml` sets `draft: true`, so a job of `release.yml`, `publish`, publishes it
+    after `attest-archives`, holding `contents: write` and nothing else: the draft it checked, by the
+    id the API listed it with (`gh api -X PATCH repos/timothymamo/shift2eu/releases/$id -F
+    draft=false`; the job checks nothing out, so `gh` is given the repository in the path). Publishing sends no `make_latest`, as GoReleaser's own step did not either, so
+    GitHub's default for a published, non-pre-release release applies, as before; `prerelease: auto`
+    still marks a pre-release tag at creation. GitHub finds no draft by its tag, so a re-run of a failed
+    `goreleaser` job would create a second draft for the tag beside the one the failed run left:
+    `replace_existing_draft: true` makes GoReleaser delete that draft (it matches drafts by name, the
+    tag) and start again. A re-run after `publish` succeeded fails in GoReleaser rather than change the
+    published release: on an immutable release it refuses at once, and without immutability its first
+    upload finds the asset already there and fails, as `replace_existing_artifacts` is off.
+    `check.GitHubRelease` holds the section to exactly `draft: true`, `prerelease: auto` and
+    `replace_existing_draft: true`, in that order. The image jobs still need only `goreleaser`, and
+    push and sign while the release is a draft: if `attest-archives` or `publish` then fails, the
+    images are public while the release is still a draft. That is accepted rather than make the image
+    jobs wait for `publish`, which would lengthen every release by the attestation and the check; the
+    recovery below finishes the release. The signing identity
+    (`release.yml@refs/tags/vX.Y.Z`), the `verify` job and release-please (`skip-github-release`, ADR
+    0021) do not change. The maintainer turns release immutability on once this lands; no workflow
+    changes repository settings.
+  - **Archive attestations.** The `goreleaser` job hands `checksums.txt` and the archives on as a
+    workflow artifact kept for seven days; `attest-archives` downloads it on a runner of its own, checks
+    it with `sha256sum -c checksums.txt`, and attests every archive and `checksums.txt` with
+    `actions/attest-build-provenance`, by `subject-path`. Both the upload and the subjects name each
+    archive by its extension (`shift2eu_*.tar.gz`, `shift2eu_*.zip`, and the same for
+    `shift2eu-server_*`): a bare `shift2eu_*` in `dist/` also matches GoReleaser's build directories and
+    would attest the bare binaries beside the archives. One attestation then names each file as a
+    subject, so a single archive verifies on its own with `gh attestation verify <archive>`, and so does
+    `checksums.txt`; `subject-checksums` would have attested the archives through `checksums.txt` but
+    not `checksums.txt` itself. The job holds `id-token: write`, `attestations: write` and
+    `contents: read`: it can sign and store attestations, never write the release, and the
+    `goreleaser` job, which writes the release, holds no OIDC token. A keyless cosign signature of
+    `checksums.txt` was left out: it would be a second identity check of the same files, and
+    `gh attestation verify` already binds each file to `release.yml`, the tag and the commit.
+    The archives use `actions/attest-build-provenance`, the dedicated provenance action issue #163
+    names, while the sign jobs call `actions/attest`: from v4 the former wraps the latter with the
+    provenance predicate built in, so the attestation is the same, and the archives, unlike the images,
+    need no registry push and no storage-record switch, which is why the images use `actions/attest`.
+  - **Check the draft before publishing.** `publish` downloads the same workflow artifact for the
+    `checksums.txt` that was attested and, before it edits anything, reads the draft from the API's
+    list of the releases (a draft is not readable by its tag; a `contents: write` token sees drafts, and
+    every asset carries a `digest`, `sha256:<hex>`). It publishes nothing if the tag already has a
+    published release (publishing it again needs a human), and nothing unless there is exactly one
+    draft for the tag, its asset names are exactly `checksums.txt` and the files it lists, every
+    asset's digest is the one `checksums.txt` records, and its `checksums.txt` is the attested file
+    itself. Once published, an immutable release can never shed an unattested asset, so it is refused
+    while still a draft. The check and the publication are one step, and the draft is published by
+    the id the list gave it, never by its tag: `gh release edit <tag>` resolves a tag to a published
+    release before a draft, and a step of its own would look the tag up again, so a release published,
+    or a draft swapped in, after the check would be published in the place of the one checked.
+  - **Every release asset is in `checksums.txt`.** A new release asset (an OpenAPI document, an SBOM,
+    a signature) must be added to `checksums.txt` (`checksum.extra_files`, or GoReleaser's own
+    checksum of its artifacts) and to the upload and `subject-path` lists of `release.yml`, which
+    `check.ReleaseWorkflow` pins exactly. Otherwise `attest-archives`' `sha256sum -c` fails on a file
+    the artifact does not hold, or `publish` refuses the draft for an asset `checksums.txt` does not
+    list (issue #139). CI's dry run (`verify-archives.sh`) catches most of them first: what
+    GoReleaser would upload, read from its `artifacts.json`, must be exactly the attested subjects, so
+    a new asset registered by a pipe a snapshot runs (an SBOM, a signature, a source archive,
+    `checksum.extra_files`) fails there. `release.extra_files` does not: GoReleaser adds those only in
+    the release pipe's publish step, which `--snapshot` skips. That key is refused by
+    `check.GitHubRelease` instead, which holds `release:` to a closed list, and by `publish`'s draft
+    check.
+  - **Recovery.** A failed `attest-archives` or `publish` leaves the release a draft. Within the seven
+    days the workflow artifact is kept, "Re-run failed jobs" on the release run runs the failed job and
+    the jobs after it from the same artifact, the same draft and the same commit. A full re-run (or a
+    re-run after the artifact has expired) runs `goreleaser` again: `replace_existing_draft` deletes the
+    draft and uploads a new one with new archives (and so new digests and a new attestation), and the
+    image jobs rebuild and push the images again under the same tags; their `verify` job then checks
+    the new digests. The `release-tag` skill holds the maintainer's steps.
+  - **No fake-`gh` dry run.** The scripts of `publish`'s check and `verify-archives` run only in a
+    release: CI does not run them against a fake `gh`. They are pinned verbatim by `check.ReleaseWorkflow`,
+    were run against a stub `gh` and sample releases when written and again in review, and fail closed
+    (each check exits non-zero before the draft is published). A CI harness would have to extract them from the YAML and
+    fake the API's paging and asset digests, and would test the stub as much as the script.
+  - **GitHub's "Latest" and the image's `latest`.** Publishing sends no `make_latest`, so GitHub marks
+    the most recently published non-pre-release release its "Latest", while the image's `latest`
+    follows the highest release tag. A patch to an older line (`v1.2.4` after `v1.3.0`) therefore
+    becomes GitHub's "Latest" but not the image's `latest`. That was already so before this amendment
+    and is unchanged; aligning them (`--latest=false` for a tag that is not the highest) is left to a
+    follow-up issue.
+  - **Verify the archives.** A twelfth job, `verify-archives`, runs after `publish` (a draft's assets
+    are not public), on a fresh runner with `contents: read` and `attestations: read` and no checkout:
+    it downloads every asset of the release, fails unless the release is published (not a draft) and
+    holds exactly `checksums.txt` and the files it lists, checks their digests and runs
+    `gh attestation verify` on each with `--signer-workflow`, `--source-ref refs/tags/<tag>`,
+    `--source-digest` and `--deny-self-hosted-runners`. Like `verify`, it detects a bad release rather
+    than prevents one, and a failure is handled the same way.
+  - `check.ReleaseWorkflow` pins the three new jobs as it pins the others, with the attest action as
+    `actions/attest-build-provenance` by commit. CI's `test` job (`.github/scripts/verify-archives.sh`)
+    mirrors the hand-over on a snapshot: the files the upload patterns pick must pass
+    `sha256sum -c checksums.txt`, and must be exactly the archives and `checksums.txt`, which must also
+    be exactly what GoReleaser would upload to the release.
+    `docs/guide/verify-releases.md` ("Verify an archive") and the `release-tag` skill check an archive's
+    attestation after each release. Releases up to `v0.3.0` have no archive attestations.

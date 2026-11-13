@@ -7,7 +7,11 @@
 # README.md and Markdown pages under docs/ (no path segment may start with a dot, so no ., .. or hidden
 # file): any other entry fails the run, so a stray file under docs/ never ships unnoticed. Every entry
 # must be a regular file or a directory: a symbolic link, hard link or device fails the run too. Every built platform has one archive of each, and checksums.txt lists and
-# matches every archive. check.GoReleaserArchives pins the configuration itself.
+# matches every archive. It then mirrors release.yml's hand-over of the archives to attest-archives
+# (issues #156 and #163): the files its patterns pick must pass sha256sum -c checksums.txt, and the
+# subjects they attest must be exactly the archives and checksums.txt, which must also be exactly what
+# GoReleaser would upload to the release (artifacts.json), or release.yml's publish job would refuse the
+# draft. check.GoReleaserArchives pins the configuration itself, and check.GitHubRelease its draft release.
 #
 # GoReleaser writes into a temporary directory, removed on exit, so the caller's dist/ is left alone.
 #
@@ -125,6 +129,44 @@ for archive in "${cli[@]}" "${server[@]}"; do
     problem "checksums.txt does not list $(basename "${archive}")"
 done
 (cd "${dist}" && sha256sum --quiet -c checksums.txt) || problem "checksums.txt does not match the archives"
+
+# The release's hand-over of the archives (issues #156 and #163), on this snapshot: release.yml's
+# goreleaser job uploads the files its patterns match, dist/shift2eu_*.tar.gz, dist/shift2eu_*.zip,
+# dist/shift2eu-server_*.tar.gz, dist/shift2eu-server_*.zip and dist/checksums.txt, as the workflow
+# artifact archives; attest-archives downloads it, runs sha256sum -c checksums.txt in it and attests
+# every file the same patterns match, directories descended into, as actions/upload-artifact and
+# actions/attest-build-provenance both expand them. A bare dist/shift2eu_* would also match
+# GoReleaser's build directories (dist/shift2eu_linux_amd64_v1/ ...) and hand on their binaries.
+# The artifact must pass sha256sum -c, so checksums.txt may list nothing the patterns leave out, and the
+# subjects must be exactly the archives checksums.txt lists and checksums.txt itself: an archive left
+# unattested, or a file attested that the release never ships, fails here and not in a release.
+artifact="${work}/artifact"
+mkdir "${artifact}"
+(cd "${dist}" && cp -R shift2eu_*.tar.gz shift2eu_*.zip shift2eu-server_*.tar.gz shift2eu-server_*.zip checksums.txt "${artifact}/")
+(cd "${artifact}" && sha256sum --quiet -c checksums.txt) ||
+  problem "checksums.txt does not pass sha256sum -c in the archives artifact release.yml hands to attest-archives"
+subjects="$(cd "${artifact}" && find shift2eu_*.tar.gz shift2eu_*.zip shift2eu-server_*.tar.gz shift2eu-server_*.zip checksums.txt -type f | LC_ALL=C sort)"
+want="$({ echo checksums.txt; awk '{ print $2 }' "${dist}/checksums.txt"; } | LC_ALL=C sort)"
+if [ "${subjects}" != "${want}" ]; then
+  problem "attest-archives would attest these files:"$'\n'"${subjects}"$'\n'"want exactly checksums.txt and the archives it lists:"$'\n'"${want}"
+fi
+
+# What GoReleaser would upload to the draft release, read from its own record of the run: every
+# artifact but its run metadata and the bare binaries its builds wrote (named by the binary and its
+# extension), which it never uploads. That must be exactly the attested subjects too: the publish job
+# refuses a draft holding anything checksums.txt does not list (issue #163), so a new asset registered
+# by a pipe a snapshot runs (an SBOM, a signature, a source archive, checksum.extra_files) fails here,
+# before a release is left a draft. release.extra_files does not: GoReleaser adds those only in the
+# release pipe's publish step, which --snapshot skips, so artifacts.json never lists them. That key is
+# refused by check.GitHubRelease (release: is a closed section), and the publish job's draft check
+# refuses what it uploads. It fails closed: an artifact type this does not know counts as uploaded.
+uploads="$(jq -r '.[]
+  | select(.type != "Metadata")
+  | select((.type == "Binary" and .name == (.extra.Binary + .extra.Ext)) | not)
+  | .name' "${dist}/artifacts.json" | LC_ALL=C sort)"
+if [ "${uploads}" != "${want}" ]; then
+  problem "GoReleaser would upload these files to the release:"$'\n'"${uploads}"$'\n'"want exactly checksums.txt and the archives it lists, what attest-archives attests:"$'\n'"${want}"
+fi
 
 if [ "${fail}" != 0 ]; then
   exit 1

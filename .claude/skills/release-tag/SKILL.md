@@ -157,6 +157,28 @@ moves or deletes a tag.
    then `gh run watch <id>`), then report the release URL (`gh release view vX.Y.Z --json url`).
    If a pending run was cancelled, re-run it with `gh run rerun <id>`. On failure, report the failed
    step's log and stop; never delete or move a pushed tag.
+   GoReleaser uploads to a draft and the run's `publish` job publishes it last, after the archives are
+   attested (issues #156 and #163, ADR 0015). Check that it did:
+   `gh release view vX.Y.Z --json isDraft,isImmutable,isPrerelease` must give `isDraft` `false`, and
+   `isPrerelease` `true` exactly when the tag has a pre-release suffix. Report `isImmutable` too: it is
+   `true` once the maintainer has turned release immutability on, and `false` means it is off. A
+   release left a draft is a failed release: report it with the `publish` job's log and stop; never
+   publish a draft by hand. `publish` refuses a tag that already has a published release, and a draft
+   whose assets are not exactly `checksums.txt` and the files it lists, with the digests it records;
+   its log says which check failed. It publishes the draft it checked by that draft's id, never by the
+   tag. Give the
+   maintainer the recovery ADR 0015 states, which only they start: within seven days of the run (the
+   archives artifact's retention), "Re-run failed jobs" (`gh run rerun <id> --failed`) re-runs
+   `attest-archives` or `publish` on the same draft and archives; after that, or when the draft itself
+   is wrong, a full re-run (`gh run rerun <id>`) rebuilds the draft (`replace_existing_draft`) with new
+   archives and a new attestation, and rebuilds and re-pushes the images under the same tags. Until it
+   is published, the images of the draft release are public already (ADR 0015). Then check the release
+   again from the top of this step.
+   Report the result of the run's `verify-archives` job, "Verify the published archives", the
+   independent check of every published archive and `checksums.txt` against their digests and their
+   build provenance:
+   `gh run view <id> --json jobs --jq '.jobs[] | select(.name == "Verify the published archives") | .conclusion'`.
+   It must be `success`; a failure is a failed release, handled as a failed `verify` below.
    Report the result of the run's `verify` job too, the independent check of both published images
    on a fresh GitHub-hosted runner (issue #99, ADR 0015). Find it by its name, "Verify the published
    images", which `check.ReleaseWorkflow` pins:
@@ -206,6 +228,19 @@ moves or deletes a tag.
      --source-ref "refs/tags/$TAG" --deny-self-hosted-runners \
      --predicate-type https://spdx.dev/Document/v2.3
    /usr/local/nerdctl/bin/nerdctl run --rm --read-only --network none "$IMAGE" version   # prints X.Y.Z, without the v
+   ```
+
+   Then check one archive and its build provenance, "Verify an archive" in
+   `docs/guide/verify-releases.md`, in a new empty directory outside the repository (the scratchpad):
+
+   ```bash
+   ARCHIVE="shift2eu_${TAG#v}_linux_amd64.tar.gz"
+   /usr/local/bin/gh release download "$TAG" --repo timothymamo/shift2eu --pattern "$ARCHIVE" --pattern checksums.txt
+   awk -v a="$ARCHIVE" '$2 == a' checksums.txt > "$ARCHIVE.sha256"
+   sha256sum --check "$ARCHIVE.sha256"
+   /usr/local/bin/gh attestation verify "$ARCHIVE" --repo timothymamo/shift2eu \
+     --signer-workflow timothymamo/shift2eu/.github/workflows/release.yml \
+     --source-ref "refs/tags/$TAG" --deny-self-hosted-runners
    ```
 
    Report the digest and each command's outcome. Every command must exit 0 and `version` must print the
