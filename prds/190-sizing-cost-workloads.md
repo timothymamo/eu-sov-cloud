@@ -182,7 +182,7 @@ Each milestone ships as one PR, in dependency order. Milestones 3, 4 and 5 can r
    source cost on `inventory.Resource`, validated by `inventory.New`. The inventory file reader accepts
    versions 1 and 2. ADR for the format. The sourcetest contract suite covers the new fields. No report
    change.
-2. [ ] **Catalog plans and prices.** Domain: plans and prices on `catalog.Offering`, validated by
+2. [x] **Catalog plans and prices.** Domain: plans and prices on `catalog.Offering`, validated by
    `catalog.New`, and the target's default region for estimates. The snapshot format version that adds
    them, with the shared reader, the targettest contract suite and an ADR
    ([0024](../docs/adr/0024-add-plans-prices-and-a-default-region-in-target-snapshot-format-v2.md)). The existing snapshots move
