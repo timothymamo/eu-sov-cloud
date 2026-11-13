@@ -22,7 +22,8 @@ import (
 //     context.Canceled (the violation wraps context.Canceled too).
 //
 // want is the inventory src must produce from its recorded input. Inventories
-// are compared exactly: source, then every resource field by field. An error
+// are compared exactly: source, then every resource field by field, the version 2
+// size, usage, workload, relations and cost included. An error
 // from src is shown through text.Quote and stays in the violation's chain.
 func Check(ctx context.Context, src analysis.InventorySource, want inventory.Inventory) error {
 	var errs []error
@@ -127,7 +128,64 @@ func equalResource(a, b inventory.Resource) bool {
 		a.RawType == b.RawType &&
 		a.Category == b.Category &&
 		a.Region == b.Region &&
-		slices.Equal(a.Capabilities, b.Capabilities)
+		slices.Equal(a.Capabilities, b.Capabilities) &&
+		equalSize(a.Size, b.Size) &&
+		equalUsage(a.Usage, b.Usage) &&
+		a.Workload == b.Workload &&
+		slices.Equal(a.Relations, b.Relations) &&
+		equalCost(a.MonthlyCost, b.MonthlyCost)
+}
+
+// equalSize reports whether a and b are the same size, field by field, with a
+// field that is not given different from one that is zero.
+func equalSize(a, b *inventory.Size) bool {
+	return compareNumber(valueOf(a, func(s *inventory.Size) *float64 { return s.VCPUs }),
+		valueOf(b, func(s *inventory.Size) *float64 { return s.VCPUs })) &&
+		compareNumber(valueOf(a, func(s *inventory.Size) *float64 { return s.MemoryGiB }),
+			valueOf(b, func(s *inventory.Size) *float64 { return s.MemoryGiB })) &&
+		compareNumber(valueOf(a, func(s *inventory.Size) *float64 { return s.StorageGiB }),
+			valueOf(b, func(s *inventory.Size) *float64 { return s.StorageGiB })) &&
+		compareNumber(valueOf(a, func(s *inventory.Size) *int { return s.Count }),
+			valueOf(b, func(s *inventory.Size) *int { return s.Count }))
+}
+
+// equalUsage reports whether a and b are the same usage profile.
+func equalUsage(a, b *inventory.Usage) bool {
+	return compareNumber(valueOf(a, func(u *inventory.Usage) *float64 { return u.HoursPerMonth }),
+		valueOf(b, func(u *inventory.Usage) *float64 { return u.HoursPerMonth }))
+}
+
+// equalCost reports whether a and b are the same cost: the same amount, given or
+// not, and the same currency.
+func equalCost(a, b *inventory.Cost) bool {
+	if (a == nil) != (b == nil) {
+		return false
+	}
+
+	if a == nil {
+		return true
+	}
+
+	return compareNumber(a.Amount, b.Amount) && a.Currency == b.Currency
+}
+
+// valueOf returns the field fn names of s, or nil when s itself is not given.
+func valueOf[T any, F any](s *T, fn func(*T) *F) *F {
+	if s == nil {
+		return nil
+	}
+
+	return fn(s)
+}
+
+// compareNumber reports whether a and b hold the same number, with nil, a field
+// that is not given, different from any value.
+func compareNumber[T comparable](a, b *T) bool {
+	if a == nil || b == nil {
+		return a == b
+	}
+
+	return *a == *b
 }
 
 // describe formats r for a violation message, quoting every value.
@@ -137,6 +195,60 @@ func describe(r inventory.Resource) string {
 		capabilities[i] = text.Quote(string(c))
 	}
 
-	return fmt.Sprintf("{ID: %s, RawType: %s, Category: %s, Region: %s, Capabilities: %v}",
-		text.Quote(r.ID), text.Quote(r.RawType), text.Quote(string(r.Category)), text.Quote(r.Region), capabilities)
+	return fmt.Sprintf(
+		"{ID: %s, RawType: %s, Category: %s, Region: %s, Capabilities: %v, Size: %s, Usage: %s, Workload: %s, Relations: %s, MonthlyCost: %s}",
+		text.Quote(r.ID), text.Quote(r.RawType), text.Quote(string(r.Category)), text.Quote(r.Region), capabilities,
+		describeSize(r.Size), describeUsage(r.Usage), text.Quote(r.Workload), describeRelations(r.Relations),
+		describeCost(r.MonthlyCost))
+}
+
+// describeSize formats s, a size that may not be given, for a violation.
+func describeSize(s *inventory.Size) string {
+	if s == nil {
+		return "not given"
+	}
+
+	return fmt.Sprintf("{vcpus: %s, memoryGiB: %s, storageGiB: %s, count: %s}",
+		describeNumber(s.VCPUs), describeNumber(s.MemoryGiB), describeNumber(s.StorageGiB), describeNumber(s.Count))
+}
+
+// describeUsage formats u, a usage profile that may not be given.
+func describeUsage(u *inventory.Usage) string {
+	if u == nil {
+		return "not given"
+	}
+
+	return fmt.Sprintf("{hoursPerMonth: %s}", describeNumber(u.HoursPerMonth))
+}
+
+// describeCost formats c, a cost that may not be given.
+func describeCost(c *inventory.Cost) string {
+	if c == nil {
+		return "not given"
+	}
+
+	return fmt.Sprintf("{amount: %s, currency: %s}", describeNumber(c.Amount), text.Quote(c.Currency))
+}
+
+// describeRelations formats relations for a violation, quoting every value.
+func describeRelations(relations []inventory.Relation) string {
+	if len(relations) == 0 {
+		return "none"
+	}
+
+	described := make([]string, len(relations))
+	for i, relation := range relations {
+		described[i] = text.Quote(string(relation.Type)) + " -> " + text.Quote(relation.Target)
+	}
+
+	return fmt.Sprint(described)
+}
+
+// describeNumber formats p, a number that may not be given.
+func describeNumber[T any](p *T) string {
+	if p == nil {
+		return "not given"
+	}
+
+	return text.Quote(fmt.Sprint(*p))
 }

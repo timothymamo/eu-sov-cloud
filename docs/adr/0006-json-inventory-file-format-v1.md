@@ -6,7 +6,8 @@
   [0009](0009-decode-adapter-json-documents-through-one-strict-decoder.md); the schema version policy
   is amended by [0011](0011-scope-capabilities-and-one-offering-per-tier.md): retiring a vocabulary
   value is not a version change while no tool writes inventory files, and needs a new version once
-  `shift2eu discover` does
+  `shift2eu discover` does; format version 2, which keeps these rules and adds sizing, usage,
+  workload, relations and cost, is added by [0025](0025-json-inventory-file-format-v2.md)
 - Date: 2026-11-10
 
 ## Context

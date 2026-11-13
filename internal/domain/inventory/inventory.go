@@ -31,6 +31,26 @@ type Resource struct {
 	// Capabilities lists the features the resource depends on. In an Inventory
 	// they are sorted and free of duplicates, and nil when there are none.
 	Capabilities []taxonomy.Capability
+
+	// The fields below come with inventory format version 2 (ADR 0025). Each is
+	// optional, and "not given" is never 0.
+
+	// Size is how big the resource is, or nil when it is not given. In an
+	// Inventory a size with no field given is nil.
+	Size *Size
+	// Usage is how much of a month the resource runs, or nil when it is not
+	// given. In an Inventory a usage with no field given is nil.
+	Usage *Usage
+	// Workload names the application the resource belongs to, as free text. It
+	// is empty when not given.
+	Workload string
+	// Relations point at other resources of the same inventory. In an Inventory
+	// they are sorted by type then target, free of duplicates, and nil when
+	// there are none.
+	Relations []Relation
+	// MonthlyCost is what the source charges for the resource in a month, or nil
+	// when it is not given.
+	MonthlyCost *Cost
 }
 
 // Inventory is a validated list of the resources found in one source. Build it
@@ -72,9 +92,31 @@ var (
 // The inventory holds its own copy of the resources, sorted by ID, with each
 // resource's capabilities sorted, de-duplicated and nil when there are none.
 //
+// The version 2 fields are optional; a size, usage or relations list that gives
+// nothing is stored as nil. A size or usage field must be one the category
+// takes (ErrFieldNotForCategory): compute.vm, compute.baremetal,
+// kubernetes.managed, database.postgresql and database.mysql take every one;
+// storage.block takes storageGiB and count; storage.object takes storageGiB;
+// serverless.function takes memoryGiB; every other category takes none. Each
+// given number must be in its range (ErrInvalidSize, ErrInvalidUsage): vcpus
+// and memoryGiB more than 0 and at most 1,000,000, storageGiB at least 0 and at
+// most 1,000,000,000, count at least 1 and at most 100,000, hoursPerMonth more
+// than 0 and at most 744. A count or hoursPerMonth that is not given is kept as
+// not given: later milestones read them as 1 and 730. The workload is free text
+// (text.Validate), or empty. A monthly cost needs an amount from 0 to
+// 1,000,000,000,000 and a currency of three upper-case ASCII letters
+// (ErrInvalidCost). A relation needs a type from the vocabulary
+// (ParseRelationType) and a target that names another resource of the
+// inventory (ErrUnknownRelationTarget, ErrSelfRelation), compared as IDs are;
+// it is stored with the target's ID as that resource writes it, and the
+// relations are de-duplicated and sorted by type then target. Relations may
+// form cycles.
+//
 // Errors name the field and the resource at fault: by ID, or by position as
-// resources[i] when the ID itself is at fault. Values echoed in errors are quoted
-// with text.Quote, so errors stay short however long the input is.
+// resources[i] when the ID itself is at fault. A version 2 field is named by its
+// path in the order the resources were given, resources[1].size.vcpus, as a
+// *FieldError. Values echoed in errors are quoted with text.Quote, so errors
+// stay short however long the input is.
 func New(source string, resources []Resource) (Inventory, error) {
 	if strings.TrimSpace(source) == "" {
 		return Inventory{}, ErrEmptySource
@@ -84,7 +126,9 @@ func New(source string, resources []Resource) (Inventory, error) {
 		return Inventory{}, fmt.Errorf("source: %w", err)
 	}
 
-	seen := make(map[string]struct{}, len(resources))
+	// seen holds the index of each resource by its ID with runs of white space
+	// collapsed: the key duplicates and relation targets are compared by.
+	seen := make(map[string]int, len(resources))
 	normalised := make([]Resource, 0, len(resources))
 
 	for i, r := range resources {
@@ -97,14 +141,30 @@ func New(source string, resources []Resource) (Inventory, error) {
 			return Inventory{}, fmt.Errorf("resources[%d]: %w %s", i, ErrDuplicateID, text.Quote(r.ID))
 		}
 
-		seen[key] = struct{}{}
+		seen[key] = i
 
 		n, err := normalise(r)
 		if err != nil {
 			return Inventory{}, fmt.Errorf("resource %s: %w", text.Quote(r.ID), err)
 		}
 
+		if n, err = checkVersion2(i, n); err != nil {
+			return Inventory{}, err
+		}
+
 		normalised = append(normalised, n)
+	}
+
+	// A relation may point at any resource, so relations are resolved once
+	// every ID is known, still in the order the resources were given.
+	for i := range normalised {
+		relations, err := resolveRelations(i, normalised[i], normalised, seen)
+		if err != nil {
+			return Inventory{}, err
+		}
+
+		normalised[i].Relations = relations
+		normalised[i] = canonical(normalised[i])
 	}
 
 	slices.SortFunc(normalised, func(a, b Resource) int {
@@ -193,6 +253,10 @@ func normalise(r Resource) (Resource, error) {
 // clone returns a copy of r that shares no memory with it.
 func clone(r Resource) Resource {
 	r.Capabilities = slices.Clone(r.Capabilities)
+	r.Size = cloneSize(r.Size)
+	r.Usage = cloneUsage(r.Usage)
+	r.Relations = slices.Clone(r.Relations)
+	r.MonthlyCost = cloneCost(r.MonthlyCost)
 
 	return r
 }

@@ -700,9 +700,17 @@ func TestAssessErrors(t *testing.T) {
 			wantStderr: []string{"malformed JSON"},
 		},
 		{
+			// Versions 1 and 2 are read; a version 3 file is refused for its version.
 			name:       "unsupported schema version",
-			inventory:  filepath.Join("testdata", "schema-version-2.json"),
+			inventory:  filepath.Join("testdata", "schema-version-3.json"),
 			wantStderr: []string{"unsupported schema version"},
+		},
+		{
+			// A relation whose target names no resource is refused by path, in file
+			// order, before any report is written.
+			name:       "relation to a resource that is not in the inventory",
+			inventory:  filepath.Join("testdata", "invalid-relation.json"),
+			wantStderr: []string{"resources[1].relations[0].target"},
 		},
 		{
 			name:       "unknown category",
@@ -1513,4 +1521,84 @@ func demotedReportLines(t *testing.T, singleTargetReport string) []string {
 	}
 
 	return demoted
+}
+
+// TestAssessInventoryVersion2 pins that inventory format version 2 changes no
+// report (PRD #190, milestone 1): the built binary, run on a version 2
+// inventory with every new field set, writes the report its version 1 twin gets,
+// byte for byte, as Markdown and as JSON. The twins sit in directories of their
+// own, so both files have the same base name and the reports differ only if the
+// new fields reach them - which no report shows yet.
+func TestAssessInventoryVersion2(t *testing.T) {
+	t.Parallel()
+
+	one := filepath.Join("testdata", "twin-v1", "inventory.json")
+	two := filepath.Join("testdata", "twin-v2", "inventory.json")
+
+	for _, tc := range targets() {
+		for _, format := range []string{markdownFormat, jsonFormat} {
+			t.Run(tc.key+"/"+format, func(t *testing.T) {
+				t.Parallel()
+
+				version1 := assess(t, tc.key, one, "--format", format)
+				version2 := assess(t, tc.key, two, "--format", format)
+
+				for name, got := range map[string]result{"version 1": version1, "version 2": version2} {
+					if got.code != 0 {
+						t.Fatalf("the %s inventory: exit code = %d, want 0; stderr = %q", name, got.code, got.stderr)
+					}
+
+					if got.stderr != "" {
+						t.Errorf("the %s inventory: stderr = %q, want empty", name, got.stderr)
+					}
+
+					if got.stdout == "" {
+						t.Fatalf("the %s inventory: stdout is empty, want a report", name)
+					}
+				}
+
+				if version1.stdout != version2.stdout {
+					t.Errorf("the version 2 report differs from its version 1 twin:\nversion 1:\n%s\nversion 2:\n%s",
+						version1.stdout, version2.stdout)
+				}
+			})
+		}
+	}
+}
+
+// TestAssessInvalidRelationWritesNoReport pins the other half of the version 2
+// error contract, on the real binary: an inventory whose relation names no
+// resource exits 1 with one error line that names the relation by path, and the
+// report --output names is never written.
+func TestAssessInvalidRelationWritesNoReport(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	dest := filepath.Join(dir, "report.md")
+
+	got := assess(t, scalewayKey, filepath.Join("testdata", "invalid-relation.json"), "--output", dest)
+
+	if got.code != 1 {
+		t.Errorf("exit code = %d, want 1; stderr = %q", got.code, got.stderr)
+	}
+
+	if got.stdout != "" {
+		t.Errorf("stdout = %q, want empty", got.stdout)
+	}
+
+	if !strings.HasPrefix(got.stderr, errPrefix) {
+		t.Errorf("stderr = %q, want it to start with %q", got.stderr, errPrefix)
+	}
+
+	if !strings.HasSuffix(got.stderr, "\n") || strings.Count(got.stderr, "\n") != 1 {
+		t.Errorf("stderr = %q, want exactly one line ending in a newline", got.stderr)
+	}
+
+	if want := "resources[1].relations[0].target"; !strings.Contains(got.stderr, want) {
+		t.Errorf("stderr = %q, want it to name the relation by path %q", got.stderr, want)
+	}
+
+	if _, err := os.Stat(dest); err == nil {
+		t.Errorf("the report %q was written for an inventory the reader refused", dest)
+	}
 }

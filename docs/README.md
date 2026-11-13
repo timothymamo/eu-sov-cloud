@@ -65,6 +65,7 @@ supersedes it.
 - [0022. Lint shell scripts with shellcheck and workflows with actionlint](adr/0022-lint-shell-scripts-and-workflows-with-shellcheck-and-actionlint.md)
 - [0023. Separate bare-metal servers from virtual machines in the taxonomy](adr/0023-separate-bare-metal-servers-from-virtual-machines-in-the-taxonomy.md)
 - [0024. Add plans, monthly EUR prices and a default region in target snapshot format version 2](adr/0024-add-plans-prices-and-a-default-region-in-target-snapshot-format-v2.md)
+- [0025. Add inventory file format version 2 for sizing, usage, workloads, relations and cost](adr/0025-json-inventory-file-format-v2.md)
 
 ## Writing a page
 

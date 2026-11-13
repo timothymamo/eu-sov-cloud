@@ -30,7 +30,7 @@ func (e *valueFreeError) Error() string { return e.msg }
 func (e *valueFreeError) Unwrap() error { return e.err }
 
 // versionValueFree refuses a schemaVersion that is present and not the integer
-// 1, naming its JSON type alone; a missing one is left to
+// 1 or 2, naming its JSON type alone; a missing one is left to
 // jsondoc.Document.Version, whose message names no value.
 func versionValueFree(doc jsondoc.Document) error {
 	raw, _, err := doc.Lookup(keySchemaVersion)
@@ -39,18 +39,18 @@ func versionValueFree(doc jsondoc.Document) error {
 	}
 
 	switch string(raw) {
-	case "", "null", "1":
+	case "", "null", "1", "2":
 		return nil
 	}
 
 	kind, isNumber := jsonKind(raw[0])
 	if isNumber {
-		// A number here is any but the literal 1, which may still equal 1
-		// (1.0, 1e0): say only that it is not the integer 1.
-		return fmt.Errorf("%w: %s is not the integer %d", ErrSchemaVersion, keySchemaVersion, schemaVersion)
+		// A number here is any but the literals 1 and 2, which may still equal
+		// one of them (1.0, 2e0): say only that it is not one of the integers.
+		return fmt.Errorf("%w: %s is not %s", ErrSchemaVersion, keySchemaVersion, wantVersions)
 	}
 
-	return fmt.Errorf("%w: %s is %s, want the integer %d", ErrSchemaVersion, keySchemaVersion, kind, schemaVersion)
+	return fmt.Errorf("%w: %s is %s, want %s", ErrSchemaVersion, keySchemaVersion, kind, wantVersions)
 }
 
 // jsonKind names, with its article, the JSON type of the value whose first
@@ -76,6 +76,13 @@ var domainSentinels = []error{
 	inventory.ErrEmptySource,
 	inventory.ErrEmptyID,
 	inventory.ErrDuplicateID,
+	inventory.ErrUnknownRelationType,
+	inventory.ErrUnknownRelationTarget,
+	inventory.ErrSelfRelation,
+	inventory.ErrInvalidSize,
+	inventory.ErrInvalidUsage,
+	inventory.ErrFieldNotForCategory,
+	inventory.ErrInvalidCost,
 	taxonomy.ErrUnknownCategory,
 	taxonomy.ErrUnknownCapability,
 	text.ErrInvalid,
@@ -85,27 +92,42 @@ var domainSentinels = []error{
 // refuses it, returns a valueFreeError that places the refused value by
 // position and field instead of the domain's message, which quotes it.
 //
-// The domain checks the source, then each resource in order, so the faulty
-// resource is the last of the shortest prefix inventory.New refuses, found by
-// binary search; its field is found from the domain's error and by checking
-// its fields in the domain's order. Only a refused
-// document pays for this, with O(log n) more calls to inventory.New.
+// A version 2 field the domain refuses is placed by the path of its
+// *inventory.FieldError, which names no value. Otherwise the domain checks the
+// source, then each resource in order, so the faulty resource is the last of
+// the shortest prefix inventory.New refuses, found by binary search over the
+// resources without their relations (a relation may point past a prefix, and
+// relations are checked only once every resource has passed); its field is
+// found from the domain's error and by checking its fields in the domain's
+// order. Only a refused document pays for this, with O(log n) more calls to
+// inventory.New.
 func newValueFree(doc document) (inventory.Inventory, error) {
 	inv, err := inventory.New(doc.source, doc.resources)
 	if err == nil {
 		return inv, nil
 	}
 
+	var fieldErr *inventory.FieldError
+	if errors.As(err, &fieldErr) {
+		return inventory.Inventory{}, valueFree(fieldErr.Path, err)
+	}
+
 	if _, srcErr := inventory.New(doc.source, nil); srcErr != nil {
 		return inventory.Inventory{}, valueFree(keySource, srcErr)
 	}
 
+	unrelated := make([]inventory.Resource, len(doc.resources))
+	for i, r := range doc.resources {
+		r.Relations = nil
+		unrelated[i] = r
+	}
+
 	// The shortest refused prefix has n resources: inventory.New accepts
 	// resources[:n-1] and refuses resources[:n].
-	lo, hi := 0, len(doc.resources)
+	lo, hi := 0, len(unrelated)
 	for lo+1 < hi {
 		mid := lo + (hi-lo)/2
-		if _, prefixErr := inventory.New(doc.source, doc.resources[:mid]); prefixErr != nil {
+		if _, prefixErr := inventory.New(doc.source, unrelated[:mid]); prefixErr != nil {
 			hi = mid
 		} else {
 			lo = mid

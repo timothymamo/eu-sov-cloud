@@ -16,6 +16,16 @@
 // Inventory has not been validated; later layers only receive inventories
 // built by New.
 //
+// Inventory format version 2 (ADR 0025) adds optional facts to a resource: its
+// Size and Usage, checked against ranges and against the fields its category
+// takes; a Workload name; Relations to other resources of the same inventory,
+// from a closed vocabulary (ParseRelationType), resolved to the target's own
+// ID, de-duplicated and sorted; and the source's MonthlyCost. A number that is
+// not given is nil, never 0, a given -0 is stored as 0, and a size, usage or
+// relations list that gives nothing is nil. Errors in these fields are
+// *FieldError values that name the field by its path in the order the
+// resources were given, resources[1].size.vcpus.
+//
 // Domain layer: standard library and other domain packages only, no I/O, no
 // clock.
 package inventory

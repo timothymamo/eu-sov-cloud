@@ -54,6 +54,15 @@ func TestInventoryFromBytesContract(t *testing.T) {
 	sourcetest.Run(t, inventoryfile.FromBytes(fixtureBytes(t, validPath)), wantValidInventory(t))
 }
 
+// TestInventoryFromBytesContractVersion2 runs the contract suite on the version 2
+// fixture through FromBytes: the API is given whoever's document, and a source
+// that drops a version 2 field between calls fails it here too.
+func TestInventoryFromBytesContractVersion2(t *testing.T) {
+	t.Parallel()
+
+	sourcetest.Run(t, inventoryfile.FromBytes(fixtureBytes(t, validV2Path)), wantVersion2Inventory(t))
+}
+
 // TestInventoryFromBytesMatchesFile pins that a document read through FromBytes
 // describes the same inventory as the same bytes written to a file and read
 // through New: the cap, the decoder and every rule are the file reader's, only
@@ -73,6 +82,28 @@ func TestInventoryFromBytesMatchesFile(t *testing.T) {
 				t.Helper()
 
 				return fixtureBytes(t, validPath)
+			},
+		},
+		{
+			// A version 2 document reaches the same inventory through FromBytes as
+			// through New, every version 2 field included: the API takes version 2
+			// inventories.
+			name: "version 2 fixture",
+			document: func(t *testing.T) []byte {
+				t.Helper()
+
+				return fixtureBytes(t, validV2Path)
+			},
+		},
+		{
+			// An empty size or usage object, an empty relations list, a null and an
+			// empty workload are all an absent field: the in-memory reader must read
+			// them exactly as the file reader does.
+			name: "absent version 2 fields read as null and empty",
+			document: func(t *testing.T) []byte {
+				t.Helper()
+
+				return []byte(schemaDocument(2, `,"size":{},"usage":null,"relations":[],"workload":""`))
 			},
 		},
 		{
@@ -199,16 +230,37 @@ func TestInventoryFromBytesErrors(t *testing.T) {
 			wantErr:  []error{inventoryfile.ErrDecode},
 		},
 		{
-			// The version is checked before any key or type of version 1, so a
-			// document of another version is refused for its version alone.
+			// Versions 1 and 2 are read; a document of another version is refused
+			// for its version alone, before any key of either is checked.
 			name:     "unsupported schema version",
-			document: []byte(`{"schemaVersion":2,"source":"aws","resources":[]}`),
+			document: []byte(`{"schemaVersion":3,"source":"aws","resources":[]}`),
 			wantErr:  []error{inventoryfile.ErrSchemaVersion},
 		},
 		{
 			name:     "missing schema version",
 			document: []byte(`{"source":"aws","resources":[]}`),
 			wantErr:  []error{inventoryfile.ErrSchemaVersion},
+		},
+		{
+			// The strict rules of version 1 hold for every version 2 object too.
+			name:     "unknown key in a size object",
+			document: []byte(schemaDocument(2, `,"size":{"vcpu":4}`)),
+			wantErr:  []error{inventoryfile.ErrDecode},
+		},
+		{
+			name:     "repeated key in a size object",
+			document: []byte(schemaDocument(2, `,"size":{"vcpus":2,"vcpus":4}`)),
+			wantErr:  []error{inventoryfile.ErrDecode},
+		},
+		{
+			name:     "relation without a target",
+			document: []byte(relationDocument(`[{"type":"attached-to"}]`)),
+			wantErr:  []error{inventoryfile.ErrDecode},
+		},
+		{
+			name:     "relation to a resource that is not in the document",
+			document: []byte(relationDocument(`[{"type":"replica-of","target":"db-missing"}]`)),
+			wantErr:  []error{inventory.ErrUnknownRelationTarget},
 		},
 		{
 			name:     "document larger than MaxFileSize",
@@ -367,6 +419,120 @@ func TestInventoryFromBytesErrorNeverEchoesAValue(t *testing.T) {
 			value:        marker,
 			wantMentions: []string{"resources[0].id"},
 			notMentions:  []string{"rawType"},
+		},
+		{
+			// A version 2 key in a version 1 document is the unknown key it is,
+			// named by its path; the value beside it is never echoed.
+			name: "a version 2 key in a version 1 document",
+			document: `{"schemaVersion":1,"source":"aws","resources":[` +
+				`{"id":"i-0123456789abcdef0","category":"compute.vm","workload":"` + marker + `"}]}`,
+			wantErr:      inventoryfile.ErrDecode,
+			value:        marker,
+			wantMentions: []string{"resources[0].workload"},
+		},
+		{
+			// A version 2 size that is not a number is named by its path, never by
+			// the value that stands where the number belongs.
+			name: "a size member of the wrong type",
+			document: `{"schemaVersion":2,"source":"aws","resources":[` +
+				`{"id":"i-0123456789abcdef0","category":"compute.vm",` +
+				`"size":{"vcpus":0,"memoryGiB":"` + marker + `"}}]}`,
+			wantErr:      inventoryfile.ErrDecode,
+			value:        marker,
+			wantMentions: []string{"resources[0].size.memoryGiB"},
+		},
+		{
+			// A relation to a resource the document does not hold is named by the
+			// relation's position and field, not by quoting the target.
+			name: "a relation to a resource that is not in the document",
+			document: `{"schemaVersion":2,"source":"aws","resources":[` +
+				`{"id":"db-primary","category":"database.postgresql"},` +
+				`{"id":"db-replica","category":"database.postgresql",` +
+				`"relations":[{"type":"replica-of","target":"` + marker + `"}]}]}`,
+			wantErr:      inventory.ErrUnknownRelationTarget,
+			value:        marker,
+			wantMentions: []string{"resources[1].relations[0].target"},
+		},
+		{
+			// A relation type outside the vocabulary is named by the relation's
+			// position and field, not by quoting the type.
+			name: "a relation type outside the vocabulary",
+			document: `{"schemaVersion":2,"source":"aws","resources":[` +
+				`{"id":"db-primary","category":"database.postgresql"},` +
+				`{"id":"db-replica","category":"database.postgresql",` +
+				`"relations":[{"type":"` + marker + `","target":"db-primary"}]}]}`,
+			wantErr:      inventory.ErrUnknownRelationType,
+			value:        marker,
+			wantMentions: []string{"resources[1].relations[0].type"},
+		},
+		{
+			// A currency the domain refuses is named by position and field.
+			name: "a currency outside the ISO 4217 shape",
+			document: `{"schemaVersion":2,"source":"aws","resources":[` +
+				`{"id":"i-0123456789abcdef0","category":"compute.vm",` +
+				`"monthlyCost":{"amount":1,"currency":"` + marker + `"}}]}`,
+			wantErr:      inventory.ErrInvalidCost,
+			value:        marker,
+			wantMentions: []string{"resources[0].monthlyCost.currency"},
+		},
+		{
+			// A vcpus count above the maximum is named by its path; the number
+			// the domain refuses is never repeated.
+			name: "a vcpus count above the maximum",
+			document: `{"schemaVersion":2,"source":"aws","resources":[` +
+				`{"id":"i-0123456789abcdef0","category":"compute.vm",` +
+				`"size":{"vcpus":4242424242}}]}`,
+			wantErr:      inventory.ErrInvalidSize,
+			value:        "4242424242",
+			wantMentions: []string{"resources[0].size.vcpus"},
+		},
+		{
+			name: "a count above the maximum",
+			document: `{"schemaVersion":2,"source":"aws","resources":[` +
+				`{"id":"i-0123456789abcdef0","category":"compute.vm",` +
+				`"size":{"count":424242}}]}`,
+			wantErr:      inventory.ErrInvalidSize,
+			value:        "424242",
+			wantMentions: []string{"resources[0].size.count"},
+		},
+		{
+			// A negative cost amount is named by its path, not by the amount.
+			name: "a negative cost amount",
+			document: `{"schemaVersion":2,"source":"aws","resources":[` +
+				`{"id":"i-0123456789abcdef0","category":"compute.vm",` +
+				`"monthlyCost":{"amount":-4242424,"currency":"EUR"}}]}`,
+			wantErr:      inventory.ErrInvalidCost,
+			value:        "4242424",
+			wantMentions: []string{"resources[0].monthlyCost.amount"},
+		},
+		{
+			// A workload the domain refuses is named by its path; the free text
+			// beside it, here leading white space before the marker, is not echoed.
+			name: "a workload with leading white space",
+			document: `{"schemaVersion":2,"source":"aws","resources":[` +
+				`{"id":"i-0123456789abcdef0","category":"compute.vm",` +
+				`"workload":" ` + marker + `"}]}`,
+			wantErr:      text.ErrInvalid,
+			value:        marker,
+			wantMentions: []string{"resources[0].workload"},
+		},
+		{
+			// The search for the faulty resource runs on the resources without
+			// their relations: a relation of a valid resource may point past the
+			// prefix the search tries, at a resource it has not reached yet. Here
+			// resources[0] is valid and its target, r2, is resources[2], so a
+			// prefix of one resource would be refused for the dangling relation
+			// and point the error at resources[0] instead of resources[1].
+			name: "an unknown category behind a relation that points forward",
+			document: `{"schemaVersion":2,"source":"aws","resources":[` +
+				`{"id":"db-primary","category":"database.postgresql",` +
+				`"relations":[{"type":"depends-on","target":"r2"}]},` +
+				`{"id":"instance-two","category":"` + marker + `"},` +
+				`{"id":"r2","category":"database.postgresql"}]}`,
+			wantErr:      taxonomy.ErrUnknownCategory,
+			value:        marker,
+			wantMentions: []string{"resources[1].category"},
+			notMentions:  []string{"resources[0]"},
 		},
 		{
 			// The guard against over-correcting: with a valid ID and only a raw
