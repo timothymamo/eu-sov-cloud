@@ -8,6 +8,9 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/google/go-cmp/cmp"
+	"github.com/google/go-cmp/cmp/cmpopts"
+
 	"github.com/timothymamo/shift2eu/test/architecture/internal/check"
 	"github.com/timothymamo/shift2eu/test/internal/releasetarget"
 	"github.com/timothymamo/shift2eu/test/internal/yamlread"
@@ -705,5 +708,170 @@ func TestStrictRuleCoverageHolds(t *testing.T) {
 
 	if withoutOS.allowsOS() {
 		t.Error("allowsOS() = true, want false: os/exec is not os")
+	}
+
+	// The $gostd entry stands for a prefix entry per top-level directory of
+	// GOROOT/src, os among them, so a rule that allows the whole standard
+	// library allows os too (issue #167).
+	gostd := rule
+	gostd.allow = []string{gostdEntry}
+
+	if !gostd.allowsOS() {
+		t.Error("allowsOS() = false, want true: the $gostd entry allows every standard package, os among them (issue #167)")
+	}
+}
+
+// TestStrictRuleCoverageAllowsSyscall pins allowsSyscall, the syscall half of the
+// seam the properties above read (issue #167): syscall reaches the environment and
+// starts processes as os does (syscall.Getenv, Environ, Exec, ForkExec,
+// StartProcess), so a rule that allows it is a place to read a credential from, and
+// the property must see it. The allow list is read as .golangci.yml writes it:
+// exact (syscall$) and as a prefix (syscall, which depguard reads as every path
+// starting with it) alike, and the $gostd entry counts as allowing it. The
+// negative cases are the ones the reading must not swallow: syscall/js is another
+// package, golang.org/x/sys/unix is no standard package at all, and os is no
+// syscall.
+func TestStrictRuleCoverageAllowsSyscall(t *testing.T) {
+	t.Parallel()
+
+	for _, tc := range []struct {
+		name  string
+		allow []string
+		want  bool
+	}{
+		{name: "an exact syscall entry", allow: []string{"syscall$"}, want: true},
+		{name: "a prefix syscall entry", allow: []string{"syscall"}, want: true},
+		{name: "the $gostd entry", allow: []string{gostdEntry}, want: true},
+		{name: "syscall/js is another package", allow: []string{"syscall/js$"}, want: false},
+		{name: "golang.org/x/sys/unix is no standard package", allow: []string{"golang.org/x/sys/unix$"}, want: false},
+		{name: "os is no syscall", allow: []string{"os$"}, want: false},
+		{name: "an empty allow list", allow: nil, want: false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			rule := strictRuleCoverage{name: "example-is-pure", allow: tc.allow}
+
+			if got := rule.allowsSyscall(); got != tc.want {
+				t.Errorf("allowsSyscall() with allow %v = %t, want %t (issue #167)", tc.allow, got, tc.want)
+			}
+		})
+	}
+}
+
+// environmentReadNames returns the names of the reads in reads, sorted, so a test
+// can compare what a forbidigo group must refuse as one list and the order neither
+// the lists nor requiredEnvironmentReads builds them in decides the result.
+func environmentReadNames(reads []struct{ pkg, name string }) []string {
+	names := make([]string, 0, len(reads))
+
+	for _, read := range reads {
+		names = append(names, read.name)
+	}
+
+	slices.Sort(names)
+
+	return names
+}
+
+// TestRequiredEnvironmentReads pins requiredEnvironmentReads (issue #167): the
+// reads a forbidigo group must refuse for a package the given strict rules hold,
+// read from the rules' allow lists. A rule that names neither os nor syscall
+// requires nothing, one that names os requires the os reads, one that names
+// syscall requires the syscall reads, either order of holder gives both, and the
+// $gostd entry requires both because it allows every standard package, syscall
+// among them. That last case is the reason the property must read $gostd at all: a
+// rule that allows the whole standard library is the widest way to reach the
+// environment, and it is the one the earlier os-only reading passed unchecked.
+func TestRequiredEnvironmentReads(t *testing.T) {
+	t.Parallel()
+
+	osNames := environmentReadNames(osEnvironmentReads)
+	syscallNames := environmentReadNames(syscallEnvironmentReads)
+	bothNames := environmentReadNames(slices.Concat(osEnvironmentReads, syscallEnvironmentReads))
+
+	allowOS := strictRuleCoverage{name: "example-allows-os", allow: []string{"errors$", "os$"}}
+	allowSyscall := strictRuleCoverage{name: "example-allows-syscall", allow: []string{"syscall$"}}
+
+	for _, tc := range []struct {
+		name    string
+		holders []strictRuleCoverage
+		want    []string
+	}{
+		{
+			name:    "no holder",
+			holders: nil,
+			want:    nil,
+		},
+		{
+			name:    "a holder that allows neither os nor syscall",
+			holders: []strictRuleCoverage{{name: "example-is-pure", allow: []string{"errors$"}}},
+			want:    nil,
+		},
+		{
+			name:    "a holder that allows os",
+			holders: []strictRuleCoverage{allowOS},
+			want:    osNames,
+		},
+		{
+			name:    "a holder that allows syscall",
+			holders: []strictRuleCoverage{allowSyscall},
+			want:    syscallNames,
+		},
+		{
+			name:    "one holder that allows os and another that allows syscall",
+			holders: []strictRuleCoverage{allowOS, allowSyscall},
+			want:    bothNames,
+		},
+		{
+			name:    "a holder that allows $gostd",
+			holders: []strictRuleCoverage{{name: "example-is-gostd", allow: []string{gostdEntry}}},
+			want:    bothNames,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			got := environmentReadNames(requiredEnvironmentReads(tc.holders))
+
+			if diff := cmp.Diff(tc.want, got, cmpopts.EquateEmpty()); diff != "" {
+				t.Errorf("requiredEnvironmentReads() mismatch (-want +got):\n%s (issue #167)", diff)
+			}
+		})
+	}
+
+	// A syscall reads list that drifted from the calls the property exists for
+	// would let a syscall-allowing rule past unchecked, so the calls the issue
+	// names are pinned here too (issue #167).
+	wantSyscall := []string{
+		"syscall.Exec",
+		"syscall.Environ",
+		"syscall.ForkExec",
+		"syscall.Getenv",
+		"syscall.RawSyscall",
+		"syscall.RawSyscall6",
+		"syscall.StartProcess",
+		"syscall.Syscall",
+		"syscall.Syscall6",
+	}
+
+	for _, read := range syscallEnvironmentReads {
+		if read.pkg != "syscall" {
+			t.Errorf("syscallEnvironmentReads holds %s.%s, want every read in package syscall (issue #167)", read.pkg, read.name)
+		}
+	}
+
+	var missing []string
+
+	for _, want := range wantSyscall {
+		if !slices.ContainsFunc(syscallEnvironmentReads, func(read struct{ pkg, name string }) bool {
+			return read.name == want
+		}) {
+			missing = append(missing, want)
+		}
+	}
+
+	if len(missing) != 0 {
+		t.Errorf("syscallEnvironmentReads names no %s, so a rule that allows syscall reaches the environment past the property (issue #167)", strings.Join(missing, ", "))
 	}
 }
