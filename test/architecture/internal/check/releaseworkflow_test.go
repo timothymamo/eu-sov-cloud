@@ -299,9 +299,12 @@ const publishJobHead = `  # The release is published last (issue #156): GoReleas
 // that checks the draft release's assets against it and publishes exactly that
 // draft, by the id the API listed it with, with GitHub's "Latest" release moved
 // by the latest job's decision alone, through env: and never pasted into the
-// script. The tag, that decision and the token come through env:, and every gh
-// command is given the repository in its own arguments, so none reads it from a
-// git remote. No checkout: this job runs no repository code.
+// script. While that decision is true, the step first refuses a "Latest"
+// release that is already higher than the tag: only a partial re-run of this
+// run, which does not re-run the latest job, can hand it such a stale decision
+// (issue #173). The tag, that decision and the token come through env:, and
+// every gh command is given the repository in its own arguments, so none reads
+// it from a git remote. No checkout: this job runs no repository code.
 var publishSteps = []string{
 	`      # The checksums.txt the attest-archives job attested, from the workflow
       # artifact it attests (issue #156): what is published must be exactly what
@@ -321,7 +324,9 @@ var publishSteps = []string{
       # that list gives it, in this one step: publishing by tag would let gh
       # resolve a published release, or a swapped draft, in its place. GitHub's
       # "Latest" release is moved by the latest job's one decision, and nothing
-      # but true or false publishes (issue #173).
+      # but true or false publishes; a decision that is already stale, made by a
+      # first attempt while "Latest" has since moved to a higher release, takes
+      # nothing over (issue #173).
       - name: Check the draft's assets and publish it
         env:
           TAG: ${{ github.ref_name }}
@@ -340,7 +345,7 @@ var publishSteps = []string{
               exit 1
               ;;
           esac
-          tmp="$(mktemp -d)"
+` + publishStaleDecisionCheck + `          tmp="$(mktemp -d)"
           # A draft release is not readable by its tag. The API lists it among
           # the releases, with draft: true, and gives every asset the digest of
           # its bytes. --paginate --slurp hands the pages over as one array of
@@ -431,6 +436,43 @@ const latestGuard = `          git rev-parse --verify --quiet refs/remotes/origi
 const publishExistingReleaseCheck = `          if [ "$(jq --arg tag "$TAG" 'add | map(select(.draft == false and .tag_name == $tag)) | length' "$tmp/releases.json")" != 0 ]; then
             echo "repos/timothymamo/shift2eu already publishes a release for $TAG" >&2
             exit 1
+          fi
+`
+
+// publishStaleDecisionCheck is the publish script's refusal, while the latest
+// job's decision is true, to take GitHub's "Latest" release from a release
+// higher than the tag (reviewer, issue #173): a partial re-run (gh run rerun
+// --failed) does not re-run the successful latest job, so the decision its
+// first attempt made can reach this step after a newer release has become
+// "Latest". It runs before anything is read for the draft's check or
+// published, so the release stays a draft, and only the API's 404, its answer
+// when no release is latest yet, is no latest release: any other failed read
+// fails the step, as verify-archives' latest_tag does.
+const publishStaleDecisionCheck = `          # A partial re-run of this release run (gh run rerun --failed) does
+          # not re-run the successful latest job, so a decision made by that
+          # job's first attempt can reach this step after GitHub's "Latest"
+          # release has moved on: taking it over from a higher release is
+          # refused, before anything is read for the check below or published,
+          # and the release stays a draft (issue #173).
+          if [ "$LATEST" = true ]; then
+            err="$(mktemp)"
+            if current="$(gh api "repos/timothymamo/shift2eu/releases/latest" --jq '.tag_name' 2> "$err")"; then
+              rm -f "$err"
+            elif grep -qF -e "HTTP 404" "$err"; then
+              # The repository publishes no latest release yet: the first
+              # release has nothing to take "Latest" over from.
+              current=""
+              rm -f "$err"
+            else
+              echo "GitHub's latest release could not be read:" >&2
+              cat "$err" >&2
+              rm -f "$err"
+              exit 1
+            fi
+            if [ -n "$current" ] && [ "$current" != "$TAG" ] && [ "$(printf '%s\n%s\n' "$TAG" "$current" | sort -V | tail -n 1)" = "$current" ]; then
+              echo "GitHub's latest release is $current, higher than $TAG: the latest decision is stale, re-run the whole release run rather than its failed jobs" >&2
+              exit 1
+            fi
           fi
 `
 
@@ -1439,6 +1481,13 @@ func TestReleaseWorkflow(t *testing.T) {
 		return release.withSteps(t, key, steps)
 	}
 
+	// afterPublish returns the workflow with the stale-decision check moved
+	// from where the fixture holds it to after the PATCH that publishes the
+	// draft, so that the check no longer runs before anything is published.
+	afterPublish := func() string {
+		return strings.Replace(in("publish", publishStaleDecisionCheck, ""), publishByID, publishByID+"\n"+publishStaleDecisionCheck, 1)
+	}
+
 	tests := []struct {
 		name     string
 		workflow string
@@ -1638,6 +1687,19 @@ func TestReleaseWorkflow(t *testing.T) {
 		{name: "the publish job checking the repository out again", workflow: steps("publish", beforeStep(t, publishSteps, "      - uses: actions/download-artifact@", "uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1\n        with:\n          fetch-depth: 0\n          persist-credentials: false")), wantIn: "jobs: publish: steps holds 3 steps, want exactly 2"},
 		{name: "the publish step in the goreleaser job", workflow: steps("goreleaser", beforeStep(t, goreleaserSteps, "      - uses: actions/upload-artifact@", "name: Check the draft's assets and publish it\n        run: "+publishByID)), wantIn: "jobs: goreleaser: steps holds 6 steps, want exactly 5"},
 		{name: "the publish step in the test job", workflow: inTestJob("name: Check the draft's assets and publish it\n        run: " + publishByID), wantIn: "holds 5 steps, want exactly 4"},
+
+		// A partial re-run (gh run rerun --failed) does not re-run the
+		// successful latest job, so a decision its first attempt made can reach
+		// the publish step after GitHub's "Latest" release moved to a higher
+		// tag (reviewer, issue #173). While LATEST is true, taking "Latest" over
+		// from a higher release is refused before anything is read or
+		// published, and the release stays a draft; only the API's 404 is no
+		// latest release, and any other failed read fails the step.
+		{name: "publish without the stale-decision check", workflow: in("publish", publishStaleDecisionCheck, ""), wantIn: `esac\ntmp=\"$(mktemp -d)\"`},
+		{name: "the stale-decision check comparing the tags without sort -V", workflow: in("publish", "| sort -V | tail -n 1", "| sort | tail -n 1"), wantIn: "sort | tail -n 1"},
+		{name: "the stale-decision check reading any failed read as no latest release", workflow: in("publish", `            elif grep -qF -e "HTTP 404" "$err"; then`, `            elif true; then`), wantIn: "elif true; then"},
+		{name: "the stale-decision check after the publication", workflow: afterPublish(), wantIn: `make_latest=\"$LATEST\"\n# A partial re-run`},
+		{name: "the stale-decision check reading another repository's latest release", workflow: in("publish", `gh api "repos/timothymamo/shift2eu/releases/latest" --jq '.tag_name'`, `gh api "repos/example/shift2eu/releases/latest" --jq '.tag_name'`), wantIn: "repos/example/shift2eu/releases/latest"},
 
 		// Whether the tag is the highest release tag on main is decided once per
 		// run, in a job of its own (issue #173), which both image jobs and the
