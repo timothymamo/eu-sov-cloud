@@ -905,8 +905,10 @@ var pinnedDepguardRules = []check.DepguardRule{
 		// the auditor's finding M-A): internal/config loads it from flags,
 		// the environment and an optional file, so it announces the environment
 		// reads that need a forbidigo group of its own and an ADR before it may
-		// import os. It has no code yet, so its allow list is the smallest
-		// AllowList reads: check.AllowList refuses an empty one. The day it
+		// import os. It has no code yet, so it allows nothing: allow: [],
+		// which check.AllowList reads as no entries (issue #166). depguard
+		// refuses a rule with no list, so it denies os as well; the strict
+		// empty allow list is what refuses every import. The day it
 		// imports a package, the rule names it here in the same commit.
 		Name:     "config-is-pure",
 		ListMode: "strict",
@@ -914,16 +916,16 @@ var pinnedDepguardRules = []check.DepguardRule{
 			"**/internal/config/**",
 			"!$test",
 		},
-		Allow: []string{
-			"errors$",
-		},
+		Allow: []string{},
+		Deny:  []string{"os"},
 	},
 	{
 		// The target subtree's own documentation package (issue #152, the
 		// auditor's finding M-A): internal/adapter/target holds doc.go and no
 		// code, and its providers have strict rules of their own, which the
-		// negated globs take out here. It imports nothing, so its allow list
-		// is the smallest AllowList reads. A provider added under it is named
+		// negated globs take out here. It imports nothing, so it allows
+		// nothing (allow: [], issue #166) and denies os, the list depguard
+		// needs, as config-is-pure does. A provider added under it is named
 		// here or in embedded-snapshot-targets-stay-offline in the same commit.
 		Name:     "target-docs-are-pure",
 		ListMode: "strict",
@@ -936,9 +938,8 @@ var pinnedDepguardRules = []check.DepguardRule{
 			"!**/internal/adapter/target/targettest/**",
 			"!$test",
 		},
-		Allow: []string{
-			"errors$",
-		},
+		Allow: []string{},
+		Deny:  []string{"os"},
 	},
 	{
 		// The contract suites every adapter runs (issue #152, the auditor's
@@ -977,9 +978,10 @@ var pinnedDepguardRules = []check.DepguardRule{
 		// the roots' allow lists name the module path as a prefix entry. Go's internal
 		// rule keeps test/internal/... and test/architecture/internal/... out of cmd/
 		// and internal/ and nothing keeps these out, so they get a rule of their own. It
-		// is one shared strict allow list, the smallest AllowList reads (check.AllowList
-		// refuses an empty one, the place S1 records); the day one of these packages
-		// imports a package, it names it here and in .golangci.yml in the same commit.
+		// is one shared strict rule that allows nothing, allow: [], which check.AllowList
+		// reads as no entries (issue #166), plus the os deny entry depguard needs, as
+		// config-is-pure has; the day one of these packages imports a
+		// package, it names it here and in .golangci.yml in the same commit.
 		// test/e2e belongs here too since issue #152 (the reviewer's B1, the auditor's
 		// L-1): its doc.go carries no build tag, so test/e2e is a production package a
 		// composition root may import, and e2e-is-black-box, the only rule that held it,
@@ -1007,10 +1009,8 @@ var pinnedDepguardRules = []check.DepguardRule{
 			"**/test/openapibundle/**",
 			"!$test",
 		},
-		Allow: []string{
-			"errors$",
-		},
-		Deny: nil,
+		Allow: []string{},
+		Deny:  []string{"os"},
 	},
 }
 
@@ -1372,7 +1372,7 @@ func depguardMutations(t *testing.T, document string) []depguardMutation {
 			add(depguardMutation{
 				name:  rule.Name + ": allow entry added: os",
 				rule:  rule.Name,
-				lines: insertDepguardLine(lines, at, 12, "- os"),
+				lines: insertDepguardLine(blockEmptyFlowSection(t, lines, span, "allow"), at, 12, "- os"),
 			}, "allow entry added")
 		}
 
@@ -1604,6 +1604,30 @@ func depguardInsertPoint(t *testing.T, lines []string, span depguardRuleSpan, se
 	}
 
 	return key + 1, true
+}
+
+// blockEmptyFlowSection returns the lines with the rule's section key rewritten
+// from an empty flow sequence (allow: [], a rule that allows nothing, issue
+// #166) to a bare key, so an entry inserted below it is a block sequence entry
+// a careless edit could add, not a key with a value and lines below it, which
+// no reader takes. Any other section comes back as it is.
+func blockEmptyFlowSection(t *testing.T, lines []string, span depguardRuleSpan, section string) []string {
+	t.Helper()
+
+	key, ok := depguardSectionKey(t, lines, span, section)
+	if !ok {
+		return lines
+	}
+
+	_, text := indentOf(lines[key])
+	if strings.TrimSpace(strings.TrimPrefix(text, section+":")) != "[]" {
+		return lines
+	}
+
+	out := slices.Clone(lines)
+	out[key] = strings.Repeat(" ", 10) + section + ":"
+
+	return out
 }
 
 // depguardListMode returns the line of the rule's list-mode key and the mode it

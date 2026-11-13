@@ -398,11 +398,14 @@ holds that.
 
 The properties called for four changes. `contract-suites-are-pure` holds both suites (`!$test`) to
 exactly what they import. `config-is-pure` and `target-docs-are-pure` hold `internal/config` and the
-doc-only `internal/adapter/target` to `errors$`: an empty allow list would say it better, but
-`check.AllowList` refuses a strict rule with none, and `errors$` is the smallest it reads (follow-up
-issue #166 lets it accept an empty list). `test-docs-are-pure` holds the doc-only `test/apiparity`,
+doc-only `internal/adapter/target` to an empty allow list, `allow: []`: they import nothing, so the
+rules allow nothing. (They first allowed `errors$` as a placeholder, as `check.AllowList` refused a
+strict rule with no entry; issue #166 made it read an explicit `allow: []` as no entries, while a
+missing or null `allow:` is still refused, and dropped the placeholders. depguard refuses a rule
+with no list at all, so each rule carries one deny entry, `os`; the strict empty allow list is what
+refuses every import.) `test-docs-are-pure` holds the doc-only `test/apiparity`,
 `test/architecture` (minus its `internal/` tree), `test/container`, `test/devenv`, `test/docs`,
-`test/e2e` and `test/lint` to the same placeholder, their tests left out with `!$test`: it takes the
+`test/e2e` and `test/lint` to the same empty list, their tests left out with `!$test`: it takes the
 e2e test files out too (depguard applies negated globs whatever their position), so they stay on
 `e2e-is-black-box` alone. A future
 `os` import in `internal/config` must come with a forbidigo group for its reads, and any read of a

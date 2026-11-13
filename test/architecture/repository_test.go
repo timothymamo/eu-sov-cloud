@@ -325,9 +325,10 @@ func rulesOf(t *testing.T, golangci []byte, name string) []check.Rule {
 		t.Fatalf("AllowList(.golangci.yml, %q): %v", name, err)
 	}
 
-	if len(allow) == 0 {
-		t.Fatalf("AllowList(.golangci.yml, %q) returned no entry, so its directories would be held to nothing", name)
-	}
+	// An empty allow list is one the rule writes on purpose, allow: [], and
+	// holds its directories to no import at all: AllowList refuses an allow
+	// key left null, so no rule parsed as empty by mistake reaches here
+	// (issue #166).
 
 	rules := make([]check.Rule, 0, len(files.Dirs))
 

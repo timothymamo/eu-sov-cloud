@@ -143,9 +143,11 @@
 // test-docs-are-pure holds it as well. TestStrictRuleCoverageHolds pins their
 // helpers. The properties brought three strict rules: config-is-pure and
 // target-docs-are-pure hold internal/config and the doc-only
-// internal/adapter/target to errors$, the smallest allow list check.AllowList
-// reads, and contract-suites-are-pure holds sourcetest and targettest, which any
-// _test.go file may import, to what they import today.
+// internal/adapter/target to an allow list of nothing, allow: [], which
+// check.AllowList reads as no entries while it refuses a null allow: (issue
+// #166); depguard needs at least one list, so each also denies os, and
+// contract-suites-are-pure holds sourcetest and targettest, which any _test.go
+// file may import, to what they import today.
 // The exemption trusts the import path, which is sound because nothing can
 // substitute other code for an allowed path: TestModulesHaveNoReplace reads
 // the root go.mod, and every other tracked one outside testdata, with the go

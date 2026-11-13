@@ -510,14 +510,17 @@ target, with the `e2e` and `integration` tags (`strictcoverage_test.go`):
 `TestStrictRuleCoverageHolds` pins the helpers the tests share. The rules the properties called for:
 
 - **`config-is-pure`** (depguard, strict) holds `internal/config`, which has only a `doc.go` today,
-  to `errors$`: the smallest allow list `check.AllowList` reads, as it refuses a strict rule with
-  none (follow-up issue #166 lets it accept an empty list and drops these placeholders). Its
+  to an empty allow list, `allow: []`: it imports nothing, so the rule allows nothing.
+  `check.AllowList` reads an explicit `allow: []` as no entries and still refuses a missing or
+  null `allow:`, so a rule parsed as empty by mistake does not pass for one (issue #166).
+  depguard refuses a rule with no list at all, so the rule carries one deny entry, `os`; the strict
+  empty allow list is what refuses every import. Its
   `doc.go` announces flags, the environment and a file; a future `os` import comes with a
   forbidigo group for its reads (the second property fails until it does), and any read of a named
   variable needs an exception decided in an ADR, as `composition-root-env`'s for
   `SHIFT2EU_SERVER_TOKEN` (ADR 0019).
 - **`target-docs-are-pure`** (depguard, strict) holds `internal/adapter/target`, a `doc.go` with no
-  code, to `errors$` as well; negated globs take out the providers, the snapshot reader and
+  code, to `allow: []` and the `os` deny entry as well; negated globs take out the providers, the snapshot reader and
   `targettest`, which have rules of their own. A provider added under it is named there and in
   `embedded-snapshot-targets-stay-offline` in the same commit.
 - **`contract-suites-are-pure`** (depguard, strict) holds `internal/adapter/source/sourcetest` and
@@ -534,7 +537,7 @@ target, with the `e2e` and `integration` tags (`strictcoverage_test.go`):
   `TestInventoryFileNoEnvForbidigoPatterns` pin it.
 - **`test-docs-are-pure`** (depguard, strict) holds the doc-only packages `test/apiparity`,
   `test/architecture`, `test/container`, `test/devenv`, `test/docs`, `test/e2e` and `test/lint` to
-  the same `errors$` placeholder (issue #166). Each is a production package a root could import
+  the same empty allow list, `allow: []`, and `os` deny entry (issue #166). Each is a production package a root could import
   through the module prefix. `!$test` leaves their tests out, and a negated glob takes out
   `test/architecture/internal/...`, which Go's internal rule hides from the roots and which reads
   `os` and `os/exec`. `test/e2e`'s untagged `doc.go` is held here as well (the third property):
