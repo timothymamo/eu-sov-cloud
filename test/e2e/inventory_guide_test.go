@@ -161,13 +161,21 @@ func inventoryGuides() []inventoryGuideCase {
 				// A persistent volume in the node resource group holds data and
 				// stays: only what AKS manages for the cluster is left out.
 				{id: "pvc-00000000-0000-0000-0000-000000000000", rawType: "Microsoft.Compute/disks", category: "storage.block"},
+				// The OS disk of a standalone virtual machine goes with it, and is
+				// still a disk to move: only a scale set member's does not.
+				{id: "vm-shop-web-1_OsDisk_1", rawType: "Microsoft.Compute/disks", category: "storage.block"},
+				// A scale set member's data disk that outlives the member holds
+				// data and stays: only one its member deletes with it goes.
+				{id: "vmss-shop-web_0abc_DataDisk_1", rawType: "Microsoft.Compute/disks", category: "storage.block"},
 			},
-			// The cluster's node scale set and its load balancer, and the OS disk
-			// of a scale set member: the member's scale set stands for both.
+			// The cluster's node scale set and its load balancer, the OS disk
+			// of a scale set member, and a member's data disk its member deletes
+			// with it: the member's scale set stands for all of them.
 			absent: []string{
 				"aks-system-12345678-vmss",
 				"kubernetes",
 				"vmss-shop-web_0abc_OsDisk_1",
+				"vmss-shop-web_0abc_DataDisk_0",
 			},
 		},
 	}

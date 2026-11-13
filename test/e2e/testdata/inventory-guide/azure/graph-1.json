@@ -1,5 +1,5 @@
 {
-  "count": 11,
+  "count": 13,
   "data": [
     {
       "id": "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg-shop/providers/Microsoft.Compute/virtualMachines/vm-shop-web-1",
@@ -12,7 +12,7 @@
         "storageProfile": {
           "osDisk": {
             "managedDisk": {
-              "id": "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg-shop/providers/Microsoft.Compute/disks/disk-shop-web-1-os"
+              "id": "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg-shop/providers/Microsoft.Compute/disks/vm-shop-web-1_OsDisk_1"
             }
           },
           "dataDisks": [
@@ -51,7 +51,24 @@
               "id": "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg-shop/providers/Microsoft.Compute/disks/vmss-shop-web_0abc_OsDisk_1"
             }
           },
-          "dataDisks": []
+          "dataDisks": [
+            {
+              "lun": 0,
+              "name": "vmss-shop-web_0abc_DataDisk_0",
+              "deleteOption": "Delete",
+              "managedDisk": {
+                "id": "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg-shop/providers/Microsoft.Compute/disks/vmss-shop-web_0abc_DataDisk_0"
+              }
+            },
+            {
+              "lun": 1,
+              "name": "vmss-shop-web_0abc_DataDisk_1",
+              "deleteOption": "Detach",
+              "managedDisk": {
+                "id": "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg-shop/providers/Microsoft.Compute/disks/vmss-shop-web_0abc_DataDisk_1"
+              }
+            }
+          ]
         },
         "networkProfile": {
           "networkInterfaces": []
@@ -110,8 +127,8 @@
       }
     },
     {
-      "id": "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg-shop/providers/Microsoft.Compute/disks/disk-shop-web-1-os",
-      "name": "disk-shop-web-1-os",
+      "id": "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg-shop/providers/Microsoft.Compute/disks/vm-shop-web-1_OsDisk_1",
+      "name": "vm-shop-web-1_OsDisk_1",
       "type": "microsoft.compute/disks",
       "kind": "",
       "location": "westeurope",
@@ -134,6 +151,28 @@
     {
       "id": "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg-shop/providers/Microsoft.Compute/disks/vmss-shop-web_0abc_OsDisk_1",
       "name": "vmss-shop-web_0abc_OsDisk_1",
+      "type": "microsoft.compute/disks",
+      "kind": "",
+      "location": "westeurope",
+      "zones": [
+        "1"
+      ],
+      "properties": null
+    },
+    {
+      "id": "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg-shop/providers/Microsoft.Compute/disks/vmss-shop-web_0abc_DataDisk_0",
+      "name": "vmss-shop-web_0abc_DataDisk_0",
+      "type": "microsoft.compute/disks",
+      "kind": "",
+      "location": "westeurope",
+      "zones": [
+        "1"
+      ],
+      "properties": null
+    },
+    {
+      "id": "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg-shop/providers/Microsoft.Compute/disks/vmss-shop-web_0abc_DataDisk_1",
+      "name": "vmss-shop-web_0abc_DataDisk_1",
       "type": "microsoft.compute/disks",
       "kind": "",
       "location": "westeurope",
@@ -175,5 +214,5 @@
     }
   ],
   "skip_token": "ew0KICAiJGlkIjogIjEiLA0KICAiTWF4Um93cyI6IDEwLA0KfQ==",
-  "total_records": 25
+  "total_records": 27
 }
