@@ -64,7 +64,7 @@ All criteria are pinned by tests that run offline under `make test` or `make tes
 
 **Inventory format version 2**
 
-- [ ] An inventory with `"schemaVersion": 2` may give each resource:
+- [x] An inventory with `"schemaVersion": 2` may give each resource:
   - `size`: `vcpus`, `memoryGiB`, `storageGiB` and `count` (instances or nodes), each optional;
   - `usage`: `hoursPerMonth` (default 730);
   - `workload`: a free-text name;
@@ -75,11 +75,12 @@ All criteria are pinned by tests that run offline under `make test` or `make tes
   It's read with the same strict rules and caps as version 1.
 - [ ] A version 1 inventory gives the same verdicts as today. Its resources get no plan and no estimate,
   and the report says that the sizes are unknown.
-- [ ] Given a relation whose `target` names no resource, a resource that relates to itself, an unknown
+- [x] Given a relation whose `target` names no resource, a resource that relates to itself, an unknown
   relation `type`, a negative or non-numeric size, or a `size` field that makes no sense for the
   category (for example `vcpus` on `storage.object`), the run exits 1 with one error line that names
   the resource and the field by path (`resources[3].relations[0].target`). Nothing is written.
-- [ ] *Review:* an ADR records format version 2 and how it relates to ADR 0006 (supersedes or amends).
+- [x] *Review:* an ADR records format version 2 and how it relates to ADR 0006 (supersedes or amends):
+  [ADR 0024](../docs/adr/0024-json-inventory-file-format-v2.md) amends it.
 
 **Catalog plans and prices**
 
@@ -178,7 +179,7 @@ All criteria are pinned by tests that run offline under `make test` or `make tes
 
 Each milestone ships as one PR, in dependency order. Milestones 3, 4 and 5 can run in parallel.
 
-1. [ ] **Inventory format version 2.** Domain: size, usage, workload, relations (closed vocabulary) and
+1. [x] **Inventory format version 2.** Domain: size, usage, workload, relations (closed vocabulary) and
    source cost on `inventory.Resource`, validated by `inventory.New`. The inventory file reader accepts
    versions 1 and 2. ADR for the format. The sourcetest contract suite covers the new fields. No report
    change.
