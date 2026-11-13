@@ -51,7 +51,7 @@ dummy sample inventories of the repository's `examples/` directory.
 Build from a clone with `make build`, or download a release for your platform
 ([Install](docs/guide/install.md)) and run its `shift2eu` in place of `./bin/shift2eu`. Then assess an
 inventory file ([ADR 0006](docs/adr/0006-json-inventory-file-format-v1.md) and
-[ADR 0024](docs/adr/0024-json-inventory-file-format-v2.md) describe its format)
+[ADR 0025](docs/adr/0025-json-inventory-file-format-v2.md) describe its format)
 against a target, or `all` of them. [Build an inventory from your cloud](docs/guide/inventory.md)
 makes one from your AWS, GCP or Azure estate with the provider's read-only CLI and `jq`:
 

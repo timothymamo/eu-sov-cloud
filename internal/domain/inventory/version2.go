@@ -12,7 +12,7 @@ import (
 )
 
 // This file holds the fields inventory format version 2 adds to a resource
-// (PRD #190, ADR 0024): its size, usage profile, workload, relations and the
+// (PRD #190, ADR 0025): its size, usage profile, workload, relations and the
 // source's own monthly cost, and how New checks them.
 
 // Size is how big a resource is. Every field is optional: nil is "not given",
@@ -142,7 +142,7 @@ const (
 const sized = fieldVCPUs | fieldMemory | fieldStorage | fieldCount | fieldHours
 
 // allowedFields says which size and usage fields each category takes (ADR
-// 0024). A category that is not listed takes none.
+// 0025). A category that is not listed takes none.
 var allowedFields = map[taxonomy.Category]int{
 	taxonomy.ComputeVM:          sized,
 	taxonomy.ComputeBareMetal:   sized,

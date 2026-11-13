@@ -80,7 +80,7 @@ All criteria are pinned by tests that run offline under `make test` or `make tes
   category (for example `vcpus` on `storage.object`), the run exits 1 with one error line that names
   the resource and the field by path (`resources[3].relations[0].target`). Nothing is written.
 - [x] *Review:* an ADR records format version 2 and how it relates to ADR 0006 (supersedes or amends):
-  [ADR 0024](../docs/adr/0024-json-inventory-file-format-v2.md) amends it.
+  [ADR 0025](../docs/adr/0025-json-inventory-file-format-v2.md) amends it.
 
 **Catalog plans and prices**
 

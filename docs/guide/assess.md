@@ -87,7 +87,7 @@ code 1 and writes no report.
 
 The inventory file is versioned JSON, described in
 [ADR 0006](../adr/0006-json-inventory-file-format-v1.md) (version 1) and
-[ADR 0024](../adr/0024-json-inventory-file-format-v2.md) (version 2, which adds sizes, usage,
+[ADR 0025](../adr/0025-json-inventory-file-format-v2.md) (version 2, which adds sizes, usage,
 workloads, relations and the source's cost; the report does not show them yet);
 [Build an inventory from your cloud](inventory.md) makes one from AWS, GCP or Azure. `--inventory` takes a path; standard input
 is not supported. The targets are `ovhcloud` (OVHcloud Public Cloud), `scaleway` and `upcloud`, each

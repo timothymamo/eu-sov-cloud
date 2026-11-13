@@ -1,4 +1,4 @@
-# 0024. Add inventory file format version 2 for sizing, usage, workloads, relations and cost
+# 0025. Add inventory file format version 2 for sizing, usage, workloads, relations and cost
 
 - Status: Accepted; amends [0006](0006-json-inventory-file-format-v1.md), whose rules version 2 keeps
 - Date: 2026-11-13

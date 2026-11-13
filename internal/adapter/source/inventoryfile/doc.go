@@ -21,7 +21,7 @@
 // JSON escapes are decoded, and never repeated; every value of the right JSON
 // type; no string that escapes a lone surrogate; and the schema version check,
 // with its wording. This package keeps the format's own decisions: its keys;
-// schemaVersion 1 (ADR 0006) or 2 (ADR 0024), found before any key or type is
+// schemaVersion 1 (ADR 0006) or 2 (ADR 0025), found before any key or type is
 // checked (any other version, or none, is refused), with a version 2 key in a
 // version 1 file refused as unknown; null read as an absent value for every
 // field but resources, at every level of the version 2 objects (size, usage,

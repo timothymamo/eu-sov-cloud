@@ -16,7 +16,7 @@
 // Inventory has not been validated; later layers only receive inventories
 // built by New.
 //
-// Inventory format version 2 (ADR 0024) adds optional facts to a resource: its
+// Inventory format version 2 (ADR 0025) adds optional facts to a resource: its
 // Size and Usage, checked against ranges and against the fields its category
 // takes; a Workload name; Relations to other resources of the same inventory,
 // from a closed vocabulary (ParseRelationType), resolved to the target's own

@@ -879,7 +879,7 @@ linters:
         # import only what is listed under allow: os, io and io/fs to open and
         # read the file, context to stop when asked, errors and fmt for its
         # errors, jsondoc to decode, strconv to read the numbers of a version
-        # 2 file (ADR 0024), and the domain packages it builds the
+        # 2 file (ADR 0025), and the domain packages it builds the
         # inventory with. The glob ends in /** so it also matches the files
         # directly in the package directory. Add a standard package only when
         # reading or parsing the file needs it, never one that reaches the

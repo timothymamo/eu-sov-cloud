@@ -539,7 +539,7 @@
         "description": "The body of POST /v1/assessments.",
         "properties": {
           "inventory": {
-            "description": "An inventory document, version 1 or 2 (docs/adr/0006, docs/adr/0024), read with the CLI's inventory reader and its rules; one it refuses is 400 invalid_inventory, whose message names the position and field at fault (resources[1].category), never the value.",
+            "description": "An inventory document, version 1 or 2 (docs/adr/0006, docs/adr/0025), read with the CLI's inventory reader and its rules; one it refuses is 400 invalid_inventory, whose message names the position and field at fault (resources[1].category), never the value.",
             "type": "object"
           },
           "targets": {

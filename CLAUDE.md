@@ -13,7 +13,7 @@ against an embedded OVHcloud, Scaleway or UpCloud catalog snapshot, through ever
 several targets in one report (`--target all` or a list), as Markdown or as versioned JSON
 (`--format json`, ADR 0018) (PRD #2, OVHcloud from PRD #11, UpCloud from PRD #77 and the comparison
 from PRD #89, the JSON report and the HTTP API from PRD #103, all in `prds/done/`). It reads inventory
-schema versions 1 and 2 (ADR 0006, ADR 0024; version 2 from PRD #190). A second binary,
+schema versions 1 and 2 (ADR 0006, ADR 0025; version 2 from PRD #190). A second binary,
 `shift2eu-server`, serves the same assessments over a versioned HTTP API (PRD #103, ADR 0019), released
 as a binary and as the image `ghcr.io/timothymamo/shift2eu-server` beside the CLI's. Live source adapters
 do not exist yet. Work is planned as PRDs in `prds/`.

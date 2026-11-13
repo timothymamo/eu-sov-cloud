@@ -32,7 +32,7 @@ type Resource struct {
 	// they are sorted and free of duplicates, and nil when there are none.
 	Capabilities []taxonomy.Capability
 
-	// The fields below come with inventory format version 2 (ADR 0024). Each is
+	// The fields below come with inventory format version 2 (ADR 0025). Each is
 	// optional, and "not given" is never 0.
 
 	// Size is how big the resource is, or nil when it is not given. In an

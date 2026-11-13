@@ -31,7 +31,7 @@ const MaxRelations = 32
 
 // The versions of the inventory file format this package reads: version 1 (ADR
 // 0006) and version 2, which adds sizing, usage, workload, relations and cost
-// (ADR 0024).
+// (ADR 0025).
 const (
 	schemaVersion1 = 1
 	schemaVersion2 = 2
@@ -183,7 +183,7 @@ func errTooLarge() error {
 	return fmt.Errorf("%w: more than %d bytes", ErrTooLarge, MaxFileSize)
 }
 
-// document is an inventory file of schema version 1 or 2, as ADRs 0006 and 0024
+// document is an inventory file of schema version 1 or 2, as ADRs 0006 and 0025
 // record it and the walk reads it, before inventory.New checks its values. Its schemaVersion
 // is checked as the document is read and not kept.
 type document struct {
@@ -192,7 +192,7 @@ type document struct {
 }
 
 // The keys of schema version 1, spelt exactly as ADR 0006 records them, and
-// those version 2 adds, as ADR 0024 records them.
+// those version 2 adds, as ADR 0025 records them.
 const (
 	keySchemaVersion = "schemaVersion"
 	keySource        = "source"
