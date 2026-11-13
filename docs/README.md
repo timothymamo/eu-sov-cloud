@@ -7,15 +7,17 @@ the contributor guide, the architecture and the architecture decision records. T
 ## User guide
 
 1. [Install](guide/install.md): the release archives, the images, and building from source.
-2. [Assess an inventory](guide/assess.md): the `assess` command, its Markdown and JSON reports, the
+2. [Try it](guide/try-it.md): a walkthrough from install to a report on a sample inventory, with the
+   CLI, the image and the HTTP API, and how to read the report.
+3. [Assess an inventory](guide/assess.md): the `assess` command, its Markdown and JSON reports, the
    comparison of several targets, and its exit codes.
-3. [Run with Docker](guide/docker.md): running the image offline as your own user, mounts, reports
+4. [Run with Docker](guide/docker.md): running the image offline as your own user, mounts, reports
    and, for live sources, credentials.
-4. [Verify a release](guide/verify-releases.md): the images' signatures, build provenance and SBOMs,
+5. [Verify a release](guide/verify-releases.md): the images' signatures, build provenance and SBOMs,
    and the releases published before the rename.
-5. [Run the HTTP API](guide/http-api.md): `shift2eu-server`, its routes, its image and example
+6. [Run the HTTP API](guide/http-api.md): `shift2eu-server`, its routes, its image and example
    requests.
-6. [Behind a reverse proxy](guide/reverse-proxy.md): deploying the server, its flags and variables,
+7. [Behind a reverse proxy](guide/reverse-proxy.md): deploying the server, its flags and variables,
    and a minimal nginx configuration.
 
 ## Contributor guide

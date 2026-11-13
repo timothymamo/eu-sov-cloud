@@ -45,6 +45,9 @@ on either side does not mean writing a mapping for every pair. See
 
 ## Quick start
 
+To see a report without an inventory of your own, follow [Try it](docs/guide/try-it.md): it uses the
+dummy sample inventories of the repository's `examples/` directory.
+
 Build from a clone with `make build`, or download a release for your platform
 ([Install](docs/guide/install.md)) and run its `shift2eu` in place of `./bin/shift2eu`. Then assess an
 inventory file ([ADR 0006](docs/adr/0006-json-inventory-file-format-v1.md) describes its format)
@@ -68,6 +71,7 @@ docker run --rm --read-only --network none --user "$(id -u):$(id -g)" \
 The [documentation's index](docs/README.md) lists every page. Using `shift2eu`:
 
 - [Install](docs/guide/install.md): the release archives, the images, and building from source.
+- [Try it](docs/guide/try-it.md): a walkthrough on a sample inventory, from install to reading the report.
 - [Assess an inventory](docs/guide/assess.md): the `assess` command, its reports and its exit codes.
 - [Run with Docker](docs/guide/docker.md): the image, mounts, users, reports and credentials.
 - [Verify a release](docs/guide/verify-releases.md): signatures, provenance and SBOMs, and the
