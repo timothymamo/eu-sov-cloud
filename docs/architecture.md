@@ -560,7 +560,7 @@ target, with the `e2e` and `integration` tags (`strictcoverage_test.go`):
   `test-docs-are-pure` refuses `os/exec`, `unsafe` and `os/user` at the import
   (`TestE2EImportsProbe` and `test/architecture`'s depguard pin hold it), so an `exec.Cmd` with a
   nil `Env`, which inherits the whole environment, cannot be written there through an import. An
-  assembly file needs no import (issue #194). `TestE2ENoEnvProbe` and
+  assembly file needs no import, so `test/lint` refuses one there (issue #194). `TestE2ENoEnvProbe` and
   `TestE2ENoEnvForbidigoPatterns` pin the group.
 - **`test-docs-are-pure`** (depguard, strict) holds the doc-only packages `test/apiparity`,
   `test/architecture`, `test/container`, `test/devenv`, `test/docs`, `test/e2e` and `test/lint` to
@@ -570,7 +570,19 @@ target, with the `e2e` and `integration` tags (`strictcoverage_test.go`):
   reads `os` and `os/exec`. `test/e2e`'s untagged `doc.go` is held here as well (the third property):
   `!$test` takes the e2e test files out (depguard applies negated globs whatever their position), so
   they stay on `e2e-is-black-box` alone, which allows `$gostd` and holds the package too. A package
-  that starts importing something names it there and in the pin in the same commit.
+  that starts importing something names it there and in the pin in the same commit. An import
+  list says nothing of a file that needs no import, so `TestDocPackagesHoldNoNonGoSource`
+  (`test/lint`, issue #194) refuses a non-Go source the Go toolchain builds beside a package
+  (assembly, C, C++, Objective-C, Fortran, SWIG or a `.syso` object) in every tree the rule's
+  `files:` list holds, outside `testdata`, `_` and `.` directories and other modules (a directory
+  holding a `go.mod` regular file, as for the go command); it reads those trees from `.golangci.yml`.
+  The go command leaves `testdata`, `_` and `.` directories out of `./...`, and that exemption
+  covers non-Go files only: a non-Go file there is no source of the held package. The check refuses
+  every symlink in, or above, a held tree, whatever its name and wherever it sits, inside
+  `testdata`, `_` and `.` directories included: the walk reads the link, not what it points at, yet
+  an import of its path follows it and the toolchain builds the source it finds there. A package
+  under `testdata` or `_x` is still built when it is imported by path, which this check does not
+  cover (the follow-up to #194).
 
 ### Tests change no process state
 
