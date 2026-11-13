@@ -1,0 +1,78 @@
+{
+  "schemaVersion": 1,
+  "source": "azure",
+  "resources": [
+    {
+      "id": "vm-shop-web-1",
+      "rawType": "Microsoft.Compute/virtualMachines",
+      "category": "compute.vm",
+      "region": "westeurope",
+      "capabilities": ["ipv6", "snapshots"]
+    },
+    {
+      "id": "vmss-shop-web",
+      "rawType": "Microsoft.Compute/virtualMachineScaleSets",
+      "category": "compute.vm",
+      "region": "westeurope",
+      "capabilities": ["autoscaling", "zone-high-availability"]
+    },
+    {
+      "id": "disk-shop-web-1-data",
+      "rawType": "Microsoft.Compute/disks",
+      "category": "storage.block",
+      "region": "westeurope",
+      "capabilities": ["encryption-at-rest", "snapshots"]
+    },
+    {
+      "id": "stshopassets",
+      "rawType": "Microsoft.Storage/storageAccounts",
+      "category": "storage.object",
+      "region": "westeurope",
+      "capabilities": ["object-versioning", "encryption-at-rest"]
+    },
+    {
+      "id": "psql-shop",
+      "rawType": "Microsoft.DBforPostgreSQL/flexibleServers",
+      "category": "database.postgresql",
+      "region": "westeurope",
+      "capabilities": ["point-in-time-restore", "zone-high-availability", "read-replicas"]
+    },
+    {
+      "id": "mysql-shop-catalog",
+      "rawType": "Microsoft.DBforMySQL/flexibleServers",
+      "category": "database.mysql",
+      "region": "westeurope",
+      "capabilities": ["point-in-time-restore", "node-high-availability", "read-replicas"]
+    },
+    {
+      "id": "aks-shop",
+      "rawType": "Microsoft.ContainerService/managedClusters",
+      "category": "kubernetes.managed",
+      "region": "westeurope",
+      "capabilities": ["zone-high-availability", "autoscaling"]
+    },
+    {
+      "id": "func-shop-thumbnails",
+      "rawType": "Microsoft.Web/sites",
+      "category": "serverless.function",
+      "region": "westeurope"
+    },
+    {
+      "id": "sb-shop-orders",
+      "rawType": "Microsoft.ServiceBus/namespaces/queues",
+      "category": "messaging.queue",
+      "region": "westeurope",
+      "capabilities": ["dead-letter-queue"]
+    },
+    {
+      "id": "cdn-shop",
+      "rawType": "Microsoft.Cdn/profiles",
+      "category": "unclassified"
+    },
+    {
+      "id": "dns-shop",
+      "rawType": "Microsoft.Network/dnsZones",
+      "category": "unclassified"
+    }
+  ]
+}

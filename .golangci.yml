@@ -1408,10 +1408,11 @@ linters:
             - github.com/timothymamo/shift2eu/internal/domain/taxonomy$
             - github.com/timothymamo/shift2eu/internal/domain/text$
         # The test trees' own documentation packages (issue #152, the auditor's finding H-1):
-        # test/apiparity, test/architecture, test/container, test/devenv, test/docs, test/lint and
-        # test/openapibundle (issue #139) each hold doc.go and no code, and each is a production
-        # package a composition root can import, because the roots' allow lists name the module
-        # path as a prefix entry. Go's internal rule keeps test/internal/... and
+        # test/apiparity, test/architecture, test/container, test/devenv, test/docs, test/lint,
+        # test/openapibundle (issue #139) and test/examples (issue #179) each hold doc.go and no
+        # code, and each is a production package a composition root can import, because the roots'
+        # allow lists name the module path as a prefix entry. Go's internal rule keeps
+        # test/internal/... and
         # test/architecture/internal/... out of reach of cmd/ and internal/, and nothing keeps
         # these out, so they get a rule of their own: one shared strict rule that allows nothing,
         # allow: [] and the one deny entry, os, as config-is-pure. The day one of them imports a
@@ -1435,6 +1436,7 @@ linters:
             - "**/test/devenv/**"
             - "**/test/docs/**"
             - "**/test/e2e/**"
+            - "**/test/examples/**"
             - "**/test/lint/**"
             - "**/test/openapibundle/**"
             - "!$test"

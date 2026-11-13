@@ -1,0 +1,92 @@
+{
+  "schemaVersion": 1,
+  "source": "aws",
+  "resources": [
+    {
+      "id": "shop-web-1",
+      "rawType": "AWS::EC2::Instance",
+      "category": "compute.vm",
+      "region": "eu-central-1",
+      "capabilities": ["ipv6", "snapshots"]
+    },
+    {
+      "id": "shop-web-2",
+      "rawType": "AWS::EC2::Instance",
+      "category": "compute.vm",
+      "region": "eu-central-1",
+      "capabilities": ["ipv6", "snapshots"]
+    },
+    {
+      "id": "shop-web-asg",
+      "rawType": "AWS::AutoScaling::AutoScalingGroup",
+      "category": "compute.vm",
+      "region": "eu-central-1",
+      "capabilities": ["autoscaling", "zone-high-availability"]
+    },
+    {
+      "id": "shop-web-1-data",
+      "rawType": "AWS::EC2::Volume",
+      "category": "storage.block",
+      "region": "eu-central-1",
+      "capabilities": ["encryption-at-rest", "snapshots"]
+    },
+    {
+      "id": "shop-assets",
+      "rawType": "AWS::S3::Bucket",
+      "category": "storage.object",
+      "region": "eu-central-1",
+      "capabilities": ["object-versioning", "encryption-at-rest"]
+    },
+    {
+      "id": "shop-db",
+      "rawType": "AWS::RDS::DBInstance",
+      "category": "database.postgresql",
+      "region": "eu-central-1",
+      "capabilities": ["point-in-time-restore", "read-replicas", "zone-high-availability", "encryption-at-rest"]
+    },
+    {
+      "id": "shop-legacy-mysql",
+      "rawType": "AWS::RDS::DBInstance",
+      "category": "database.mysql",
+      "region": "eu-central-1",
+      "capabilities": ["point-in-time-restore", "node-high-availability"]
+    },
+    {
+      "id": "shop-eks",
+      "rawType": "AWS::EKS::Cluster",
+      "category": "kubernetes.managed",
+      "region": "eu-central-1",
+      "capabilities": ["node-high-availability", "autoscaling"]
+    },
+    {
+      "id": "shop-thumbnailer",
+      "rawType": "AWS::Lambda::Function",
+      "category": "serverless.function",
+      "region": "eu-central-1"
+    },
+    {
+      "id": "shop-orders",
+      "rawType": "AWS::SQS::Queue",
+      "category": "messaging.queue",
+      "region": "eu-central-1",
+      "capabilities": ["dead-letter-queue", "encryption-at-rest"]
+    },
+    {
+      "id": "shop-orders-dlq",
+      "rawType": "AWS::SQS::Queue",
+      "category": "messaging.queue",
+      "region": "eu-central-1",
+      "capabilities": ["encryption-at-rest"]
+    },
+    {
+      "id": "shop-cdn",
+      "rawType": "AWS::CloudFront::Distribution",
+      "category": "unclassified"
+    },
+    {
+      "id": "shop.example.com",
+      "rawType": "AWS::Route53::HostedZone",
+      "category": "unclassified"
+    }
+  ]
+}
