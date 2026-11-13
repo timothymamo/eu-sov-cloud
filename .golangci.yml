@@ -1430,10 +1430,10 @@ linters:
         # os and os/exec. An import list says nothing of a file that needs no import, so
         # test/lint's TestDocPackagesHoldNoNonGoSource refuses a non-Go source (assembly, C, a
         # .syso object, ...) outside testdata, _ and . directories in every tree this files:
-        # list holds, read from it (issue #194), and every symlink in, or above, a held tree, anywhere, testdata, _ and .
-        # directories included. The testdata, _ and . exemption of ./... covers non-Go files only.
-        # A package under testdata or _x is still built when it is imported by path, which that
-        # check does not cover (the follow-up to #194).
+        # list holds, read from it (issue #194), and every symlink in, or above, a held tree,
+        # anywhere, testdata, _ and . directories included. The testdata, _ and . exemption of
+        # ./... covers non-Go files only. A package under testdata or _x is still built when it
+        # is imported by path, which that check does not cover (the follow-up to #194).
         test-docs-are-pure:
           list-mode: strict
           files:

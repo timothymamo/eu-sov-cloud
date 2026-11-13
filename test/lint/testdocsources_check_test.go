@@ -106,7 +106,8 @@ type docPath struct {
 // link follows it whatever directory it sits in (issue #194). Nothing comes
 // from under the root of another module, symlinks included, though the walked
 // root itself is always read. As for the go command, a module root is a
-// directory holding a go.mod regular file: a directory named go.mod makes none. No directory is returned, and a walk error is.
+// directory holding a go.mod regular file: a directory named go.mod makes
+// none. No directory is returned, and a walk error is.
 func docEntries(fsys fs.FS) ([]docPath, error) {
 	var entries []docPath
 
