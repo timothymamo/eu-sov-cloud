@@ -113,7 +113,7 @@ func resources(w *jsondoc.Walker, version int) ([]inventory.Resource, error) {
 		chunk = append(chunk, inventory.Resource{})
 		total++
 
-		return resource(w, version, &chunk[len(chunk)-1])
+		return resource(w, version, i, &chunk[len(chunk)-1])
 	})
 	if err != nil {
 		return nil, err
@@ -127,9 +127,10 @@ func resources(w *jsondoc.Walker, version int) ([]inventory.Resource, error) {
 	return append(list, chunk...), nil
 }
 
-// resource reads the next value into r: a resource object of version, with the
-// keys that version defines. Its values are checked by inventory.New, not here.
-func resource(w *jsondoc.Walker, version int, r *inventory.Resource) error {
+// resource reads the next value into r: resources[i], a resource object of
+// version, with the keys that version defines. Its values are checked by
+// inventory.New, not here.
+func resource(w *jsondoc.Walker, version, i int, r *inventory.Resource) error {
 	keys := resourceKeys
 	if version == schemaVersion2 {
 		keys = resourceKeysV2
@@ -160,7 +161,7 @@ func resource(w *jsondoc.Walker, version int, r *inventory.Resource) error {
 		case keyWorkload:
 			r.Workload, err = optionalText(w)
 		case keyRelations:
-			r.Relations, err = relations(w)
+			r.Relations, err = relations(w, i)
 		case keyMonthlyCost:
 			r.MonthlyCost, err = cost(w)
 		}
@@ -282,25 +283,23 @@ func cost(w *jsondoc.Walker) (*inventory.Cost, error) {
 	return &c, nil
 }
 
-// relations reads the next value: an array of at most MaxRelations relation
-// objects, duplicates included, or null for an absent list. The list is refused at its first element
-// past the cap, before that element is read; a null element is refused, as a
-// value that is not an object.
-func relations(w *jsondoc.Walker) ([]inventory.Relation, error) {
+// relations reads the next value, the relations of resources[i]: an array of
+// at most MaxRelations relation objects, duplicates included, or null for an
+// absent list. The list is refused at its first element past the cap, before
+// that element is read; a null element is refused, as a value that is not an
+// object.
+func relations(w *jsondoc.Walker, i int) ([]inventory.Relation, error) {
 	if null, err := w.Null(); null || err != nil {
 		return nil, err
 	}
-
-	// The cap names the resource the list belongs to, resources[1]: the list's
-	// path without its key. It is built here, never for a resource without
-	// relations, so a document of many resources pays nothing for it.
-	path := w.Path()
-	at := path[:len(path)-len("."+keyRelations)]
 
 	list := []inventory.Relation{}
 
 	err := w.Array("an array", func(j int) error {
 		if j == MaxRelations {
+			// The cap names the resource the list belongs to, resources[1].
+			at := fmt.Sprintf("%s[%d]", keyResources, i)
+
 			return fmt.Errorf("%w: %s lists more than %d %s, at %s",
 				ErrDecode, text.Quote(at), MaxRelations, keyRelations, w.Position())
 		}
