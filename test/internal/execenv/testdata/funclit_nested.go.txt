@@ -1,0 +1,10 @@
+package probe
+
+import "os/exec"
+
+func funclitNested() func() error {
+	return func() error {
+		cmd := exec.Command("sh")
+		return cmd.Run()
+	}
+}

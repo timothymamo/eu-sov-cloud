@@ -1,0 +1,8 @@
+package probe
+
+import "os/exec"
+
+func methodExpression() error {
+	cmd := exec.Command("sh")
+	return (*exec.Cmd).Run(cmd)
+}

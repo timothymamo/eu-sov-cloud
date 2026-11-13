@@ -1,0 +1,15 @@
+package probe
+
+import (
+	"io"
+	"os/exec"
+)
+
+func fieldBeforeEnv(out io.Writer) error {
+	cmd := exec.Command("sh")
+	cmd.Dir = "/tmp"
+	cmd.Stdout = out
+	cmd.Stderr = out
+	cmd.Env = []string{"PATH=/usr/bin"}
+	return cmd.Run()
+}

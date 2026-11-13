@@ -1,0 +1,7 @@
+package probe
+
+import "os/exec"
+
+func sliceElement() []*exec.Cmd {
+	return []*exec.Cmd{exec.Command("sh")}
+}

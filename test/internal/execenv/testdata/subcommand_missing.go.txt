@@ -1,0 +1,8 @@
+package probe
+
+import "os/exec"
+
+func subcommandMissing() error {
+	cmd := exec.Command("go")
+	return cmd.Run()
+}
