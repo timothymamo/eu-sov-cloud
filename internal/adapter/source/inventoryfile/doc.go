@@ -21,14 +21,19 @@
 // JSON escapes are decoded, and never repeated; every value of the right JSON
 // type; no string that escapes a lone surrogate; and the schema version check,
 // with its wording. This package keeps the format's own decisions: its keys;
-// schemaVersion 1, found before any key or type is checked (any other version,
-// or none, is refused); null read as an absent value for every field but
-// resources, and refused as an element of resources or capabilities; a
+// schemaVersion 1 (ADR 0006) or 2 (ADR 0024), found before any key or type is
+// checked (any other version, or none, is refused), with a version 2 key in a
+// version 1 file refused as unknown; null read as an absent value for every
+// field but resources, at every level of the version 2 objects (size, usage,
+// monthlyCost) too, and refused as an element of resources, capabilities or
+// relations; a version 2 number read as a float64 (a count as an integer
+// written with no fraction or exponent), with one that overflows refused; a
 // resources list (which may be empty) of at most MaxResources entries and at
-// most MaxCapabilities capabilities in each, counted as they are read, so a
-// list is refused at its first element past the cap before that element is
-// read; and its sentinels. The values are validated by the domain, through
-// inventory.New: an unknown category is an error, never unclassified.
+// most MaxCapabilities capabilities and MaxRelations relations in each,
+// counted as they are read, so a list is refused at its first element past the
+// cap before that element is read; and its sentinels. The values are validated
+// by the domain, through inventory.New: an unknown category is an error, never
+// unclassified, and a version 2 field the domain refuses is named by its path.
 //
 // Errors are one line, name the file (if any) through text.QuotePath (which keeps the
 // base name of a long path), and wrap ErrRead, ErrTooLarge, ErrDecode,

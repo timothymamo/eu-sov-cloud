@@ -627,6 +627,7 @@ var pinnedDepguardRules = []check.DepguardRule{
 			"io$",
 			"io/fs$",
 			"os$",
+			"strconv$",
 			"github.com/timothymamo/shift2eu/internal/adapter/internal/jsondoc$",
 			"github.com/timothymamo/shift2eu/internal/domain/inventory$",
 			"github.com/timothymamo/shift2eu/internal/domain/taxonomy$",
