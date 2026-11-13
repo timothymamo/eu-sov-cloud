@@ -110,6 +110,10 @@ func TestSamplesCoverTheTaxonomy(t *testing.T) {
 		t.Errorf("the sample inventories together do not use every taxonomy capability; add a resource that depends on each missing capability (declared minus used):\n%s", diff)
 	}
 
+	// declaredFits is written out by hand: the mapping package declares the Fit
+	// values but, unlike taxonomy.Categories() and taxonomy.Capabilities(),
+	// exposes no list of them (no mapping.Fits()), so a new mapping.Fit must be
+	// added here by hand until it does.
 	declaredFits := []mapping.Fit{mapping.Direct, mapping.Partial, mapping.None}
 
 	var fitsInUse []mapping.Fit
@@ -121,6 +125,6 @@ func TestSamplesCoverTheTaxonomy(t *testing.T) {
 	}
 
 	if diff := cmp.Diff(declaredFits, fitsInUse); diff != "" {
-		t.Errorf("the sample inventories together do not produce every fit on every target; add a resource for each missing fit (declared minus produced):\n%s", diff)
+		t.Errorf("the sample inventories together do not produce every fit on any target; add a resource for each missing fit (declared minus produced):\n%s", diff)
 	}
 }
