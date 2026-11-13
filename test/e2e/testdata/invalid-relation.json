@@ -1,0 +1,20 @@
+{
+  "schemaVersion": 2,
+  "source": "aws",
+  "resources": [
+    {
+      "id": "db-primary",
+      "rawType": "AWS::RDS::DBInstance",
+      "category": "database.postgresql",
+      "region": "eu-west-1"
+    },
+    {
+      "id": "db-replica",
+      "rawType": "AWS::RDS::DBInstance",
+      "category": "database.postgresql",
+      "region": "eu-west-1",
+      "size": { "vcpus": 2, "memoryGiB": 8, "storageGiB": 100, "count": 1 },
+      "relations": [{ "type": "replica-of", "target": "db-missing" }]
+    }
+  ]
+}

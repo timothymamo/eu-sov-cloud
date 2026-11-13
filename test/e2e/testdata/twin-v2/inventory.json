@@ -1,0 +1,29 @@
+{
+  "schemaVersion": 2,
+  "source": "aws",
+  "resources": [
+    {
+      "id": "i-0123456789abcdef0",
+      "rawType": "AWS::EC2::Instance",
+      "category": "compute.vm",
+      "region": "eu-west-1",
+      "capabilities": ["ipv6"],
+      "size": { "vcpus": 2, "memoryGiB": 8, "storageGiB": 100, "count": 1 },
+      "usage": { "hoursPerMonth": 730 },
+      "workload": "shop",
+      "relations": [{ "type": "depends-on", "target": "db-example" }],
+      "monthlyCost": { "amount": 123.45, "currency": "USD" }
+    },
+    {
+      "id": "db-example",
+      "rawType": "AWS::RDS::DBInstance",
+      "category": "database.postgresql",
+      "region": "eu-west-1",
+      "capabilities": ["point-in-time-restore"],
+      "size": { "vcpus": 0.5, "memoryGiB": 4, "storageGiB": 200, "count": 2 },
+      "usage": { "hoursPerMonth": 744 },
+      "workload": "shop",
+      "monthlyCost": { "amount": 0, "currency": "EUR" }
+    }
+  ]
+}
