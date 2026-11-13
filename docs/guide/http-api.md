@@ -76,7 +76,8 @@ the version stamp). Deploy it as [Behind a reverse proxy](reverse-proxy.md) desc
 
 ## Example requests
 
-An assessment request is a JSON object with the inventory document ([ADR 0006](../adr/0006-json-inventory-file-format-v1.md))
+An assessment request is a JSON object with the inventory document, version 1 or 2
+([ADR 0006](../adr/0006-json-inventory-file-format-v1.md), [ADR 0024](../adr/0024-json-inventory-file-format-v2.md)),
 and the target keys. Started from a clone with a token, the server listens on its default loopback
 address; the requests read the token from the same variable, which keeps it out of your shell history, and
 hand curl the header on standard input (`-H @-`), which keeps it out of the process list.
