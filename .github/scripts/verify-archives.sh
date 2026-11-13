@@ -5,19 +5,21 @@
 # Windows) and not shift2eu-server; the server's, shift2eu-server_<version>_<os>_<arch>, hold
 # shift2eu-server (.exe) and not shift2eu. Besides its own binary an archive may hold only LICENSE,
 # README.md and Markdown pages under docs/ (no path segment may start with a dot, so no ., .. or hidden
-# file): any other entry fails the run, so a stray file under docs/ never ships unnoticed. Every entry
-# must be a regular file or a directory: a symbolic link, hard link or device fails the run too. Every built platform has one archive of each, and checksums.txt lists and
-# matches every archive. checksums.txt also lists, exactly once, shift2eu-server_openapi.json, the bundled
-# OpenAPI document the release publishes beside the archives (issue #139), with the sha256 of the
-# committed api/openapi.bundled.json. GoReleaser v2.20.1 copies neither checksum nor release extra files
-# into dist/, so, as release.yml's goreleaser job does after GoReleaser, this copies the committed file into
-# dist/ as shift2eu-server_openapi.json (a copy GoReleaser itself left there must already be that file),
-# and checksums.txt must then pass sha256sum -c in dist/ as a whole.
-# It then mirrors release.yml's hand-over of the archives to attest-archives
-# (issues #139, #156 and #163): the files its patterns pick must pass sha256sum -c checksums.txt, and the
-# subjects they attest must be exactly the archives, the OpenAPI document and checksums.txt, which must
-# also be exactly what GoReleaser would upload to the release (artifacts.json, plus the OpenAPI document,
-# which a snapshot never records there), or release.yml's publish job would refuse the draft. check.GoReleaserArchives pins the configuration itself, and check.GitHubRelease its draft release.
+# file): any other entry fails the run, so a stray file under docs/ never ships unnoticed. Every entry must
+# be a regular file or a directory: a symbolic link, hard link or device fails the run too. Every built
+# platform has one archive of each, and checksums.txt lists and matches every archive. checksums.txt also
+# lists, exactly once, shift2eu-server_openapi.json, the bundled OpenAPI document the release publishes
+# beside the archives (issue #139), with the sha256 of the committed api/openapi.bundled.json. GoReleaser
+# v2.20.1 copies neither checksum nor release extra files into dist/, so, as release.yml's goreleaser job
+# does after GoReleaser, this copies the committed file into dist/ as shift2eu-server_openapi.json (a copy
+# GoReleaser itself left there must already be that file), and checksums.txt must then pass sha256sum -c in
+# dist/ as a whole.
+# It then mirrors release.yml's hand-over of the archives to attest-archives (issues #139, #156 and #163):
+# the files its patterns pick must pass sha256sum -c checksums.txt, and the subjects they attest must be
+# exactly the archives, the OpenAPI document and checksums.txt, which must also be exactly what GoReleaser
+# would upload to the release (artifacts.json, plus the OpenAPI document, which a snapshot never records
+# there), or release.yml's publish job would refuse the draft. check.GoReleaserArchives pins the
+# configuration itself, and check.GitHubRelease its draft release.
 #
 # GoReleaser writes into a temporary directory, removed on exit, so the caller's dist/ is left alone.
 #

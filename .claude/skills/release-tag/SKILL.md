@@ -209,8 +209,11 @@ moves or deletes a tag.
 
    Then confirm the release publishes the bundled OpenAPI document (issue #139). CI's snapshot dry run
    (`.github/scripts/verify-archives.sh`) never exercises `release.extra_files`, because GoReleaser
-   skips the release pipe under `--snapshot`, so this is the first check that the asset really ships.
-   The release must list the asset `shift2eu-server_openapi.json`:
+   skips the release pipe under `--snapshot`, but the release itself already holds the asset to account
+   (#172): the `publish` job refuses a draft whose assets are not exactly the names `checksums.txt`
+   lists plus `checksums.txt`, which lists the document, and `verify-archives` checks its digest and
+   attestation. This step is an independent cross-check that the published bytes are the tag's
+   committed `api/openapi.bundled.json`. The release must list the asset `shift2eu-server_openapi.json`:
    `gh release view vX.Y.Z --json assets --jq '.assets[].name'`. Its `checksums.txt` must hold exactly
    one line for it, with the sha256 of `api/openapi.bundled.json` at the tag:
 

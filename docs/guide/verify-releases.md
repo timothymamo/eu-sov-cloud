@@ -113,7 +113,9 @@ gh attestation verify "$DOC" --repo timothymamo/shift2eu \
   --source-ref "refs/tags/$TAG" --deny-self-hosted-runners
 ```
 
-The document is attested from the first release after `v0.3.0`, the first to publish it. On Windows, in PowerShell, for a `.zip` archive:
+The document is attested from the first release after `v0.3.0`, the first to publish it.
+
+On Windows, in PowerShell, for a `.zip` archive:
 
 ```powershell
 $Tag = "vX.Y.Z"
