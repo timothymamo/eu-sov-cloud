@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.4.0](https://github.com/timothymamo/shift2eu/compare/v0.3.0...v0.4.0) (2026-11-13)
+
+
+### Features
+
+* **openapi:** publish a bundled OpenAPI document with each release ([#139](https://github.com/timothymamo/shift2eu/issues/139)) ([#170](https://github.com/timothymamo/shift2eu/issues/170)) ([1616951](https://github.com/timothymamo/shift2eu/commit/1616951943429f0ad8b016db4edb243607e669f0))
+
 ## [0.3.0](https://github.com/timothymamo/shift2eu/compare/v0.2.0...v0.3.0) (2026-11-12)
 
 
