@@ -332,8 +332,8 @@ published release, as for every asset. `check.ReleaseWorkflow` pins the copy, th
 subject, and the dry run makes the same copy and checks the same hand-over. The asset name carries no version, so
 `releases/latest/download/shift2eu-server_openapi.json` is a stable URL: the release already scopes
 the version (`releases/download/vX.Y.Z/...`). GitHub's "Latest" release is the highest release tag
-on `main`, as the images' `latest` tag is (ADR 0015, issue #173), so that URL serves the highest
-release's document, and a patch to an older line does not take it over. The `shift2eu-server_` prefix matches the server's
+on `main`, by the one decision the release workflow's `latest` job makes per run and the images'
+`latest` tag also follows (ADR 0015, issue #173), so that URL serves the highest release's document, and a patch to an older line does not take it over. The `shift2eu-server_` prefix matches the server's
 archives, as the document describes that binary's API.
 
 ## Alternatives considered

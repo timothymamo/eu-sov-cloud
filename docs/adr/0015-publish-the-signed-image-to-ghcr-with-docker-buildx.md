@@ -81,9 +81,10 @@ attestations, pushed to the registry beside the image.
   `cosign sign --yes --recursive ghcr.io/timothymamo/shift2eu@<digest>`; `actions/attest` (provenance);
   `actions/download-artifact`; `actions/attest` (SBOM).
 - **Tags.** The git tag (`vX.Y.Z`) and `X.Y` from `metadata-action`'s semver rules. `latest` only when
-  the tag is the highest release tag on `main`: the build-arguments step sorts
+  the tag is the highest release tag on `main`: the `latest` job (issue #173, amendment below) sorts
   `git tag -l 'v*.*.*' --merged refs/remotes/origin/main` by version, leaving out pre-releases, and
-  passes `true` or `false` to `metadata-action` (`flavor: latest=...`). A patch to
+  both image jobs pass its `true` or `false` to `metadata-action`
+  (`flavor: latest=${{ needs.latest.outputs.latest }}`). A patch to
   an older line (`v1.2.4` after `v1.3.0`) does not move `latest`, which `latest=auto` would. A
   pre-release tag (`v0.1.0-rc.1`) gets only its own tag: no `X.Y`, no `latest`. The GitHub release
   follows the same rule (issue #92): `.goreleaser.yaml` sets `release.prerelease: auto`, so a tag with
@@ -240,10 +241,11 @@ attestations, pushed to the registry beside the image.
   Then it checks the tag rule above for both images, on the digests this run built: `vX.Y.Z` always;
   `X.Y` for every release; and a pre-release moves neither `X.Y` nor `latest`, so a pre-release fails
   only if `X.Y` or `latest` resolves to its digest (a shipped `X.Y` of an earlier release is fine).
-  `latest` follows the highest release tag, which, as in the stamp, is the highest of the release tags
+  `latest` follows the highest release tag, which, as in the `latest` job, is the highest of the release tags
   merged into `main`, read by ancestry: the job fetches `main` and the `v*` tags of the public repository
   treeless (`git init` and `git fetch --filter=tree:0`, no token) into a repository of its own, with no
-  checkout, so no repository code runs, and picks the highest with the stamp's filter, sort and pick. Not
+  checkout, so no repository code runs, and picks the highest with the `latest` job's filter, sort and
+  pick, on its own: an independent check, not a read of that job's output. Not
   GitHub's "latest release", which by default is the most recently published release rather than the
   highest version (`publish` aligns it since issue #173, and `verify-archives` checks it, but `verify`
   does not rely on it), and not every tag on the remote, which would count a tag off `main`. No release tag merged into `main`
@@ -253,7 +255,8 @@ attestations, pushed to the registry beside the image.
   in the concurrency group, or never run), the `latest` check is skipped with a `::notice::` naming
   that tag. That window is not covered: a release that wrongly moved `latest` passes while the higher
   tag stays unpublished. It includes a stray tag pushed on a commit of `main` whose run never publishes,
-  which also freezes `latest` in the image jobs' stamp, since the stamp counts it as the highest too.
+  which also freezes `latest` in the `latest` job's decision, since that job counts it as the highest
+  too.
   So the notice is acted on, not ignored: the `release-tag` skill checks that the named tag has a
   release run queued or in progress, and otherwise reports the tag as stray or unpublished to the
   maintainer, who decides whether to remove it or re-run its release. A re-run of an older release's
@@ -318,7 +321,7 @@ attestations, pushed to the registry beside the image.
     after `attest-archives`, holding `contents: write` and nothing else: the draft it checked, by the
     id the API listed it with (`gh api -X PATCH repos/timothymamo/shift2eu/releases/$id -F
     draft=false`; `gh` is given the repository in the path, so none reads it from a git remote).
-    Publishing also sends `make_latest`, from the highest-release decision below (amended by issue
+    Publishing also sends `make_latest`, from the `latest` job's decision below (amended by issue
     #173); `prerelease: auto` still marks a pre-release tag at creation. GitHub finds no draft by its tag, so a re-run of a failed
     `goreleaser` job would create a second draft for the tag beside the one the failed run left:
     `replace_existing_draft: true` makes GoReleaser delete that draft (it matches drafts by name, the
@@ -395,17 +398,33 @@ attestations, pushed to the registry beside the image.
     marks the most recently published non-pre-release release its "Latest", so a patch to an older
     line (`v1.2.4` after `v1.3.0`) would take over GitHub's "Latest", and with it every
     `releases/latest/download/...` URL, while the images' `latest` stays on `v1.3.0`. GitHub's
-    "Latest" therefore follows the same rule as the images' `latest` tag: it is the highest release
-    tag merged into `main`, computed by the same line as the image jobs' stamp (`git tag -l 'v*.*.*'
-    --merged refs/remotes/origin/main`, the pre-release filter, `sort -V`, `tail -n 1`), which
-    `check.ReleaseWorkflow` holds byte-identical in every job that uses it. `publish` checks out the
-    whole history (`fetch-depth: 0`, `persist-credentials: false`; no repository code runs), refuses a
-    checkout without `origin/main` as the stamp does, sets `latest=true` only when the tag is that
-    highest tag, and publishes with `-F draft=false -f make_latest="$latest"`. `make_latest` is sent as
-    a string field (`-f`): the API takes the string `"true"`, `"false"` or `"legacy"`, and `-F` would
-    send a JSON boolean. A pre-release is never the highest (the filter drops it) and is published as
-    a GitHub pre-release, which GitHub never makes "Latest". The job's permissions are unchanged,
-    `contents: write` alone.
+    "Latest" therefore follows the same rule as the images' `latest` tag, and the same decision. A
+    thirteenth job, `latest`, needs only `test` and decides once per run whether the tag is the highest
+    release tag merged into `main` (`git tag -l 'v*.*.*' --merged refs/remotes/origin/main`, the
+    pre-release filter, `sort -V`, `tail -n 1`): it checks out the whole history (`fetch-depth: 0`,
+    `persist-credentials: false`) with `contents: read` alone, runs no repository code, refuses a
+    checkout without `origin/main` (the run shell, `bash -e`, has no `pipefail`, so the pipeline would
+    otherwise leave the highest tag empty and `latest` false without failing), and writes
+    `latest=true` or `latest=false` as its output. Both image jobs and `publish` need it and read that
+    output (`needs.latest.outputs.latest`); none of them computes it again. Deciding once is what keeps
+    them agreeing: were each job to read the tags from its own checkout, a release tag merged into
+    `main` between two checkouts would give the images one answer and GitHub's "Latest" another within
+    the same run. `publish` keeps no checkout: it takes the decision through `env:` as `LATEST`,
+    refuses any value but exactly `true` or `false`, and publishes with
+    `-F draft=false -f make_latest="$LATEST"`. `make_latest` is sent as a string field (`-f`): the API
+    takes the string `"true"`, `"false"` or `"legacy"`, and `-F` would send a JSON boolean. A
+    pre-release is never the highest (the filter drops it) and is published as a GitHub pre-release,
+    which GitHub never makes "Latest". The job's permissions are unchanged, `contents: write` alone.
+    `check.ReleaseWorkflow` pins the `latest` job and its line byte for byte, and
+    `check.DryRunMirrorsRelease` holds CI's dry run to that job's line.
+
+    Consequence, accepted and shared with the images' `latest` tag: a `vX.Y.Z` tag merged into `main`
+    whose release is never published (its run failed, or, still queued, was replaced by a newer tag's
+    run in the concurrency group) is the highest release tag, so every later run decides
+    `latest=false`, and GitHub's "Latest" stays on the previous release, as the images' `latest` does,
+    until that tag's release is published or the tag is deleted. `verify` and `verify-archives` only
+    print a `::notice::` naming the tag; they do not fail. The `release-tag` skill acts on the notice:
+    re-run the failed release run, or delete the stray tag, as the maintainer decides.
   - **Verify the archives.** A twelfth job, `verify-archives`, runs after `publish` (a draft's assets
     are not public), on a fresh runner with `contents: read` and `attestations: read` and no checkout:
     it downloads every asset of the release, fails unless the release is published (not a draft) and
@@ -413,8 +432,11 @@ attestations, pushed to the registry beside the image.
     `gh attestation verify` on each with `--signer-workflow`, `--source-ref refs/tags/<tag>`,
     `--source-digest` and `--deny-self-hosted-runners`. Its last step checks GitHub's "Latest"
     (issue #173): it fetches `main` and the `v*` tags treeless into a repository of its own, as
-    `verify` does, computes the highest release tag with the same line, fails when there is none, and
-    reads `releases/latest`'s `tag_name`. When the tag is the highest, GitHub's "Latest" must be the
+    `verify` does, computes the highest release tag with the same line on its own, an independent
+    check of the `latest` job's decision rather than a read of it, fails when there is none, and
+    reads `releases/latest`'s `tag_name`. A pre-release tag must never be GitHub's "Latest", checked
+    first and without any condition, so the skip below cannot let one through. When the tag is the
+    highest, GitHub's "Latest" must be the
     tag. When the highest release tag's release is published, GitHub's "Latest" must not be the tag.
     When the API answers 404 for the highest release tag's release (not published yet, for any reason),
     the check is skipped with a `::notice::`, the same window and handling as `verify`'s `latest`

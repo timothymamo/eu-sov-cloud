@@ -77,7 +77,13 @@ release published is the draft that was checked. The release workflow's `verify-
 runs these checks on every asset of every release, on a fresh runner with read-only permissions, and
 fails the release when one fails. It also checks that GitHub's "Latest" release, the one
 `releases/latest/download/...` serves, is the highest version released, the release the images'
-`latest` tag names: a patch to an older line is published without becoming "Latest". Check either archive, or the OpenAPI document, the same way, with `TAG` set to the release you
+`latest` tag names: a patch to an older line is published without becoming "Latest", and a
+pre-release never becomes it. The release decides that once per run, in its `latest` job, and both
+the images' `latest` tag and GitHub's "Latest" follow that one decision, so they cannot disagree
+within a run; `verify-archives`, like `verify` for the images, reads the highest release tag again
+on its own, as an independent check. A release tag on `main` whose release is never published (a
+failed run, or a queued run replaced by a newer one) holds both back on the previous release until
+it is published or the tag is deleted; the check then passes with a notice naming that tag. Check either archive, or the OpenAPI document, the same way, with `TAG` set to the release you
 want:
 
 ```bash
