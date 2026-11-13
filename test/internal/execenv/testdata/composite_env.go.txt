@@ -1,0 +1,7 @@
+package probe
+
+import "os/exec"
+
+func compositeEnv() *exec.Cmd {
+	return &exec.Cmd{Path: "/bin/sh", Env: []string{"PATH=/usr/bin"}}
+}

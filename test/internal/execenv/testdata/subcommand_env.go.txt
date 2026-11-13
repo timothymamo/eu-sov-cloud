@@ -1,0 +1,8 @@
+package probe
+
+import "os/exec"
+
+func subcommandEnv() error {
+	cmd := exec.Command("go", "env", "GOPATH")
+	return cmd.Run()
+}

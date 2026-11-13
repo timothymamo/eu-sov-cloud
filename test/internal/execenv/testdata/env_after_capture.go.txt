@@ -1,0 +1,13 @@
+package probe
+
+import "os/exec"
+
+// The command is deferred before its Env is assigned again, so the assignment
+// may land after the run it was meant for.
+func envAfterCapture() error {
+	cmd := exec.Command("sh")
+	cmd.Env = []string{"PATH=/usr/bin"}
+	defer cmd.Run()
+	cmd.Env = nil
+	return nil
+}

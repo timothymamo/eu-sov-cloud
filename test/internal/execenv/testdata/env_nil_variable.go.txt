@@ -1,0 +1,11 @@
+package probe
+
+import "os/exec"
+
+func envNilVariable() error {
+	var env []string
+
+	cmd := exec.Command("sh")
+	cmd.Env = env
+	return cmd.Run()
+}

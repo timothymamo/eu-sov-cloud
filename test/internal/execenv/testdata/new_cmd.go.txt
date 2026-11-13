@@ -1,0 +1,7 @@
+package probe
+
+import "os/exec"
+
+func newCmd() *exec.Cmd {
+	return new(exec.Cmd)
+}

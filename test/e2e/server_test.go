@@ -630,7 +630,7 @@ func TestServerLoopbackRule(t *testing.T) {
 		stderr := &lockedBuffer{}
 
 		cmd := exec.Command(serverBinary(t), "--listen", "0.0.0.0:0")
-		cmd.Env = emptyEnv()
+		cmd.Env = []string{}
 		cmd.Stderr = stderr
 
 		err := cmd.Run()

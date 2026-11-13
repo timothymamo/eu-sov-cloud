@@ -1,0 +1,9 @@
+package probe
+
+func environLiterals() []string {
+	return []string{
+		"/proc/self/environ",
+		"/proc/1/environ",
+		"/proc/thread-self/environ",
+	}
+}

@@ -1,0 +1,13 @@
+package probe
+
+import "os/exec"
+
+// A pointer to an Env field is a finding wherever it appears, though the
+// command's own Env is set and its run is accepted.
+func envAddressVar() error {
+	cmd := exec.Command("sh")
+	cmd.Env = []string{"PATH=/usr/bin"}
+	p := &cmd.Env
+	_ = p
+	return cmd.Run()
+}

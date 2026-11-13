@@ -1,0 +1,25 @@
+package probe
+
+import "os/exec"
+
+// *exec.Cmd is allowed only as the whole type of a struct field, a function
+// parameter, a function result or a var (pointer_cmd.go.txt). It is refused as
+// the element or key of an array, slice, map or chan type, on the right of a
+// type declaration, and as a type argument, so no composite value can hold a
+// command (P2). Each shape is one finding, at the type expression.
+var sliceOfCmds []*exec.Cmd
+var nestedSliceOfCmds [][]*exec.Cmd
+var mapOfCmds map[*exec.Cmd]int
+var mapOfSlicesOfCmds map[string][]*exec.Cmd
+var chanOfCmds chan *exec.Cmd
+
+type cmds []*exec.Cmd
+type cmdPointer = *exec.Cmd
+
+// cmdList is a generic type, not a function: the type argument below is the
+// only thing the type rule has to say about it.
+type cmdList[T any] []T
+
+func cmdListArgument() {
+	_ = cmdList[*exec.Cmd]{}
+}

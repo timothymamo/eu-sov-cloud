@@ -1,0 +1,18 @@
+package probe
+
+import "os/exec"
+
+// These are the values the e2e tier's sites assign: a composite literal, even
+// empty, and a make call, which are both non-nil.
+func envAcceptedForms(env []string) []error {
+	literal := exec.Command("one")
+	literal.Env = []string{}
+
+	made := exec.Command("two")
+	made.Env = make([]string, 0, len(env))
+
+	appended := exec.Command("three")
+	appended.Env = append([]string{}, env...)
+
+	return []error{literal.Run(), made.Run(), appended.Run()}
+}

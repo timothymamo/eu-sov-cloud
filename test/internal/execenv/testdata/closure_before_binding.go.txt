@@ -1,0 +1,17 @@
+package probe
+
+import "os/exec"
+
+// cmd is a package variable the closure below captures before this function
+// binds it: source order and run order differ, so the binding is no command
+// the check can follow.
+var cmd *exec.Cmd
+
+func closureBeforeBinding() error {
+	run := func() error { return cmd.Run() }
+
+	cmd = exec.Command("sh")
+	cmd.Env = []string{"PATH=/usr/bin"}
+
+	return run()
+}

@@ -316,7 +316,7 @@ func runJQ(t *testing.T, jq, source string, inputs []string) []byte {
 	cmd.Stderr = &stderr
 
 	// The program needs no environment: it reads the files the arguments name.
-	cmd.Env = emptyEnv()
+	cmd.Env = []string{}
 
 	err := cmd.Run()
 

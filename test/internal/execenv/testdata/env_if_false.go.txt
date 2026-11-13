@@ -1,0 +1,11 @@
+package probe
+
+import "os/exec"
+
+func envIfFalse() error {
+	cmd := exec.Command("sh")
+	if false {
+		cmd.Env = []string{"PATH=/usr/bin"}
+	}
+	return cmd.Run()
+}

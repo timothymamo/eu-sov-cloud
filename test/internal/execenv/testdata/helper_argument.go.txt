@@ -1,0 +1,7 @@
+package probe
+
+import "os/exec"
+
+func helperArgument(run func(*exec.Cmd)) {
+	run(exec.Command("sh"))
+}

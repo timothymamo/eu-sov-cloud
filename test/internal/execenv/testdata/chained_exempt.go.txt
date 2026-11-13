@@ -1,0 +1,9 @@
+package probe
+
+import "os/exec"
+
+// No site chains an exempt command to its run method, and a chained run lets
+// the exemption through unexamined, so every chained run is refused.
+func chainedExempt() ([]byte, error) {
+	return exec.Command("go", "list", "-deps", "./cmd/x").Output()
+}

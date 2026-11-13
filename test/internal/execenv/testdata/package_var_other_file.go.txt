@@ -1,0 +1,11 @@
+package probe
+
+import "os/exec"
+
+// shared is declared in another file of the package, as the e2e tier's helpers
+// are spread over several files, so the check resolves no object for it.
+func packageVarOtherFile() error {
+	shared = exec.Command("sh")
+	shared.Env = []string{"PATH=/usr/bin"}
+	return shared.Run()
+}

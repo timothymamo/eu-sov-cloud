@@ -1,0 +1,12 @@
+package probe
+
+import "os/exec"
+
+// The result type holds a command and is refused, the slice literal's type at
+// the return line is refused as any composite type is, and the construction
+// inside it, which the check cannot follow, is refused where it is built (P2).
+func sliceElement() []*exec.Cmd {
+	return []*exec.Cmd{
+		exec.Command("sh"),
+	}
+}

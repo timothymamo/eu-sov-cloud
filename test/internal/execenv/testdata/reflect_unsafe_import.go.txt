@@ -1,0 +1,17 @@
+package probe
+
+import (
+	"os/exec"
+	"reflect"
+	"unsafe"
+)
+
+// A grouped import that holds both reaches a command's fields both ways, and
+// each import is a finding of its own: one finding per line, the import a
+// reader removes (P6).
+
+func reflectUnsafeEnv(cmd *exec.Cmd) {
+	cmd.Env = []string{}
+	reflect.ValueOf(cmd).Elem().FieldByName("Env").Set(reflect.ValueOf([]string{}))
+	_ = unsafe.Pointer(cmd)
+}

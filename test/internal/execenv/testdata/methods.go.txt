@@ -1,0 +1,17 @@
+package probe
+
+import "os/exec"
+
+func methods() {
+	run := exec.Command("run")
+	_ = run.Run()
+
+	start := exec.Command("start")
+	_ = start.Start()
+
+	output := exec.Command("output")
+	_, _ = output.Output()
+
+	combined := exec.Command("combined")
+	_, _ = combined.CombinedOutput()
+}

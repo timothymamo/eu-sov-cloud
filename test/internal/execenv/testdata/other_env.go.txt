@@ -1,0 +1,11 @@
+package probe
+
+import "os/exec"
+
+func otherEnv() error {
+	first := exec.Command("first")
+	first.Env = []string{"PATH=/usr/bin"}
+
+	second := exec.Command("second")
+	return second.Run()
+}

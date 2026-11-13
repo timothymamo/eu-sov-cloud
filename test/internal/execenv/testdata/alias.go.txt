@@ -1,0 +1,9 @@
+package probe
+
+import "os/exec"
+
+func alias() {
+	cmd := exec.Command("sh")
+	other := cmd
+	_ = other
+}

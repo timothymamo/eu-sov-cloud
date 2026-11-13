@@ -1,0 +1,5 @@
+package probe
+
+func environStatus() string {
+	return "/proc/self/status"
+}

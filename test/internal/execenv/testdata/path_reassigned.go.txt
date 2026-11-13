@@ -1,0 +1,9 @@
+package probe
+
+import "os/exec"
+
+func pathReassigned() error {
+	cmd := exec.Command("go", "build", "-o", "out", "./cmd/x")
+	cmd.Path = "/usr/local/bin/other"
+	return cmd.Run()
+}

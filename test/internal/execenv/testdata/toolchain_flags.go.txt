@@ -1,0 +1,29 @@
+package probe
+
+import "os/exec"
+
+// The exemption is an allow-list: after the subcommand, every literal argument
+// that starts with - must be one of -trimpath, -o and -deps. A -ldflags that
+// names another linker and its -extld, a -C that runs the go command elsewhere
+// and a -pgo that reads a profile are none of them, so each call loses the
+// exemption and is refused at its run (P4).
+
+func toolchainLdflagsEqual() error {
+	build := exec.Command("go", "build", "-ldflags=-linkmode=external -extld=/tmp/x", "./cmd/x")
+	return build.Run()
+}
+
+func toolchainLdflagsApart() error {
+	build := exec.Command("go", "build", "-ldflags", "-linkmode=external -extld=/tmp/x", "./cmd/x")
+	return build.Run()
+}
+
+func toolchainChdir() error {
+	build := exec.Command("go", "build", "-C", "..", "./cmd/x")
+	return build.Run()
+}
+
+func toolchainPGO() error {
+	build := exec.Command("go", "build", "-pgo=x", "./cmd/x")
+	return build.Run()
+}

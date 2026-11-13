@@ -1,0 +1,7 @@
+package probe
+
+import "os/exec"
+
+func chained() ([]byte, error) {
+	return exec.Command("x").Output()
+}

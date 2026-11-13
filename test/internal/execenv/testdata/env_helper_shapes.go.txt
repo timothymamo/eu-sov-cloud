@@ -1,0 +1,43 @@
+package probe
+
+import "os/exec"
+
+// A helper whose return the check reads as an Env value proves that value only
+// while it has no named results and no defer statement in its body (P5): a
+// deferred closure can set a named result to nil after the return expression,
+// and a panic leaves every result zero. The finding is the helper's
+// declaration, and the assignment that reads it is refused as any value the
+// check cannot prove is, so the run after it is refused too.
+
+func emptiedEnv() (env []string) {
+	defer func() { env = nil }()
+	return []string{}
+}
+
+func recoveredEnv() []string {
+	defer func() { _ = recover() }()
+	return []string{}
+}
+
+func envHelperShapes() error {
+	cmd := exec.Command("sh")
+	cmd.Env = emptiedEnv()
+	_ = cmd.Run()
+
+	other := exec.Command("sh")
+	other.Env = recoveredEnv()
+	return other.Run()
+}
+
+// A named result alone proves nothing, even with no defer statement in the
+// body: a deferred function added later can still set the name to nil, so the
+// declaration is refused and the assignment that reads it proves no Env (P5).
+func namedEnv() (env []string) {
+	return []string{}
+}
+
+func envNamedResult() error {
+	cmd := exec.Command("sh")
+	cmd.Env = namedEnv()
+	return cmd.Run()
+}

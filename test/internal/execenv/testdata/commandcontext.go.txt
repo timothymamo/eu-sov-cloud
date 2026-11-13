@@ -1,0 +1,11 @@
+package probe
+
+import (
+	"context"
+	"os/exec"
+)
+
+func commandContext(ctx context.Context) error {
+	cmd := exec.CommandContext(ctx, "x")
+	return cmd.Run()
+}

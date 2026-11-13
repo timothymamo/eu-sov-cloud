@@ -1,0 +1,11 @@
+package probe
+
+import "os/exec"
+
+// The exemption admits "go" whatever follows it, and the subcommand is still
+// no literal, so the call is refused: a sub a literal-only exemption cannot
+// read is never exempt.
+func nameOnlyExemptionCommand(sub string) error {
+	cmd := exec.Command("go", sub, "./cmd/x")
+	return cmd.Run()
+}

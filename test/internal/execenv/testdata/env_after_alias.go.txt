@@ -1,0 +1,14 @@
+package probe
+
+import "os/exec"
+
+// The command was aliased before its Env is assigned again: the assignment is
+// a finding whatever its value, an accepted value included.
+func envAfterAlias() error {
+	cmd := exec.Command("sh")
+	cmd.Env = []string{"PATH=/usr/bin"}
+	other := cmd
+	_ = other
+	cmd.Env = []string{"PATH=/usr/bin"}
+	return cmd.Run()
+}

@@ -1,0 +1,293 @@
+package lint_test
+
+import (
+	"fmt"
+	"os"
+	"path/filepath"
+	"slices"
+	"strings"
+	"testing"
+
+	"github.com/timothymamo/shift2eu/test/internal/execenv"
+)
+
+// The checker these scans run, and its probes, live in test/internal/execenv
+// (issue #195), as the shellcheck rule's do in test/internal/shellcheck:
+// test/lint holds doc.go and _test.go files only.
+
+// e2eToolchainCommands lists the commands a test/e2e _test.go file may start
+// with the whole environment of the test process, as the name and the
+// subcommand the source writes, joined by a space. It is the go toolchain's
+// alone: the `go build` calls of assess_test.go's buildAndRun and the
+// `go list -deps` calls of assess_test.go and server_test.go inherit that
+// environment because the go command needs it (GOPATH, the module cache,
+// GOFLAGS, a proxy, a toolchain) and print none of it (issue #195). Every other
+// command must set its Env: exec.Cmd reads a nil Env as "inherit the
+// environment", where the agents' keys and tokens live (CLAUDE.md rule 3), and
+// what the child prints can reach a t.Log call or a golden file. The exemption
+// is keyed on the name and the subcommand, both string literals, so a `go run`
+// or a `go env` call is let through by nothing; the checker itself takes the
+// exemption away from a call with a spread argument (issue #195 round 4). A
+// resulting argument the source builds at run time (an output path, a package)
+// keeps the exemption, so an argument that holds a flag without being a literal
+// is left to review, as the e2e-no-env forbidigo group leaves its own gaps. A Dir
+// set on an exempt command keeps the exemption too: the go command then reads
+// that directory's go.mod and go.work, and that is left to review, like a
+// non-literal argument holding a flag.
+var e2eToolchainCommands = []string{"go build", "go list"}
+
+// e2eToolchainFlags is the allow-list of flags an exempt command may carry:
+// after the subcommand, every literal argument that starts with "-" must be one
+// of these, or the exemption is lost (issue #195 round 4). The three are the
+// flags the tier passes today, and each keeps the go command from handing its
+// environment to a program the argument names: -trimpath and -o build a binary,
+// and -deps lists the packages it needs. A flag the go command gains later, or
+// one of the many that run another program with that environment (-ldflags with
+// -extld, -toolexec, -exec, -overlay, -C, -pgo, -compiler, ...), is refused
+// until review adds it here on purpose.
+var e2eToolchainFlags = []string{"-trimpath", "-o", "-deps"}
+
+// e2eExecExempt reports whether the e2e tier may start the command named name
+// with its first argument sub, no Env of its own and the literal arguments
+// flags after the subcommand (e2eToolchainCommands, e2eToolchainFlags).
+func e2eExecExempt(name, sub string, flags []string) bool {
+	if !slices.Contains(e2eToolchainCommands, name+" "+sub) {
+		return false
+	}
+	for _, flag := range flags {
+		if strings.HasPrefix(flag, "-") && !slices.Contains(e2eToolchainFlags, flag) {
+			return false
+		}
+	}
+	return true
+}
+
+// TestE2EExecExempt pins the exemption the e2e scan hands the checker: the go
+// toolchain's two commands, keyed on the name and the subcommand, and only
+// while every literal argument after the subcommand that starts with "-" is in
+// e2eToolchainFlags. The scan of test/e2e passes none of the flags that spoil
+// it today, so only a test of the function itself pins that it refuses them
+// (issue #195 round 4).
+func TestE2EExecExempt(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name  string
+		cmd   string
+		sub   string
+		flags []string
+		want  bool
+	}{
+		{
+			name:  "the flags buildAndRun passes to go build",
+			cmd:   "go",
+			sub:   "build",
+			flags: []string{"-trimpath", "-o"},
+			want:  true,
+		},
+		{
+			name:  "the flags the dependency scans pass to go list",
+			cmd:   "go",
+			sub:   "list",
+			flags: []string{"-deps"},
+			want:  true,
+		},
+		{
+			name:  "a positional argument the source builds at run time is no flag",
+			cmd:   "go",
+			sub:   "list",
+			flags: []string{"-deps", "./cmd/shift2eu"},
+			want:  true,
+		},
+		{
+			// `go run` builds and runs a program with the go command's
+			// environment, which is why the exemption names build and list
+			// alone.
+			name: "a subcommand the exemption does not name",
+			cmd:  "go",
+			sub:  "run",
+		},
+		{
+			// `go env` prints the environment it inherits.
+			name: "go env",
+			cmd:  "go",
+			sub:  "env",
+		},
+		{
+			name: "another command named with an exempt subcommand",
+			cmd:  "sh",
+			sub:  "build",
+		},
+		{
+			name:  "a literal flag the allow-list does not name",
+			cmd:   "go",
+			sub:   "build",
+			flags: []string{"-toolexec"},
+		},
+		{
+			name:  "a flag with = the allow-list does not name",
+			cmd:   "go",
+			sub:   "build",
+			flags: []string{"-pgo=auto"},
+		},
+		{
+			// The allow-list is read after the subcommand, so an allowed
+			// flag does not rescue a spoil flag further along the call.
+			name:  "a spoil flag after an allowed one",
+			cmd:   "go",
+			sub:   "build",
+			flags: []string{"-trimpath", "-overlay", "overlay.json"},
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			if got := e2eExecExempt(tc.cmd, tc.sub, tc.flags); got != tc.want {
+				t.Errorf("e2eExecExempt(%q, %q, %q) = %v, want %v", tc.cmd, tc.sub, tc.flags, got, tc.want)
+			}
+		})
+	}
+}
+
+// TestE2ETestsSetExecEnv holds every test/e2e _test.go file to the rule that a
+// command it runs carries an Env of its own. The tier imports os/exec on
+// purpose, so forbidigo's e2e-no-env group cannot refuse the import; it refuses
+// (*exec.Cmd).Environ, the one call that dumps the environment, but nothing
+// refuses a command built with a nil Env, which inherits all of it. This test
+// keeps every run of the binary setting cmd.Env (issue #195).
+// execenv.CheckExecEnv is the checker; the go toolchain's calls are exempt
+// (e2eToolchainCommands).
+//
+// The walk is recursive, so a sub-package the tier grows later is scanned too,
+// and skips the testdata directories, which hold fixtures and no package of the
+// tier.
+func TestE2ETestsSetExecEnv(t *testing.T) {
+	t.Parallel()
+
+	root := moduleRoot(t)
+	dir := filepath.Join(root, "test", "e2e")
+
+	var scanned []string
+	refused, err := walkGoFiles(dir, skipTestdataDir, func(rel string, src []byte) error {
+		// Every _test.go file of the tier: doc.go is the package's only
+		// production file, and TestE2ETestsSetExecEnv holds the tests.
+		if !strings.HasSuffix(rel, "_test.go") {
+			return nil
+		}
+		at := "test/e2e/" + rel
+		scanned = append(scanned, at)
+		findings, err := execenv.CheckExecEnv(at, src, e2eExecExempt)
+		if err != nil {
+			return fmt.Errorf("check %s: %w", at, err)
+		}
+		for _, f := range findings {
+			t.Error(findingLine(f))
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("walk %s: %v", dir, err)
+	}
+	for _, problem := range refused {
+		t.Error(problem)
+	}
+
+	// Guard the scan itself: a walk that found no test file, or one that lost
+	// the files the toolchain calls live in, would pass whatever they say, and
+	// one that descended into a testdata directory would read fixtures as if
+	// they were the tier's.
+	for _, rel := range []string{
+		"test/e2e/assess_test.go",
+		"test/e2e/inventory_guide_test.go",
+		"test/e2e/server_test.go",
+	} {
+		if !slices.Contains(scanned, rel) {
+			t.Errorf("the scan skipped %s, a _test.go file of the e2e tier", rel)
+		}
+	}
+	for _, at := range scanned {
+		if strings.Contains(at, "/testdata/") {
+			t.Errorf("the scan read %s, a file under testdata, which holds fixtures and no package of the e2e tier", at)
+		}
+	}
+	t.Logf("checked %d e2e test files", len(scanned))
+}
+
+// skipTestdataDir is walkGoFiles' skip function for the e2e tier: a testdata
+// directory holds fixtures, which are no Go file of the tier the rule is about.
+func skipTestdataDir(_ *os.Root, _, name string) (bool, error) {
+	return name == "testdata", nil
+}
+
+// TestTestTreeNamesNoProcEnviron holds every Go file under test/ to the rule
+// that no string literal in it names the environment of a process: reading that
+// file hands over the whole environment of the test process without starting a
+// child, and the e2e-no-env forbidigo group allows os.ReadFile, so nothing else
+// refuses it (issue #195).
+//
+// The tier decides the rule (execenv.Tier): under test/e2e, which holds no
+// fixture literals, any literal that names a path into /proc or /dev/fd is
+// refused; elsewhere in test/, where a probe's source and expected message are
+// literals of their own, only a literal whose whole value names a
+// /proc/<something>/environ file is.
+//
+// The walk skips nothing, testdata directories included: a literal there would
+// be a probe of some other rule, and the probes of this one are .go.txt files
+// under test/internal/execenv/testdata, which are no Go files and which this
+// scan therefore never meets. No name is left out: the cases of the matcher
+// both tiers read are values in a JSON file there, so the file that pins them,
+// test/internal/execenv/environmentpath_test.go, is scanned like every other
+// Go file under test/ (issue #195 round 3).
+func TestTestTreeNamesNoProcEnviron(t *testing.T) {
+	t.Parallel()
+
+	root := moduleRoot(t)
+
+	var scanned []string
+	refused, err := walkGoFiles(filepath.Join(root, "test"), nil, func(rel string, src []byte) error {
+		scanned = append(scanned, rel)
+		tier := execenv.TierTest
+		if strings.HasPrefix(rel, "e2e/") {
+			tier = execenv.TierE2E
+		}
+		findings, err := execenv.CheckEnvironLiterals("test/"+rel, src, tier)
+		if err != nil {
+			return fmt.Errorf("check %s: %w", rel, err)
+		}
+		for _, f := range findings {
+			t.Error(findingLine(f))
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("walk test/: %v", err)
+	}
+	// walkGoFiles refuses a Go file that is not a regular file (whyNotRegular);
+	// an unread file would hide the literals inside it.
+	for _, problem := range refused {
+		t.Error(problem)
+	}
+
+	// Guard the walk itself: it must reach the tier this rule is about, a
+	// testdata directory, which it does not skip, and the file that pins the
+	// matcher on values in a JSON file beside the probes.
+	for _, rel := range []string{
+		"e2e/assess_test.go",
+		"lint/doc.go",
+		"lint/testdata/e2enoenv/mod/test/e2e/probe.go",
+		"internal/execenv/environmentpath_test.go",
+	} {
+		if !slices.Contains(scanned, rel) {
+			t.Errorf("the scan skipped %s; it reads every Go file under test/", rel)
+		}
+	}
+	t.Logf("checked %d Go files under test/", len(scanned))
+}
+
+// findingLine renders one refusal of a checker as the line a reader sees in a
+// test failure.
+func findingLine(f execenv.Finding) string {
+	return fmt.Sprintf("%s:%d: %s", f.File, f.Line, f.Msg)
+}

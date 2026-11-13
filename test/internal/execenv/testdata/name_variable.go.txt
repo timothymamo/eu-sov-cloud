@@ -1,0 +1,8 @@
+package probe
+
+import "os/exec"
+
+func nameVariable(name string) error {
+	cmd := exec.Command(name)
+	return cmd.Run()
+}

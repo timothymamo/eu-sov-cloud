@@ -1,0 +1,15 @@
+package probe
+
+import "os/exec"
+
+// emptyEnv is the helper shape the e2e tier's sites use: a call the check
+// follows one level into the file to a return expression it accepts.
+func emptyEnv() []string {
+	return []string{}
+}
+
+func envHelper() error {
+	cmd := exec.Command("sh")
+	cmd.Env = emptyEnv()
+	return cmd.Run()
+}
