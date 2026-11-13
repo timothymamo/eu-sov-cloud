@@ -901,15 +901,31 @@ func TestRequiredEnvironmentReads(t *testing.T) {
 	// would let a syscall-allowing rule past unchecked, so the calls the issue
 	// names are pinned here too (issue #167).
 	wantSyscall := []string{
+		"syscall.AllThreadsSyscall",
+		"syscall.AllThreadsSyscall6",
+		"syscall.CreateProcess",
+		"syscall.CreateProcessAsUser",
 		"syscall.Exec",
 		"syscall.Environ",
 		"syscall.ForkExec",
+		"syscall.GetEnvironmentStrings",
+		"syscall.GetEnvironmentVariable",
 		"syscall.Getenv",
+		"syscall.GetProcAddress",
+		"syscall.LoadDLL",
+		"syscall.LoadLibrary",
+		"syscall.MustLoadDLL",
+		"syscall.NewLazyDLL",
 		"syscall.RawSyscall",
 		"syscall.RawSyscall6",
 		"syscall.StartProcess",
 		"syscall.Syscall",
+		"syscall.Syscall12",
+		"syscall.Syscall15",
+		"syscall.Syscall18",
 		"syscall.Syscall6",
+		"syscall.Syscall9",
+		"syscall.SyscallN",
 	}
 
 	for _, read := range syscallEnvironmentReads {

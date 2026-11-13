@@ -21,9 +21,9 @@ const e2eNoEnvTag = "e2e-no-env"
 
 // e2eNoEnvRefused lists every name the group must refuse: the os reads
 // testutil-no-env, cli-no-env-or-process and inventoryfile-no-env refuse, and the
-// syscall reads the composition roots' groups refuse on every unix platform. A
-// name is refused when an entry of the group matches its pkg and its rendered
-// name; the wording of a msg is not pinned here, the tag is.
+// syscall reads, the ones linux and the ones windows reach the environment or
+// start a process with. A name is refused when an entry of the group matches its
+// pkg and its rendered name; the wording of a msg is not pinned here, the tag is.
 var e2eNoEnvRefused = []rootName{
 	{"os", "os.Getenv"},
 	{"os", "os.LookupEnv"},
@@ -34,17 +34,31 @@ var e2eNoEnvRefused = []rootName{
 	{"os", "os.UserConfigDir"},
 	{"os", "os.UserCacheDir"},
 	{"os", "os.TempDir"},
-	{"syscall", "syscall.Getenv"},
-	{"syscall", "syscall.Environ"},
+	{"syscall", "syscall.AllThreadsSyscall"},
+	{"syscall", "syscall.AllThreadsSyscall6"},
+	{"syscall", "syscall.CreateProcess"},
+	{"syscall", "syscall.CreateProcessAsUser"},
 	{"syscall", "syscall.Exec"},
+	{"syscall", "syscall.Environ"},
 	{"syscall", "syscall.ForkExec"},
+	{"syscall", "syscall.GetEnvironmentStrings"},
+	{"syscall", "syscall.GetEnvironmentVariable"},
+	{"syscall", "syscall.Getenv"},
+	{"syscall", "syscall.GetProcAddress"},
+	{"syscall", "syscall.LoadDLL"},
+	{"syscall", "syscall.LoadLibrary"},
+	{"syscall", "syscall.MustLoadDLL"},
+	{"syscall", "syscall.NewLazyDLL"},
+	{"syscall", "syscall.RawSyscall"},
+	{"syscall", "syscall.RawSyscall6"},
 	{"syscall", "syscall.StartProcess"},
 	{"syscall", "syscall.Syscall"},
+	{"syscall", "syscall.Syscall12"},
+	{"syscall", "syscall.Syscall15"},
+	{"syscall", "syscall.Syscall18"},
 	{"syscall", "syscall.Syscall6"},
 	{"syscall", "syscall.Syscall9"},
 	{"syscall", "syscall.SyscallN"},
-	{"syscall", "syscall.RawSyscall"},
-	{"syscall", "syscall.RawSyscall6"},
 }
 
 // e2eNoEnvAllowed are names no e2e-no-env entry may refuse: what the e2e tests
