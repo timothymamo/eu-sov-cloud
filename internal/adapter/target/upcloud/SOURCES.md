@@ -359,6 +359,9 @@ capability follows from that.
   the same monthly list prices: the data plane table says "All node plans are billed by the starting hour,
   maximum of 28 days per month". GPU plans are left out (*Left out on purpose*). Included storage is as
   for *Cloud Servers*.
+- **No storage price.** Worker-node storage beyond a plan's included storage is not priced: no page read
+  on 2026-11-13 gives a per-GiB price for it (*Left out on purpose*). A sized node needing more disk than
+  its plan includes is "not estimated" (PRD #190 milestone 6).
 
 | Plan | Tab | CPU cores | Memory | Included storage | Page price | Stored |
 |---|---|---|---|---|---|---|
@@ -466,6 +469,9 @@ Category `kubernetes.managed`. A variant of *Managed Kubernetes* (tier-variant r
   per hour" on the billing page), which ADR 0024's format cannot hold: a plan is multiplied by the node
   count, and there is no per-cluster price. It is left out (*Left out on purpose*), so an estimate for a
   cluster on this offering is low by that fee.
+- **No storage price**, as for *Managed Kubernetes*: worker-node storage beyond a plan's included storage
+  is not priced (*Left out on purpose*), and a sized node needing more disk than its plan includes is "not
+  estimated" (PRD #190 milestone 6).
 
 | Plan | Tab | CPU cores | Memory | Included storage | Page price | Stored |
 |---|---|---|---|---|---|---|
@@ -863,6 +869,15 @@ Prices and plans left out (PRD #190 milestone 5, read 2026-11-13 from <https://u
   per-cluster price: a plan is a node size, multiplied by the node count, and adding the fee to every node
   plan would charge it once per node. An estimate for a cluster on *Managed Kubernetes Production* is low
   by €60 a month per cluster (issue #205 adds a fixed fee). The Development control plane is "€0/mo".
+- **Managed Kubernetes worker-node storage beyond a plan's included storage** (*Managed Kubernetes*,
+  *Managed Kubernetes Production*). The Managed Kubernetes billing page
+  (<https://upcloud.com/docs/products/managed-kubernetes/billing/>, read 2026-11-13) refers only to Cloud
+  Server pricing, and the pricing page (<https://upcloud.com/pricing/>, read 2026-11-13) gives no per-GiB
+  node storage price. Its Cloud Native node-group example, 8 nodes of 2 cores, 8 GB and 20 GB at
+  "€252.88/mo", is €31.61 a node against the €24.00 `CLOUDNATIVE-2xCPU-8GB` plan, leaving €7.61 for 20 GB:
+  neither MaxIOPS (€4.40) nor Standard (€1.70), with or without an IPv4 address (€3.47). The *Cloud
+  Servers* storage price is not assumed to apply, so none is recorded, and a sized node needing more disk
+  than its plan includes is "not estimated" (PRD #190 milestone 6).
 - **Managed Database Developer plans** (`rdb.development.1CPU-1GB`, `rdb.development.1CPU-2GB`,
   `rdb.development.1CPU-4GB`: "€9/mo", "€14/mo", "€24/mo", read 2026-11-13). Their storage is a different
   tier at a different price ("Standard – €0.04/GB/mo" against "MaxIOPS – €0.10/GB/mo" for Standard and
