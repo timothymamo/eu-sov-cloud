@@ -17,7 +17,7 @@ A made-up web shop on AWS in `eu-central-1`, as an inventory: dummy data only, f
 | `shop-cdn` | `AWS::CloudFront::Distribution` | `unclassified` | |
 | `shop.example.com` | `AWS::Route53::HostedZone` | `unclassified` | |
 
-Assess it from a clone:
+Assess it from a clone (from a release archive, run `./shift2eu` in place of `./bin/shift2eu`):
 
 ```bash
 make build
@@ -25,5 +25,5 @@ make build
 ./bin/shift2eu assess --inventory examples/aws/inventory.json --target all
 ```
 
-This is the sample [Try it](../../docs/guide/try-it.md) uses; its reports are pinned in
+This is the sample [Try it](../../docs/guide/try-it.md) uses; in a clone, its reports are pinned in
 [`test/examples/testdata/`](../../test/examples/testdata/).

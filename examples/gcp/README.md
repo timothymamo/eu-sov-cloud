@@ -20,7 +20,7 @@ types, as `gcloud asset search-all-resources` and `gcloud asset export` report t
 | `shop-cdn-backend` | `compute.googleapis.com/BackendBucket` | `unclassified` | |
 | `shop-zone` | `dns.googleapis.com/ManagedZone` | `unclassified` | |
 
-Assess it from a clone:
+Assess it from a clone (from a release archive, run `./shift2eu` in place of `./bin/shift2eu`):
 
 ```bash
 make build

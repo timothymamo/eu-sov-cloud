@@ -24,9 +24,10 @@ make build   # ./bin/shift2eu and ./bin/shift2eu-server
 
 Or download the `shift2eu` and `shift2eu-server` archives of a release for your platform
 ([Install](install.md#the-release-archives)) and unpack them into one directory. Each archive holds the
-samples too, in `examples/` beside `docs/`, so that directory works like the clone's root: run the
-binaries from it in place of `./bin/shift2eu` and `./bin/shift2eu-server` (`./shift2eu` and
-`./shift2eu-server`). The commands below run from the clone's root, or from that directory.
+samples too, in `examples/` beside `docs/`, so the commands below work from that directory as from the
+clone's root: run `./shift2eu` and `./shift2eu-server` in place of `./bin/shift2eu` and
+`./bin/shift2eu-server` (`shift2eu.exe` and `shift2eu-server.exe` from the Windows zip). The archives do
+not hold the repository's tests, so the links below to golden files under `test/` work only in a clone.
 
 ## Assess against one target
 
@@ -58,7 +59,7 @@ inputs and the fits counted:
 [Read the report](#read-the-report) explains the rest. `--output report.md` writes the report to a
 file instead of standard output ([Assess an inventory](assess.md#usage)).
 
-The excerpts on this page are quoted from golden files in
+The excerpts on this page are quoted from golden files in the repository's
 [`test/examples/testdata/`](../../test/examples/testdata/): the whole report is
 [`aws-scaleway.md.golden`](../../test/examples/testdata/aws-scaleway.md.golden). A test renders them
 from the sample through the same path as `assess`, so a change to a catalog snapshot shows up as a
