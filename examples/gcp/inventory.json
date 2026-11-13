@@ -4,81 +4,81 @@
   "resources": [
     {
       "id": "shop-web-1",
-      "rawType": "ComputeInstance",
+      "rawType": "compute.googleapis.com/Instance",
       "category": "compute.vm",
       "region": "europe-west1",
       "capabilities": ["ipv6"]
     },
     {
       "id": "shop-web-mig",
-      "rawType": "ComputeRegionInstanceGroupManager",
+      "rawType": "compute.googleapis.com/InstanceGroupManager",
       "category": "compute.vm",
       "region": "europe-west1",
       "capabilities": ["autoscaling", "zone-high-availability"]
     },
     {
       "id": "shop-web-1-data",
-      "rawType": "ComputeDisk",
+      "rawType": "compute.googleapis.com/Disk",
       "category": "storage.block",
       "region": "europe-west1",
       "capabilities": ["snapshots", "encryption-at-rest"]
     },
     {
       "id": "shop-assets",
-      "rawType": "StorageBucket",
+      "rawType": "storage.googleapis.com/Bucket",
       "category": "storage.object",
       "region": "europe-west1",
       "capabilities": ["object-versioning"]
     },
     {
       "id": "shop-db",
-      "rawType": "SQLInstance",
+      "rawType": "sqladmin.googleapis.com/Instance",
       "category": "database.postgresql",
       "region": "europe-west1",
       "capabilities": ["point-in-time-restore", "zone-high-availability", "read-replicas"]
     },
     {
       "id": "shop-db-replica",
-      "rawType": "SQLInstance",
+      "rawType": "sqladmin.googleapis.com/Instance",
       "category": "database.postgresql",
       "region": "europe-west4"
     },
     {
       "id": "shop-catalog-mysql",
-      "rawType": "SQLInstance",
+      "rawType": "sqladmin.googleapis.com/Instance",
       "category": "database.mysql",
       "region": "europe-west1",
       "capabilities": ["point-in-time-restore", "read-replicas"]
     },
     {
       "id": "shop-gke",
-      "rawType": "ContainerCluster",
+      "rawType": "container.googleapis.com/Cluster",
       "category": "kubernetes.managed",
       "region": "europe-west1",
       "capabilities": ["zone-high-availability", "autoscaling"]
     },
     {
       "id": "shop-resize-images",
-      "rawType": "CloudFunctionsFunction",
+      "rawType": "cloudfunctions.googleapis.com/Function",
       "category": "serverless.function",
       "region": "europe-west1",
       "capabilities": ["autoscaling"]
     },
     {
       "id": "shop-orders",
-      "rawType": "PubSubSubscription",
+      "rawType": "pubsub.googleapis.com/Subscription",
       "category": "messaging.queue",
       "region": "europe-west1",
       "capabilities": ["dead-letter-queue"]
     },
     {
       "id": "shop-cdn-backend",
-      "rawType": "ComputeBackendBucket",
+      "rawType": "compute.googleapis.com/BackendBucket",
       "category": "unclassified"
     },
     {
       "id": "shop-zone",
-      "rawType": "DNSManagedZone",
+      "rawType": "dns.googleapis.com/ManagedZone",
       "category": "unclassified"
     }
   ]

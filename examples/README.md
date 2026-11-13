@@ -24,8 +24,9 @@ golden files.
 
 Each file is an inventory in the format of
 [ADR 0006](../docs/adr/0006-json-inventory-file-format-v1.md). Its `rawType` is the source's own
-resource type name: AWS CloudFormation types (`AWS::EC2::Instance`), GCP Config Connector kinds
-(`ComputeInstance`) and Azure Resource Manager types (`Microsoft.Compute/virtualMachines`).
+resource type name: AWS CloudFormation types (`AWS::EC2::Instance`), GCP Cloud Asset Inventory asset
+types (`compute.googleapis.com/Instance`) and Azure Resource Manager types
+(`Microsoft.Compute/virtualMachines`).
 
 Assess one from a clone:
 
