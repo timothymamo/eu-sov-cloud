@@ -16,6 +16,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"maps"
 	"os"
 	"slices"
 	"strings"
@@ -146,7 +147,10 @@ func TestCatalogSnapshotHeader(t *testing.T) {
 // plan includes from the same offering. leftOut names the offerings those rules
 // are waived for, with the reason, because the snapshot cannot express their price
 // as a plan or a storage price; extraStorageLeftOut waives that storage-price rule
-// alone for an offering whose plans must still be pinned.
+// alone for an offering whose plans must still be pinned. A waiver only holds while
+// the rule it waives would still fail: an entry that names no offering of the
+// catalog, or that waives a rule the data now meets, fails the test, so a refresh
+// cannot leave a waiver silently in place.
 func TestCatalogPlansAndPrices(t *testing.T) {
 	t.Parallel()
 
@@ -273,6 +277,58 @@ func TestCatalogPlansAndPrices(t *testing.T) {
 		if slices.Contains(o.Regions, wantRegion) && len(o.StoragePrices) > 0 && !anyPriceAppliesIn(o.StoragePrices, wantRegion) {
 			t.Errorf("offering %s lists storage prices but none for the default region %s, want one applying there: they apply to %s",
 				text.Quote(o.Name), text.Quote(wantRegion), regionsListed(o.StoragePrices))
+		}
+	}
+
+	// A waiver is a finding, not a way past a refresh: it is only valid while the
+	// rule it waives would still fail for that offering. A refresh renames or prices
+	// offerings, and a waiver that outlived its finding would silently skip a rule the
+	// data now meets, so each entry is checked against the catalog instead of trusted.
+	// The names are iterated in sorted order, so a failure names the same offering on
+	// every run whatever the map order.
+	byName := make(map[string]catalog.Offering, len(cat.Offerings()))
+	for _, o := range cat.Offerings() {
+		byName[o.Name] = o
+	}
+
+	for _, name := range slices.Sorted(maps.Keys(leftOut)) {
+		o, found := byName[name]
+		if !found {
+			t.Errorf("leftOut names offering %s, want an offering of the catalog: the waiver names no offering and should be removed",
+				text.Quote(name))
+
+			continue
+		}
+
+		// leftOut waives the plan rule and the storage-price rule, so it is still
+		// needed only while one of them would fail: the offering serves a category
+		// priced by plan or per GiB of storage and lists neither a plan nor a storage
+		// price. Once it lists either, remove the entry and its reason.
+		needsWaiver := (servesAny(o, planCategories) || servesAny(o, storageCategories)) &&
+			len(o.Plans) == 0 && len(o.StoragePrices) == 0
+		if !needsWaiver {
+			t.Errorf("offering %s is now priced; remove its waiver from leftOut: it serves %v and lists %d plans and %d storage prices",
+				text.Quote(name), o.Categories, len(o.Plans), len(o.StoragePrices))
+		}
+	}
+
+	for _, name := range slices.Sorted(maps.Keys(extraStorageLeftOut)) {
+		o, found := byName[name]
+		if !found {
+			t.Errorf("extraStorageLeftOut names offering %s, want an offering of the catalog: the waiver names no offering and should be removed",
+				text.Quote(name))
+
+			continue
+		}
+
+		// The extra-storage rule fails only for an offering that lists a plan and no
+		// storage price, so the waiver is still needed only while the offering lists
+		// plans and no storage price. Once it lists a storage price, remove the entry
+		// and its reason.
+		needsWaiver := len(o.Plans) > 0 && len(o.StoragePrices) == 0
+		if !needsWaiver {
+			t.Errorf("offering %s is now priced; remove its waiver from extraStorageLeftOut: it lists %d plans and %d storage prices",
+				text.Quote(name), len(o.Plans), len(o.StoragePrices))
 		}
 	}
 }
