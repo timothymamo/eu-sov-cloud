@@ -116,11 +116,19 @@
 // TestDocPackagesHoldNoNonGoSource (issue #194) refuses every non-Go source the
 // Go toolchain builds beside a package (assembly, C, C++, Objective-C, Fortran,
 // SWIG and .syso objects) in the trees test-docs-are-pure holds, which docTrees
-// reads from the rule's files: list in .golangci.yml with test/internal/yamlread;
-// a testdata directory is no package source, so its files are left out.
+// reads from the rule's files: list in .golangci.yml with test/internal/yamlread.
+// A non-Go file under testdata is no source of the held package, so it is left
+// out: the go command leaves testdata, _ and . directories out of ./..., and a
+// package there is built only when it is imported by path, which this check does
+// not cover (a follow-up to #194). It refuses a symlink in those trees too,
+// testdata included, whatever its name: the walk reads the link, not what it
+// points at, yet an import of its path follows it and the toolchain builds the
+// source it finds there.
 // TestDocPackageNonGoSourceProbe runs the check on testdata/docsources/mod,
 // whose test/e2e/probe_amd64.s must be refused and test/e2e/testdata copy must
-// not, and TestDocSourceProblems and TestDocTrees pin its helpers.
+// not, TestDocPackageSymlinkProbe on a symlinked directory it builds in a
+// temporary directory, and TestDocSourceProblems and TestDocTrees pin its
+// helpers.
 // TestTestsNoProcessStateProbe (testdata/testsprocessstate) runs the forbidigo
 // group tests-no-process-state (issue #153) on t.Setenv, t.Chdir, os.Setenv,
 // os.Unsetenv, os.Clearenv, os.Chdir, syscall.Unsetenv, syscall.Clearenv and
