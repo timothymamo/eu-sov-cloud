@@ -81,11 +81,12 @@ jobs:
           docker run --rm --read-only --network none "$IMAGE" version | tee version.txt
 `
 
-// releaseDryRun is the image, sbom and verify jobs of .github/workflows/release.yml as
-// far as the dry run checks them: the latest decision on the release tags on
-// main, the BuildKit image by exact release and index digest, the pins, the tag
-// rules on github.ref_name, the build settings, the SPDX SBOM with an exact
-// syft, and the container run of each published image.
+// releaseDryRun is the latest, image, sbom and verify jobs of
+// .github/workflows/release.yml as far as the dry run checks them: the latest
+// decision on the release tags on main, made once in a job of its own (issue
+// #173) that the image jobs read, the BuildKit image by exact release and index
+// digest, the pins, the tag rules on github.ref_name, the build settings, the
+// SPDX SBOM with an exact syft, and the container run of each published image.
 const releaseDryRun = `name: Release
 
 on:
@@ -93,8 +94,35 @@ on:
     tags: ["v*.*.*"]
 
 jobs:
+  latest:
+    name: Latest
+    needs: test
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read # check out the repository
+    outputs:
+      latest: ${{ steps.decide.outputs.latest }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Decide whether the tag is the highest release tag on main
+        id: decide
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          git rev-parse --verify --quiet refs/remotes/origin/main > /dev/null || {
+            echo "origin/main is missing from the checkout" >&2
+            exit 1
+          }
+          highest="$(git tag -l 'v*.*.*' --merged refs/remotes/origin/main | sed -nE '/^v[0-9]+\.[0-9]+\.[0-9]+$/p' | sort -V | tail -n 1)"
+          latest=false
+          if [ "$TAG" = "$highest" ]; then latest=true; fi
+          echo "latest=$latest" >> "$GITHUB_OUTPUT"
   image:
     name: Container image
+    needs: [test, goreleaser, latest]
     runs-on: ubuntu-latest
     steps:
       - name: Build arguments, as GoReleaser stamps them
@@ -102,11 +130,10 @@ jobs:
         env:
           TAG: ${{ github.ref_name }}
         run: |
-          highest="$(git tag -l 'v*.*.*' --merged refs/remotes/origin/main | sed -nE '/^v[0-9]+\.[0-9]+\.[0-9]+$/p' | sort -V | tail -n 1)"
-          latest=false
-          if [ "$TAG" = "$highest" ]; then latest=true; fi
           {
-            echo "latest=$latest"
+            echo "version=${TAG#v}"
+            echo "commit=$(git rev-parse --short HEAD)"
+            echo "date=$(TZ=UTC git log -1 --format=%cd --date=format-local:%Y-%m-%dT%H:%M:%SZ)"
           } >> "$GITHUB_OUTPUT"
       - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
         with:
@@ -115,7 +142,7 @@ jobs:
         uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6.2.0
         with:
           images: ghcr.io/timothymamo/shift2eu
-          flavor: latest=${{ steps.stamp.outputs.latest }}
+          flavor: latest=${{ needs.latest.outputs.latest }}
           tags: |
             type=semver,pattern={{raw}}
             type=semver,pattern={{major}}.{{minor}},enable=${{ !contains(github.ref_name, '-') }}
@@ -195,6 +222,7 @@ const ciDryRunServer = `      - name: Build the server image, linux/amd64 and li
 // SBOM of the pushed server image. The cases append it to releaseDryRun.
 const releaseDryRunServer = `  server-image:
     name: Container image (shift2eu-server)
+    needs: [test, goreleaser, latest]
     runs-on: ubuntu-latest
     steps:
       - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
@@ -349,19 +377,43 @@ func TestDryRunMirrorsRelease(t *testing.T) {
 			wantIn:  "so the dry run checks none of the release's tags",
 		},
 
-		// The latest decision: the dry run makes it in a step of its own, id:
-		// latest, whose outputs its metadata-action steps read. A flavor: that
-		// reads anything else, a literal or another step, is refused, and so is
-		// one that is not the release's shape.
+		// The latest decision: the release makes it once, in the latest job, and
+		// its image jobs read that job's output (issue #173); the dry run makes it
+		// in a step of its own, id: latest, whose outputs its metadata-action
+		// steps read. A flavor: that reads anything else, a literal or another
+		// step, is refused, and so is one that is not the release's shape.
 		{name: "a flavor of latest=auto", ci: mutate(t, ciDryRun, "          flavor: latest=${{ steps.latest.outputs.highest }}\n", "          flavor: latest=auto\n"), release: releaseDryRun, wantIn: "the dry run must tag latest as the release does"},
 		{name: "a flavor that is always latest", ci: mutate(t, ciDryRun, "          flavor: latest=${{ steps.latest.outputs.highest }}\n", "          flavor: latest=true\n"), release: releaseDryRun, wantIn: "the dry run must tag latest as the release does"},
 		{name: "a flavor read from a step that is not the latest step", ci: mutate(t, ciDryRun, "          flavor: latest=${{ steps.latest.outputs.highest }}\n", "          flavor: latest=${{ steps.stamp.outputs.latest }}\n"), release: releaseDryRun, wantIn: "the dry run must tag latest as the release does"},
+		{
+			// The decision is made in the latest job, so the image job's flavor:
+			// reads that job's output and never a step of its own.
+			name:    "a release flavor read from a step of its image job",
+			ci:      ciDryRun,
+			release: mutate(t, releaseDryRun, "          flavor: latest=${{ needs.latest.outputs.latest }}\n", "          flavor: latest=${{ steps.stamp.outputs.latest }}\n"),
+			wantIn:  `want exactly "latest=${{ needs.latest.outputs.latest }}"`,
+		},
 
-		// The pipeline that picks latest: the release's line that takes the
-		// highest release tag merged into main, with its git tag -l
-		// 'v*.*.*' --merged refs/remotes/origin/main in place of the dry run's
-		// printf '%s\n' "$@". Everything after the source, the sed, the sort
-		// and the tail, must be the release's.
+		// The pipeline that picks latest: the release's latest job takes the
+		// highest release tag merged into main, in a decide step of its own
+		// (issue #173), with its git tag -l 'v*.*.*' --merged
+		// refs/remotes/origin/main in place of the dry run's printf '%s\n'
+		// "$@". Everything after the source, the sed, the sort and the tail,
+		// must be the release's.
+		{
+			// The decision is no step of the image job's any more: a release
+			// without the latest job is refused rather than read from there.
+			name:    "a release without a latest job",
+			ci:      ciDryRun,
+			release: mutate(t, releaseDryRun, "  latest:\n", "  decision:\n"),
+			wantIn:  "release.yml: no jobs: latest",
+		},
+		{
+			name:    "a release whose latest job has no decide step",
+			ci:      ciDryRun,
+			release: mutate(t, releaseDryRun, "        id: decide\n", "        id: decision\n"),
+			wantIn:  `release.yml's latest job holds 0 run: steps with id: decide, want exactly 1`,
+		},
 		{name: "a latest rule without the release regex", ci: mutate(t, ciDryRun, `'/^v[0-9]+\.[0-9]+\.[0-9]+$/p'`, `'/^v[0-9]+\.[0-9]+\.[0-9]+$/p;/^latest$/p'`), release: releaseDryRun, wantIn: "the dry run must pick the highest tag the release picks"},
 		{name: "a latest rule that sorts like the shell", ci: mutate(t, ciDryRun, "| sort -V |", "| sort |"), release: releaseDryRun, wantIn: "the dry run must pick the highest tag the release picks"},
 		{name: "a latest rule that takes another line", ci: mutate(t, ciDryRun, "| tail -n 1)", "| tail -n 2)"), release: releaseDryRun, wantIn: "the dry run must pick the highest tag the release picks"},
