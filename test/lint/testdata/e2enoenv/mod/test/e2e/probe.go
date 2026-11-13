@@ -7,8 +7,11 @@
 // Every line below that ends in a want comment is a call the group must refuse;
 // the calls the e2e tests make (os/exec, a signal, a file read) keep no want
 // comment, so a group that stops firing, or one that reaches them, fails the
-// probe. Only names every unix platform has are called, so the probe builds on
-// the host. Nothing here runs: the probe lints the file.
+// probe. os/exec is the tier's way to run the binary, and *exec.Cmd.Environ hands
+// a child the whole environment of the test process (issue #185): the group
+// refuses that one method and keeps the rest. Only names every unix platform has
+// are called, so the probe builds on the host. Nothing here runs: the probe lints
+// the file.
 package e2e
 
 import (
@@ -46,9 +49,12 @@ func syscallReads() {
 }
 
 // runs builds and runs the binary as the e2e tests do: the group keeps these
-// allowed.
+// allowed, except Environ, the one method that reads the whole environment of
+// the test process.
 func runs(path string) {
 	cmd := exec.Command(path, "assess")
+	_ = cmd.Environ() // want "e2e-no-env: "
+	cmd.Env = []string{}
 	if err := cmd.Start(); err != nil {
 		return
 	}

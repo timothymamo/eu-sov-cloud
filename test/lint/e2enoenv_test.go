@@ -20,10 +20,12 @@ import (
 const e2eNoEnvTag = "e2e-no-env"
 
 // e2eNoEnvRefused lists every name the group must refuse: the os reads
-// testutil-no-env, cli-no-env-or-process and inventoryfile-no-env refuse, and the
-// syscall reads, the ones linux and the ones windows reach the environment or
-// start a process with. A name is refused when an entry of the group matches its
-// pkg and its rendered name; the wording of a msg is not pinned here, the tag is.
+// testutil-no-env, cli-no-env-or-process and inventoryfile-no-env refuse, the one
+// os/exec method that hands a child the whole environment of the test process,
+// and the syscall reads, the ones linux and the ones windows reach the
+// environment or start a process with. A name is refused when an entry of the
+// group matches its pkg and its rendered name; the wording of a msg is not pinned
+// here, the tag is.
 var e2eNoEnvRefused = []rootName{
 	{"os", "os.Getenv"},
 	{"os", "os.LookupEnv"},
@@ -34,6 +36,15 @@ var e2eNoEnvRefused = []rootName{
 	{"os", "os.UserConfigDir"},
 	{"os", "os.UserCacheDir"},
 	{"os", "os.TempDir"},
+	// os/exec is how the e2e tier builds and runs the binary, and *exec.Cmd's
+	// Environ is the one call that hands a child the whole environment of the
+	// test process (issue #185). An exec.Cmd with a nil Env inherits that
+	// environment too, but depguard's test-docs-are-pure keeps os/exec out of
+	// the tier's production files, where such a command would be built; the
+	// test files import it on purpose, so the group refuses the call there.
+	// forbidigo renders a method as pkg.Type.Method, the pointer receiver
+	// dropped (docs/architecture.md, How forbidigo renders a name).
+	{"os/exec", "exec.Cmd.Environ"},
 	{"syscall", "syscall.AllThreadsSyscall"},
 	{"syscall", "syscall.AllThreadsSyscall6"},
 	{"syscall", "syscall.CreateProcess"},
@@ -70,6 +81,21 @@ var e2eNoEnvRefused = []rootName{
 var e2eNoEnvAllowed = []rootName{
 	{"os/exec", "exec.Command"},
 	{"os/exec", "exec.CommandContext"},
+	// The rest of what a test does with the command it builds: it sets the
+	// environment of its own (never Environ, the one call the group refuses),
+	// the directory, its output and error streams, then starts it, signals it,
+	// waits for it and reads its exit status (issue #185).
+	{"os/exec", "exec.Cmd"},
+	{"os/exec", "exec.Cmd.Dir"},
+	{"os/exec", "exec.Cmd.Env"},
+	{"os/exec", "exec.Cmd.Output"},
+	{"os/exec", "exec.Cmd.Process"},
+	{"os/exec", "exec.Cmd.Run"},
+	{"os/exec", "exec.Cmd.Start"},
+	{"os/exec", "exec.Cmd.Stderr"},
+	{"os/exec", "exec.Cmd.Stdout"},
+	{"os/exec", "exec.Cmd.Wait"},
+	{"os/exec", "exec.ExitError"},
 	{"os", "os.ReadFile"},
 	{"os", "os.WriteFile"},
 	{"os", "os.Open"},
