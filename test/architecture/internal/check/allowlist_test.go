@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
+	"github.com/google/go-cmp/cmp/cmpopts"
 
 	"github.com/timothymamo/shift2eu/test/architecture/internal/check"
 )
@@ -110,7 +111,10 @@ func oneRuleDoc(comment string) string {
 // string prefix, so `os` would allow os/exec and `github.com/aws` would allow
 // github.com/awsfoo: the check reads only a prefix written with its trailing /
 // and refuses the rest, and it refuses a rule whose deny list collides with its
-// allow list, since depguard decides that import by entry length.
+// allow list, since depguard decides that import by entry length. A rule that
+// allows nothing is read from an explicit empty flow sequence, allow: [], and
+// returns no entries; a missing allow key, or an allow key left null, is still
+// refused (issue #166).
 func TestAllowList(t *testing.T) {
 	t.Parallel()
 
@@ -345,10 +349,23 @@ func TestAllowList(t *testing.T) {
 			wantErr:  true,
 		},
 		{
-			name:     "an empty allow list is an error",
+			// An explicit empty flow sequence is how a strict rule says it
+			// allows nothing at all, which the doc.go-only packages need
+			// (issue #166): the rule is read, with no entries, not refused.
+			name:     "an explicit empty allow list allows nothing",
 			golangci: golangciDoc("        r:\n          list-mode: strict\n          allow: []\n"),
 			rule:     "r",
-			wantErr:  true,
+			want:     []check.AllowEntry{},
+		},
+		{
+			// Only [] means "allows nothing": an allow key left null (an
+			// empty block sequence) is refused, so a rule that was parsed as
+			// empty by mistake cannot pass for one that allows nothing.
+			name:            "an allow key with no items is an error",
+			golangci:        golangciDoc("        r:\n          list-mode: strict\n          allow:\n"),
+			rule:            "r",
+			wantErr:         true,
+			wantErrFragment: "the allow list is empty",
 		},
 	}
 
@@ -379,7 +396,7 @@ func TestAllowList(t *testing.T) {
 				t.Fatalf("AllowList(%q): %v", tc.rule, err)
 			}
 
-			if diff := cmp.Diff(tc.want, got); diff != "" {
+			if diff := cmp.Diff(tc.want, got, cmpopts.EquateEmpty()); diff != "" {
 				t.Errorf("AllowList(%q) mismatch (-want +got):\n%s", tc.rule, diff)
 			}
 		})
