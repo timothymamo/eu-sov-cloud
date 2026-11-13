@@ -26,7 +26,15 @@ func newInventory(t *testing.T, source string, resources []inventory.Resource) i
 	return inv
 }
 
-// wantInventory is the recorded inventory a conforming source returns.
+// sourcePtr returns a pointer to v, for a version 2 field a source reports: nil
+// is a field the source did not discover, which is not zero.
+func sourcePtr[T any](v T) *T {
+	return &v
+}
+
+// wantInventory is the recorded inventory a conforming source returns. It gives
+// the version 2 fields of both resources, a relation between them included, so a
+// source that drops one of them fails the comparison.
 func wantInventory(t *testing.T) inventory.Inventory {
 	t.Helper()
 
@@ -37,12 +45,23 @@ func wantInventory(t *testing.T) inventory.Inventory {
 			Category:     taxonomy.StorageObject,
 			Region:       "eu-west-1",
 			Capabilities: []taxonomy.Capability{taxonomy.ObjectVersioning},
+			Size:         &inventory.Size{StorageGiB: sourcePtr(2048.0)},
+			Workload:     "shop",
+			MonthlyCost:  &inventory.Cost{Amount: sourcePtr(12.5), Currency: "USD"},
 		},
 		{
 			ID:       "i-0123456789abcdef0",
 			RawType:  "AWS::EC2::Instance",
 			Category: taxonomy.ComputeVM,
 			Region:   "eu-west-1",
+			Size: &inventory.Size{
+				VCPUs:     sourcePtr(2.0),
+				MemoryGiB: sourcePtr(8.0),
+				Count:     sourcePtr(2),
+			},
+			Usage:     &inventory.Usage{HoursPerMonth: sourcePtr(730.0)},
+			Workload:  "shop",
+			Relations: []inventory.Relation{{Type: inventory.AttachedTo, Target: "bucket-example"}},
 		},
 	})
 }
@@ -233,6 +252,97 @@ func TestCheck(t *testing.T) {
 			name: "changes a capability",
 			src: &fakeSource{inventories: []inventory.Inventory{wantVariant(t, 0, func(r *inventory.Resource) {
 				r.Capabilities = []taxonomy.Capability{taxonomy.ObjectVersioning, taxonomy.Snapshots}
+			})}},
+			wantErr:      true,
+			wantMentions: [][]string{{"want"}},
+		},
+		// The version 2 fields are discovery facts like the others: a source that
+		// loses one, or invents one, has broken the contract.
+		{
+			name: "changes a size",
+			src: &fakeSource{inventories: []inventory.Inventory{wantVariant(t, 1, func(r *inventory.Resource) {
+				r.Size = &inventory.Size{VCPUs: sourcePtr(4.0), MemoryGiB: sourcePtr(8.0), Count: sourcePtr(2)}
+			})}},
+			wantErr:      true,
+			wantMentions: [][]string{{"want"}},
+		},
+		{
+			name: "changes the count of a size",
+			src: &fakeSource{inventories: []inventory.Inventory{wantVariant(t, 1, func(r *inventory.Resource) {
+				r.Size.Count = sourcePtr(3)
+			})}},
+			wantErr:      true,
+			wantMentions: [][]string{{"want"}},
+		},
+		{
+			// A size that is not given and one that is zero are different facts.
+			name: "drops a size",
+			src: &fakeSource{inventories: []inventory.Inventory{wantVariant(t, 0, func(r *inventory.Resource) {
+				r.Size = nil
+			})}},
+			wantErr:      true,
+			wantMentions: [][]string{{"want"}},
+		},
+		{
+			name: "changes a usage",
+			src: &fakeSource{inventories: []inventory.Inventory{wantVariant(t, 1, func(r *inventory.Resource) {
+				r.Usage = &inventory.Usage{HoursPerMonth: sourcePtr(744.0)}
+			})}},
+			wantErr:      true,
+			wantMentions: [][]string{{"want"}},
+		},
+		{
+			name: "drops a usage",
+			src: &fakeSource{inventories: []inventory.Inventory{wantVariant(t, 1, func(r *inventory.Resource) {
+				r.Usage = nil
+			})}},
+			wantErr:      true,
+			wantMentions: [][]string{{"want"}},
+		},
+		{
+			name: "changes a workload",
+			src: &fakeSource{inventories: []inventory.Inventory{wantVariant(t, 0, func(r *inventory.Resource) {
+				r.Workload = "other"
+			})}},
+			wantErr:      true,
+			wantMentions: [][]string{{"want"}},
+		},
+		{
+			name: "drops a workload",
+			src: &fakeSource{inventories: []inventory.Inventory{wantVariant(t, 1, func(r *inventory.Resource) {
+				r.Workload = ""
+			})}},
+			wantErr:      true,
+			wantMentions: [][]string{{"want"}},
+		},
+		{
+			name: "changes a relation",
+			src: &fakeSource{inventories: []inventory.Inventory{wantVariant(t, 1, func(r *inventory.Resource) {
+				r.Relations = []inventory.Relation{{Type: inventory.DependsOn, Target: "bucket-example"}}
+			})}},
+			wantErr:      true,
+			wantMentions: [][]string{{"want"}},
+		},
+		{
+			name: "drops a relation",
+			src: &fakeSource{inventories: []inventory.Inventory{wantVariant(t, 1, func(r *inventory.Resource) {
+				r.Relations = nil
+			})}},
+			wantErr:      true,
+			wantMentions: [][]string{{"want"}},
+		},
+		{
+			name: "changes a cost",
+			src: &fakeSource{inventories: []inventory.Inventory{wantVariant(t, 0, func(r *inventory.Resource) {
+				r.MonthlyCost = &inventory.Cost{Amount: sourcePtr(12.5), Currency: "EUR"}
+			})}},
+			wantErr:      true,
+			wantMentions: [][]string{{"want"}},
+		},
+		{
+			name: "drops a cost",
+			src: &fakeSource{inventories: []inventory.Inventory{wantVariant(t, 0, func(r *inventory.Resource) {
+				r.MonthlyCost = nil
 			})}},
 			wantErr:      true,
 			wantMentions: [][]string{{"want"}},
