@@ -50,20 +50,22 @@ type inventoryGuideCase struct {
 	// *.inventory.json: a real inventory describes someone's infrastructure,
 	// while this one is a sanitised fixture and has to be committed.
 	golden string
-	// bareMetal is the recorded bare-metal server of this source: the resource
-	// the program has to classify compute.baremetal, never compute.vm (ADR 0023).
-	bareMetal bareMetalServer
+	// bareMetal are the recorded bare-metal servers of this source: the
+	// resources the program has to classify compute.baremetal, never compute.vm
+	// (ADR 0023). One source spells it in more than one way, so a source may
+	// record several.
+	bareMetal []bareMetalServer
 	// present are resources the inventory has to hold, by ID, with this category
 	// and rawType.
 	present []resourceFact
-	// absent are resource IDs the program has to leave out altogether: a managed
-	// Kubernetes cluster stands for its nodes.
+	// absent are resource IDs the program has to leave out altogether: another
+	// recorded resource stands for them.
 	absent []string
 	// absentRawTypes are raw types no resource of this source may carry.
 	absentRawTypes []string
 }
 
-// bareMetalServer is the bare-metal server one source's recorded output holds.
+// bareMetalServer is one bare-metal server a source's recorded output holds.
 // Every provider spells it differently, so the case names the ID and the raw
 // type the guide's program writes for it.
 type bareMetalServer struct {
@@ -88,10 +90,15 @@ type resourceFact struct {
 func inventoryGuides() []inventoryGuideCase {
 	return []inventoryGuideCase{
 		{
-			source:    "aws",
-			pattern:   inventoryGuideDir + "/aws/*/*.json",
-			golden:    "aws.inventory.golden",
-			bareMetal: bareMetalServer{id: "i-0123456789abcdef6", rawType: "AWS::EC2::Instance"},
+			source:  "aws",
+			pattern: inventoryGuideDir + "/aws/*/*.json",
+			golden:  "aws.inventory.golden",
+			bareMetal: []bareMetalServer{
+				// An instance type ending in .metal is a dedicated physical
+				// server, and so is a metal type with a size suffix.
+				{id: "i-0123456789abcdef6", rawType: "AWS::EC2::Instance"},
+				{id: "i-0123456789abcdef7", rawType: "AWS::EC2::Instance"},
+			},
 			present: []resourceFact{
 				// An Aurora cluster is covered by its instances, which
 				// rds describe-db-instances lists.
@@ -101,10 +108,12 @@ func inventoryGuides() []inventoryGuideCase {
 				{id: "vol-0123456789abcdef6", rawType: "AWS::EC2::Volume", category: "storage.block"},
 			},
 			// The EKS nodes, the Auto Scaling groups that run them and their
-			// root volumes.
+			// root volumes, and the root volume of an Auto Scaling group's
+			// instance: the group stands for its instances.
 			absent: []string{
 				"i-0123456789abcdef4",
 				"i-0123456789abcdef5",
+				"vol-0123456789abcdef2",
 				"vol-0123456789abcdef4",
 				"vol-0123456789abcdef5",
 				"eks-shop-eks-default-00000000-0000-0000-0000-000000000000",
@@ -116,19 +125,30 @@ func inventoryGuides() []inventoryGuideCase {
 			source:    "gcp",
 			pattern:   inventoryGuideDir + "/gcp/*.json",
 			golden:    "gcp.inventory.golden",
-			bareMetal: bareMetalServer{id: "shop-baremetal-1", rawType: "baremetalsolution.googleapis.com/Instance"},
-			// A node pool's managed instance group, and a node with its disk,
-			// labelled goog-gke-node.
+			bareMetal: []bareMetalServer{{id: "shop-baremetal-1", rawType: "baremetalsolution.googleapis.com/Instance"}},
+			present: []resourceFact{
+				// A persistent volume is a disk no Kubernetes node label covers:
+				// it holds data and stays, only a node's boot disk goes.
+				{id: "pvc-00000000-0000-0000-0000-000000000001", rawType: "compute.googleapis.com/Disk", category: "storage.block"},
+			},
+			// A node pool's managed instance group, a node with its disk,
+			// labelled goog-gke-node, and the boot disk of the group's member:
+			// the group stands for its instances.
 			absent: []string{
 				"gke-shop-gke-default-pool-0a1b2c3d-grp",
 				"gke-shop-gke-default-pool-0a1b2c3d-x1y2",
+				"shop-web-mig-0abc",
 			},
 		},
 		{
-			source:    "azure",
-			pattern:   inventoryGuideDir + "/azure/*.json",
-			golden:    "azure.inventory.golden",
-			bareMetal: bareMetalServer{id: "shop-baremetal-1", rawType: "Microsoft.BareMetalInfrastructure/bareMetalInstances"},
+			source:  "azure",
+			pattern: inventoryGuideDir + "/azure/*.json",
+			golden:  "azure.inventory.golden",
+			bareMetal: []bareMetalServer{
+				{id: "shop-baremetal-1", rawType: "Microsoft.BareMetalInfrastructure/bareMetalInstances"},
+				// A SAP HANA Large Instance is a dedicated physical server too.
+				{id: "shop-hana-1", rawType: "Microsoft.AzureLargeInstance/azureLargeInstances"},
+			},
 			present: []resourceFact{
 				// A storage queue is a queue; a Service Bus topic publishes and
 				// subscribes, which no taxonomy category covers.
@@ -212,7 +232,7 @@ func jqPath(t *testing.T) string {
 // target without an error. The assertions beyond the golden file are the
 // guide's promises that a careless -update must not be able to accept away: the
 // document's schema version and source, every taxonomy category the fixtures
-// cover, the bare-metal server of each source (ADR 0023), the resources the
+// cover, the bare-metal servers of each source (ADR 0023), the resources the
 // program has to leave out or classify a particular way, an unclassified
 // resource that keeps its rawType, and short IDs only.
 func TestInventoryGuidePrograms(t *testing.T) {
@@ -340,30 +360,32 @@ func assertCategories(t *testing.T, source string, doc inventoryDoc) {
 	}
 }
 
-// assertBareMetal fails unless the inventory holds the recorded bare-metal
+// assertBareMetal fails unless the inventory holds each recorded bare-metal
 // server, by ID, as compute.baremetal with the source's raw type. A bare-metal
 // server is not a virtual machine (ADR 0023): moving to it changes how the
 // resource is provisioned, sized, snapshotted and billed, so classifying it
 // compute.vm assesses it against hosts that cannot replace it.
-func assertBareMetal(t *testing.T, source string, doc inventoryDoc, want bareMetalServer) {
+func assertBareMetal(t *testing.T, source string, doc inventoryDoc, wants []bareMetalServer) {
 	t.Helper()
 
-	resource, ok := findResource(doc, want.id)
-	if !ok {
-		t.Errorf("%s: the inventory holds no resource %q; the recorded bare-metal server is missing",
-			source, want.id)
+	for _, want := range wants {
+		resource, ok := findResource(doc, want.id)
+		if !ok {
+			t.Errorf("%s: the inventory holds no resource %q; the recorded bare-metal server is missing",
+				source, want.id)
 
-		return
-	}
+			continue
+		}
 
-	if resource.Category != "compute.baremetal" {
-		t.Errorf("%s: bare-metal server %q has category %q, want %q",
-			source, want.id, resource.Category, "compute.baremetal")
-	}
+		if resource.Category != "compute.baremetal" {
+			t.Errorf("%s: bare-metal server %q has category %q, want %q",
+				source, want.id, resource.Category, "compute.baremetal")
+		}
 
-	if resource.RawType != want.rawType {
-		t.Errorf("%s: bare-metal server %q has rawType %q, want %q",
-			source, want.id, resource.RawType, want.rawType)
+		if resource.RawType != want.rawType {
+			t.Errorf("%s: bare-metal server %q has rawType %q, want %q",
+				source, want.id, resource.RawType, want.rawType)
+		}
 	}
 }
 
@@ -393,8 +415,9 @@ func assertPresent(t *testing.T, source string, doc inventoryDoc, wants []resour
 }
 
 // assertAbsent fails when the inventory holds any of the IDs. The nodes of a
-// managed Kubernetes cluster are left out, the cluster stands for them: an
-// inventory that lists them assesses every node as a machine of its own.
+// managed Kubernetes cluster are left out, the cluster stands for them, and so
+// is what the cluster or a group manages for them: an inventory that lists them
+// assesses every node as a machine of its own.
 func assertAbsent(t *testing.T, source string, doc inventoryDoc, ids []string) {
 	t.Helper()
 
@@ -404,7 +427,7 @@ func assertAbsent(t *testing.T, source string, doc inventoryDoc, ids []string) {
 			continue
 		}
 
-		t.Errorf("%s: the inventory holds %q (%s, %s), want it left out: a Kubernetes cluster stands for its nodes",
+		t.Errorf("%s: the inventory holds %q (%s, %s), want it left out: another recorded resource stands for it",
 			source, id, resource.RawType, resource.Category)
 	}
 }

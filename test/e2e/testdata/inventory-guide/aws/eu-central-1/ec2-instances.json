@@ -189,6 +189,27 @@
               "Key": "Name"
             }
           ]
+        },
+        {
+          "InstanceId": "i-0123456789abcdef7",
+          "InstanceType": "c7i.metal-24xl",
+          "State": {
+            "Name": "running"
+          },
+          "Placement": {
+            "AvailabilityZone": "eu-central-1a"
+          },
+          "BlockDeviceMappings": [],
+          "NetworkInterfaces": [
+            {
+              "Ipv6AddressCount": 0
+            }
+          ],
+          "Tags": [
+            {
+              "Key": "Name"
+            }
+          ]
         }
       ]
     }

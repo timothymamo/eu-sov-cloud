@@ -23,6 +23,17 @@
       ]
     },
     {
+      "VolumeId": "vol-0123456789abcdef2",
+      "AvailabilityZone": "eu-central-1a",
+      "Encrypted": true,
+      "Attachments": [
+        {
+          "InstanceId": "i-0123456789abcdef2",
+          "DeleteOnTermination": true
+        }
+      ]
+    },
+    {
       "VolumeId": "vol-0123456789abcdef4",
       "AvailabilityZone": "eu-central-1a",
       "Encrypted": true,
