@@ -59,6 +59,95 @@ func e2eExecExempt(name, sub string, flags []string) bool {
 	return true
 }
 
+// TestE2EExecExempt pins the exemption the e2e scan hands the checker: the go
+// toolchain's two commands, keyed on the name and the subcommand, and only
+// while every literal argument after the subcommand that starts with "-" is in
+// e2eToolchainFlags. The scan of test/e2e passes none of the flags that spoil
+// it today, so only a test of the function itself pins that it refuses them
+// (issue #195 round 4).
+func TestE2EExecExempt(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name  string
+		cmd   string
+		sub   string
+		flags []string
+		want  bool
+	}{
+		{
+			name:  "the flags buildAndRun passes to go build",
+			cmd:   "go",
+			sub:   "build",
+			flags: []string{"-trimpath", "-o"},
+			want:  true,
+		},
+		{
+			name:  "the flags the dependency scans pass to go list",
+			cmd:   "go",
+			sub:   "list",
+			flags: []string{"-deps"},
+			want:  true,
+		},
+		{
+			name:  "a positional argument the source builds at run time is no flag",
+			cmd:   "go",
+			sub:   "list",
+			flags: []string{"-deps", "./cmd/shift2eu"},
+			want:  true,
+		},
+		{
+			// `go run` builds and runs a program with the go command's
+			// environment, which is why the exemption names build and list
+			// alone.
+			name: "a subcommand the exemption does not name",
+			cmd:  "go",
+			sub:  "run",
+		},
+		{
+			// `go env` prints the environment it inherits.
+			name: "go env",
+			cmd:  "go",
+			sub:  "env",
+		},
+		{
+			name: "another command named with an exempt subcommand",
+			cmd:  "sh",
+			sub:  "build",
+		},
+		{
+			name:  "a literal flag the allow-list does not name",
+			cmd:   "go",
+			sub:   "build",
+			flags: []string{"-toolexec"},
+		},
+		{
+			name:  "a flag with = the allow-list does not name",
+			cmd:   "go",
+			sub:   "build",
+			flags: []string{"-pgo=auto"},
+		},
+		{
+			// The allow-list is read after the subcommand, so an allowed
+			// flag does not rescue a spoil flag further along the call.
+			name:  "a spoil flag after an allowed one",
+			cmd:   "go",
+			sub:   "build",
+			flags: []string{"-trimpath", "-overlay", "overlay.json"},
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			if got := e2eExecExempt(tc.cmd, tc.sub, tc.flags); got != tc.want {
+				t.Errorf("e2eExecExempt(%q, %q, %q) = %v, want %v", tc.cmd, tc.sub, tc.flags, got, tc.want)
+			}
+		})
+	}
+}
+
 // TestE2ETestsSetExecEnv holds every test/e2e _test.go file to the rule that a
 // command it runs carries an Env of its own. The tier imports os/exec on
 // purpose, so forbidigo's e2e-no-env group cannot refuse the import; it refuses

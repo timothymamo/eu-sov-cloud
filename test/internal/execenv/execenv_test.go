@@ -358,9 +358,12 @@ func TestCheckExecEnv(t *testing.T) {
 			// value copy, a parameter, a struct field, a type-switch variable,
 			// a range statement, an unpaired call and a reslice one by one, and
 			// an Env key of another struct's literal too.
+			// A dereference of the command is the command: the Env the
+			// dereference assigns at line 96, after the run method was taken,
+			// is refused as the direct assignment would be.
 			name:  "every Env assignment is refused unless its value is proven, whatever the receiver",
 			probe: "env_receiver.go.txt",
-			want:  find("env_receiver.go.txt", 15, 22, 28, 33, 43, 51, 58, 69, 75, 85),
+			want:  find("env_receiver.go.txt", 15, 22, 28, 33, 43, 51, 58, 69, 75, 85, 96),
 		},
 		{
 			name:  "Env assigned a dereferenced pointer to a nil slice is refused at the assignment and at the run",
@@ -424,14 +427,17 @@ func TestCheckExecEnv(t *testing.T) {
 			// P5: the declaration is what a reader fixes, and a helper that
 			// could hand back a zero value proves nothing, so the assignment
 			// that reads it and the run after it are refused as an unproven Env
-			// and an unset one.
+			// and an unset one. Such a helper is refused for a named result
+			// alone (namedEnv) as well as for a defer (recoveredEnv).
 			name:  "a helper with a named result or a defer proves no Env and is refused at its declaration",
 			probe: "env_helper_shapes.go.txt",
-			want:  find("env_helper_shapes.go.txt", 12, 17, 24, 25, 28, 29),
+			want:  find("env_helper_shapes.go.txt", 12, 17, 24, 25, 28, 29, 35, 41, 42),
 		},
 		{
 			// The accepted counterparts of env_receiver.go.txt: the same
-			// receivers with the values the e2e tier writes.
+			// receivers with the values the e2e tier writes, and a type
+			// assertion, whose type is one of the places a *exec.Cmd may be
+			// declared (P2).
 			name:  "a proven Env assigned through any receiver is accepted",
 			probe: "env_receiver_accepted.go.txt",
 		},

@@ -35,3 +35,11 @@ type envAcceptedSettings struct {
 func envKeyAccepted() {
 	_ = envAcceptedSettings{Env: []string{}}
 }
+
+// A type assertion hands back a command the check never built, and a proven
+// Env assigned through it is accepted as through any other receiver: the
+// assertion's type is one of the places a *exec.Cmd may be declared (P2).
+func envAssertAccepted(v any) {
+	cmd := v.(*exec.Cmd)
+	cmd.Env = []string{}
+}

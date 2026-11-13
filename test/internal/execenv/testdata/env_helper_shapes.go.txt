@@ -28,3 +28,16 @@ func envHelperShapes() error {
 	other.Env = recoveredEnv()
 	return other.Run()
 }
+
+// A named result alone proves nothing, even with no defer statement in the
+// body: a deferred function added later can still set the name to nil, so the
+// declaration is refused and the assignment that reads it proves no Env (P5).
+func namedEnv() (env []string) {
+	return []string{}
+}
+
+func envNamedResult() error {
+	cmd := exec.Command("sh")
+	cmd.Env = namedEnv()
+	return cmd.Run()
+}

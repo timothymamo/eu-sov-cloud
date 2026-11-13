@@ -84,3 +84,14 @@ type envSettings struct {
 func envKeyAnyStruct() {
 	_ = envSettings{Env: nil}
 }
+
+// A dereference of a command the check follows is that command: an Env
+// assigned through it once the command's run method has been taken is refused
+// as the direct assignment is, a proven value included (P1).
+func envDerefAfterEscape() {
+	cmd := exec.Command("sh")
+	cmd.Env = []string{}
+	start := cmd.Start
+	_ = start
+	(*cmd).Env = []string{"PATH=/usr/bin"}
+}
