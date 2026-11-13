@@ -105,7 +105,8 @@ type docPath struct {
 // their files out, not the symlinks in them: an import of a path through a
 // link follows it whatever directory it sits in (issue #194). Nothing comes
 // from under the root of another module, symlinks included, though the walked
-// root itself is always read. No directory is returned, and a walk error is.
+// root itself is always read. As for the go command, a module root is a
+// directory holding a go.mod regular file: a directory named go.mod makes none. No directory is returned, and a walk error is.
 func docEntries(fsys fs.FS) ([]docPath, error) {
 	var entries []docPath
 
@@ -119,14 +120,14 @@ func docEntries(fsys fs.FS) ([]docPath, error) {
 				return nil
 			}
 
-			_, err := fs.Stat(fsys, path.Join(rel, "go.mod"))
+			fi, err := fs.Stat(fsys, path.Join(rel, "go.mod"))
 			switch {
-			case err == nil:
+			case err == nil && !fi.IsDir():
 				return fs.SkipDir
-			case errors.Is(err, fs.ErrNotExist):
+			case err == nil, errors.Is(err, fs.ErrNotExist):
 				return nil
 			default:
-				return err
+				return fmt.Errorf("look for a module root at %s: %w", rel, err)
 			}
 		}
 
@@ -173,8 +174,8 @@ func leftOutOfDotDotDot(dir string) bool {
 // walk reads the link, not what it points at, yet an import of its path follows
 // it and the toolchain builds the source it finds there. Any other entry is
 // refused (docSourceLine) when it is a non-Go source (nonGoSourceExtensions)
-// under no testdata directory: the testdata, _ and . exemption of ./... covers
-// non-Go files only. A package under testdata or _x is still built when it is
+// under no testdata, _ or . directory (leftOutOfDotDotDot): the exemption of
+// ./... covers non-Go files only. A package under testdata or _x is still built when it is
 // imported by path, which this check does not cover (the follow-up to #194).
 func docSourceProblems(entries []docPath, held, takenOut []string) []string {
 	var problems []string
@@ -204,7 +205,7 @@ func docSourceProblems(entries []docPath, held, takenOut []string) []string {
 			continue
 		}
 
-		if slices.Contains(strings.Split(path.Dir(e.rel), "/"), "testdata") {
+		if leftOutOfDotDotDot(path.Dir(e.rel)) {
 			continue
 		}
 

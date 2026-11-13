@@ -574,7 +574,8 @@ target, with the `e2e` and `integration` tags (`strictcoverage_test.go`):
   list says nothing of a file that needs no import, so `TestDocPackagesHoldNoNonGoSource`
   (`test/lint`, issue #194) refuses a non-Go source the Go toolchain builds beside a package
   (assembly, C, C++, Objective-C, Fortran, SWIG or a `.syso` object) in every tree the rule's
-  `files:` list holds, outside `testdata` directories; it reads those trees from `.golangci.yml`.
+  `files:` list holds, outside `testdata`, `_` and `.` directories and other modules (a directory
+  holding a `go.mod` regular file, as for the go command); it reads those trees from `.golangci.yml`.
   The go command leaves `testdata`, `_` and `.` directories out of `./...`, and that exemption
   covers non-Go files only: a non-Go file there is no source of the held package. The check refuses
   every symlink in, or above, a held tree, whatever its name and wherever it sits, inside
