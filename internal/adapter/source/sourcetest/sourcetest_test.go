@@ -216,10 +216,12 @@ func TestCheck(t *testing.T) {
 		// Every field of a resource carries a discovery fact. A source that gets
 		// one of them wrong for one resource has still broken the contract, and a
 		// suite that compared a subset would pass it.
+		// The compute.vm of wantInventory is renamed: no relation points to it,
+		// so the variant is otherwise valid and only its ID is wrong.
 		{
 			name: "changes a resource id",
-			src: &fakeSource{inventories: []inventory.Inventory{wantVariant(t, 0, func(r *inventory.Resource) {
-				r.ID = "bucket-renamed"
+			src: &fakeSource{inventories: []inventory.Inventory{wantVariant(t, 1, func(r *inventory.Resource) {
+				r.ID = "i-renamed"
 			})}},
 			wantErr:      true,
 			wantMentions: [][]string{{"want"}},

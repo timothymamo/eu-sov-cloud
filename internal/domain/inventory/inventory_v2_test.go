@@ -122,8 +122,9 @@ func TestNewKeepsVersion2Fields(t *testing.T) {
 	zeroStorage := vm("i-0123456789abcdef0")
 	zeroStorage.Size = &inventory.Size{StorageGiB: ptr(0.0)}
 
-	// zeroCost is a source cost of 0, in its own currency: a value too.
-	zeroCost := vm("i-0123456789abcdef0")
+	// zeroCost is a source cost of 0, in its own currency: a value too. It has
+	// its own ID so it can share an inventory with zeroStorage.
+	zeroCost := vm("i-0123456789abcdef1")
 	zeroCost.MonthlyCost = &inventory.Cost{Amount: ptr(0.0), Currency: "EUR"}
 
 	// usage is an hoursPerMonth of its own, and hoursPerMonth 744 is the whole of
