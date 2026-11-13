@@ -44,6 +44,14 @@ var e2eNoEnvRefused = []rootName{
 	// test files import it on purpose, so the group refuses the call there.
 	// forbidigo renders a method as pkg.Type.Method, the pointer receiver
 	// dropped (docs/architecture.md, How forbidigo renders a name).
+	//
+	// The entry is defence in depth, not a guarantee. It does not refuse a
+	// method promoted through an embedded *exec.Cmd: `type w struct{ *exec.Cmd }`
+	// renders w{cmd}.Environ() under the embedding type, w, so no entry for
+	// exec.Cmd matches it. What holds the tier is that its non-test files cannot
+	// import os/exec at all (test-docs-are-pure, TestE2EImportsProbe); the
+	// _test.go files can, and may still start a child with a nil Env, which #185
+	// leaves out of scope (follow-up issue #195).
 	{"os/exec", "exec.Cmd.Environ"},
 	{"syscall", "syscall.AllThreadsSyscall"},
 	{"syscall", "syscall.AllThreadsSyscall6"},
