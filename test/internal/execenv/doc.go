@@ -6,46 +6,62 @@
 // CheckExecEnv parses one Go source file and refuses every way an *exec.Cmd
 // may start with a nil Env, which exec.Cmd reads as "inherit the whole
 // environment of this process"; whatever the child prints from it can reach a
-// t.Log call or a golden file. It fails closed: it follows a command only when
-// exec.Command or exec.CommandContext builds it as the whole right-hand side
-// of a statement inside a function that declares the name it binds
+// t.Log call or a golden file. It fails closed: apart from the four gaps
+// below, a shape it cannot follow is a finding. It follows a command only
+// when exec.Command or exec.CommandContext builds it as the whole right-hand
+// side of a statement inside a function that declares the name it binds
 // (`ident :=` or `var ident =`), keyed by the variable that identifier
 // declares (go/types, with every import an empty package), so a shadowing name
 // cannot mask it. A construction bound any other way (to a name that exists
 // already or is declared in another file, a call argument, a composite
-// element, a struct field, a chained run) is a finding, and so is a followed
-// name rebound to anything but a new construction.
+// element, a struct field, a chained run) is a finding, and so are a followed
+// name rebound to anything but a new construction and exec.Command or
+// exec.CommandContext used as a function value. A file reports at most one
+// finding per line, at the earliest statement a reader fixes.
 //
 // Until its Env is set, the command may only have fields assigned
-// (`ident.<Field> = ...`); a Run, Start, Output or CombinedOutput call, an
-// alias, an argument, a method value or expression and a capture in a function
-// literal are each a finding. Env is set only by a value the check proves is
-// not nil: a composite literal, a make call, an append of such a value, or a
-// call to a function of the same file whose every return is one of those. Any
-// other value (nil, []string(nil), a variable, *new([]string), a multi-value
-// call) is a finding and leaves Env unset. Once the command has been aliased,
-// stored, passed, captured, deferred or handed to a go statement, any Env
-// assigned to it is a finding, and the address of any Env field is a finding
-// wherever it appears.
+// (`ident.<Field> = ...`, through parentheses and `*` too); a Run, Start,
+// Output or CombinedOutput call, an alias, an argument, a method value or
+// expression and a capture in a function literal are each a finding. Every
+// Env assignment, whatever its receiver (a followed command, a parameter, an
+// alias, a value copy, a struct field, a type-switch variable), and every Env
+// key of a composite literal of any type, takes only a value the check proves
+// is not nil: a composite literal, a make call, an append of such a value, or
+// a call to a function of the same file, with no named result and no defer
+// statement, whose every return is one of those. Any other value (nil,
+// []string(nil), a variable, a reslice, *new([]string), one of a call's
+// several results, a range statement's) is a finding and leaves Env unset, and
+// a helper with a named result or a defer is refused at its declaration. Once
+// the command has been aliased, stored, passed, captured, deferred or handed
+// to a go statement, any Env assigned to it is a finding, and the address of
+// any Env field is a finding wherever it appears.
 //
 // Every type expression naming exec.Cmd that is not the operand of a `*` is
 // refused (a value variable, field, array, embedded field, alias, defined
 // type, type argument, new(exec.Cmd)), as is an embedded *exec.Cmd: a command
 // value no exec.Command built has a nil Env. The one exception is an exec.Cmd
-// composite literal whose Env key holds a proven value. A *exec.Cmd field,
-// parameter, result or var is accepted, since a nil pointer runs nothing. A
-// blank or dot import of os/exec, which hides the commands the check follows,
-// is refused too. A finding names the line a reader fixes, and says nothing
-// about how far the child's output travels, which no source check can see.
+// composite literal whose Env key holds a proven value. A *exec.Cmd is
+// accepted only as the whole type of a struct field, a parameter, a result, a
+// var, a type assertion or a type-switch case, since a nil pointer runs
+// nothing; as the element or key of an array, slice, map or chan type, on the
+// right of a type declaration or as a type argument it is refused, so no
+// composite value holds a command. A generic function, which could build or
+// hold one the check cannot follow, is refused in a file that imports
+// os/exec, and so is a blank or dot import of os/exec, which hides the
+// commands the check follows. A finding names the line a reader fixes, and
+// says nothing about how far the child's output travels, which no source
+// check can see.
 //
 // The caller's exempt function is handed the command name and the argument
-// after it, both only when they are string literals; a command it admits may
-// run with no Env, once bound to a variable (a run chained to the construction
-// is always refused). test/lint admits `go build` and `go list`, which need
-// the environment and print none of it. The exemption is lost by a spread
-// argument, by a literal argument that is or starts with -toolexec,
-// --toolexec, -exec, --exec, -overlay or --overlay, and by assigning Path or
-// Args.
+// after it, both only when they are string literals, and the string-literal
+// arguments after that in source order; a command it admits may run with no
+// Env, once bound to a variable (a run chained to the construction is always
+// refused). test/lint admits `go build` and `go list`, which need the
+// environment and print none of it, and only while every literal flag is one
+// of its allow-list, e2eToolchainFlags (-trimpath, -o, -deps), so a flag the
+// go command gains later is refused until review adds it. The checker itself
+// takes the exemption away from a spread argument and on an assignment to
+// Path or Args.
 //
 // Four gaps are accepted, and review holds them:
 //   - Flow-insensitivity: the check follows the source, not the flow, so an
@@ -55,8 +71,8 @@
 //   - Paths built at run time are beyond CheckEnvironLiterals, a rule of
 //     literals (below).
 //   - A command built in another package is out of the file's sight.
-//   - A non-literal argument to an exempt toolchain command that holds one of
-//     the flags above keeps the exemption: only literals are read.
+//   - A non-literal argument to an exempt toolchain command that holds a flag
+//     keeps the exemption: only literals are checked against the allow-list.
 //
 // CheckEnvironLiterals refuses the string literals of a file that name the
 // environment of a process, which reads it without starting a child, under one

@@ -1963,8 +1963,9 @@ linters:
         # needs. A nil Env in a _test.go file is refused by test/lint's
         # TestE2ETestsSetExecEnv (issue #195), which fails closed on every
         # command it cannot follow, apart from the go build and go list
-        # calls it exempts. In the
-        # non-test files, doc.go today, test-docs-are-pure refuses os/exec,
+        # calls it exempts while each literal flag is on its allow-list and
+        # the four gaps test/internal/execenv documents. In the non-test
+        # files, doc.go today, test-docs-are-pure refuses os/exec,
         # unsafe and os/user at the import (TestE2EImportsProbe and
         # test/architecture's depguard pin hold it), so an exec.Cmd with a
         # nil Env, which inherits the whole environment, cannot be written

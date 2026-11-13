@@ -8,6 +8,7 @@ import (
 	"go/types"
 	"path"
 	"regexp"
+	"sort"
 	"strconv"
 	"strings"
 )
@@ -34,18 +35,13 @@ var runMethods = map[string]bool{
 	"CombinedOutput": true,
 }
 
-// exemptionSpoilers are the go command's flags that hand its environment to a
-// program the next argument (or the value after "=") names: an exempt command
-// with a literal argument that is, or starts with, one of them is exempt no
-// more.
-var exemptionSpoilers = []string{"-toolexec", "--toolexec", "-exec", "--exec", "-overlay", "--overlay"}
-
-// CheckExecEnv returns a finding, in source order, for every place in the Go
-// source src where a command of os/exec may start with a nil Env, which
-// inherits the whole environment of the test process. It fails closed: a
-// command it cannot follow, and a use of a command it cannot vouch for, is a
-// finding too. filename names the file in the findings and in the parse
-// error.
+// CheckExecEnv returns a finding, in line order and at most one per line, for
+// every place in the Go source src where a command of os/exec may start with a
+// nil Env, which inherits the whole environment of the test process. It fails
+// closed: a command it cannot follow, a use of a command it cannot vouch for,
+// and a shape that could carry a command out of its sight is a finding too.
+// Where two rules meet on one line, the line is reported once. filename names
+// the file in the findings and in the parse error.
 //
 // A command is followed when exec.Command or exec.CommandContext builds it as
 // the whole right-hand side of a statement inside a function that declares the
@@ -53,35 +49,50 @@ var exemptionSpoilers = []string{"-toolexec", "--toolexec", "-exec", "--exec", "
 // variable, so a shadowing name in an inner block is another command. A
 // construction bound any other way (to a name that exists already, a call
 // argument, a composite element, a struct field, a chained run) is a finding,
-// and so is a followed name rebound to anything but a new construction.
+// and so are a followed name rebound to anything but a new construction and
+// exec.Command or exec.CommandContext used as a function value rather than
+// called.
 //
 // Until an Env is set, the only uses of a followed command accepted are
-// `ident.<Field> = ...` and, for an exempt command, a Run, Start, Output or
-// CombinedOutput call on it; every other use (an alias, an argument, a method
-// value or expression, a capture in a function literal, a run call) is a
-// finding. Env is set only by a value the check proves is not nil: a composite
-// literal, a make call, an append whose first argument is such a value, or a
-// call to a function of the same file whose every return is one of the first
-// three. Any other value is a finding and leaves Env unset. Once the command
-// has been aliased, stored, passed, captured, deferred or handed to a go
-// statement, an Env assigned to it is a finding whatever the value, and Env
-// keeps the state it had. The check follows the source, not the flow: an Env
-// assigned anywhere before the use counts, in a branch that never runs or in a
-// closure too.
+// `ident.<Field> = ...` (through parentheses and `*` too) and, for an exempt
+// command, a Run, Start, Output or CombinedOutput call on it; every other use
+// (an alias, an argument, a method value or expression, a capture in a function
+// literal, a run call) is a finding.
+//
+// Every assignment to an Env field, whatever its receiver (a followed command,
+// a parameter, an alias, a value copy, a field of a struct, a type-switch
+// variable), and every Env key of a composite literal of any type, takes only
+// a value the check proves is not nil: a composite literal, a make call, an
+// append whose first argument is such a value, or a call to a function of the
+// same file with no named result and no defer statement whose every return is
+// one of the first three. Any other value, one of several results of a call,
+// and an Env a range statement assigns, is a finding and leaves the command's
+// Env unset; a helper of the wrong shape is a finding at its declaration as
+// well. Once a followed command has been aliased, stored, passed, captured,
+// deferred or handed to a go statement, a proven Env assigned to it is a
+// finding too, and Env keeps the state it had. The check follows the source,
+// not the flow: an Env assigned anywhere before the use counts, in a branch
+// that never runs or in a closure too.
 //
 // Also refused: every type expression naming exec.Cmd that is not the operand
 // of a `*` (a value variable, field, array, alias, defined type, type argument,
 // new(exec.Cmd)), except an exec.Cmd composite literal whose Env key holds a
-// proven value; an embedded *exec.Cmd field; the address of any Env field; and
-// a blank or dot import of os/exec.
+// proven value; a *exec.Cmd anywhere but as the whole type of a struct field,
+// a parameter, a result, a var, a type assertion or a type-switch case (the
+// element or key of an array, slice, map or chan type, the right of a type
+// declaration, a type argument, a conversion), so no composite value holds a
+// command; an embedded *exec.Cmd field; the address of any Env field; a
+// generic function declaration; and a blank or dot import of os/exec.
 //
 // exempt is handed the command name, the first argument of exec.Command and the
-// second of exec.CommandContext, and sub, the argument after it, when both are
-// string literals; a command it admits may run with no Env. A missing or
-// non-literal name or sub is never exempt, and the exemption is lost by a
-// spread argument, a literal argument that is or starts with one of
-// exemptionSpoilers, and an assignment to Path or Args.
-func CheckExecEnv(filename string, src []byte, exempt func(name, sub string) bool) ([]Finding, error) {
+// second of exec.CommandContext, sub, the argument after it, when both are
+// string literals, and flags, the string-literal arguments after sub in source
+// order (a non-literal argument is not passed); a command it admits may run
+// with no Env. A missing or non-literal name or sub is never exempt, and the
+// exemption is lost by a spread argument, which exempt is never asked about,
+// and by an assignment to Path or Args. Which flags keep the exemption is the
+// caller's to decide.
+func CheckExecEnv(filename string, src []byte, exempt func(name, sub string, flags []string) bool) ([]Finding, error) {
 	fset := token.NewFileSet()
 	file, err := parser.ParseFile(fset, filename, src, parser.SkipObjectResolution)
 	if err != nil {
@@ -93,6 +104,8 @@ func CheckExecEnv(filename string, src []byte, exempt func(name, sub string) boo
 		filename: filename,
 		exempt:   exempt,
 		commands: map[types.Object]*command{},
+		allowed:  map[*ast.StarExpr]bool{},
+		helpers:  map[*ast.FuncDecl]bool{},
 	}
 	if !c.imports(file) {
 		return c.findings, nil
@@ -100,7 +113,23 @@ func CheckExecEnv(filename string, src []byte, exempt func(name, sub string) boo
 	c.info = resolve(fset, file)
 	c.funcDecls = funcDecls(c.info, file)
 	ast.Inspect(file, c.visit)
-	return c.findings, nil
+	return oneFindingPerLine(c.findings), nil
+}
+
+// oneFindingPerLine sorts findings by line and keeps the first reported on each
+// line: where two rules meet on one line, a reader fixes it once. A helper that
+// proves no Env is reported at its declaration when an assignment reads it,
+// which may sit above that assignment, hence the sort.
+func oneFindingPerLine(findings []Finding) []Finding {
+	sort.SliceStable(findings, func(i, j int) bool { return findings[i].Line < findings[j].Line })
+	kept := findings[:0]
+	for _, f := range findings {
+		if len(kept) > 0 && kept[len(kept)-1].Line == f.Line {
+			continue
+		}
+		kept = append(kept, f)
+	}
+	return kept
 }
 
 // resolve type-checks file on its own, for the objects its identifiers
@@ -156,13 +185,20 @@ type execChecker struct {
 	fset     *token.FileSet
 	filename string
 	info     *types.Info
-	exempt   func(name, sub string) bool
+	exempt   func(name, sub string, flags []string) bool
 	// funcDecls are the functions the file declares, which an Env value may
 	// call.
 	funcDecls map[types.Object]*ast.FuncDecl
 	// commands are the commands followed so far, by the variable that holds
 	// each.
 	commands map[types.Object]*command
+	// allowed are the *exec.Cmd type expressions that are the whole type of a
+	// struct field, a parameter, a result, a var, a type assertion or a type
+	// switch case: the only places a command pointer may be declared.
+	allowed map[*ast.StarExpr]bool
+	// helpers are the same-file functions an Env value called that were
+	// refused for a named result or a defer, each reported once.
+	helpers map[*ast.FuncDecl]bool
 	// funcs counts the function bodies the walk is inside, a function
 	// literal's included; a construction outside every one is no command the
 	// checker can follow.
@@ -223,6 +259,11 @@ func (c *execChecker) imports(file *ast.File) bool {
 func (c *execChecker) visit(n ast.Node) bool {
 	switch n := n.(type) {
 	case *ast.FuncDecl:
+		if n.Type.TypeParams != nil && len(n.Type.TypeParams.List) > 0 {
+			c.report(n.Pos(), fmt.Sprintf(
+				"%s is a generic function, which can build or hold a command the check cannot follow; a file that imports os/exec declares no generic function",
+				n.Name.Name))
+		}
 		if n.Recv != nil {
 			ast.Inspect(n.Recv, c.visit)
 		}
@@ -255,6 +296,7 @@ func (c *execChecker) visit(n ast.Node) bool {
 		return false
 	case *ast.ValueSpec:
 		if n.Type != nil {
+			c.allow(n.Type)
 			ast.Inspect(n.Type, c.visit)
 		}
 		lhs := make([]ast.Expr, len(n.Names))
@@ -268,19 +310,64 @@ func (c *execChecker) visit(n ast.Node) bool {
 	case *ast.CompositeLit:
 		return c.composite(n)
 	case *ast.StarExpr:
+		if !c.isCmdType(n.X) {
+			return true
+		}
 		// A pointer to a command is nil until a command the check follows, or
-		// refuses, is assigned to it.
-		return !c.isCmdType(n.X)
+		// refuses, is assigned to it, so it may be declared on its own. A
+		// composite type, a type declaration or a type argument holding one
+		// would let a command travel where the check cannot follow it.
+		if !c.allowed[n] {
+			c.report(n.Pos(), "*exec.Cmd is declared only as the whole type of a struct field, a parameter, a result or a var; a composite type, a type declaration or a type argument holding one lets a command travel where the check cannot follow its Env")
+		}
+		return false
 	case *ast.SelectorExpr:
 		if c.isCmdType(n) {
 			c.report(n.Pos(), "exec.Cmd as a value type holds a command no exec.Command built, whose nil Env inherits the whole environment of the test process; hold a *exec.Cmd that exec.Command returns")
 			return false
 		}
+		if c.isConstructor(n) {
+			// Every call of exec.Command or exec.CommandContext is handled
+			// as a call and never walks its Fun, so this selector is a
+			// function value.
+			c.report(n.Pos(), fmt.Sprintf(
+				"exec.%s is used as a function value, which builds commands with a nil Env wherever it is called; call exec.%s directly and bind the command it returns",
+				n.Sel.Name, n.Sel.Name))
+			return false
+		}
+		return true
+	case *ast.FuncType:
+		c.allowFields(n.Params)
+		c.allowFields(n.Results)
 		return true
 	case *ast.StructType:
+		c.allowFields(n.Fields)
 		for _, field := range n.Fields.List {
 			if star, ok := ast.Unparen(field.Type).(*ast.StarExpr); ok && len(field.Names) == 0 && c.isCmdType(star.X) {
 				c.report(field.Type.Pos(), "an embedded *exec.Cmd hands its run methods to a struct the check cannot follow; hold the command in a named field")
+			}
+		}
+		return true
+	case *ast.TypeAssertExpr:
+		if n.Type != nil {
+			c.allow(n.Type)
+		}
+		return true
+	case *ast.TypeSwitchStmt:
+		for _, stmt := range n.Body.List {
+			if clause, ok := stmt.(*ast.CaseClause); ok {
+				for _, t := range clause.List {
+					c.allow(t)
+				}
+			}
+		}
+		return true
+	case *ast.RangeStmt:
+		for _, x := range []ast.Expr{n.Key, n.Value} {
+			if sel, ok := ast.Unparen(x).(*ast.SelectorExpr); ok && sel.Sel.Name == "Env" {
+				c.report(sel.Pos(), fmt.Sprintf(
+					"%s is assigned by a range statement, a value the check cannot prove is not nil, and a nil Env inherits the whole environment of the test process; assign a composite literal, a make, an append of one, or a call to a helper of this file that returns one",
+					types.ExprString(sel)))
 			}
 		}
 		return true
@@ -371,50 +458,63 @@ func (c *execChecker) bind(target *ast.Ident, bound *binding, constructed bool) 
 	}
 }
 
-// setField handles an assignment to a field: on a followed command it refuses
-// an Env the check cannot prove, or one assigned after the command escaped,
-// and takes the exemption away on Path and Args. value is nil for an
-// assignment whose right-hand side is no single expression per target.
+// setField handles an assignment to a field. An Env, through any receiver,
+// takes only a value the check proves is not nil; value is nil for an
+// assignment whose right-hand side is no single expression per target, which
+// proves nothing. On a followed command it also refuses an Env assigned after
+// the command escaped, and takes the exemption away on Path and Args.
 func (c *execChecker) setField(target *ast.SelectorExpr, value ast.Expr) {
+	field := target.Sel.Name
+	proven := field == "Env" && value != nil && c.accepted(value, true)
 	id, cmd := c.command(target.X)
 	if cmd == nil {
+		if field == "Env" && !proven {
+			c.reportUnprovenEnv(target)
+		}
 		ast.Inspect(target, c.visit)
 		return
 	}
-	field := target.Sel.Name
-	if field == "Env" && cmd.escaped {
+
+	switch {
+	case field == "Env" && !proven:
+		// The value is checked first: a value no rule proves is the
+		// finding, whatever else is wrong with the command.
+		if c.captured(cmd) {
+			cmd.escaped = true
+		}
+		cmd.envSet = false
+		c.reportUnprovenEnv(target)
+		return
+	case field == "Env" && cmd.escaped:
 		c.report(target.Pos(), fmt.Sprintf(
 			"%s.Env is assigned after %s was aliased, stored, passed, captured or deferred, so a run may not see it; assign %s.Env before the command leaves the function's hands",
 			id.Name, id.Name, id.Name))
 		return
 	}
 
-	reported := false
 	if c.captured(cmd) {
 		cmd.escaped = true
 		if !cmd.envSet {
 			c.report(id.Pos(), fmt.Sprintf(
 				"%s is captured by a function literal before its Env is set, so the check cannot tell what runs it; assign %s.Env before the literal",
 				id.Name, id.Name))
-			reported = true
 		}
 	}
 
 	switch field {
 	case "Env":
-		if value != nil && c.accepted(value, true) {
-			cmd.envSet = true
-			return
-		}
-		cmd.envSet = false
-		if !reported {
-			c.report(target.Pos(), fmt.Sprintf(
-				"%s.Env is assigned a value the check cannot prove is not nil, and a nil Env inherits the whole environment of the test process; assign a composite literal, a make, an append of one, or a call to a helper of this file that returns one",
-				id.Name))
-		}
+		cmd.envSet = true
 	case "Path", "Args":
 		cmd.exempt = false
 	}
+}
+
+// reportUnprovenEnv refuses an assignment to the Env field target whose value
+// the check cannot prove is not nil.
+func (c *execChecker) reportUnprovenEnv(target *ast.SelectorExpr) {
+	c.report(target.Pos(), fmt.Sprintf(
+		"%s is assigned a value the check cannot prove is not nil, and a nil Env inherits the whole environment of the test process; assign a composite literal, a make, an append of one, or a call to a helper of this file that returns one",
+		types.ExprString(target)))
 }
 
 // call handles a call expression and reports whether the walk should descend
@@ -473,23 +573,24 @@ func (c *execChecker) call(call *ast.CallExpr) bool {
 }
 
 // composite handles a composite literal and reports whether the walk should
-// descend into it. An exec.Cmd literal, and one whose type the source elides
-// in a literal of exec.Cmd elements, is refused unless its Env key holds a
-// value the check proves is not nil; its type is no value type to refuse.
+// descend into it. An exec.Cmd literal is refused unless its Env key holds a
+// value the check proves is not nil; its type is no value type to refuse. An
+// Env key of any other literal, whatever its type, must hold such a value too.
+// No composite type may hold a *exec.Cmd, so a literal whose type the source
+// elides is never a command.
 func (c *execChecker) composite(lit *ast.CompositeLit) bool {
 	if lit.Type != nil && c.isCmdType(lit.Type) {
 		c.checkCmdLiteral(lit)
 		c.walkElts(lit)
 		return false
 	}
-	if c.holdsCmd(lit.Type) {
-		for _, elt := range lit.Elts {
-			if kv, ok := elt.(*ast.KeyValueExpr); ok {
-				elt = kv.Value
-			}
-			if inner, ok := ast.Unparen(elt).(*ast.CompositeLit); ok && inner.Type == nil {
-				c.checkCmdLiteral(inner)
-			}
+	for _, elt := range lit.Elts {
+		kv, ok := elt.(*ast.KeyValueExpr)
+		if !ok {
+			continue
+		}
+		if key, ok := kv.Key.(*ast.Ident); ok && key.Name == "Env" && !c.accepted(kv.Value, true) {
+			c.report(kv.Pos(), "an Env key holds a value the check cannot prove is not nil, and a nil Env inherits the whole environment of the test process; give it a composite literal, a make, an append of one, or a call to a helper of this file that returns one")
 		}
 	}
 	return true
@@ -517,23 +618,23 @@ func (c *execChecker) walkElts(lit *ast.CompositeLit) {
 	}
 }
 
-// holdsCmd reports whether t is an array, slice or map type whose elements are
-// exec.Cmd or *exec.Cmd, so an element literal with no type of its own builds
-// a command.
-func (c *execChecker) holdsCmd(t ast.Expr) bool {
-	var elt ast.Expr
-	switch t := ast.Unparen(t).(type) {
-	case *ast.ArrayType:
-		elt = t.Elt
-	case *ast.MapType:
-		elt = t.Value
-	default:
-		return false
+// allowFields allows a *exec.Cmd that is the whole type of a field of fields:
+// a struct field, a parameter or a result.
+func (c *execChecker) allowFields(fields *ast.FieldList) {
+	if fields == nil {
+		return
 	}
-	if star, ok := ast.Unparen(elt).(*ast.StarExpr); ok {
-		elt = star.X
+	for _, field := range fields.List {
+		c.allow(field.Type)
 	}
-	return c.isCmdType(elt)
+}
+
+// allow records t, through parentheses, as a place a *exec.Cmd may be
+// declared, when it is one.
+func (c *execChecker) allow(t ast.Expr) {
+	if star, ok := ast.Unparen(t).(*ast.StarExpr); ok {
+		c.allowed[star] = true
+	}
 }
 
 // accepted reports whether the Env value x is one the check proves is not nil:
@@ -559,8 +660,41 @@ func (c *execChecker) accepted(x ast.Expr, helpers bool) bool {
 			}
 		case *types.Func:
 			decl := c.funcDecls[obj]
-			return helpers && decl != nil && c.returnsAccepted(decl)
+			return helpers && decl != nil && c.provingHelper(decl) && c.returnsAccepted(decl)
 		}
+	}
+	return false
+}
+
+// provingHelper reports whether decl has the shape of a helper whose return
+// may prove an Env: no named result, which a deferred function could set to
+// nil after the return expression, and no defer statement, whose recover
+// would hand back a zero result. A helper of another shape is refused at its
+// declaration, once.
+func (c *execChecker) provingHelper(decl *ast.FuncDecl) bool {
+	named := false
+	if results := decl.Type.Results; results != nil {
+		for _, field := range results.List {
+			if len(field.Names) > 0 {
+				named = true
+			}
+		}
+	}
+	deferred := false
+	ast.Inspect(decl.Body, func(n ast.Node) bool {
+		if _, ok := n.(*ast.DeferStmt); ok {
+			deferred = true
+		}
+		return !deferred
+	})
+	if !named && !deferred {
+		return true
+	}
+	if !c.helpers[decl] {
+		c.helpers[decl] = true
+		c.report(decl.Pos(), fmt.Sprintf(
+			"%s returns an Env value but has a named result or a defer statement, either of which can hand back a nil slice; return the literal from a helper with an unnamed result and no defer",
+			decl.Name.Name))
 	}
 	return false
 }
@@ -614,47 +748,35 @@ func (c *execChecker) walkArgs(call *ast.CallExpr) {
 // and if so whether the command it builds is exempt.
 func (c *execChecker) construction(call *ast.CallExpr) (exempt, ok bool) {
 	sel, isSel := ast.Unparen(call.Fun).(*ast.SelectorExpr)
-	if !isSel || !c.isExec(sel.X) {
+	if !isSel || !c.isConstructor(sel) {
 		return false, false
 	}
-	var nameArg int
-	switch sel.Sel.Name {
-	case "Command":
-		nameArg = 0
-	case "CommandContext":
+	nameArg := 0
+	if sel.Sel.Name == "CommandContext" {
 		nameArg = 1
-	default:
-		return false, false
 	}
-	if len(call.Args) <= nameArg+1 {
+	// A spread hands the command argument values the source does not write,
+	// any flag among them.
+	if len(call.Args) <= nameArg+1 || call.Ellipsis.IsValid() {
 		return false, true
 	}
 	name, nameOK := stringLit(call.Args[nameArg])
 	sub, subOK := stringLit(call.Args[nameArg+1])
-	if !nameOK || !subOK || !c.exempt(name, sub) {
+	if !nameOK || !subOK {
 		return false, true
 	}
-	return !spoilsExemption(call), true
+	var flags []string
+	for _, arg := range call.Args[nameArg+2:] {
+		if value, ok := stringLit(arg); ok {
+			flags = append(flags, value)
+		}
+	}
+	return c.exempt(name, sub, flags), true
 }
 
-// spoilsExemption reports whether call has a spread argument or a literal
-// argument that names one of exemptionSpoilers.
-func spoilsExemption(call *ast.CallExpr) bool {
-	if call.Ellipsis.IsValid() {
-		return true
-	}
-	for _, arg := range call.Args {
-		value, ok := stringLit(arg)
-		if !ok {
-			continue
-		}
-		for _, flag := range exemptionSpoilers {
-			if strings.HasPrefix(value, flag) {
-				return true
-			}
-		}
-	}
-	return false
+// isConstructor reports whether sel is exec.Command or exec.CommandContext.
+func (c *execChecker) isConstructor(sel *ast.SelectorExpr) bool {
+	return (sel.Sel.Name == "Command" || sel.Sel.Name == "CommandContext") && c.isExec(sel.X)
 }
 
 // isExec reports whether x names the os/exec package.
@@ -701,10 +823,18 @@ func (c *execChecker) declares(x ast.Expr) bool {
 	return ok && id.Name != "_" && c.info.Defs[id] != nil
 }
 
-// command returns the identifier x is, through parentheses, and the command
-// it holds, or a nil command when x names no followed command.
+// command returns the identifier x is, through parentheses and `*`, and the
+// command it holds, or a nil command when x names no followed command.
 func (c *execChecker) command(x ast.Expr) (*ast.Ident, *command) {
-	id, ok := ast.Unparen(x).(*ast.Ident)
+	x = ast.Unparen(x)
+	for {
+		star, ok := x.(*ast.StarExpr)
+		if !ok {
+			break
+		}
+		x = ast.Unparen(star.X)
+	}
+	id, ok := x.(*ast.Ident)
 	if !ok {
 		return nil, nil
 	}

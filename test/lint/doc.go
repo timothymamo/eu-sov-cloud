@@ -120,28 +120,34 @@
 // and the child's output can reach a t.Log call or a golden file.
 // TestE2ETestsSetExecEnv runs execenv.CheckExecEnv over every _test.go file
 // under test/e2e, walked recursively so a sub-package the tier grows is
-// scanned too, testdata directories skipped. The rule fails closed: it
-// follows a command only when exec.Command or exec.CommandContext builds it
-// as the whole right-hand side of a declaration in a function (`ident :=` or
-// `var ident =`), and refuses every other construction, a followed name
-// rebound to anything else, every use of the command before its Env is set (a
-// run call, an alias, an argument, a method value or expression, a capture in
-// a function literal), an Env value it cannot prove is not nil, an Env
+// scanned too, testdata directories skipped. The rule fails closed: apart
+// from the four gaps below, a shape it cannot follow is a finding. It follows
+// a command only when exec.Command or exec.CommandContext builds it as the
+// whole right-hand side of a declaration in a function (`ident :=` or
+// `var ident =`), and refuses every other construction, exec.Command or
+// exec.CommandContext used as a function value, a followed name rebound to
+// anything else, every use of the command before its Env is set (a run call,
+// an alias, an argument, a method value or expression, a capture in a
+// function literal), an Env assigned, through any receiver or as an Env key
+// of any composite literal, a value it cannot prove is not nil, an Env
 // assigned after the command was aliased, stored, passed, captured or
 // deferred, the address of an Env field, every exec.Cmd type expression not
-// under a `*` and an embedded *exec.Cmd, an exec.Cmd composite literal
-// without a proven Env, and a blank or dot import of os/exec. The proven Env
+// under a `*`, a *exec.Cmd anywhere but as the whole type of a struct field,
+// a parameter, a result, a var, a type assertion or a type-switch case, an
+// embedded *exec.Cmd, an exec.Cmd composite literal without a proven Env, a
+// generic function, and a blank or dot import of os/exec. The proven Env
 // values are a composite literal, a make, an append of one, and a call to a
-// helper of the same file that returns one. The exemption the test declares
-// (e2eToolchainCommands) is keyed on the name and the subcommand, both
-// literals: `go build` and `go list`, which need that environment and print
-// none of it. A run chained to its construction is never exempt, and a spread
-// argument, a literal -toolexec, -exec or -overlay argument (one dash or two,
-// the = form too) and a Path or Args assigned on the command take the
-// exemption away. Four gaps are accepted and left to review: the rule follows
-// the source, not the flow (an Env assigned in a branch that never runs, or in
-// a closure, counts); a path built at run time; a command built in another
-// package; and a non-literal toolchain argument that holds one of those flags.
+// helper of the same file, with no named result and no defer, that returns
+// one. The exemption the test declares (e2eToolchainCommands) is keyed on the
+// name and the subcommand, both literals: `go build` and `go list`, which need
+// that environment and print none of it, and only while every literal flag
+// after the subcommand is one of the allow-list e2eToolchainFlags (-trimpath,
+// -o and -deps). A run chained to its construction is never exempt, and a
+// spread argument and a Path or Args assigned on the command take the
+// exemption away too. Four gaps are accepted and left to review: the rule
+// follows the source, not the flow (an Env assigned in a branch that never
+// runs, or in a closure, counts); a path built at run time; a command built in
+// another package; and a non-literal toolchain argument that holds a flag.
 // TestTestTreeNamesNoProcEnviron runs execenv.CheckEnvironLiterals over every
 // Go file under test/, testdata directories included and no file left out,
 // which reads the same environment without a child at all, in two tiers:
