@@ -548,9 +548,13 @@ target, with the `e2e` and `integration` tags (`strictcoverage_test.go`):
   rule). `e2e-is-black-box` allows `$gostd`, which the first property reads as allowing `os` and
   `syscall`; `test-docs-are-pure` holds the untagged `doc.go` to `errors$` as well, so for it the
   group is defence in depth. It refuses `os.TempDir`, the direct temp-directory lookup, not every
-  use of `$TMPDIR`: `os.MkdirTemp("", ...)` still reads it. The e2e tests build and run the binary
-  with `os/exec`, which stays allowed, as do `unsafe` and `os/user`: narrowing `e2e-is-black-box`'s
-  allow list is issue #166's. `TestE2ENoEnvProbe` and `TestE2ENoEnvForbidigoPatterns` pin it.
+  use of `$TMPDIR`: `os.MkdirTemp("", ...)` still reads it. It refuses `(*exec.Cmd).Environ` too,
+  which hands a child the whole environment of the test process (issue #185). The e2e `_test.go`
+  files keep `$gostd` to build and run the binary with `os/exec`, and set `cmd.Env` explicitly. In
+  the non-test files `test-docs-are-pure` refuses `os/exec`, `unsafe` and `os/user` at the import
+  (`TestE2EImportsProbe` and `test/architecture`'s depguard pin hold it), so an `exec.Cmd` with a
+  nil `Env`, which inherits the whole environment, cannot be written there. `TestE2ENoEnvProbe` and
+  `TestE2ENoEnvForbidigoPatterns` pin the group.
 - **`test-docs-are-pure`** (depguard, strict) holds the doc-only packages `test/apiparity`,
   `test/architecture`, `test/container`, `test/devenv`, `test/docs`, `test/e2e` and `test/lint` to
   `allow: []` and the `os` deny entry, as `config-is-pure`. Each is a production package a root

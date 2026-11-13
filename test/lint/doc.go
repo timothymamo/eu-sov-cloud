@@ -106,8 +106,11 @@
 // pattern.
 // TestE2ENoEnvProbe (testdata/e2enoenv) runs the forbidigo group e2e-no-env
 // (issue #167) on the e2e tier, whose os and syscall environment reads, process
-// starts and raw system calls must each be refused while os/exec stays allowed,
-// and TestE2ENoEnvForbidigoPatterns pins its patterns.
+// starts and raw system calls, and (*exec.Cmd).Environ (issue #185), must each
+// be refused while os/exec stays allowed, and TestE2ENoEnvForbidigoPatterns pins
+// its patterns. TestE2EImportsProbe (testdata/e2eimports) runs depguard on the
+// e2e tier (issue #185): a non-test file importing os/exec, unsafe or os/user is
+// refused by test-docs-are-pure, and a _test.go file importing os/exec is not.
 // TestTestsNoProcessStateProbe (testdata/testsprocessstate) runs the forbidigo
 // group tests-no-process-state (issue #153) on t.Setenv, t.Chdir, os.Setenv,
 // os.Unsetenv, os.Clearenv, os.Chdir, syscall.Unsetenv, syscall.Clearenv and
