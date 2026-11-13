@@ -8,12 +8,12 @@
 // and needs no credentials. SOURCES.md records where each offering,
 // capability and region comes from, and the licence of each source.
 //
-// catalog.json is a target catalog snapshot of schema version 1, the format
-// every target with an embedded snapshot shares (ADR 0007). Source.Catalog and
-// Regions read it through the shared reader, snapshot.Parse in
-// internal/adapter/target/snapshot, which defines the format, its strictness
-// and its errors; Regions returns the snapshot's declared EU region list. This
-// package adds only the name of the embedded file to an error.
+// catalog.json is a target catalog snapshot of schema version 2, the format
+// every target with an embedded snapshot shares (ADR 0007, ADR 0024).
+// Source.Catalog and Regions read it through the shared reader, snapshot.Parse
+// in internal/adapter/target/snapshot, which defines the format, its
+// strictness and its errors; Regions returns the snapshot's declared EU region
+// list. This package adds only the name of the embedded file to an error.
 //
 // To refresh the snapshot: take each offering's regions from the product
 // availability page, subject to the API check under "Rules applied" in

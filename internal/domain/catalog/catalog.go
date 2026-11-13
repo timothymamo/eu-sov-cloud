@@ -27,6 +27,11 @@ type Snapshot struct {
 	// RetrievedOn is when the data was retrieved. In a Catalog it is in UTC, and
 	// reporters format it as a UTC calendar date.
 	RetrievedOn time.Time
+	// DefaultRegion is the region estimates use when the user names none:
+	// non-blank valid free text, stored as given. New does not check it against
+	// the offerings' regions; the snapshot reader checks it against the regions
+	// the snapshot declares (ADR 0024).
+	DefaultRegion string
 }
 
 // Offering is one service a target sells, described in taxonomy terms.
@@ -44,6 +49,13 @@ type Offering struct {
 	// Regions lists the EU regions the offering is available in, as the target
 	// names them. In a Catalog they are sorted and free of duplicates.
 	Regions []string
+	// Plans lists the plans the offering sells, with their monthly prices. In a
+	// Catalog they are sorted by name, and nil when there are none.
+	Plans []Plan
+	// StoragePrices lists the monthly price of one GiB of the offering's
+	// storage, by region. In a Catalog they are sorted by their first region,
+	// the every-region price first, and nil when there are none.
+	StoragePrices []Price
 }
 
 // Has reports whether the offering provides capability c.
@@ -215,7 +227,8 @@ func validateTarget(target string) error {
 	return nil
 }
 
-// validateSnapshot checks that snapshot is dated and has a valid source URL.
+// validateSnapshot checks that snapshot is dated, has a valid source URL and a
+// default region that is valid free text and not blank.
 func validateSnapshot(snapshot Snapshot) error {
 	if err := validateSourceURL(snapshot.SourceURL); err != nil {
 		return fmt.Errorf("%w: snapshot source URL: %w", ErrInvalidCatalog, err)
@@ -223,6 +236,14 @@ func validateSnapshot(snapshot Snapshot) error {
 
 	if snapshot.RetrievedOn.IsZero() {
 		return fmt.Errorf("%w: snapshot has no retrieval date", ErrInvalidCatalog)
+	}
+
+	if strings.TrimSpace(snapshot.DefaultRegion) == "" {
+		return fmt.Errorf("%w: snapshot has an empty default region", ErrInvalidCatalog)
+	}
+
+	if err := text.Validate(snapshot.DefaultRegion); err != nil {
+		return fmt.Errorf("%w: snapshot default region: %w", ErrInvalidCatalog, err)
 	}
 
 	return nil
@@ -571,9 +592,9 @@ func validateName(name string) error {
 	return nil
 }
 
-// normalise checks the categories, capabilities and regions of an offering with
-// a valid name and returns a copy of it whose slices are sorted, de-duplicated
-// and nil when empty.
+// normalise checks the categories, capabilities, regions, plans and storage
+// prices of an offering with a valid name and returns a copy of it whose slices
+// are sorted, de-duplicated and nil when empty.
 func normalise(o Offering) (Offering, error) {
 	if len(o.Categories) == 0 {
 		return Offering{}, ErrNoCategory
@@ -610,10 +631,24 @@ func normalise(o Offering) (Offering, error) {
 		}
 	}
 
+	regions := newRegionSet(o.Regions)
+
+	plans, err := normalisePlans(o.Plans, regions)
+	if err != nil {
+		return Offering{}, err
+	}
+
+	storagePrices, err := normalisePrices("storagePrices", o.StoragePrices, regions)
+	if err != nil {
+		return Offering{}, err
+	}
+
 	o = clone(o)
 	o.Categories = sortedUnique(o.Categories)
 	o.Capabilities = sortedUnique(withImplied(o.Capabilities))
 	o.Regions = sortedUnique(o.Regions)
+	o.Plans = plans
+	o.StoragePrices = storagePrices
 
 	return o, nil
 }
@@ -656,6 +691,8 @@ func clone(o Offering) Offering {
 	o.Categories = slices.Clone(o.Categories)
 	o.Capabilities = slices.Clone(o.Capabilities)
 	o.Regions = slices.Clone(o.Regions)
+	o.Plans = clonePlans(o.Plans)
+	o.StoragePrices = clonePrices(o.StoragePrices)
 
 	return o
 }

@@ -7,7 +7,9 @@
   version policy that ends once a snapshot can come from outside this repository; the schema version
   policy is amended by [0011](0011-scope-capabilities-and-one-offering-per-tier.md): snapshots are
   embedded and rewritten in the same change as the vocabulary, so retiring a vocabulary value is not
-  a version change
+  a version change; the format moves to schema version 2, with plans, monthly EUR prices and a default
+  region, by [0024](0024-add-plans-prices-and-a-default-region-in-target-snapshot-format-v2.md), and
+  the reader no longer reads version 1
 - Date: 2026-11-10
 
 ## Context

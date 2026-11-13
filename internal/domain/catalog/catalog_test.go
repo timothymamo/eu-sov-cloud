@@ -18,11 +18,13 @@ import (
 // Target() returns exactly what was passed, with no case mapping.
 const targetName = "Scaleway"
 
-// validSnapshot is the dated, sourced snapshot every real catalog must carry.
+// validSnapshot is the dated, sourced snapshot every real catalog must carry,
+// with the default region estimates use when the user names none (ADR 0024).
 func validSnapshot() catalog.Snapshot {
 	return catalog.Snapshot{
-		SourceURL:   "https://www.scaleway.com/en/pricing/",
-		RetrievedOn: time.Date(2026, 11, 1, 0, 0, 0, 0, time.UTC),
+		SourceURL:     "https://www.scaleway.com/en/pricing/",
+		RetrievedOn:   time.Date(2026, 11, 1, 0, 0, 0, 0, time.UTC),
+		DefaultRegion: "fr-par",
 	}
 }
 
@@ -362,8 +364,9 @@ func TestSnapshotRetrievedOnIsUTC(t *testing.T) {
 	t.Parallel()
 
 	snapshot := catalog.Snapshot{
-		SourceURL:   "https://www.scaleway.com/en/pricing/",
-		RetrievedOn: time.Date(2026, 11, 1, 20, 0, 0, 0, time.FixedZone("x", -10*60*60)),
+		SourceURL:     "https://www.scaleway.com/en/pricing/",
+		RetrievedOn:   time.Date(2026, 11, 1, 20, 0, 0, 0, time.FixedZone("x", -10*60*60)),
+		DefaultRegion: "fr-par",
 	}
 
 	cat := newCatalog(t, targetName, snapshot, validOfferings())
@@ -534,7 +537,11 @@ func TestSnapshotSourceURL(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 
-			snapshot := catalog.Snapshot{SourceURL: tc.url, RetrievedOn: validSnapshot().RetrievedOn}
+			snapshot := catalog.Snapshot{
+				SourceURL:     tc.url,
+				RetrievedOn:   validSnapshot().RetrievedOn,
+				DefaultRegion: validSnapshot().DefaultRegion,
+			}
 
 			_, err := catalog.New(targetName, snapshot, validOfferings())
 			if len(tc.wantErrs) == 0 {
@@ -752,7 +759,11 @@ func TestSnapshotSourceURLErrorDetailAroundUserInfoGuard(t *testing.T) {
 func sourceURLError(t *testing.T, rawURL string) error {
 	t.Helper()
 
-	snapshot := catalog.Snapshot{SourceURL: rawURL, RetrievedOn: validSnapshot().RetrievedOn}
+	snapshot := catalog.Snapshot{
+		SourceURL:     rawURL,
+		RetrievedOn:   validSnapshot().RetrievedOn,
+		DefaultRegion: validSnapshot().DefaultRegion,
+	}
 
 	_, err := catalog.New(targetName, snapshot, validOfferings())
 	if err == nil {
@@ -827,44 +838,66 @@ func TestNewErrors(t *testing.T) {
 			wantErr:   catalog.ErrInvalidCatalog,
 		},
 		{
-			name:      "empty snapshot source url",
-			target:    targetName,
-			snapshot:  catalog.Snapshot{RetrievedOn: validSnapshot().RetrievedOn},
+			name:   "empty snapshot source url",
+			target: targetName,
+			snapshot: catalog.Snapshot{
+				RetrievedOn:   validSnapshot().RetrievedOn,
+				DefaultRegion: validSnapshot().DefaultRegion,
+			},
 			offerings: validOfferings(),
 			wantErr:   catalog.ErrInvalidCatalog,
 		},
 		{
-			name:      "plain http source url",
-			target:    targetName,
-			snapshot:  catalog.Snapshot{SourceURL: "http://www.scaleway.com/en/pricing/", RetrievedOn: validSnapshot().RetrievedOn},
+			name:   "plain http source url",
+			target: targetName,
+			snapshot: catalog.Snapshot{
+				SourceURL:     "http://www.scaleway.com/en/pricing/",
+				RetrievedOn:   validSnapshot().RetrievedOn,
+				DefaultRegion: validSnapshot().DefaultRegion,
+			},
 			offerings: validOfferings(),
 			wantErr:   catalog.ErrInvalidCatalog,
 		},
 		{
-			name:      "javascript source url",
-			target:    targetName,
-			snapshot:  catalog.Snapshot{SourceURL: "javascript:alert(1)", RetrievedOn: validSnapshot().RetrievedOn},
+			name:   "javascript source url",
+			target: targetName,
+			snapshot: catalog.Snapshot{
+				SourceURL:     "javascript:alert(1)",
+				RetrievedOn:   validSnapshot().RetrievedOn,
+				DefaultRegion: validSnapshot().DefaultRegion,
+			},
 			offerings: validOfferings(),
 			wantErr:   catalog.ErrInvalidCatalog,
 		},
 		{
-			name:      "relative source url",
-			target:    targetName,
-			snapshot:  catalog.Snapshot{SourceURL: "www.scaleway.com/en/pricing/", RetrievedOn: validSnapshot().RetrievedOn},
+			name:   "relative source url",
+			target: targetName,
+			snapshot: catalog.Snapshot{
+				SourceURL:     "www.scaleway.com/en/pricing/",
+				RetrievedOn:   validSnapshot().RetrievedOn,
+				DefaultRegion: validSnapshot().DefaultRegion,
+			},
 			offerings: validOfferings(),
 			wantErr:   catalog.ErrInvalidCatalog,
 		},
 		{
-			name:      "https source url without host",
-			target:    targetName,
-			snapshot:  catalog.Snapshot{SourceURL: "https://", RetrievedOn: validSnapshot().RetrievedOn},
+			name:   "https source url without host",
+			target: targetName,
+			snapshot: catalog.Snapshot{
+				SourceURL:     "https://",
+				RetrievedOn:   validSnapshot().RetrievedOn,
+				DefaultRegion: validSnapshot().DefaultRegion,
+			},
 			offerings: validOfferings(),
 			wantErr:   catalog.ErrInvalidCatalog,
 		},
 		{
-			name:      "zero retrieval date",
-			target:    targetName,
-			snapshot:  catalog.Snapshot{SourceURL: validSnapshot().SourceURL},
+			name:   "zero retrieval date",
+			target: targetName,
+			snapshot: catalog.Snapshot{
+				SourceURL:     validSnapshot().SourceURL,
+				DefaultRegion: validSnapshot().DefaultRegion,
+			},
 			offerings: validOfferings(),
 			wantErr:   catalog.ErrInvalidCatalog,
 		},
@@ -1213,4 +1246,661 @@ func TestNewKeepsNameAsGiven(t *testing.T) {
 			}
 		})
 	}
+}
+
+// The constants of ADR 0024 fix the units a plan, a price and a memory size are
+// held in, and the caps that bound the arithmetic of milestone 6. They are part
+// of the format, so they are pinned here rather than left to a reader of the Go
+// source: a snapshot writer, another repository's test and an estimate all
+// depend on the same numbers.
+func TestCatalogConstants(t *testing.T) {
+	t.Parallel()
+
+	if catalog.AmountScale != 10_000 {
+		t.Errorf("AmountScale = %d, want 10000 units in one currency unit", catalog.AmountScale)
+	}
+
+	if catalog.MaxAmount != 1_000_000*catalog.AmountScale {
+		t.Errorf("MaxAmount = %s, want one million currency units", catalog.MaxAmount)
+	}
+
+	if catalog.EUR != "EUR" {
+		t.Errorf("EUR = %q, want %q: the only currency a price may hold", catalog.EUR, "EUR")
+	}
+
+	if catalog.MaxPlanVCPUs != 1<<16 {
+		t.Errorf("MaxPlanVCPUs = %d, want %d", catalog.MaxPlanVCPUs, 1<<16)
+	}
+
+	if catalog.MaxPlanMemoryMilliGiB != (1<<24)*1_000 {
+		t.Errorf("MaxPlanMemoryMilliGiB = %d, want %d thousandths of a GiB", catalog.MaxPlanMemoryMilliGiB, (1<<24)*1_000)
+	}
+
+	if catalog.MaxIncludedStorageGiB != 1<<30 {
+		t.Errorf("MaxIncludedStorageGiB = %d, want %d", catalog.MaxIncludedStorageGiB, 1<<30)
+	}
+}
+
+// Amount.String formats an exact amount as a plain decimal: at least two
+// fractional digits, the trailing zeros dropped, and a leading minus sign when
+// the amount is negative. It is how a report and a SOURCES.md show a price, so
+// two sources holding the same price must produce the same text.
+func TestAmountString(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name   string
+		amount catalog.Amount
+		want   string
+	}{
+		{name: "zero", amount: 0, want: "0.00"},
+		{name: "ten-thousandth", amount: 1, want: "0.0001"},
+		{name: "ten ten-thousandths", amount: 10, want: "0.001"},
+		{name: "four cents", amount: 400, want: "0.04"},
+		{name: "twelve and a half cents", amount: 1250, want: "0.125"},
+		{name: "twelve and a half", amount: 125000, want: "12.50"},
+		{name: "thirteen and a hundred and a quarter", amount: 130125, want: "13.0125"},
+		{name: "the largest amount", amount: catalog.MaxAmount, want: "1000000.00"},
+		{name: "four cents below zero", amount: -400, want: "-0.04"},
+		{name: "twelve and a half below zero", amount: -125000, want: "-12.50"},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			if got := tc.amount.String(); got != tc.want {
+				t.Errorf("Amount(%d).String() = %q, want %q", int64(tc.amount), got, tc.want)
+			}
+		})
+	}
+}
+
+// pricedOffering is an offering with plans and storage prices whose input is
+// deliberately unsorted and repeated: New must return the plans sorted by name,
+// each price's regions sorted and de-duplicated, and the prices sorted by their
+// first region with the every-region price first. Its storage prices are
+// region-scoped, one of them repeated, so a test can change a storage region in
+// place as well as a plan price's (ADR 0024).
+func pricedOffering() catalog.Offering {
+	return catalog.Offering{
+		Name:         "Example Compute",
+		Categories:   []taxonomy.Category{taxonomy.ComputeVM},
+		Capabilities: []taxonomy.Capability{taxonomy.IPv6},
+		Regions:      []string{"fr-par", "nl-ams"},
+		Plans: []catalog.Plan{
+			{
+				Name:               "EC-2-4",
+				VCPUs:              2,
+				MemoryMilliGiB:     4000,
+				IncludedStorageGiB: 20,
+				Prices: []catalog.Price{
+					{Amount: 130125, Currency: catalog.EUR, Regions: []string{"nl-ams", "nl-ams"}},
+					{Amount: 125000, Currency: catalog.EUR, Regions: []string{"fr-par"}},
+				},
+			},
+			{
+				Name:           "EC-1-0.5",
+				VCPUs:          1,
+				MemoryMilliGiB: 500,
+				Prices:         []catalog.Price{{Amount: 36500, Currency: catalog.EUR}},
+			},
+		},
+		StoragePrices: []catalog.Price{
+			{Amount: 400, Currency: catalog.EUR, Regions: []string{"nl-ams", "nl-ams"}},
+			{Amount: 450, Currency: catalog.EUR, Regions: []string{"fr-par"}},
+		},
+	}
+}
+
+// pricedOfferingNormalised is what the catalog must hold for pricedOffering:
+// plans by name, price regions sorted, de-duplicated and nil when empty, and the
+// prices by first region with the every-region price first.
+func pricedOfferingNormalised() catalog.Offering {
+	return catalog.Offering{
+		Name:         "Example Compute",
+		Categories:   []taxonomy.Category{taxonomy.ComputeVM},
+		Capabilities: []taxonomy.Capability{taxonomy.IPv6},
+		Regions:      []string{"fr-par", "nl-ams"},
+		Plans: []catalog.Plan{
+			{
+				Name:           "EC-1-0.5",
+				VCPUs:          1,
+				MemoryMilliGiB: 500,
+				Prices:         []catalog.Price{{Amount: 36500, Currency: catalog.EUR}},
+			},
+			{
+				Name:               "EC-2-4",
+				VCPUs:              2,
+				MemoryMilliGiB:     4000,
+				IncludedStorageGiB: 20,
+				Prices: []catalog.Price{
+					{Amount: 125000, Currency: catalog.EUR, Regions: []string{"fr-par"}},
+					{Amount: 130125, Currency: catalog.EUR, Regions: []string{"nl-ams"}},
+				},
+			},
+		},
+		StoragePrices: []catalog.Price{
+			{Amount: 450, Currency: catalog.EUR, Regions: []string{"fr-par"}},
+			{Amount: 400, Currency: catalog.EUR, Regions: []string{"nl-ams"}},
+		},
+	}
+}
+
+// offeringChanged returns pricedOffering with mutate applied, so a case breaks
+// exactly one plan, price or list and leaves the rest valid.
+func offeringChanged(mutate func(*catalog.Offering)) catalog.Offering {
+	o := pricedOffering()
+	mutate(&o)
+
+	return o
+}
+
+// TestNewAcceptsPlansAndPrices pins the canonical form New gives plans and
+// prices: plans sorted by name, each price's regions sorted and de-duplicated
+// with every-region prices keeping no regions at all, and the prices sorted by
+// first region with the every-region price first.
+func TestNewAcceptsPlansAndPrices(t *testing.T) {
+	t.Parallel()
+
+	cat := newCatalog(t, targetName, validSnapshot(), []catalog.Offering{pricedOffering()})
+
+	got := cat.Offerings()
+	if len(got) != 1 {
+		t.Fatalf("Offerings() returned %d offerings, want 1", len(got))
+	}
+
+	want := pricedOfferingNormalised()
+
+	if diff := cmp.Diff(want.Plans, got[0].Plans); diff != "" {
+		t.Errorf("Plans are not sorted and normalised (-want +got):\n%s", diff)
+	}
+
+	if diff := cmp.Diff(want.StoragePrices, got[0].StoragePrices); diff != "" {
+		t.Errorf("StoragePrices are not sorted and normalised (-want +got):\n%s", diff)
+	}
+}
+
+// An offering that sells no plan and publishes no storage price is a valid
+// offering: an empty list is a value, not an absence (ADR 0024).
+func TestNewOfferingWithoutPlansOrStoragePrices(t *testing.T) {
+	t.Parallel()
+
+	withoutLists := catalog.Offering{
+		Name:       "Object Storage",
+		Categories: []taxonomy.Category{taxonomy.StorageObject},
+		Regions:    []string{"fr-par"},
+	}
+
+	withEmptyLists := withoutLists
+	withEmptyLists.Plans = []catalog.Plan{}
+	withEmptyLists.StoragePrices = []catalog.Price{}
+
+	for _, offering := range []catalog.Offering{withoutLists, withEmptyLists} {
+		cat := newCatalog(t, targetName, validSnapshot(), []catalog.Offering{offering})
+
+		got := cat.Offerings()[0]
+		if got.Plans != nil {
+			t.Errorf("Plans = %v for offering %q, want nil", got.Plans, got.Name)
+		}
+
+		if got.StoragePrices != nil {
+			t.Errorf("StoragePrices = %v for offering %q, want nil", got.StoragePrices, got.Name)
+		}
+	}
+}
+
+// TestNewPlanAndPriceErrors pins every rule New holds for plans, prices and
+// storage prices: the sentinel the error wraps, and that the message names the
+// offering and the plan (or the list index) and the field at fault. A price that
+// was silently dropped, rounded or read as free would change an estimate without
+// a word (ADR 0024, PRD #190).
+func TestNewPlanAndPriceErrors(t *testing.T) {
+	t.Parallel()
+
+	const (
+		offeringName = "Example Compute"
+		planName     = "EC-2-4"
+	)
+
+	tests := []struct {
+		name     string
+		offering catalog.Offering
+		wantErr  error
+		// wantMsg lists the substrings the message must hold besides the offering
+		// name: the plan name or the list index it is at, and the field.
+		wantMsg []string
+	}{
+		{
+			name:     "blank plan name",
+			offering: offeringChanged(func(o *catalog.Offering) { o.Plans[0].Name = "" }),
+			wantErr:  catalog.ErrInvalidPlan,
+			wantMsg:  []string{"plans[0]", "name"},
+		},
+		{
+			name:     "white space plan name",
+			offering: offeringChanged(func(o *catalog.Offering) { o.Plans[0].Name = "   " }),
+			wantErr:  catalog.ErrInvalidPlan,
+			wantMsg:  []string{"plans[0]", "name"},
+		},
+		{
+			name:     "plan name with a control character",
+			offering: offeringChanged(func(o *catalog.Offering) { o.Plans[0].Name = "EC\u0000-2-4" }),
+			wantErr:  catalog.ErrInvalidPlan,
+			wantMsg:  []string{"plans[0]", "name"},
+		},
+		{
+			name:     "vcpus below one",
+			offering: offeringChanged(func(o *catalog.Offering) { o.Plans[0].VCPUs = 0 }),
+			wantErr:  catalog.ErrInvalidPlan,
+			wantMsg:  []string{planName, "vcpus"},
+		},
+		{
+			name:     "vcpus above the cap",
+			offering: offeringChanged(func(o *catalog.Offering) { o.Plans[0].VCPUs = catalog.MaxPlanVCPUs + 1 }),
+			wantErr:  catalog.ErrInvalidPlan,
+			wantMsg:  []string{planName, "vcpus"},
+		},
+		{
+			name:     "memory below one thousandth of a GiB",
+			offering: offeringChanged(func(o *catalog.Offering) { o.Plans[0].MemoryMilliGiB = 0 }),
+			wantErr:  catalog.ErrInvalidPlan,
+			wantMsg:  []string{planName, "memoryGiB"},
+		},
+		{
+			name: "memory above the cap",
+			offering: offeringChanged(func(o *catalog.Offering) {
+				o.Plans[0].MemoryMilliGiB = catalog.MaxPlanMemoryMilliGiB + 1
+			}),
+			wantErr: catalog.ErrInvalidPlan,
+			wantMsg: []string{planName, "memoryGiB"},
+		},
+		{
+			name:     "included storage below zero",
+			offering: offeringChanged(func(o *catalog.Offering) { o.Plans[0].IncludedStorageGiB = -1 }),
+			wantErr:  catalog.ErrInvalidPlan,
+			wantMsg:  []string{planName, "storageGiB"},
+		},
+		{
+			name: "included storage above the cap",
+			offering: offeringChanged(func(o *catalog.Offering) {
+				o.Plans[0].IncludedStorageGiB = catalog.MaxIncludedStorageGiB + 1
+			}),
+			wantErr: catalog.ErrInvalidPlan,
+			wantMsg: []string{planName, "storageGiB"},
+		},
+		{
+			name: "duplicate plan name",
+			offering: offeringChanged(func(o *catalog.Offering) {
+				o.Plans[1].Name = o.Plans[0].Name
+			}),
+			wantErr: catalog.ErrDuplicatePlan,
+			wantMsg: []string{planName},
+		},
+		{
+			// A run of spaces is not a difference: two plan names that collapse to
+			// the same text are the same plan, as offering names are compared.
+			name: "duplicate plan name differing in inner white space",
+			offering: offeringChanged(func(o *catalog.Offering) {
+				o.Plans[0].Name = "Example Plan"
+				o.Plans[1].Name = "Example  Plan"
+			}),
+			wantErr: catalog.ErrDuplicatePlan,
+			wantMsg: []string{"Example"},
+		},
+		{
+			name:     "plan without a price",
+			offering: offeringChanged(func(o *catalog.Offering) { o.Plans[0].Prices = nil }),
+			wantErr:  catalog.ErrUnpricedPlan,
+			wantMsg:  []string{planName, "price"},
+		},
+		{
+			name:     "plan with an empty price list",
+			offering: offeringChanged(func(o *catalog.Offering) { o.Plans[0].Prices = []catalog.Price{} }),
+			wantErr:  catalog.ErrUnpricedPlan,
+			wantMsg:  []string{planName, "price"},
+		},
+		{
+			name: "negative price amount",
+			offering: offeringChanged(func(o *catalog.Offering) {
+				o.Plans[0].Prices[0].Amount = -1
+			}),
+			wantErr: catalog.ErrInvalidPrice,
+			wantMsg: []string{planName, "amount"},
+		},
+		{
+			name: "price amount above the maximum",
+			offering: offeringChanged(func(o *catalog.Offering) {
+				o.Plans[0].Prices[0].Amount = catalog.MaxAmount + 1
+			}),
+			wantErr: catalog.ErrInvalidPrice,
+			wantMsg: []string{planName, "amount"},
+		},
+		{
+			// The currency is compared exactly: no case folding and no trimming.
+			name: "currency in lower case",
+			offering: offeringChanged(func(o *catalog.Offering) {
+				o.Plans[0].Prices[0].Currency = "eur"
+			}),
+			wantErr: catalog.ErrInvalidPrice,
+			wantMsg: []string{planName, "currency", "eur"},
+		},
+		{
+			name: "currency that is not EUR",
+			offering: offeringChanged(func(o *catalog.Offering) {
+				o.Plans[0].Prices[0].Currency = "USD"
+			}),
+			wantErr: catalog.ErrInvalidPrice,
+			wantMsg: []string{planName, "currency"},
+		},
+		{
+			name:     "empty currency",
+			offering: offeringChanged(func(o *catalog.Offering) { o.Plans[0].Prices[0].Currency = "" }),
+			wantErr:  catalog.ErrInvalidPrice,
+			wantMsg:  []string{planName, "currency"},
+		},
+		{
+			name: "blank price region",
+			offering: offeringChanged(func(o *catalog.Offering) {
+				o.Plans[0].Prices[0].Regions = []string{"  "}
+			}),
+			wantErr: catalog.ErrInvalidPrice,
+			wantMsg: []string{planName, "regions"},
+		},
+		{
+			name: "price region with a control character",
+			offering: offeringChanged(func(o *catalog.Offering) {
+				o.Plans[0].Prices[0].Regions = []string{"fr\u0000par"}
+			}),
+			wantErr: catalog.ErrInvalidPrice,
+			wantMsg: []string{planName, "regions"},
+		},
+		{
+			name: "price region the offering is not in",
+			offering: offeringChanged(func(o *catalog.Offering) {
+				o.Plans[0].Prices[0].Regions = []string{"de-fra"}
+			}),
+			wantErr: catalog.ErrPriceRegion,
+			wantMsg: []string{planName, "de-fra"},
+		},
+		{
+			name: "two prices for the same region",
+			offering: offeringChanged(func(o *catalog.Offering) {
+				o.Plans[0].Prices = []catalog.Price{
+					{Amount: 125000, Currency: catalog.EUR, Regions: []string{"fr-par"}},
+					{Amount: 130125, Currency: catalog.EUR, Regions: []string{"fr-par"}},
+				}
+			}),
+			wantErr: catalog.ErrOverlappingPrices,
+			wantMsg: []string{planName, "prices[", "fr-par"},
+		},
+		{
+			// A price with no region applies to every region of the offering, so it
+			// overlaps any other price of the same list.
+			name: "every-region price beside a price for one region",
+			offering: offeringChanged(func(o *catalog.Offering) {
+				o.Plans[0].Prices = []catalog.Price{
+					{Amount: 125000, Currency: catalog.EUR},
+					{Amount: 130125, Currency: catalog.EUR, Regions: []string{"fr-par"}},
+				}
+			}),
+			wantErr: catalog.ErrOverlappingPrices,
+			wantMsg: []string{planName, "prices["},
+		},
+		{
+			name: "storage price with a negative amount",
+			offering: offeringChanged(func(o *catalog.Offering) {
+				o.StoragePrices[0].Amount = -100
+			}),
+			wantErr: catalog.ErrInvalidPrice,
+			wantMsg: []string{"storagePrices[0]", "amount"},
+		},
+		{
+			name: "storage price amount above the maximum",
+			offering: offeringChanged(func(o *catalog.Offering) {
+				o.StoragePrices[0].Amount = catalog.MaxAmount + 1
+			}),
+			wantErr: catalog.ErrInvalidPrice,
+			wantMsg: []string{"storagePrices[0]", "amount"},
+		},
+		{
+			name: "storage price in another currency",
+			offering: offeringChanged(func(o *catalog.Offering) {
+				o.StoragePrices[0].Currency = "USD"
+			}),
+			wantErr: catalog.ErrInvalidPrice,
+			wantMsg: []string{"storagePrices[0]", "currency"},
+		},
+		{
+			name: "storage price with a blank region",
+			offering: offeringChanged(func(o *catalog.Offering) {
+				o.StoragePrices[0].Regions = []string{" "}
+			}),
+			wantErr: catalog.ErrInvalidPrice,
+			wantMsg: []string{"storagePrices[0]", "regions"},
+		},
+		{
+			name: "storage price region the offering is not in",
+			offering: offeringChanged(func(o *catalog.Offering) {
+				o.StoragePrices[0].Regions = []string{"de-fra"}
+			}),
+			wantErr: catalog.ErrPriceRegion,
+			wantMsg: []string{"storagePrices[0]", "de-fra"},
+		},
+		{
+			name: "two storage prices for the same region",
+			offering: offeringChanged(func(o *catalog.Offering) {
+				o.StoragePrices = []catalog.Price{
+					{Amount: 400, Currency: catalog.EUR, Regions: []string{"fr-par"}},
+					{Amount: 500, Currency: catalog.EUR, Regions: []string{"fr-par"}},
+				}
+			}),
+			wantErr: catalog.ErrOverlappingPrices,
+			wantMsg: []string{"storagePrices[", "fr-par"},
+		},
+		{
+			name: "every-region storage price beside one for a region",
+			offering: offeringChanged(func(o *catalog.Offering) {
+				o.StoragePrices = []catalog.Price{
+					{Amount: 400, Currency: catalog.EUR},
+					{Amount: 500, Currency: catalog.EUR, Regions: []string{"nl-ams"}},
+				}
+			}),
+			wantErr: catalog.ErrOverlappingPrices,
+			wantMsg: []string{"storagePrices["},
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			_, err := catalog.New(targetName, validSnapshot(), []catalog.Offering{tc.offering})
+			if !errors.Is(err, tc.wantErr) {
+				t.Fatalf("New() error = %v, want one wrapping %v", err, tc.wantErr)
+			}
+
+			msg := err.Error()
+
+			if strings.ContainsAny(msg, "\r\n") {
+				t.Errorf("New() error = %q, want a single line", msg)
+			}
+
+			for _, want := range append([]string{offeringName}, tc.wantMsg...) {
+				if !strings.Contains(msg, want) {
+					t.Errorf("New() error = %q, want it to name %s", msg, text.Quote(want))
+				}
+			}
+		})
+	}
+}
+
+// New refuses a snapshot without a usable default region: every estimate falls
+// back to it when the user names no region, so a blank one would estimate in no
+// region at all. New does not check that it is a region of any offering: the
+// declared regions are not in the domain, and a catalog with no offering still
+// has a default region (ADR 0024).
+func TestNewDefaultRegion(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name    string
+		region  string
+		wantErr error
+	}{
+		{name: "a declared region", region: "fr-par"},
+		{name: "a region no offering is available in", region: "de-fra"},
+		{name: "empty", wantErr: catalog.ErrInvalidCatalog},
+		{name: "only white space", region: "   ", wantErr: catalog.ErrInvalidCatalog},
+		{name: "a control character", region: "fr\u0000par", wantErr: catalog.ErrInvalidCatalog},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			snapshot := validSnapshot()
+			snapshot.DefaultRegion = tc.region
+
+			cat, err := catalog.New(targetName, snapshot, validOfferings())
+
+			if tc.wantErr != nil {
+				if !errors.Is(err, tc.wantErr) {
+					t.Fatalf("New() with default region %s error = %v, want one wrapping %v",
+						text.Quote(tc.region), err, tc.wantErr)
+				}
+
+				if !strings.Contains(err.Error(), "default region") {
+					t.Errorf("New() error = %q, want it to name the default region", err)
+				}
+
+				return
+			}
+
+			if err != nil {
+				t.Fatalf("New() with default region %s returned unexpected error: %v", text.Quote(tc.region), err)
+			}
+
+			if got := cat.Snapshot().DefaultRegion; got != tc.region {
+				t.Errorf("Snapshot().DefaultRegion = %s, want %s as given",
+					text.Quote(got), text.Quote(tc.region))
+			}
+		})
+	}
+}
+
+// tamperPricedOffering breaks every plan, price and storage price reachable
+// through off, so a catalog that hands out a list it shares with its input or
+// its result shows the change. It changes each region in place and never
+// replaces a region slice: a slice the catalog shares but a test replaces is
+// never written to, so a shallow copy would go unnoticed, and a storage price's
+// regions deserve the same proof as a plan price's (ADR 0024). It walks the
+// lists instead of indexing a plan: the plans come back sorted by name.
+func tamperPricedOffering(t *testing.T, off *catalog.Offering) {
+	t.Helper()
+
+	if len(off.Plans) == 0 {
+		t.Fatal("the offering sells no plan to tamper with")
+	}
+
+	for i := range off.Plans {
+		off.Plans[i].Name = "Tampered"
+
+		for j := range off.Plans[i].Prices {
+			off.Plans[i].Prices[j].Amount = 1
+
+			for k := range off.Plans[i].Prices[j].Regions {
+				off.Plans[i].Prices[j].Regions[k] = "tampered"
+			}
+		}
+	}
+
+	if len(off.StoragePrices) == 0 {
+		t.Fatal("the offering publishes no storage price to tamper with")
+	}
+
+	regions := 0
+
+	for i := range off.StoragePrices {
+		off.StoragePrices[i].Amount = 1
+
+		for k := range off.StoragePrices[i].Regions {
+			off.StoragePrices[i].Regions[k] = "tampered"
+
+			regions++
+		}
+	}
+
+	// A fixture whose storage prices are all every-region prices would leave the
+	// loop above with nothing to change, so the test would pin nothing.
+	if regions == 0 {
+		t.Fatal("the offering's storage prices hold no region to tamper with")
+	}
+}
+
+// The catalog is immutable: mutating the slices handed to New, or what Offerings
+// and OfferingsFor return, must not reach the catalog. Plans, their prices and a
+// price's regions are part of that copy (ADR 0024).
+func TestPlansAndPricesAreCopied(t *testing.T) {
+	t.Parallel()
+
+	want := pricedOfferingNormalised()
+
+	check := func(t *testing.T, cat catalog.Catalog) {
+		t.Helper()
+
+		got := cat.Offerings()
+		if len(got) != 1 {
+			t.Fatalf("Offerings() returned %d offerings, want 1", len(got))
+		}
+
+		if diff := cmp.Diff(want.Plans, got[0].Plans); diff != "" {
+			t.Errorf("Plans changed (-want +got):\n%s", diff)
+		}
+
+		if diff := cmp.Diff(want.StoragePrices, got[0].StoragePrices); diff != "" {
+			t.Errorf("StoragePrices changed (-want +got):\n%s", diff)
+		}
+	}
+
+	t.Run("input slices", func(t *testing.T) {
+		t.Parallel()
+
+		offerings := []catalog.Offering{pricedOffering()}
+		cat := newCatalog(t, targetName, validSnapshot(), offerings)
+
+		tamperPricedOffering(t, &offerings[0])
+
+		check(t, cat)
+	})
+
+	t.Run("Offerings result", func(t *testing.T) {
+		t.Parallel()
+
+		cat := newCatalog(t, targetName, validSnapshot(), []catalog.Offering{pricedOffering()})
+
+		got := cat.Offerings()
+		if len(got) != 1 {
+			t.Fatalf("Offerings() returned %d offerings, want 1", len(got))
+		}
+
+		tamperPricedOffering(t, &got[0])
+
+		check(t, cat)
+	})
+
+	t.Run("OfferingsFor result", func(t *testing.T) {
+		t.Parallel()
+
+		cat := newCatalog(t, targetName, validSnapshot(), []catalog.Offering{pricedOffering()})
+
+		got := cat.OfferingsFor(taxonomy.ComputeVM)
+		if len(got) == 0 {
+			t.Fatal("OfferingsFor(compute.vm) is empty")
+		}
+
+		tamperPricedOffering(t, &got[0])
+
+		check(t, cat)
+	})
 }

@@ -77,8 +77,9 @@ func TestCatalogContract(t *testing.T) {
 	t.Parallel()
 
 	targettest.Run(t, upcloud.New(), targettest.Expectations{
-		Target:  "UpCloud",
-		Regions: wantRegions(),
+		Target:        "UpCloud",
+		Regions:       wantRegions(),
+		DefaultRegion: "de-fra1",
 		Categories: []taxonomy.Category{
 			taxonomy.ComputeVM,
 			taxonomy.KubernetesManaged,
@@ -123,6 +124,34 @@ func TestCatalogSnapshotHeader(t *testing.T) {
 
 	if got := snap.RetrievedOn.Location(); got != time.UTC {
 		t.Errorf("Snapshot().RetrievedOn location = %v, want time.UTC", got)
+	}
+}
+
+// TestCatalogDefaultRegionAndNoPlansYet pins what milestone 2 gives the snapshot
+// before its pricing milestone (ADR 0024): the provisional default region
+// estimates use when the user names none, and no plan or price recorded yet. The
+// pricing milestone that adds either updates this test and the SOURCES.md section
+// beside the snapshot.
+func TestCatalogDefaultRegionAndNoPlansYet(t *testing.T) {
+	t.Parallel()
+
+	cat := catalogOf(t)
+
+	const wantRegion = "de-fra1"
+	if got := cat.Snapshot().DefaultRegion; got != wantRegion {
+		t.Errorf("Snapshot().DefaultRegion = %s, want %s", text.Quote(got), text.Quote(wantRegion))
+	}
+
+	for _, o := range cat.Offerings() {
+		if len(o.Plans) != 0 {
+			t.Errorf("offering %s lists %d plans, want none until its pricing milestone",
+				text.Quote(o.Name), len(o.Plans))
+		}
+
+		if len(o.StoragePrices) != 0 {
+			t.Errorf("offering %s lists %d storage prices, want none until its pricing milestone",
+				text.Quote(o.Name), len(o.StoragePrices))
+		}
 	}
 }
 

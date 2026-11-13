@@ -1,129 +1,170 @@
 {
-  "schemaVersion": 1,
+  "schemaVersion": 2,
   "target": "OVHcloud",
   "sourceURL": "https://www.ovhcloud.com/en/public-cloud/regions-availability/",
   "retrievedOn": "2026-11-11",
   "regions": ["GRA", "LIM", "MIL", "PAR", "RBX", "SBG", "WAW"],
+  "defaultRegion": "GRA",
   "offerings": [
     {
       "name": "Block Storage",
       "categories": ["storage.block"],
       "capabilities": ["snapshots"],
-      "regions": ["GRA", "LIM", "RBX", "SBG", "WAW"]
+      "regions": ["GRA", "LIM", "RBX", "SBG", "WAW"],
+      "plans": [],
+      "storagePrices": []
     },
     {
       "name": "Block Storage 3-AZ Regional Classic",
       "categories": ["storage.block"],
       "capabilities": ["zone-high-availability"],
-      "regions": ["MIL", "PAR"]
+      "regions": ["MIL", "PAR"],
+      "plans": [],
+      "storagePrices": []
     },
     {
       "name": "Block Storage LUKS",
       "categories": ["storage.block"],
       "capabilities": ["encryption-at-rest", "snapshots"],
-      "regions": ["GRA", "LIM", "RBX", "SBG"]
+      "regions": ["GRA", "LIM", "RBX", "SBG"],
+      "plans": [],
+      "storagePrices": []
     },
     {
       "name": "Block Storage LUKS Zonal",
       "categories": ["storage.block"],
       "capabilities": ["encryption-at-rest"],
-      "regions": ["MIL", "PAR"]
+      "regions": ["MIL", "PAR"],
+      "plans": [],
+      "storagePrices": []
     },
     {
       "name": "Instances",
       "categories": ["compute.vm"],
       "capabilities": ["ipv6", "snapshots"],
-      "regions": ["GRA", "LIM", "MIL", "PAR", "RBX", "SBG", "WAW"]
+      "regions": ["GRA", "LIM", "MIL", "PAR", "RBX", "SBG", "WAW"],
+      "plans": [],
+      "storagePrices": []
     },
     {
       "name": "Managed Kubernetes Service",
       "categories": ["kubernetes.managed"],
       "capabilities": ["autoscaling"],
-      "regions": ["GRA", "LIM", "RBX", "SBG", "WAW"]
+      "regions": ["GRA", "LIM", "RBX", "SBG", "WAW"],
+      "plans": [],
+      "storagePrices": []
     },
     {
       "name": "Managed Kubernetes Service 3-AZ",
       "categories": ["kubernetes.managed"],
       "capabilities": ["autoscaling", "zone-high-availability"],
-      "regions": ["MIL", "PAR"]
+      "regions": ["MIL", "PAR"],
+      "plans": [],
+      "storagePrices": []
     },
     {
       "name": "Managed MySQL",
       "categories": ["database.mysql"],
       "capabilities": ["encryption-at-rest", "point-in-time-restore"],
-      "regions": ["GRA", "LIM", "RBX", "SBG", "WAW"]
+      "regions": ["GRA", "LIM", "RBX", "SBG", "WAW"],
+      "plans": [],
+      "storagePrices": []
     },
     {
       "name": "Managed MySQL Multi-node",
       "categories": ["database.mysql"],
       "capabilities": ["encryption-at-rest", "node-high-availability", "point-in-time-restore"],
-      "regions": ["GRA", "LIM", "RBX", "SBG", "WAW"]
+      "regions": ["GRA", "LIM", "RBX", "SBG", "WAW"],
+      "plans": [],
+      "storagePrices": []
     },
     {
       "name": "Managed MySQL Multi-node 3-AZ",
       "categories": ["database.mysql"],
       "capabilities": ["encryption-at-rest", "point-in-time-restore", "zone-high-availability"],
-      "regions": ["MIL", "PAR"]
+      "regions": ["MIL", "PAR"],
+      "plans": [],
+      "storagePrices": []
     },
     {
       "name": "Managed MySQL Multi-node Advanced",
       "categories": ["database.mysql"],
       "capabilities": ["encryption-at-rest", "node-high-availability", "point-in-time-restore", "read-replicas"],
-      "regions": ["GRA", "LIM", "RBX", "SBG", "WAW"]
+      "regions": ["GRA", "LIM", "RBX", "SBG", "WAW"],
+      "plans": [],
+      "storagePrices": []
     },
     {
       "name": "Managed MySQL Multi-node Advanced 3-AZ",
       "categories": ["database.mysql"],
       "capabilities": ["encryption-at-rest", "point-in-time-restore", "read-replicas", "zone-high-availability"],
-      "regions": ["MIL", "PAR"]
+      "regions": ["MIL", "PAR"],
+      "plans": [],
+      "storagePrices": []
     },
     {
       "name": "Managed PostgreSQL",
       "categories": ["database.postgresql"],
       "capabilities": ["encryption-at-rest", "point-in-time-restore"],
-      "regions": ["GRA", "LIM", "RBX", "SBG", "WAW"]
+      "regions": ["GRA", "LIM", "RBX", "SBG", "WAW"],
+      "plans": [],
+      "storagePrices": []
     },
     {
       "name": "Managed PostgreSQL Multi-node",
       "categories": ["database.postgresql"],
       "capabilities": ["encryption-at-rest", "node-high-availability", "point-in-time-restore"],
-      "regions": ["GRA", "LIM", "RBX", "SBG", "WAW"]
+      "regions": ["GRA", "LIM", "RBX", "SBG", "WAW"],
+      "plans": [],
+      "storagePrices": []
     },
     {
       "name": "Managed PostgreSQL Multi-node 3-AZ",
       "categories": ["database.postgresql"],
       "capabilities": ["encryption-at-rest", "point-in-time-restore", "zone-high-availability"],
-      "regions": ["MIL", "PAR"]
+      "regions": ["MIL", "PAR"],
+      "plans": [],
+      "storagePrices": []
     },
     {
       "name": "Managed PostgreSQL Multi-node Advanced",
       "categories": ["database.postgresql"],
       "capabilities": ["encryption-at-rest", "node-high-availability", "point-in-time-restore", "read-replicas"],
-      "regions": ["GRA", "LIM", "RBX", "SBG", "WAW"]
+      "regions": ["GRA", "LIM", "RBX", "SBG", "WAW"],
+      "plans": [],
+      "storagePrices": []
     },
     {
       "name": "Managed PostgreSQL Multi-node Advanced 3-AZ",
       "categories": ["database.postgresql"],
       "capabilities": ["encryption-at-rest", "point-in-time-restore", "read-replicas", "zone-high-availability"],
-      "regions": ["MIL", "PAR"]
+      "regions": ["MIL", "PAR"],
+      "plans": [],
+      "storagePrices": []
     },
     {
       "name": "Metal Instances",
       "categories": ["compute.baremetal"],
       "capabilities": ["ipv6", "snapshots"],
-      "regions": ["GRA", "LIM", "SBG", "WAW"]
+      "regions": ["GRA", "LIM", "SBG", "WAW"],
+      "plans": [],
+      "storagePrices": []
     },
     {
       "name": "Object Storage",
       "categories": ["storage.object"],
       "capabilities": ["encryption-at-rest", "node-high-availability", "object-versioning"],
-      "regions": ["GRA", "LIM", "RBX", "SBG", "WAW"]
+      "regions": ["GRA", "LIM", "RBX", "SBG", "WAW"],
+      "plans": [],
+      "storagePrices": []
     },
     {
       "name": "Object Storage 3-AZ",
       "categories": ["storage.object"],
       "capabilities": ["encryption-at-rest", "object-versioning", "zone-high-availability"],
-      "regions": ["MIL", "PAR"]
+      "regions": ["MIL", "PAR"],
+      "plans": [],
+      "storagePrices": []
     }
   ]
 }

@@ -28,13 +28,14 @@ const (
 	upcloudSourceURL  = "https://upcloud.com/pricing/"
 )
 
-// OVHcloudSnapshot is where and when the OVHcloud fixture catalog was taken. The
-// date differs from ScalewaySnapshot so a comparison test can tell two targets'
-// snapshots apart.
+// OVHcloudSnapshot is where and when the OVHcloud fixture catalog was taken, and
+// the region its estimates use when the user names none. The date differs from
+// ScalewaySnapshot so a comparison test can tell two targets' snapshots apart.
 func OVHcloudSnapshot() catalog.Snapshot {
 	return catalog.Snapshot{
-		SourceURL:   ovhcloudSourceURL,
-		RetrievedOn: time.Date(2026, 11, 8, 0, 0, 0, 0, time.UTC),
+		SourceURL:     ovhcloudSourceURL,
+		RetrievedOn:   time.Date(2026, 11, 8, 0, 0, 0, 0, time.UTC),
+		DefaultRegion: "gra",
 	}
 }
 
@@ -64,13 +65,14 @@ func OVHcloudOfferings() []catalog.Offering {
 	}
 }
 
-// UpCloudSnapshot is where and when the UpCloud fixture catalog was taken. The
-// date differs from the other fixtures so a comparison test can tell two
-// targets' snapshots apart.
+// UpCloudSnapshot is where and when the UpCloud fixture catalog was taken, and
+// the region its estimates use when the user names none. The date differs from
+// the other fixtures so a comparison test can tell two targets' snapshots apart.
 func UpCloudSnapshot() catalog.Snapshot {
 	return catalog.Snapshot{
-		SourceURL:   upcloudSourceURL,
-		RetrievedOn: time.Date(2026, 10, 25, 0, 0, 0, 0, time.UTC),
+		SourceURL:     upcloudSourceURL,
+		RetrievedOn:   time.Date(2026, 10, 25, 0, 0, 0, 0, time.UTC),
+		DefaultRegion: "de-fra1",
 	}
 }
 

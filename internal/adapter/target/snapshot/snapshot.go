@@ -13,8 +13,8 @@ import (
 )
 
 // schemaVersion is the only version of the snapshot format this package reads
-// (ADR 0007).
-const schemaVersion = 1
+// (ADR 0007, ADR 0024).
+const schemaVersion = 2
 
 // MaxDocumentBytes is the size of the largest snapshot Parse reads, in bytes. A
 // larger one is refused before any of it is decoded. An embedded snapshot is a
@@ -30,7 +30,10 @@ var (
 	// escapes a lone surrogate, a retrieval date that is not a YYYY-MM-DD date,
 	// or a declared region that is blank, not valid text (text.Validate),
 	// declared twice, not a region code (ASCII letters and digits in groups
-	// joined by single hyphens) or equal to another ignoring ASCII case.
+	// joined by single hyphens) or equal to another ignoring ASCII case, or a
+	// number that does not follow the format's grammar (an integer with a
+	// fraction or an exponent, an exact decimal with an exponent or too many
+	// fractional digits, a zero with a minus sign, or a value outside int64).
 	ErrDecode = errors.New("not a valid catalog document")
 	// ErrSchemaVersion is returned for a document whose schemaVersion is missing
 	// or is not a version this package reads.
@@ -38,6 +41,10 @@ var (
 	// ErrUndeclaredRegion is returned for an offering available in a region the
 	// document's top-level regions list does not declare.
 	ErrUndeclaredRegion = errors.New("offering in an undeclared region")
+	// ErrUndeclaredDefaultRegion is returned for a document whose defaultRegion
+	// is not one of the regions it declares, spelt as declared. A blank one, and
+	// any default region of a document that declares none, is undeclared too.
+	ErrUndeclaredDefaultRegion = errors.New("default region is not a declared region")
 )
 
 // Document is a parsed snapshot: the catalog it describes and the EU regions it
@@ -51,13 +58,14 @@ type Document struct {
 	Regions []string
 }
 
-// Parse decodes and validates data as a snapshot of schema version 1 and
+// Parse decodes and validates data as a snapshot of schema version 2 and
 // returns the catalog it describes, built by catalog.New, and the regions it
 // declares. The package documentation lists every rule a document must meet.
 //
 // Every error is one line and wraps ErrDecode, ErrSchemaVersion,
-// ErrUndeclaredRegion, or the error of catalog.New (so catalog.ErrInvalidCatalog
-// and the taxonomy sentinels stay reachable). Values from data are shown through
+// ErrUndeclaredDefaultRegion, ErrUndeclaredRegion, or the error of catalog.New
+// (so catalog.ErrInvalidCatalog, the plan and price sentinels and the taxonomy
+// sentinels stay reachable). Values from data are shown through
 // text.Quote; the text of the JSON decoder and time.Parse errors is never passed
 // on. Errors name neither the input nor a target: the caller does.
 func Parse(data []byte) (Document, error) {
@@ -76,6 +84,11 @@ func Parse(data []byte) (Document, error) {
 		return Document{}, err
 	}
 
+	if !isDeclared(declared, doc.defaultRegion) {
+		return Document{}, fmt.Errorf("%w: default region %s is not one of the declared regions",
+			ErrUndeclaredDefaultRegion, text.Quote(doc.defaultRegion))
+	}
+
 	offerings := make([]catalog.Offering, len(doc.offerings))
 
 	for i, o := range doc.offerings {
@@ -88,14 +101,20 @@ func Parse(data []byte) (Document, error) {
 		}
 
 		offerings[i] = catalog.Offering{
-			Name:         o.name,
-			Categories:   o.categories,
-			Capabilities: o.capabilities,
-			Regions:      o.regions,
+			Name:          o.name,
+			Categories:    o.categories,
+			Capabilities:  o.capabilities,
+			Regions:       o.regions,
+			Plans:         o.plans,
+			StoragePrices: o.storagePrices,
 		}
 	}
 
-	snapshot := catalog.Snapshot{SourceURL: doc.sourceURL, RetrievedOn: retrievedOn}
+	snapshot := catalog.Snapshot{
+		SourceURL:     doc.sourceURL,
+		RetrievedOn:   retrievedOn,
+		DefaultRegion: doc.defaultRegion,
+	}
 
 	cat, err := catalog.New(doc.target, snapshot, offerings)
 	if err != nil {
@@ -105,27 +124,31 @@ func Parse(data []byte) (Document, error) {
 	return Document{Catalog: cat, Regions: doc.regions}, nil
 }
 
-// document is a snapshot of schema version 1 as the walk reads it, before its
+// document is a snapshot of schema version 2 as the walk reads it, before its
 // values are checked. Every field is required by the format; the walk refuses a
 // document that leaves one out or gives it as null.
 type document struct {
-	target      string
-	sourceURL   string
-	retrievedOn string
-	regions     []string
-	offerings   []offering
+	target        string
+	sourceURL     string
+	retrievedOn   string
+	regions       []string
+	defaultRegion string
+	offerings     []offering
 }
 
 // offering is one offering of a document. Its values are checked by catalog.New,
 // not here.
 type offering struct {
-	name         string
-	categories   []taxonomy.Category
-	capabilities []taxonomy.Capability
-	regions      []string
+	name          string
+	categories    []taxonomy.Category
+	capabilities  []taxonomy.Capability
+	regions       []string
+	plans         []catalog.Plan
+	storagePrices []catalog.Price
 }
 
-// The keys of schema version 1, spelt exactly as ADR 0007 records them.
+// The keys of schema version 2, spelt exactly as ADR 0007 and ADR 0024 record
+// them.
 const (
 	keySchemaVersion = "schemaVersion"
 	keyTarget        = "target"
@@ -136,11 +159,20 @@ const (
 	keyName          = "name"
 	keyCategories    = "categories"
 	keyCapabilities  = "capabilities"
+	keyDefaultRegion = "defaultRegion"
+	keyPlans         = "plans"
+	keyStoragePrices = "storagePrices"
+	keyVCPUs         = "vcpus"
+	keyMemoryGiB     = "memoryGiB"
+	keyStorageGiB    = "storageGiB"
+	keyPrices        = "prices"
+	keyAmount        = "amount"
+	keyCurrency      = "currency"
 )
 
-// documentKeys and offeringKeys list the keys of the document object and of an
-// offering object, every one of them required: the format has no optional
-// field. They are never modified.
+// documentKeys, offeringKeys, planKeys and priceKeys list the keys of the
+// document object, an offering, a plan and a price, every one of them required:
+// the format has no optional field. They are never modified.
 var (
 	documentKeys = []jsondoc.Key{
 		{Name: keySchemaVersion, Required: true},
@@ -148,6 +180,7 @@ var (
 		{Name: keySourceURL, Required: true},
 		{Name: keyRetrievedOn, Required: true},
 		{Name: keyRegions, Required: true},
+		{Name: keyDefaultRegion, Required: true},
 		{Name: keyOfferings, Required: true},
 	}
 	offeringKeys = []jsondoc.Key{
@@ -155,17 +188,31 @@ var (
 		{Name: keyCategories, Required: true},
 		{Name: keyCapabilities, Required: true},
 		{Name: keyRegions, Required: true},
+		{Name: keyPlans, Required: true},
+		{Name: keyStoragePrices, Required: true},
+	}
+	planKeys = []jsondoc.Key{
+		{Name: keyName, Required: true},
+		{Name: keyVCPUs, Required: true},
+		{Name: keyMemoryGiB, Required: true},
+		{Name: keyStorageGiB, Required: true},
+		{Name: keyPrices, Required: true},
+	}
+	priceKeys = []jsondoc.Key{
+		{Name: keyAmount, Required: true},
+		{Name: keyCurrency, Required: true},
+		{Name: keyRegions, Required: true},
 	}
 )
 
-// decode reads data as a snapshot of schema version 1 through the shared strict
+// decode reads data as a snapshot of schema version 2 through the shared strict
 // decoder (jsondoc), in this order: at most MaxDocumentBytes; UTF-8 without a
-// byte order mark; one JSON value, which is an object; schemaVersion 1
+// byte order mark; one JSON value, which is an object; schemaVersion 2
 // (jsondoc.Document.Version), found before any other key or value is checked,
 // so a document of another version is refused for its version alone; then,
 // token by token (walk), every key exact, known and not repeated, every field
-// present, not null and of its JSON type, and no string that escapes a lone
-// surrogate.
+// present, not null and of its JSON type, every number following the format's
+// grammar (number.go), and no string that escapes a lone surrogate.
 func decode(data []byte) (document, error) {
 	doc, err := jsondoc.Open(data, MaxDocumentBytes, ErrDecode)
 	if err != nil {

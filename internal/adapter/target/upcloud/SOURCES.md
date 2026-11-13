@@ -75,6 +75,17 @@ records where each fact comes from, so the snapshot can be checked and refreshed
   which confirms the split.
 - Recent zones, from the changelog: Stockholm opened on 2023-11-15 and Copenhagen on 2025-12-16.
 
+## Default region
+
+`de-fra1` (Frankfurt, Germany) is the snapshot's `defaultRegion`: the region a cost estimate uses when the user names
+none (PRD #190, ADR 0024). It is the first of the eight codes in the snapshot's `regions` list, which is kept in code order, and every offering
+of the snapshot is available in it, so an estimate in it is never "not estimated" for want of an offering
+in its region.
+
+The choice is **provisional**. It was made in PRD #190 milestone 2, before the snapshot lists any plan or
+price, and says nothing about which region is cheapest or best. The milestone that adds this target's
+plans and prices (milestones 3 to 5 of PRD #190) may confirm it or change it, and records its reason here.
+
 ## Offerings
 
 ### Block Storage

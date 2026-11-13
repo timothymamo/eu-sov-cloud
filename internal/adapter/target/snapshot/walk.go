@@ -2,12 +2,13 @@ package snapshot
 
 import (
 	"github.com/timothymamo/shift2eu/internal/adapter/internal/jsondoc"
+	"github.com/timothymamo/shift2eu/internal/domain/catalog"
 	"github.com/timothymamo/shift2eu/internal/domain/taxonomy"
 )
 
 // walk reads the whole document with w, a walker at its start, and returns what
 // it holds. The document is a JSON object whose exact schemaVersion key decode
-// has found to be 1. jsondoc refuses an unknown, inexact or repeated key, a
+// has found to be 2. jsondoc refuses an unknown, inexact or repeated key, a
 // value of the wrong JSON type, a missing key and a string that escapes a lone
 // surrogate; walk decides the keys, all of them required, and reads every value
 // without jsondoc.Walker.Null, so null is refused like any other value of the
@@ -20,7 +21,7 @@ func walk(w *jsondoc.Walker) (document, error) {
 
 		switch key {
 		case keySchemaVersion:
-			// decode has found the version to be 1, and jsondoc refuses a
+			// decode has found the version to be 2, and jsondoc refuses a
 			// second schemaVersion key as repeated before its value is read;
 			// the walk checks the value again all the same, so it never relies
 			// on that.
@@ -33,6 +34,8 @@ func walk(w *jsondoc.Walker) (document, error) {
 			doc.retrievedOn, err = w.String()
 		case keyRegions:
 			doc.regions, err = list[string](w)
+		case keyDefaultRegion:
+			doc.defaultRegion, err = w.String()
 		case keyOfferings:
 			doc.offerings, err = offerings(w)
 		}
@@ -98,6 +101,10 @@ func readOffering(w *jsondoc.Walker) (offering, error) {
 			o.capabilities, err = list[taxonomy.Capability](w)
 		case keyRegions:
 			o.regions, err = list[string](w)
+		case keyPlans:
+			o.plans, err = plans(w)
+		case keyStoragePrices:
+			o.storagePrices, err = prices(w)
 		}
 
 		return err
@@ -107,4 +114,99 @@ func readOffering(w *jsondoc.Walker) (offering, error) {
 	}
 
 	return o, nil
+}
+
+// plans reads the next value: an array of plan objects, each with every key of
+// planKeys. An empty array is an empty, non-nil list.
+func plans(w *jsondoc.Walker) ([]catalog.Plan, error) {
+	values := []catalog.Plan{}
+
+	err := w.Array("an array of objects", func(int) error {
+		p, err := readPlan(w)
+		values = append(values, p)
+
+		return err
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	return values, nil
+}
+
+// readPlan reads the next value: a plan object. Its numbers are read from their
+// JSON text (number.go); their ranges are checked by catalog.New.
+func readPlan(w *jsondoc.Walker) (catalog.Plan, error) {
+	var p catalog.Plan
+
+	err := w.Object(planKeys, func(key string) error {
+		var err error
+
+		switch key {
+		case keyName:
+			p.Name, err = w.String()
+		case keyVCPUs:
+			p.VCPUs, err = integer(w)
+		case keyMemoryGiB:
+			p.MemoryMilliGiB, err = exactDecimal(w, memoryDigits)
+		case keyStorageGiB:
+			p.IncludedStorageGiB, err = integer(w)
+		case keyPrices:
+			p.Prices, err = prices(w)
+		}
+
+		return err
+	})
+	if err != nil {
+		return catalog.Plan{}, err
+	}
+
+	return p, nil
+}
+
+// prices reads the next value: an array of price objects, each with every key
+// of priceKeys. An empty array is an empty, non-nil list.
+func prices(w *jsondoc.Walker) ([]catalog.Price, error) {
+	values := []catalog.Price{}
+
+	err := w.Array("an array of objects", func(int) error {
+		p, err := readPrice(w)
+		values = append(values, p)
+
+		return err
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	return values, nil
+}
+
+// readPrice reads the next value: a price object. Its amount is read from its
+// JSON text (number.go); its range and currency are checked by catalog.New.
+func readPrice(w *jsondoc.Walker) (catalog.Price, error) {
+	var p catalog.Price
+
+	err := w.Object(priceKeys, func(key string) error {
+		var err error
+
+		switch key {
+		case keyAmount:
+			var amount int64
+
+			amount, err = exactDecimal(w, amountDigits)
+			p.Amount = catalog.Amount(amount)
+		case keyCurrency:
+			p.Currency, err = w.String()
+		case keyRegions:
+			p.Regions, err = list[string](w)
+		}
+
+		return err
+	})
+	if err != nil {
+		return catalog.Price{}, err
+	}
+
+	return p, nil
 }
