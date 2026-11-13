@@ -1,0 +1,8 @@
+[
+  {
+    "name": "projects/example-project/subscriptions/shop-orders-worker",
+    "deadLetterPolicy": {
+      "deadLetterTopic": "projects/example-project/topics/shop-orders-dlq"
+    }
+  }
+]

@@ -18,12 +18,13 @@ import (
 const scalewayTarget = "Scaleway"
 
 // scalewayExpectations says what the Scaleway adapter must deliver for the
-// shared fixture: its display name, its EU regions and the categories the
-// catalog has to serve.
+// shared fixture: its display name, its EU regions, the categories the catalog
+// has to serve, and the region its estimates use when the user names none.
 func scalewayExpectations() targettest.Expectations {
 	return targettest.Expectations{
-		Target:  scalewayTarget,
-		Regions: []string{"fr-par", "nl-ams", "pl-waw"},
+		Target:        scalewayTarget,
+		Regions:       []string{"fr-par", "nl-ams", "pl-waw"},
+		DefaultRegion: "fr-par",
 		Categories: []taxonomy.Category{
 			taxonomy.ComputeVM,
 			taxonomy.DatabaseMySQL,
@@ -103,6 +104,97 @@ func catalogWithOffering(t *testing.T, extra catalog.Offering) catalog.Catalog {
 	return newCatalog(t, scalewayTarget, append(testutil.ScalewayOfferings(), extra))
 }
 
+// pricedOfferings is the Scaleway fixture offerings with plans and prices on the
+// Instances offering, so two catalogs can differ in a plan, a plan price or a
+// storage price alone.
+func pricedOfferings() []catalog.Offering {
+	offerings := testutil.ScalewayOfferings()
+
+	for i, o := range offerings {
+		if o.Name != "Instances" {
+			continue
+		}
+
+		offerings[i].Plans = []catalog.Plan{
+			{
+				Name:               "S-1-1",
+				VCPUs:              1,
+				MemoryMilliGiB:     1000,
+				IncludedStorageGiB: 10,
+				Prices: []catalog.Price{
+					{Amount: 5000, Currency: catalog.EUR, Regions: []string{"fr-par"}},
+					{Amount: 5500, Currency: catalog.EUR, Regions: []string{"nl-ams"}},
+				},
+			},
+			{
+				Name:           "S-2-2",
+				VCPUs:          2,
+				MemoryMilliGiB: 2000,
+				Prices:         []catalog.Price{{Amount: 10000, Currency: catalog.EUR}},
+			},
+		}
+		offerings[i].StoragePrices = []catalog.Price{{Amount: 40, Currency: catalog.EUR}}
+	}
+
+	return offerings
+}
+
+// pricedCatalog is the Scaleway fixture catalog with plans and prices, built
+// through catalog.New like every catalog an adapter returns.
+func pricedCatalog(t *testing.T) catalog.Catalog {
+	t.Helper()
+
+	return newCatalog(t, scalewayTarget, pricedOfferings())
+}
+
+// catalogWithPlanName is the priced fixture catalog with the name of its first
+// plan changed, so two catalogs can differ in a plan alone.
+func catalogWithPlanName(t *testing.T, name string) catalog.Catalog {
+	t.Helper()
+
+	offerings := pricedOfferings()
+
+	for i, o := range offerings {
+		if len(o.Plans) > 0 {
+			offerings[i].Plans[0].Name = name
+		}
+	}
+
+	return newCatalog(t, scalewayTarget, offerings)
+}
+
+// catalogWithPlanPrice is the priced fixture catalog with the first price of its
+// first plan changed, so two catalogs can differ in one plan price alone.
+func catalogWithPlanPrice(t *testing.T, amount catalog.Amount) catalog.Catalog {
+	t.Helper()
+
+	offerings := pricedOfferings()
+
+	for i, o := range offerings {
+		if len(o.Plans) > 0 && len(o.Plans[0].Prices) > 0 {
+			offerings[i].Plans[0].Prices[0].Amount = amount
+		}
+	}
+
+	return newCatalog(t, scalewayTarget, offerings)
+}
+
+// catalogWithStoragePrice is the priced fixture catalog with its first storage
+// price changed, so two catalogs can differ in a storage price alone.
+func catalogWithStoragePrice(t *testing.T, amount catalog.Amount) catalog.Catalog {
+	t.Helper()
+
+	offerings := pricedOfferings()
+
+	for i, o := range offerings {
+		if len(o.StoragePrices) > 0 {
+			offerings[i].StoragePrices[0].Amount = amount
+		}
+	}
+
+	return newCatalog(t, scalewayTarget, offerings)
+}
+
 // fakeTarget is an in-memory CatalogSource whose answers a test scripts. It
 // returns err if set and catalogs in call order, repeating the last one, and
 // records how often it was called. Unless it ignores the context, it returns
@@ -161,6 +253,7 @@ func TestCheck(t *testing.T) {
 	t.Parallel()
 
 	scaleway := testutil.ScalewayCatalog(t)
+	priced := pricedCatalog(t)
 	want := scalewayExpectations()
 
 	// wantMentions is a list of alternatives: the violation must contain at
@@ -350,6 +443,71 @@ func TestCheck(t *testing.T) {
 			wantMentions: [][]string{{"catalog"}},
 			wantQuoted:   errHostile,
 		},
+		// A catalog with plans, prices and a storage price is conforming: the
+		// prices and price-regions checks accept it, so a target listing real
+		// prices is not reported for them. The violating side of those two checks
+		// cannot be built here: catalog.New refuses a price whose currency is not
+		// EUR, whose amount is negative, whose region the offering is not in, or a
+		// plan without a price, and an adapter can only return a catalog that went
+		// through New.
+		{
+			name: "conforming target with plans and prices",
+			tgt:  &fakeTarget{catalogs: []catalog.Catalog{priced}},
+		},
+		{
+			// Estimates use the default region when the user names none, so an
+			// adapter that names another one than the target declares violates the
+			// contract under the default-region label alone.
+			name: "default region differs from the expectation",
+			tgt: &fakeTarget{catalogs: []catalog.Catalog{catalogWithSnapshot(t, func(s *catalog.Snapshot) {
+				s.DefaultRegion = "pl-waw"
+			})}},
+			wantErr:      true,
+			wantMentions: [][]string{{"default-region"}},
+			wantAbsent:   []string{"regions:", "prices:", "price-regions:", "repeat:"},
+		},
+		{
+			// The default region is one of the regions the target declares, or the
+			// report would estimate in a region the target does not serve.
+			name: "default region outside the expected regions",
+			tgt: &fakeTarget{catalogs: []catalog.Catalog{catalogWithSnapshot(t, func(s *catalog.Snapshot) {
+				s.DefaultRegion = "eu-north"
+			})}},
+			wantErr:      true,
+			wantMentions: [][]string{{"default-region"}, {"eu-north"}},
+			wantAbsent:   []string{"regions:", "prices:", "price-regions:", "repeat:"},
+		},
+		// Plans and prices are part of the catalog's content, so an adapter that
+		// rewrites a plan name, a plan price or a storage price between calls is
+		// not stable.
+		{
+			name:         "changes one offering's plans between calls",
+			tgt:          &fakeTarget{catalogs: []catalog.Catalog{priced, catalogWithPlanName(t, "S-0-0")}},
+			wantErr:      true,
+			wantMentions: [][]string{{"repeat"}},
+		},
+		{
+			name:         "changes one offering's plan prices between calls",
+			tgt:          &fakeTarget{catalogs: []catalog.Catalog{priced, catalogWithPlanPrice(t, 1)}},
+			wantErr:      true,
+			wantMentions: [][]string{{"repeat"}},
+		},
+		{
+			name:         "changes one offering's storage prices between calls",
+			tgt:          &fakeTarget{catalogs: []catalog.Catalog{priced, catalogWithStoragePrice(t, 1)}},
+			wantErr:      true,
+			wantMentions: [][]string{{"repeat"}},
+		},
+		{
+			// The default region is part of the snapshot the catalog describes, so a
+			// catalog that changes it between calls is not stable either.
+			name: "changes only the default region between calls",
+			tgt: &fakeTarget{catalogs: []catalog.Catalog{scaleway, catalogWithSnapshot(t, func(s *catalog.Snapshot) {
+				s.DefaultRegion = "nl-ams"
+			})}},
+			wantErr:      true,
+			wantMentions: [][]string{{"repeat"}},
+		},
 	}
 
 	for _, tt := range tests {
@@ -463,6 +621,14 @@ func TestCheckExpectations(t *testing.T) {
 			name:      "missing categories",
 			want:      targettest.Expectations{Target: full.Target, Regions: full.Regions},
 			wantField: "categories",
+		},
+		{
+			// Estimates fall back to the target's default region, so a suite without
+			// one has nothing to compare the catalog's default region against.
+			name:            "missing default region",
+			want:            targettest.Expectations{Target: full.Target, Regions: full.Regions, Categories: full.Categories},
+			wantField:       "defaultregion",
+			wantNoViolation: "default-region",
 		},
 	}
 

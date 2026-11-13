@@ -1,0 +1,157 @@
+{
+  "schemaVersion": 1,
+  "source": "gcp",
+  "resources": [
+    {
+      "id": "pvc-00000000-0000-0000-0000-000000000001",
+      "rawType": "compute.googleapis.com/Disk",
+      "category": "storage.block",
+      "region": "europe-west1",
+      "capabilities": [
+        "encryption-at-rest"
+      ]
+    },
+    {
+      "id": "shop-assets-example",
+      "rawType": "storage.googleapis.com/Bucket",
+      "category": "storage.object",
+      "region": "europe-west1",
+      "capabilities": [
+        "encryption-at-rest",
+        "object-versioning"
+      ]
+    },
+    {
+      "id": "shop-backups-example",
+      "rawType": "storage.googleapis.com/Bucket",
+      "category": "storage.object",
+      "region": "eu",
+      "capabilities": [
+        "encryption-at-rest"
+      ]
+    },
+    {
+      "id": "shop-baremetal-1",
+      "rawType": "baremetalsolution.googleapis.com/Instance",
+      "category": "compute.baremetal",
+      "region": "europe-west1"
+    },
+    {
+      "id": "shop-catalog-mysql",
+      "rawType": "sqladmin.googleapis.com/Instance",
+      "category": "database.mysql",
+      "region": "europe-west1",
+      "capabilities": [
+        "encryption-at-rest",
+        "point-in-time-restore"
+      ]
+    },
+    {
+      "id": "shop-cdn-backend",
+      "rawType": "compute.googleapis.com/BackendBucket",
+      "category": "unclassified"
+    },
+    {
+      "id": "shop-db",
+      "rawType": "sqladmin.googleapis.com/Instance",
+      "category": "database.postgresql",
+      "region": "europe-west1",
+      "capabilities": [
+        "encryption-at-rest",
+        "point-in-time-restore",
+        "read-replicas",
+        "zone-high-availability"
+      ]
+    },
+    {
+      "id": "shop-gke",
+      "rawType": "container.googleapis.com/Cluster",
+      "category": "kubernetes.managed",
+      "region": "europe-west1",
+      "capabilities": [
+        "autoscaling",
+        "node-high-availability",
+        "zone-high-availability"
+      ]
+    },
+    {
+      "id": "shop-orders",
+      "rawType": "pubsub.googleapis.com/Topic",
+      "category": "messaging.queue"
+    },
+    {
+      "id": "shop-orders-dlq",
+      "rawType": "pubsub.googleapis.com/Topic",
+      "category": "messaging.queue"
+    },
+    {
+      "id": "shop-orders-worker",
+      "rawType": "pubsub.googleapis.com/Subscription",
+      "category": "messaging.queue",
+      "capabilities": [
+        "dead-letter-queue"
+      ]
+    },
+    {
+      "id": "shop-reports-sqlserver",
+      "rawType": "sqladmin.googleapis.com/Instance",
+      "category": "unclassified",
+      "region": "europe-west1"
+    },
+    {
+      "id": "shop-resize-images",
+      "rawType": "cloudfunctions.googleapis.com/Function",
+      "category": "serverless.function",
+      "region": "europe-west1"
+    },
+    {
+      "id": "shop-storefront",
+      "rawType": "run.googleapis.com/Service",
+      "category": "unclassified",
+      "region": "europe-west1"
+    },
+    {
+      "id": "shop-web-1 (compute.googleapis.com/Disk, europe-west1)",
+      "rawType": "compute.googleapis.com/Disk",
+      "category": "storage.block",
+      "region": "europe-west1",
+      "capabilities": [
+        "encryption-at-rest"
+      ]
+    },
+    {
+      "id": "shop-web-1 (compute.googleapis.com/Instance, europe-west1)",
+      "rawType": "compute.googleapis.com/Instance",
+      "category": "compute.vm",
+      "region": "europe-west1",
+      "capabilities": [
+        "ipv6"
+      ]
+    },
+    {
+      "id": "shop-web-1-data",
+      "rawType": "compute.googleapis.com/Disk",
+      "category": "storage.block",
+      "region": "europe-west1",
+      "capabilities": [
+        "encryption-at-rest",
+        "snapshots"
+      ]
+    },
+    {
+      "id": "shop-web-mig",
+      "rawType": "compute.googleapis.com/InstanceGroupManager",
+      "category": "compute.vm",
+      "region": "europe-west1",
+      "capabilities": [
+        "autoscaling",
+        "zone-high-availability"
+      ]
+    },
+    {
+      "id": "shop-zone",
+      "rawType": "dns.googleapis.com/ManagedZone",
+      "category": "unclassified"
+    }
+  ]
+}

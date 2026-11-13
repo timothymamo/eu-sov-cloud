@@ -1,0 +1,39 @@
+[
+  {
+    "kind": "sql#instance",
+    "selfLink": "https://sqladmin.googleapis.com/sql/v1beta4/projects/example-project/instances/shop-db",
+    "region": "europe-west1",
+    "databaseVersion": "POSTGRES_16",
+    "replicaNames": [
+      "shop-db-replica"
+    ],
+    "settings": {
+      "availabilityType": "REGIONAL",
+      "backupConfiguration": {
+        "pointInTimeRecoveryEnabled": true
+      }
+    }
+  },
+  {
+    "kind": "sql#instance",
+    "selfLink": "https://sqladmin.googleapis.com/sql/v1beta4/projects/example-project/instances/shop-catalog-mysql",
+    "region": "europe-west1",
+    "databaseVersion": "MYSQL_8_0",
+    "settings": {
+      "availabilityType": "ZONAL",
+      "backupConfiguration": {
+        "binaryLogEnabled": true
+      }
+    }
+  },
+  {
+    "kind": "sql#instance",
+    "selfLink": "https://sqladmin.googleapis.com/sql/v1beta4/projects/example-project/instances/shop-reports-sqlserver",
+    "region": "europe-west1",
+    "databaseVersion": "SQLSERVER_2022_STANDARD",
+    "settings": {
+      "availabilityType": "ZONAL",
+      "backupConfiguration": {}
+    }
+  }
+]

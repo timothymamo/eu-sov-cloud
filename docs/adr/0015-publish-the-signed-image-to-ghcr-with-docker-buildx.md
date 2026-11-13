@@ -308,8 +308,10 @@ attestations, pushed to the registry beside the image.
   closed schema, and CI's `test` job runs `.github/scripts/verify-archives.sh`
   (`check.DryRunVerifiesArchives`): a GoReleaser snapshot of the release, failed unless each archive
   holds exactly its own binary and otherwise only `LICENSE`, `README.md` and Markdown pages under
-  `docs/`, every built platform has one archive of each and `checksums.txt` matches every archive. The
-  script builds into a temporary directory, so a local run leaves `dist/` alone.
+  `docs/` (since issues #188 and #178 also the sample inventories under `examples/` and the inventory
+  guide's jq programs, `docs/guide/inventory/<source>.jq`, each listed by exact path), every built
+  platform has one archive of each and `checksums.txt` matches every archive. The script builds into a
+  temporary directory, so a local run leaves `dist/` alone.
 - Amended by issues #156 and #163: the release is published last, into a release whose assets cannot
   change once it is public, and its archives are attested and verified like the images.
   - **Draft, then publish.** GitHub's release immutability (Settings, General, Releases) locks a

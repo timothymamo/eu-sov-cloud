@@ -148,6 +148,17 @@ the Block Storage encryption page
 <https://docs.ovhcloud.com/en/guides/public-cloud/compute/encrypting-a-block-storage-volume-with-luks>
 (DE1, WAW1, RBX-A, EU-WEST-PAR and EU-SOUTH-MIL as OpenStack regions).
 
+## Default region
+
+`GRA` (Gravelines, France) is the snapshot's `defaultRegion`: the region a cost estimate uses when the user names
+none (PRD #190, ADR 0024). It is the first of the seven codes in the snapshot's `regions` list, which is kept in code order. Every offering of
+the snapshot is available in it except eight that are available in `MIL` and `PAR` only: the seven 3-AZ
+offerings and Block Storage LUKS Zonal.
+
+The choice is **provisional**. It was made in PRD #190 milestone 2, before the snapshot lists any plan or
+price, and says nothing about which region is cheapest or best. The milestone that adds this target's
+plans and prices (milestones 3 to 5 of PRD #190) may confirm it or change it, and records its reason here.
+
 ## Offerings
 
 ### Block Storage

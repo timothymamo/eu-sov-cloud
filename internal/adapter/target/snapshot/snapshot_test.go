@@ -1,17 +1,19 @@
 // Package snapshot_test pins the shared target snapshot reader: the document
-// format every target with an embedded snapshot reads (schemaVersion 1), the
-// strictness a document must meet, the declared region list Parse returns, and
-// the reader's own error contract - one line, the sentinel it wraps, every value
-// shown through text.Quote, the keys a document must carry and spell exactly,
-// the nulls and duplicate keys it must refuse rather than default, the lone
-// surrogates it must refuse rather than read as U+FFFD, the byte order marks
-// (UTF-8 and UTF-16) it refuses by name, the line and column it places each
-// problem at, the declared regions it must declare once and as valid text (UTF-8
-// included), and the size limit above which a document is refused undecoded.
-// Errors are worded for every target: the reader is shared, so no message names
-// one. It also pins that every offering of every embedded snapshot has a section
-// in the SOURCES.md beside it (see sources_test.go). It is black-box: only the
-// package's exported API is used.
+// format every target with an embedded snapshot reads (schemaVersion 2), the
+// strictness a document must meet, the declared region list Parse returns, the
+// default region estimates use (ADR 0024), the plans and prices an offering may
+// sell and the exact decimals they are written as, and the reader's own error
+// contract - one line, the sentinel it wraps, every value shown through
+// text.Quote, the keys a document must carry and spell exactly, the nulls and
+// duplicate keys it must refuse rather than default, the lone surrogates it must
+// refuse rather than read as U+FFFD, the byte order marks (UTF-8 and UTF-16) it
+// refuses by name, the line and column it places each problem at, the declared
+// regions it must declare once and as valid text (UTF-8 included), and the size
+// limit above which a document is refused undecoded. Errors are worded for every
+// target: the reader is shared, so no message names one. It also pins that every
+// offering of every embedded snapshot has a section in the SOURCES.md beside it,
+// and that every plan name and price amount is cited there (see sources_test.go).
+// It is black-box: only the package's exported API is used.
 package snapshot_test
 
 import (
@@ -24,6 +26,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/google/go-cmp/cmp"
+
 	"github.com/timothymamo/shift2eu/internal/adapter/target/snapshot"
 	"github.com/timothymamo/shift2eu/internal/domain/catalog"
 	"github.com/timothymamo/shift2eu/internal/domain/taxonomy"
@@ -31,21 +35,71 @@ import (
 )
 
 // validDocument is a complete, minimal catalog document: one offering in one
-// declared region. The error table replaces one line of it to break exactly one
-// thing. It uses a made-up target and domain, so no case can pass by agreeing
-// with one provider's snapshot.
+// declared region, which sells no plan and publishes no storage price yet. The
+// error table replaces one line of it to break exactly one thing. It uses a
+// made-up target and domain, so no case can pass by agreeing with one provider's
+// snapshot.
 const validDocument = `{
-  "schemaVersion": 1,
+  "schemaVersion": 2,
   "target": "Example Cloud",
   "sourceURL": "https://www.example.com/docs/",
   "retrievedOn": "2026-11-10",
   "regions": ["fr-par"],
+  "defaultRegion": "fr-par",
   "offerings": [
     {
       "name": "Example Compute",
       "categories": ["compute.vm"],
       "capabilities": ["ipv6"],
-      "regions": ["fr-par"]
+      "regions": ["fr-par"],
+      "plans": [],
+      "storagePrices": []
+    }
+  ]
+}`
+
+// pricedDocument is validDocument with what a real snapshot will hold once a
+// target lists its prices (ADR 0024): two plans and a storage price, written out
+// one key per line so a case can break one value at a known line and column. The
+// first plan's prices are deliberately out of order, and one repeats a region, so
+// a case can pin the canonical order and de-duplication Parse gives them.
+const pricedDocument = `{
+  "schemaVersion": 2,
+  "target": "Example Cloud",
+  "sourceURL": "https://www.example.com/docs/",
+  "retrievedOn": "2026-11-10",
+  "regions": ["fr-par", "nl-ams"],
+  "defaultRegion": "fr-par",
+  "offerings": [
+    {
+      "name": "Example Compute",
+      "categories": ["compute.vm"],
+      "capabilities": ["ipv6"],
+      "regions": ["fr-par", "nl-ams"],
+      "plans": [
+        {
+          "name": "EC-2-4",
+          "vcpus": 2,
+          "memoryGiB": 4,
+          "storageGiB": 20,
+          "prices": [
+            { "amount": 12.5, "currency": "EUR", "regions": ["nl-ams"] },
+            { "amount": 13.0125, "currency": "EUR", "regions": ["fr-par", "fr-par"] }
+          ]
+        },
+        {
+          "name": "EC-1-0.5",
+          "vcpus": 1,
+          "memoryGiB": 0.5,
+          "storageGiB": 0,
+          "prices": [
+            { "amount": 3.65, "currency": "EUR", "regions": [] }
+          ]
+        }
+      ],
+      "storagePrices": [
+        { "amount": 0.04, "currency": "EUR", "regions": [] }
+      ]
     }
   ]
 }`
@@ -57,13 +111,21 @@ const validDocument = `{
 func doc(t *testing.T, replacements ...string) string {
 	t.Helper()
 
-	data := validDocument
+	return docIn(t, validDocument, replacements...)
+}
+
+// docIn is doc over any base document, so a case can break one value of
+// pricedDocument, which holds the plans and prices validDocument does not.
+func docIn(t *testing.T, base string, replacements ...string) string {
+	t.Helper()
+
+	data := base
 
 	for i := 0; i+1 < len(replacements); i += 2 {
 		old, replacement := replacements[i], replacements[i+1]
 
 		if !strings.Contains(data, old) {
-			t.Fatalf("doc(): %s is not in the document", text.Quote(old))
+			t.Fatalf("docIn(): %s is not in the document", text.Quote(old))
 		}
 
 		data = strings.Replace(data, old, replacement, 1)
@@ -200,6 +262,120 @@ func withoutOffering(t *testing.T, key string) string {
 	})
 }
 
+// The places pricedDocument's plans and prices sit at, as editAt takes them.
+var (
+	planPath         = []any{"offerings", 0, "plans", 0}
+	secondPlanPath   = []any{"offerings", 0, "plans", 1}
+	pricePath        = []any{"offerings", 0, "plans", 0, "prices", 0}
+	storagePricePath = []any{"offerings", 0, "storagePrices", 0}
+)
+
+// editAt returns base with edit applied to the JSON object at path, re-encoding
+// only the levels above it: path is a list of object keys and array indexes,
+// starting at base, which must hold that object. It is how a case breaks exactly
+// one key of a plan or a price and leaves every other value as written.
+func editAt(t *testing.T, base string, path []any, edit func(map[string]json.RawMessage)) string {
+	t.Helper()
+
+	return string(editLevel(t, json.RawMessage(base), path, edit))
+}
+
+// editLevel is editAt's step: it descends one level of path and re-encodes the
+// value it changed.
+func editLevel(t *testing.T, raw json.RawMessage, path []any, edit func(map[string]json.RawMessage)) json.RawMessage {
+	t.Helper()
+
+	if len(path) == 0 {
+		var fields map[string]json.RawMessage
+		if err := json.Unmarshal(raw, &fields); err != nil {
+			t.Fatalf("editAt(): unmarshalling the object to edit: %v", err)
+		}
+
+		edit(fields)
+
+		return marshalJSON(t, fields)
+	}
+
+	switch step := path[0].(type) {
+	case string:
+		var fields map[string]json.RawMessage
+		if err := json.Unmarshal(raw, &fields); err != nil {
+			t.Fatalf("editAt(): unmarshalling an object: %v", err)
+		}
+
+		value, ok := fields[step]
+		if !ok {
+			t.Fatalf("editAt(): the document has no %s key", text.Quote(step))
+		}
+
+		fields[step] = editLevel(t, value, path[1:], edit)
+
+		return marshalJSON(t, fields)
+	case int:
+		var values []json.RawMessage
+		if err := json.Unmarshal(raw, &values); err != nil {
+			t.Fatalf("editAt(): unmarshalling an array: %v", err)
+		}
+
+		if step >= len(values) {
+			t.Fatalf("editAt(): the document has %d array elements, want one at index %d", len(values), step)
+		}
+
+		values[step] = editLevel(t, values[step], path[1:], edit)
+
+		return marshalJSON(t, values)
+	default:
+		t.Fatalf("editAt(): a path step is %T, want a key or an index", step)
+
+		return nil
+	}
+}
+
+// marshalJSON renders v back as JSON, failing the test rather than returning a
+// document no case meant to write.
+func marshalJSON(t *testing.T, v any) json.RawMessage {
+	t.Helper()
+
+	raw, err := json.Marshal(v)
+	if err != nil {
+		t.Fatalf("marshalling an edited value: %v", err)
+	}
+
+	return raw
+}
+
+// withNested returns base with the key of the object at path set to the raw JSON
+// value, so a case pins a value a whole plan or price key takes, such as null.
+func withNested(t *testing.T, base string, path []any, key, raw string) string {
+	t.Helper()
+
+	if !json.Valid([]byte(raw)) {
+		t.Fatalf("withNested(): %s is not a JSON value", text.Quote(raw))
+	}
+
+	return editAt(t, base, path, func(fields map[string]json.RawMessage) {
+		if _, ok := fields[key]; !ok {
+			t.Fatalf("withNested(): the object at %v has no %s key", path, text.Quote(key))
+		}
+
+		fields[key] = json.RawMessage(raw)
+	})
+}
+
+// withoutNested returns base with the key of the object at path removed, so a
+// case pins a key of a plan or a price the format requires.
+func withoutNested(t *testing.T, base string, path []any, key string) string {
+	t.Helper()
+
+	return editAt(t, base, path, func(fields map[string]json.RawMessage) {
+		if _, ok := fields[key]; !ok {
+			t.Fatalf("withoutNested(): the object at %v has no %s key", path, text.Quote(key))
+		}
+
+		delete(fields, key)
+	})
+}
+
 // TestParseErrors pins every way parsing a catalog document fails: the sentinel
 // the error wraps, and that the message is one line naming the offending value
 // through text.Quote. A document the reader cannot understand is never silently
@@ -243,8 +419,8 @@ func TestParseErrors(t *testing.T) {
 		},
 		{
 			name: "unknown top-level field",
-			data: doc(t, `  "schemaVersion": 1,`,
-				"  \"schemaVersion\": 1,\n  \"bogusField\": true,"),
+			data: doc(t, `  "schemaVersion": 2,`,
+				"  \"schemaVersion\": 2,\n  \"bogusField\": true,"),
 			wantErr:      []error{snapshot.ErrDecode},
 			wantQuoted:   []string{"bogusField"},
 			wantContains: []string{"unknown key"},
@@ -276,10 +452,10 @@ func TestParseErrors(t *testing.T) {
 				"      \"regions\": [\"fr-par\"],\n      \"regions\": [\"fr-par\"]"),
 			wantErr:    []error{snapshot.ErrDecode},
 			wantQuoted: []string{"offerings[0].regions"},
-			// The repeated line is the offering's last one, indented six
+			// The repeated line is the offering's first regions line, indented six
 			// spaces, so its key starts in column 7.
 			wantContains: []string{"repeated key"},
-			wantPosition: "line 13, column 7",
+			wantPosition: "line 14, column 7",
 		},
 		{
 			// encoding/json matches field names without regard to case, so a key
@@ -315,7 +491,7 @@ func TestParseErrors(t *testing.T) {
 			data:         validDocument + "{}",
 			wantErr:      []error{snapshot.ErrDecode},
 			wantContains: []string{"unexpected data after the first JSON value"},
-			wantPosition: "line 15, column 2",
+			wantPosition: "line 18, column 2",
 			wantAbsent:   []string{"catalog object"},
 		},
 		{
@@ -330,50 +506,60 @@ func TestParseErrors(t *testing.T) {
 			wantAbsent:   []string{"catalog object"},
 		},
 		{
+			// A version this package does not read is refused for its version: the
+			// reader reads version 2 only, so a version 1 document, which every
+			// snapshot held before ADR 0024, is named by the version it is.
+			name:         "schema version 1",
+			data:         doc(t, `"schemaVersion": 2`, `"schemaVersion": 1`),
+			wantErr:      []error{snapshot.ErrSchemaVersion},
+			wantNotErr:   []error{snapshot.ErrDecode},
+			wantContains: []string{"is 1, want the integer 2"},
+		},
+		{
 			// An integer version is named by its value alone: the message never
 			// quotes a number the document spelt as an integer.
 			name:         "unsupported schema version",
-			data:         doc(t, `"schemaVersion": 1`, `"schemaVersion": 2`),
+			data:         doc(t, `"schemaVersion": 2`, `"schemaVersion": 3`),
 			wantErr:      []error{snapshot.ErrSchemaVersion},
-			wantContains: []string{"is 2, want the integer 1"},
+			wantContains: []string{"is 3, want the integer 2"},
 		},
 		{
 			name:         "schema version written as the integer 0",
-			data:         doc(t, `"schemaVersion": 1`, `"schemaVersion": 0`),
+			data:         doc(t, `"schemaVersion": 2`, `"schemaVersion": 0`),
 			wantErr:      []error{snapshot.ErrSchemaVersion},
-			wantContains: []string{"is 0, want the integer 1"},
+			wantContains: []string{"is 0, want the integer 2"},
 		},
 		{
 			// -0 is the integer 0 in a spelling that says more than its value:
 			// the message shows the number as written, so the reader says what
 			// the document actually holds, not a normalised form of it.
 			name:       "schema version written as -0",
-			data:       doc(t, `"schemaVersion": 1`, `"schemaVersion": -0`),
+			data:       doc(t, `"schemaVersion": 2`, `"schemaVersion": -0`),
 			wantErr:    []error{snapshot.ErrSchemaVersion},
 			wantQuoted: []string{"-0"},
 			wantAbsent: []string{"is 0,"},
 		},
 		{
-			// 1.0 and 1e0 are the integer 1 in another spelling, which the
+			// 2.0 and 2e0 are the integer 2 in another spelling, which the
 			// reader refuses just the same, and names as the number it is not
-			// allowed to normalise: 1 alone would be a version the document
+			// allowed to normalise: 2 alone would be a version the document
 			// does not contain.
-			name:       "schema version written as 1.0",
-			data:       doc(t, `"schemaVersion": 1`, `"schemaVersion": 1.0`),
+			name:       "schema version written as 2.0",
+			data:       doc(t, `"schemaVersion": 2`, `"schemaVersion": 2.0`),
 			wantErr:    []error{snapshot.ErrSchemaVersion},
-			wantQuoted: []string{"1.0"},
-			wantAbsent: []string{"is 1,"},
+			wantQuoted: []string{"2.0"},
+			wantAbsent: []string{"is 2,"},
 		},
 		{
-			name:       "schema version written as 1e0",
-			data:       doc(t, `"schemaVersion": 1`, `"schemaVersion": 1e0`),
+			name:       "schema version written as 2e0",
+			data:       doc(t, `"schemaVersion": 2`, `"schemaVersion": 2e0`),
 			wantErr:    []error{snapshot.ErrSchemaVersion},
-			wantQuoted: []string{"1e0"},
-			wantAbsent: []string{"is 1,"},
+			wantQuoted: []string{"2e0"},
+			wantAbsent: []string{"is 2,"},
 		},
 		{
 			name:    "missing schema version",
-			data:    doc(t, "  \"schemaVersion\": 1,\n", ""),
+			data:    doc(t, "  \"schemaVersion\": 2,\n", ""),
 			wantErr: []error{snapshot.ErrSchemaVersion},
 		},
 		{
@@ -381,7 +567,7 @@ func TestParseErrors(t *testing.T) {
 			// is refused for itself alone, and the message names the key the
 			// writer spelt so the mistake is visible.
 			name:         "schema version key not spelt as the format spells it",
-			data:         doc(t, `"schemaVersion": 1`, `"SchemaVersion": 1`),
+			data:         doc(t, `"schemaVersion": 2`, `"SchemaVersion": 2`),
 			wantErr:      []error{snapshot.ErrSchemaVersion},
 			wantNotErr:   []error{snapshot.ErrDecode},
 			wantQuoted:   []string{"SchemaVersion"},
@@ -418,9 +604,9 @@ func TestParseErrors(t *testing.T) {
 			// A document of a version this package does not read is refused for
 			// its version alone: a field only that version defines is no reason
 			// to report it as unreadable.
-			name: "schema version 2 carrying a field version 1 lacks",
+			name: "schema version 3 carrying a field version 2 lacks",
 			data: doc(t,
-				`"schemaVersion": 1`, `"schemaVersion": 2`,
+				`"schemaVersion": 2`, `"schemaVersion": 3`,
 				`  "target": "Example Cloud",`,
 				"  \"target\": \"Example Cloud\",\n  \"account\": \"123456789012\","),
 			wantErr:    []error{snapshot.ErrSchemaVersion},
@@ -429,9 +615,9 @@ func TestParseErrors(t *testing.T) {
 		{
 			// A duplicate key in a document of another version is the version's
 			// fault alone for the same reason: the strictness checks never run.
-			name: "schema version 2 with a key given twice",
+			name: "schema version 3 with a key given twice",
 			data: doc(t,
-				`"schemaVersion": 1`, `"schemaVersion": 2`,
+				`"schemaVersion": 2`, `"schemaVersion": 3`,
 				`  "target": "Example Cloud",`,
 				"  \"target\": \"Example Cloud\",\n  \"target\": \"Example Cloud\","),
 			wantErr:    []error{snapshot.ErrSchemaVersion},
@@ -441,9 +627,9 @@ func TestParseErrors(t *testing.T) {
 			// The version is a JSON number: a quoted number is another value, and
 			// naming it must not quote the quotes.
 			name:         "schema version as a string",
-			data:         doc(t, `"schemaVersion": 1`, `"schemaVersion": "1"`),
+			data:         doc(t, `"schemaVersion": 2`, `"schemaVersion": "2"`),
 			wantErr:      []error{snapshot.ErrSchemaVersion},
-			wantContains: []string{"string", "\"1\""},
+			wantContains: []string{"string", "\"2\""},
 			wantAbsent:   []string{`\"`},
 		},
 		{
@@ -456,7 +642,7 @@ func TestParseErrors(t *testing.T) {
 		},
 		{
 			name:    "top-level array",
-			data:    `[{"schemaVersion": 1}]`,
+			data:    `[{"schemaVersion": 2}]`,
 			wantErr: []error{snapshot.ErrDecode},
 		},
 		{
@@ -572,8 +758,8 @@ func TestParseErrors(t *testing.T) {
 			data:         doc(t, "      \"capabilities\": [\"ipv6\"],\n", ""),
 			wantErr:      []error{snapshot.ErrDecode},
 			wantQuoted:   []string{"offerings[0]"},
-			wantContains: []string{"required key", "is missing", "which starts at line 8, column 5"},
-			wantPosition: "line 8, column 5",
+			wantContains: []string{"required key", "is missing", "which starts at line 9, column 5"},
+			wantPosition: "line 9, column 5",
 		},
 		{
 			name:         "missing offering regions",
@@ -590,7 +776,7 @@ func TestParseErrors(t *testing.T) {
 			wantContains: []string{"is null", "want a string"},
 			// null is placed where it is written: after the six spaces, the
 			// quoted key and the colon, which leaves column 15.
-			wantPosition: "line 9, column 15",
+			wantPosition: "line 10, column 15",
 		},
 		{
 			name:         "null offering categories",
@@ -618,6 +804,238 @@ func TestParseErrors(t *testing.T) {
 			// offering with no capability is a real offering: it is accepted.
 			name: "offering with an empty capabilities list",
 			data: withOffering(t, "capabilities", "[]"),
+		},
+		{
+			// A complete version 2 document with plans, prices and a storage
+			// price is what every target will publish once it lists its prices.
+			name: "valid document with plans and prices",
+			data: pricedDocument,
+		},
+		{
+			// A plan may hold a price in some of the offering's regions only: the
+			// provider's coverage is a fact of the price list, not an error.
+			name: "price for some of the offering's regions",
+			data: withNested(t, pricedDocument, secondPlanPath, "prices", `[{ "amount": 3.65, "currency": "EUR", "regions": ["nl-ams"] }]`),
+		},
+		{
+			name: "memory with three fractional digits",
+			data: docIn(t, pricedDocument, `"memoryGiB": 4,`, `"memoryGiB": 1.875,`),
+		},
+		{
+			// The default region is one of the declared regions, spelt as the
+			// document declares it: anything else would estimate in a region the
+			// snapshot never declared (ADR 0024).
+			name:         "default region that is not declared",
+			data:         docIn(t, validDocument, `"defaultRegion": "fr-par",`, `"defaultRegion": "fr-paris",`),
+			wantErr:      []error{snapshot.ErrUndeclaredDefaultRegion},
+			wantNotErr:   []error{snapshot.ErrUndeclaredRegion, snapshot.ErrDecode},
+			wantQuoted:   []string{"fr-paris"},
+			wantContains: []string{"declared region"},
+		},
+		{
+			name:       "default region in another case than the declaration",
+			data:       docIn(t, validDocument, `"defaultRegion": "fr-par",`, `"defaultRegion": "FR-PAR",`),
+			wantErr:    []error{snapshot.ErrUndeclaredDefaultRegion},
+			wantQuoted: []string{"FR-PAR"},
+		},
+		{
+			// A snapshot that declares no region has no region to estimate in, so
+			// it cannot be read at all (ADR 0024).
+			name:       "default region when the document declares no region",
+			data:       docIn(t, validDocument, `"regions": ["fr-par"],`, `"regions": [],`),
+			wantErr:    []error{snapshot.ErrUndeclaredDefaultRegion},
+			wantNotErr: []error{snapshot.ErrUndeclaredRegion},
+		},
+		{
+			name:       "blank default region",
+			data:       docIn(t, validDocument, `"defaultRegion": "fr-par",`, `"defaultRegion": "",`),
+			wantErr:    []error{snapshot.ErrUndeclaredDefaultRegion},
+			wantNotErr: []error{snapshot.ErrDecode},
+		},
+		// A price is an exact decimal read from its JSON text, never a float64: an
+		// exponent, a fraction where an integer belongs, more fractional digits
+		// than the format allows and an amount outside int64 are refused with the
+		// line and column of the number and its path in the document.
+		{
+			name:         "price amount with an exponent",
+			data:         docIn(t, pricedDocument, `"amount": 3.65,`, `"amount": 1e2,`),
+			wantErr:      []error{snapshot.ErrDecode},
+			wantQuoted:   []string{"offerings[0].plans[1].prices[0].amount", "1e2"},
+			wantContains: []string{"the number"},
+			wantPosition: "line 31, column 25",
+		},
+		{
+			name:       "price amount with five fractional digits",
+			data:       docIn(t, pricedDocument, `"amount": 12.5,`, `"amount": 12.34567,`),
+			wantErr:    []error{snapshot.ErrDecode},
+			wantQuoted: []string{"offerings[0].plans[0].prices[0].amount", "12.34567"},
+		},
+		{
+			// Trailing zeros count towards the limit: 1.00000 says five fractional
+			// digits even though it is the integer 1.
+			name:       "price amount with a trailing zero past four fractional digits",
+			data:       docIn(t, pricedDocument, `"amount": 12.5,`, `"amount": 1.00000,`),
+			wantErr:    []error{snapshot.ErrDecode},
+			wantQuoted: []string{"offerings[0].plans[0].prices[0].amount", "1.00000"},
+		},
+		{
+			name:       "memory with four fractional digits",
+			data:       docIn(t, pricedDocument, `"memoryGiB": 4,`, `"memoryGiB": 0.5000,`),
+			wantErr:    []error{snapshot.ErrDecode},
+			wantQuoted: []string{"offerings[0].plans[0].memoryGiB", "0.5000"},
+		},
+		{
+			name:       "vcpus written as a decimal",
+			data:       docIn(t, pricedDocument, `"vcpus": 2,`, `"vcpus": 1.0,`),
+			wantErr:    []error{snapshot.ErrDecode},
+			wantQuoted: []string{"offerings[0].plans[0].vcpus", "1.0"},
+		},
+		{
+			name:       "vcpus written with an exponent",
+			data:       docIn(t, pricedDocument, `"vcpus": 2,`, `"vcpus": 1e0,`),
+			wantErr:    []error{snapshot.ErrDecode},
+			wantQuoted: []string{"offerings[0].plans[0].vcpus", "1e0"},
+		},
+		{
+			name:       "included storage written as a decimal",
+			data:       docIn(t, pricedDocument, `"storageGiB": 20,`, `"storageGiB": 1.0,`),
+			wantErr:    []error{snapshot.ErrDecode},
+			wantQuoted: []string{"offerings[0].plans[0].storageGiB", "1.0"},
+		},
+		{
+			// -0 is never what a price list means, and an exact reader that read it
+			// as 0 would drop the sign without a word, so the reader refuses every
+			// spelling of it.
+			name:       "price amount written as -0",
+			data:       docIn(t, pricedDocument, `"amount": 12.5,`, `"amount": -0,`),
+			wantErr:    []error{snapshot.ErrDecode},
+			wantQuoted: []string{"offerings[0].plans[0].prices[0].amount", "-0"},
+		},
+		{
+			name:       "price amount written as -0.0",
+			data:       docIn(t, pricedDocument, `"amount": 12.5,`, `"amount": -0.0,`),
+			wantErr:    []error{snapshot.ErrDecode},
+			wantQuoted: []string{"offerings[0].plans[0].prices[0].amount", "-0.0"},
+		},
+		{
+			name:       "memory written as -0.000",
+			data:       docIn(t, pricedDocument, `"memoryGiB": 4,`, `"memoryGiB": -0.000,`),
+			wantErr:    []error{snapshot.ErrDecode},
+			wantQuoted: []string{"offerings[0].plans[0].memoryGiB", "-0.000"},
+		},
+		{
+			// -0 is refused whatever the number holds: the sign on a zero integer
+			// is as meaningless as one on a decimal, and a reader that read it as 0
+			// would drop the sign without a word (ADR 0024).
+			name:         "vcpus written as -0",
+			data:         docIn(t, pricedDocument, `"vcpus": 2,`, `"vcpus": -0,`),
+			wantErr:      []error{snapshot.ErrDecode},
+			wantNotErr:   []error{catalog.ErrInvalidPlan},
+			wantQuoted:   []string{"offerings[0].plans[0].vcpus", "-0"},
+			wantContains: []string{"the number"},
+		},
+		{
+			name:         "included storage written as -0",
+			data:         docIn(t, pricedDocument, `"storageGiB": 20,`, `"storageGiB": -0,`),
+			wantErr:      []error{snapshot.ErrDecode},
+			wantNotErr:   []error{catalog.ErrInvalidPlan},
+			wantQuoted:   []string{"offerings[0].plans[0].storageGiB", "-0"},
+			wantContains: []string{"the number"},
+		},
+		{
+			// The amount is held as a count of ten-thousandths, so an amount whose
+			// count does not fit an int64 is refused even though its integer part
+			// alone would.
+			name:       "price amount outside int64",
+			data:       docIn(t, pricedDocument, `"amount": 12.5,`, `"amount": 922337203685477.5808,`),
+			wantErr:    []error{snapshot.ErrDecode},
+			wantQuoted: []string{"offerings[0].plans[0].prices[0].amount"},
+		},
+		{
+			name:       "vcpus outside int64",
+			data:       docIn(t, pricedDocument, `"vcpus": 2,`, `"vcpus": 9223372036854775808,`),
+			wantErr:    []error{snapshot.ErrDecode},
+			wantQuoted: []string{"offerings[0].plans[0].vcpus"},
+		},
+		{
+			name:       "memory outside int64",
+			data:       docIn(t, pricedDocument, `"memoryGiB": 4,`, `"memoryGiB": 9223372036854775.808,`),
+			wantErr:    []error{snapshot.ErrDecode},
+			wantQuoted: []string{"offerings[0].plans[0].memoryGiB"},
+		},
+		{
+			// A negative number is read: the sign is part of the grammar, and the
+			// rule that a size or a price is not negative lives once, in the
+			// domain, so the reader does not report a different sentinel than
+			// catalog.New does.
+			name:         "negative vcpus reaches the domain",
+			data:         docIn(t, pricedDocument, `"vcpus": 2,`, `"vcpus": -1,`),
+			wantErr:      []error{catalog.ErrInvalidPlan},
+			wantNotErr:   []error{snapshot.ErrDecode},
+			wantQuoted:   []string{"EC-2-4"},
+			wantContains: []string{"vcpus"},
+		},
+		{
+			name:         "negative included storage reaches the domain",
+			data:         docIn(t, pricedDocument, `"storageGiB": 20,`, `"storageGiB": -1,`),
+			wantErr:      []error{catalog.ErrInvalidPlan},
+			wantNotErr:   []error{snapshot.ErrDecode},
+			wantQuoted:   []string{"EC-2-4"},
+			wantContains: []string{"storageGiB"},
+		},
+		{
+			name:         "negative price amount reaches the domain",
+			data:         docIn(t, pricedDocument, `"amount": 3.65,`, `"amount": -0.01,`),
+			wantErr:      []error{catalog.ErrInvalidPrice},
+			wantNotErr:   []error{snapshot.ErrDecode},
+			wantQuoted:   []string{"EC-1-0.5"},
+			wantContains: []string{"amount"},
+		},
+		// The PRD's four refusals reach the domain's sentinels through Parse: the
+		// reader turns JSON text into domain values and leaves the rules to
+		// catalog.New, whose error Parse returns as it is.
+		{
+			name:       "plan without a price",
+			data:       withNested(t, pricedDocument, planPath, "prices", "[]"),
+			wantErr:    []error{catalog.ErrUnpricedPlan},
+			wantQuoted: []string{"EC-2-4"},
+		},
+		{
+			name:         "price in a currency that is not EUR",
+			data:         withNested(t, pricedDocument, pricePath, "currency", `"USD"`),
+			wantErr:      []error{catalog.ErrInvalidPrice},
+			wantQuoted:   []string{"EC-2-4", "USD"},
+			wantContains: []string{"currency"},
+		},
+		{
+			name:       "two plans of one offering with the same name",
+			data:       withNested(t, pricedDocument, secondPlanPath, "name", `"EC-2-4"`),
+			wantErr:    []error{catalog.ErrDuplicatePlan},
+			wantQuoted: []string{"EC-2-4"},
+		},
+		{
+			// A price region is checked against the offering's regions, which the
+			// reader has already checked against the declared ones (ADR 0024).
+			name:         "price region the offering is not in",
+			data:         withNested(t, pricedDocument, pricePath, "regions", `["de-fra"]`),
+			wantErr:      []error{catalog.ErrPriceRegion},
+			wantNotErr:   []error{snapshot.ErrUndeclaredRegion, snapshot.ErrDecode},
+			wantQuoted:   []string{"de-fra"},
+			wantContains: []string{"region"},
+		},
+		{
+			// The domain names a field bare, so the empty region is named by the
+			// index it sits at, not by a quoted path.
+			name:         "blank price region",
+			data:         withNested(t, pricedDocument, pricePath, "regions", `[""]`),
+			wantErr:      []error{catalog.ErrInvalidPrice},
+			wantContains: []string{"regions[0]"},
+		},
+		{
+			name:       "storage price region the offering is not in",
+			data:       withNested(t, pricedDocument, storagePricePath, "regions", `["de-fra"]`),
+			wantErr:    []error{catalog.ErrPriceRegion},
+			wantQuoted: []string{"de-fra"},
 		},
 		{
 			// encoding/json reads an escaped lone surrogate as U+FFFD and reports
@@ -660,7 +1078,7 @@ func TestParseErrors(t *testing.T) {
 			wantErr:      []error{snapshot.ErrDecode},
 			wantQuoted:   []string{"offerings[0].name"},
 			wantContains: []string{"surrogate on its own", "U+D800"},
-			wantPosition: "line 9, column 17",
+			wantPosition: "line 10, column 17",
 		},
 		{
 			// A surrogate pair is one character, not two lone surrogates: the
@@ -790,7 +1208,7 @@ func TestParseErrors(t *testing.T) {
 			data:         doc(t, `      "name": "Example Compute",`, "      \"name\": \"bad\xffname\","),
 			wantErr:      []error{snapshot.ErrDecode},
 			wantContains: []string{"not valid UTF-8"},
-			wantPosition: "line 9, column 19",
+			wantPosition: "line 10, column 19",
 			wantAbsent:   []string{"line 1, column 1"},
 		},
 		{
@@ -823,7 +1241,7 @@ func TestParseErrors(t *testing.T) {
 			// and the JSON decoder counts the rune's last byte: the message must
 			// place the character at its first byte, which is line 3's column 2.
 			name:         "malformed two-byte character where a key is expected",
-			data:         "{\n \"schemaVersion\": 1,\n é\n}",
+			data:         "{\n \"schemaVersion\": 2,\n é\n}",
 			wantErr:      []error{snapshot.ErrDecode},
 			wantContains: []string{"malformed JSON"},
 			wantPosition: "line 3, column 2",
@@ -833,7 +1251,7 @@ func TestParseErrors(t *testing.T) {
 			// The same for a character of three bytes: the step back to the first
 			// byte of the rune covers every byte of it.
 			name:         "malformed three-byte character where a key is expected",
-			data:         "{\n \"schemaVersion\": 1,\n €\n}",
+			data:         "{\n \"schemaVersion\": 2,\n €\n}",
 			wantErr:      []error{snapshot.ErrDecode},
 			wantContains: []string{"malformed JSON"},
 			wantPosition: "line 3, column 2",
@@ -967,6 +1385,334 @@ func TestParseErrorsNameNoTarget(t *testing.T) {
 	}
 }
 
+// TestParsePlansAndPrices pins what the plans and prices of a version 2 document
+// become in the catalog: the exact decimals converted to whole units (memoryGiB
+// to thousandths of a GiB, amount to ten-thousandths of EUR), plans sorted by
+// name, every price's regions sorted, de-duplicated and nil when empty, the
+// prices sorted by first region with the every-region price first, and the
+// document's default region carried into the catalog's snapshot.
+func TestParsePlansAndPrices(t *testing.T) {
+	t.Parallel()
+
+	document, err := snapshot.Parse([]byte(pricedDocument))
+	if err != nil {
+		t.Fatalf("Parse() of a document with plans and prices returned unexpected error: %v", err)
+	}
+
+	if got, want := document.Catalog.Snapshot().DefaultRegion, "fr-par"; got != want {
+		t.Errorf("Parse().Catalog.Snapshot().DefaultRegion = %s, want %s", text.Quote(got), text.Quote(want))
+	}
+
+	offerings := document.Catalog.Offerings()
+	if len(offerings) != 1 {
+		t.Fatalf("Parse().Catalog.Offerings() returned %d offerings, want 1", len(offerings))
+	}
+
+	wantPlans := []catalog.Plan{
+		{
+			Name:           "EC-1-0.5",
+			VCPUs:          1,
+			MemoryMilliGiB: 500,
+			Prices:         []catalog.Price{{Amount: 36500, Currency: catalog.EUR}},
+		},
+		{
+			Name:               "EC-2-4",
+			VCPUs:              2,
+			MemoryMilliGiB:     4000,
+			IncludedStorageGiB: 20,
+			Prices: []catalog.Price{
+				{Amount: 130125, Currency: catalog.EUR, Regions: []string{"fr-par"}},
+				{Amount: 125000, Currency: catalog.EUR, Regions: []string{"nl-ams"}},
+			},
+		},
+	}
+
+	if diff := cmp.Diff(wantPlans, offerings[0].Plans); diff != "" {
+		t.Errorf("Plans mismatch (-want +got):\n%s", diff)
+	}
+
+	wantStoragePrices := []catalog.Price{{Amount: 400, Currency: catalog.EUR}}
+	if diff := cmp.Diff(wantStoragePrices, offerings[0].StoragePrices); diff != "" {
+		t.Errorf("StoragePrices mismatch (-want +got):\n%s", diff)
+	}
+
+	// The stored amount and the document's decimal are the same price, at the
+	// precision the format stores it: 12.5 EUR is 125000 ten-thousandths.
+	if got, want := offerings[0].Plans[1].Prices[1].Amount.String(), "12.50"; got != want {
+		t.Errorf("parsed amount = %s, want %s", text.Quote(got), text.Quote(want))
+	}
+
+	t.Run("an amount with four fractional digits", func(t *testing.T) {
+		t.Parallel()
+
+		// The last digit the format allows is stored exactly: 12.3456 EUR is
+		// 123456 ten-thousandths, never a rounded or floating-point value.
+		document, err := snapshot.Parse([]byte(docIn(t, pricedDocument, `"amount": 12.5,`, `"amount": 12.3456,`)))
+		if err != nil {
+			t.Fatalf("Parse() returned unexpected error: %v", err)
+		}
+
+		plans := document.Catalog.Offerings()[0].Plans
+		if len(plans) != 2 || len(plans[1].Prices) != 2 {
+			t.Fatalf("the document's plans are not the two plans with their prices")
+		}
+
+		if got, want := plans[1].Prices[1].Amount, catalog.Amount(123456); got != want {
+			t.Errorf("stored amount = %d, want %d for 12.3456 EUR", got, want)
+		}
+	})
+}
+
+// offeringPath is where pricedDocument's offering sits, as editAt takes it.
+var offeringPath = []any{"offerings", 0}
+
+// TestParseRequiresEveryVersion2Key pins that every key schema version 2 adds is
+// required and spelt exactly: defaultRegion, an offering's plans and
+// storagePrices, every plan key and every price key is refused with ErrDecode
+// when it is missing, null, of the wrong type, repeated or spelt inexactly. A
+// key that a document forgot would otherwise read as a value the document never
+// stated (ADR 0007, ADR 0024).
+func TestParseRequiresEveryVersion2Key(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name string
+		// base is the document the case edits.
+		base string
+		// path is where the object that holds the key sits, or nil when the key
+		// is the document's own; holder is that object's path, spelt as an error
+		// names it, or "" for the document object.
+		path   []any
+		holder string
+		key    string
+		// wrong is a JSON value of a type the key does not have.
+		wrong string
+		// misspelt and repeated are the old and new text of the edit that spells
+		// the key differently or writes it a second time.
+		misspelt [2]string
+		repeated [2]string
+	}{
+		{
+			name:     "defaultRegion",
+			base:     validDocument,
+			key:      "defaultRegion",
+			wrong:    "5",
+			misspelt: [2]string{`"defaultRegion"`, `"DefaultRegion"`},
+			repeated: [2]string{
+				`"defaultRegion": "fr-par",`,
+				`"defaultRegion": "fr-par", "defaultRegion": "fr-par",`,
+			},
+		},
+		{
+			name:     "offering plans",
+			base:     validDocument,
+			path:     offeringPath,
+			holder:   "offerings[0]",
+			key:      "plans",
+			wrong:    `{}`,
+			misspelt: [2]string{`"plans": [],`, `"Plans": [],`},
+			repeated: [2]string{`"plans": [],`, `"plans": [], "plans": [],`},
+		},
+		{
+			name:     "offering storagePrices",
+			base:     validDocument,
+			path:     offeringPath,
+			holder:   "offerings[0]",
+			key:      "storagePrices",
+			wrong:    `"none"`,
+			misspelt: [2]string{`"storagePrices": []`, `"StoragePrices": []`},
+			repeated: [2]string{`"storagePrices": []`, `"storagePrices": [], "storagePrices": []`},
+		},
+		{
+			name:     "plan name",
+			base:     pricedDocument,
+			path:     planPath,
+			holder:   "offerings[0].plans[0]",
+			key:      "name",
+			wrong:    "5",
+			misspelt: [2]string{`"name": "EC-2-4",`, `"Name": "EC-2-4",`},
+			repeated: [2]string{`"name": "EC-2-4",`, `"name": "EC-2-4", "name": "EC-2-4",`},
+		},
+		{
+			name:     "plan vcpus",
+			base:     pricedDocument,
+			path:     planPath,
+			holder:   "offerings[0].plans[0]",
+			key:      "vcpus",
+			wrong:    `"2"`,
+			misspelt: [2]string{`"vcpus": 2,`, `"Vcpus": 2,`},
+			repeated: [2]string{`"vcpus": 2,`, `"vcpus": 2, "vcpus": 2,`},
+		},
+		{
+			name:     "plan memoryGiB",
+			base:     pricedDocument,
+			path:     planPath,
+			holder:   "offerings[0].plans[0]",
+			key:      "memoryGiB",
+			wrong:    `[]`,
+			misspelt: [2]string{`"memoryGiB": 4,`, `"MemoryGiB": 4,`},
+			repeated: [2]string{`"memoryGiB": 4,`, `"memoryGiB": 4, "memoryGiB": 4,`},
+		},
+		{
+			name:     "plan storageGiB",
+			base:     pricedDocument,
+			path:     planPath,
+			holder:   "offerings[0].plans[0]",
+			key:      "storageGiB",
+			wrong:    `true`,
+			misspelt: [2]string{`"storageGiB": 20,`, `"StorageGiB": 20,`},
+			repeated: [2]string{`"storageGiB": 20,`, `"storageGiB": 20, "storageGiB": 20,`},
+		},
+		{
+			name:     "plan prices",
+			base:     pricedDocument,
+			path:     planPath,
+			holder:   "offerings[0].plans[0]",
+			key:      "prices",
+			wrong:    `{}`,
+			misspelt: [2]string{`"prices": [`, `"Prices": [`},
+			repeated: [2]string{`"prices": [`, `"prices": [], "prices": [`},
+		},
+		{
+			name:     "price amount",
+			base:     pricedDocument,
+			path:     pricePath,
+			holder:   "offerings[0].plans[0].prices[0]",
+			key:      "amount",
+			wrong:    `"12.50"`,
+			misspelt: [2]string{`"amount": 12.5,`, `"Amount": 12.5,`},
+			repeated: [2]string{`"amount": 12.5,`, `"amount": 12.5, "amount": 12.5,`},
+		},
+		{
+			name:     "price currency",
+			base:     pricedDocument,
+			path:     pricePath,
+			holder:   "offerings[0].plans[0].prices[0]",
+			key:      "currency",
+			wrong:    "5",
+			misspelt: [2]string{`"currency": "EUR",`, `"Currency": "EUR",`},
+			repeated: [2]string{`"currency": "EUR",`, `"currency": "EUR", "currency": "EUR",`},
+		},
+		{
+			name:     "price regions",
+			base:     pricedDocument,
+			path:     pricePath,
+			holder:   "offerings[0].plans[0].prices[0]",
+			key:      "regions",
+			wrong:    `"nl-ams"`,
+			misspelt: [2]string{`"currency": "EUR", "regions": ["nl-ams"]`, `"currency": "EUR", "Regions": ["nl-ams"]`},
+			repeated: [2]string{
+				`"currency": "EUR", "regions": ["nl-ams"]`,
+				`"currency": "EUR", "regions": ["nl-ams"], "regions": ["nl-ams"]`,
+			},
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			full := tc.key
+			if tc.holder != "" {
+				full = tc.holder + "." + tc.key
+			}
+
+			// set gives the key a raw value; remove leaves it out of the document.
+			set := func(t *testing.T, raw string) string {
+				t.Helper()
+
+				if tc.path == nil {
+					return with(t, tc.key, raw)
+				}
+
+				return withNested(t, tc.base, tc.path, tc.key, raw)
+			}
+
+			remove := func(t *testing.T) string {
+				t.Helper()
+
+				if tc.path == nil {
+					return without(t, tc.key)
+				}
+
+				return withoutNested(t, tc.base, tc.path, tc.key)
+			}
+
+			cases := []struct {
+				name   string
+				data   string
+				quoted []string
+				// want contains the substrings the message must hold besides the
+				// key's own name, which every case requires.
+				want []string
+			}{
+				{
+					name:   "missing",
+					data:   remove(t),
+					quoted: []string{tc.key},
+					want:   []string{"required key", "is missing"},
+				},
+				{
+					name:   "null",
+					data:   set(t, "null"),
+					quoted: []string{full},
+					want:   []string{"null"},
+				},
+				{
+					name:   "wrong type",
+					data:   set(t, tc.wrong),
+					quoted: []string{full},
+				},
+				{
+					name:   "repeated",
+					data:   docIn(t, tc.base, tc.repeated[0], tc.repeated[1]),
+					quoted: []string{tc.key},
+					want:   []string{"repeated key"},
+				},
+				{
+					name:   "spelt inexactly",
+					data:   docIn(t, tc.base, tc.misspelt[0], tc.misspelt[1]),
+					quoted: []string{tc.key},
+					want:   []string{"unknown key", "keys are exact"},
+				},
+			}
+
+			for _, tt := range cases {
+				t.Run(tt.name, func(t *testing.T) {
+					t.Parallel()
+
+					if !json.Valid([]byte(tt.data)) {
+						t.Fatalf("the case's document is not valid JSON: %s", tt.data)
+					}
+
+					_, err := snapshot.Parse([]byte(tt.data))
+					if !errors.Is(err, snapshot.ErrDecode) {
+						t.Fatalf("Parse() error = %v, want one wrapping %v", err, snapshot.ErrDecode)
+					}
+
+					msg := err.Error()
+
+					if strings.ContainsAny(msg, "\r\n") {
+						t.Errorf("Parse() error = %q, want a single line", msg)
+					}
+
+					for _, value := range tt.quoted {
+						if quoted := text.Quote(value); !strings.Contains(msg, quoted) {
+							t.Errorf("Parse() error = %q, want it to name %s through text.Quote", msg, quoted)
+						}
+					}
+
+					for _, want := range tt.want {
+						if !strings.Contains(msg, want) {
+							t.Errorf("Parse() error = %q, want it to contain %s", msg, text.Quote(want))
+						}
+					}
+				})
+			}
+		})
+	}
+}
+
 // TestParseRegions pins the declared region list Parse returns: the order the
 // document lists the regions in, not a sorted one (callers report it as the
 // snapshot declares it), and the caller's own copy, so changing one result
@@ -1062,27 +1808,31 @@ func TestParseRejectsDocumentsOverTheSizeCap(t *testing.T) {
 	}
 }
 
-// emptyCatalogDocument is a complete catalog that declares no region and no
-// offering. Both lists are present and empty, which is a catalog of nothing;
-// null (see TestParseErrors) is a document that does not say.
+// emptyCatalogDocument is a complete catalog that declares one region, which is
+// also its default region, and no offering. Both lists are present and empty,
+// which is a catalog of nothing; null (see TestParseErrors) is a document that
+// does not say. It declares a region because a snapshot needs one to estimate
+// in (ADR 0024): a document declaring none cannot be read.
 const emptyCatalogDocument = `{
-  "schemaVersion": 1,
+  "schemaVersion": 2,
   "target": "Example Cloud",
   "sourceURL": "https://www.example.com/docs/",
   "retrievedOn": "2026-11-10",
-  "regions": [],
+  "regions": ["fr-par"],
+  "defaultRegion": "fr-par",
   "offerings": []
 }`
 
-// TestParseEmptyCatalog pins that a document declaring no region and no offering
-// is an empty catalog, not a broken one: an empty list is an answer, which is why
-// only null is refused. It is the other side of the two null rows above.
+// TestParseEmptyCatalog pins that a document declaring a region, its default
+// region and no offering is an empty catalog, not a broken one: an empty list is
+// an answer, which is why only null is refused. It is the other side of the two
+// null rows above.
 func TestParseEmptyCatalog(t *testing.T) {
 	t.Parallel()
 
 	document, err := snapshot.Parse([]byte(emptyCatalogDocument))
 	if err != nil {
-		t.Fatalf("Parse() of a document declaring no region and no offering returned unexpected error: %v", err)
+		t.Fatalf("Parse() of a document declaring a region and no offering returned unexpected error: %v", err)
 	}
 
 	if got := document.Catalog.Target(); got != "Example Cloud" {
@@ -1093,8 +1843,12 @@ func TestParseEmptyCatalog(t *testing.T) {
 		t.Errorf("Parse().Catalog.Offerings() = %v, want none", got)
 	}
 
-	if len(document.Regions) != 0 {
-		t.Errorf("Parse().Regions = %v, want none", document.Regions)
+	if got := document.Catalog.Snapshot().DefaultRegion; got != "fr-par" {
+		t.Errorf("Parse().Catalog.Snapshot().DefaultRegion = %s, want %s", text.Quote(got), text.Quote("fr-par"))
+	}
+
+	if want := []string{"fr-par"}; !slices.Equal(document.Regions, want) {
+		t.Errorf("Parse().Regions = %v, want %v", document.Regions, want)
 	}
 }
 
@@ -1124,20 +1878,23 @@ func repeatedRegionDocument(tb testing.TB) []byte {
 	// size of every other byte can be measured with the mentions empty.
 	compose := func(mentions string) string {
 		return fmt.Sprintf(`{
-  "schemaVersion": 1,
+  "schemaVersion": 2,
   "target": "Example Cloud",
   "sourceURL": "https://www.example.com/docs/",
   "retrievedOn": "2026-11-10",
   "regions": [%s],
+  "defaultRegion": %s,
   "offerings": [
     {
       "name": "Example Compute",
       "categories": ["compute.vm"],
       "capabilities": ["ipv6"],
-      "regions": [%s]
+      "regions": [%s],
+      "plans": [],
+      "storagePrices": []
     }
   ]
-}`, strings.Join(regions, ", "), mentions)
+}`, strings.Join(regions, ", "), regions[0], mentions)
 	}
 
 	// Every mention but the last is followed by a comma, so a mention costs the

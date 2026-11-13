@@ -1,69 +1,90 @@
 {
-  "schemaVersion": 1,
+  "schemaVersion": 2,
   "target": "Scaleway",
   "sourceURL": "https://www.scaleway.com/en/docs/",
   "retrievedOn": "2026-11-11",
   "regions": ["fr-par", "it-mil", "nl-ams", "pl-waw"],
+  "defaultRegion": "fr-par",
   "offerings": [
     {
       "name": "Block Storage",
       "categories": ["storage.block"],
       "capabilities": ["snapshots"],
-      "regions": ["fr-par", "it-mil", "nl-ams", "pl-waw"]
+      "regions": ["fr-par", "it-mil", "nl-ams", "pl-waw"],
+      "plans": [],
+      "storagePrices": []
     },
     {
       "name": "Elastic Metal",
       "categories": ["compute.baremetal"],
       "capabilities": ["ipv6"],
-      "regions": ["fr-par", "nl-ams", "pl-waw"]
+      "regions": ["fr-par", "nl-ams", "pl-waw"],
+      "plans": [],
+      "storagePrices": []
     },
     {
       "name": "Instances",
       "categories": ["compute.vm"],
       "capabilities": ["ipv6", "snapshots"],
-      "regions": ["fr-par", "it-mil", "nl-ams", "pl-waw"]
+      "regions": ["fr-par", "it-mil", "nl-ams", "pl-waw"],
+      "plans": [],
+      "storagePrices": []
     },
     {
       "name": "Kubernetes Kapsule",
       "categories": ["kubernetes.managed"],
       "capabilities": ["autoscaling"],
-      "regions": ["fr-par", "it-mil", "nl-ams", "pl-waw"]
+      "regions": ["fr-par", "it-mil", "nl-ams", "pl-waw"],
+      "plans": [],
+      "storagePrices": []
     },
     {
       "name": "Kubernetes Kapsule Dedicated",
       "categories": ["kubernetes.managed"],
       "capabilities": ["autoscaling", "node-high-availability"],
-      "regions": ["fr-par", "nl-ams", "pl-waw"]
+      "regions": ["fr-par", "nl-ams", "pl-waw"],
+      "plans": [],
+      "storagePrices": []
     },
     {
       "name": "Managed Database for PostgreSQL and MySQL",
       "categories": ["database.mysql", "database.postgresql"],
       "capabilities": ["encryption-at-rest", "read-replicas", "snapshots"],
-      "regions": ["fr-par", "nl-ams", "pl-waw"]
+      "regions": ["fr-par", "nl-ams", "pl-waw"],
+      "plans": [],
+      "storagePrices": []
     },
     {
       "name": "Managed Database for PostgreSQL and MySQL High Availability",
       "categories": ["database.mysql", "database.postgresql"],
       "capabilities": ["encryption-at-rest", "node-high-availability", "read-replicas", "snapshots"],
-      "regions": ["fr-par", "nl-ams", "pl-waw"]
+      "regions": ["fr-par", "nl-ams", "pl-waw"],
+      "plans": [],
+      "storagePrices": []
     },
     {
       "name": "Object Storage",
       "categories": ["storage.object"],
       "capabilities": ["encryption-at-rest", "object-versioning"],
-      "regions": ["fr-par", "it-mil", "nl-ams", "pl-waw"]
+      "regions": ["fr-par", "it-mil", "nl-ams", "pl-waw"],
+      "plans": [],
+      "storagePrices": []
     },
     {
       "name": "Queues",
       "categories": ["messaging.queue"],
       "capabilities": ["dead-letter-queue"],
-      "regions": ["fr-par", "nl-ams"]
+      "regions": ["fr-par", "nl-ams"],
+      "plans": [],
+      "storagePrices": []
     },
     {
       "name": "Serverless Functions",
       "categories": ["serverless.function"],
       "capabilities": ["autoscaling"],
-      "regions": ["fr-par", "nl-ams", "pl-waw"]
+      "regions": ["fr-par", "nl-ams", "pl-waw"],
+      "plans": [],
+      "storagePrices": []
     }
   ]
 }

@@ -1,0 +1,70 @@
+{
+  "Volumes": [
+    {
+      "VolumeId": "vol-0123456789abcdef0",
+      "AvailabilityZone": "eu-central-1a",
+      "Encrypted": true,
+      "Attachments": [
+        {
+          "InstanceId": "i-0123456789abcdef0",
+          "DeleteOnTermination": true
+        }
+      ]
+    },
+    {
+      "VolumeId": "vol-0123456789abcdef1",
+      "AvailabilityZone": "eu-central-1b",
+      "Encrypted": false,
+      "Attachments": [
+        {
+          "InstanceId": "i-0123456789abcdef1",
+          "DeleteOnTermination": true
+        }
+      ]
+    },
+    {
+      "VolumeId": "vol-0123456789abcdef2",
+      "AvailabilityZone": "eu-central-1a",
+      "Encrypted": true,
+      "Attachments": [
+        {
+          "InstanceId": "i-0123456789abcdef2",
+          "DeleteOnTermination": true
+        }
+      ]
+    },
+    {
+      "VolumeId": "vol-0123456789abcdef4",
+      "AvailabilityZone": "eu-central-1a",
+      "Encrypted": true,
+      "Attachments": [
+        {
+          "InstanceId": "i-0123456789abcdef4",
+          "DeleteOnTermination": true
+        }
+      ]
+    },
+    {
+      "VolumeId": "vol-0123456789abcdef5",
+      "AvailabilityZone": "eu-central-1b",
+      "Encrypted": true,
+      "Attachments": [
+        {
+          "InstanceId": "i-0123456789abcdef5",
+          "DeleteOnTermination": true
+        }
+      ]
+    },
+    {
+      "VolumeId": "vol-0123456789abcdef6",
+      "AvailabilityZone": "eu-central-1b",
+      "Encrypted": true,
+      "Attachments": [
+        {
+          "InstanceId": "i-0123456789abcdef5",
+          "DeleteOnTermination": false
+        }
+      ]
+    }
+  ]
+}

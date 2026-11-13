@@ -1,0 +1,217 @@
+{
+  "Reservations": [
+    {
+      "Instances": [
+        {
+          "InstanceId": "i-0123456789abcdef0",
+          "InstanceType": "m5.large",
+          "State": {
+            "Name": "running"
+          },
+          "Placement": {
+            "AvailabilityZone": "eu-central-1a"
+          },
+          "BlockDeviceMappings": [
+            {
+              "Ebs": {
+                "VolumeId": "vol-0123456789abcdef0"
+              }
+            }
+          ],
+          "NetworkInterfaces": [
+            {
+              "Ipv6AddressCount": 1
+            }
+          ],
+          "Tags": [
+            {
+              "Key": "Name"
+            }
+          ]
+        },
+        {
+          "InstanceId": "i-0123456789abcdef1",
+          "InstanceType": "m5.large",
+          "State": {
+            "Name": "stopped"
+          },
+          "Placement": {
+            "AvailabilityZone": "eu-central-1b"
+          },
+          "BlockDeviceMappings": [
+            {
+              "Ebs": {
+                "VolumeId": "vol-0123456789abcdef1"
+              }
+            }
+          ],
+          "NetworkInterfaces": [
+            {
+              "Ipv6AddressCount": 0
+            }
+          ],
+          "Tags": [
+            {
+              "Key": "Name"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "Instances": [
+        {
+          "InstanceId": "i-0123456789abcdef2",
+          "InstanceType": "m5.large",
+          "State": {
+            "Name": "running"
+          },
+          "Placement": {
+            "AvailabilityZone": "eu-central-1a"
+          },
+          "BlockDeviceMappings": [],
+          "NetworkInterfaces": [],
+          "Tags": [
+            {
+              "Key": "aws:autoscaling:groupName"
+            }
+          ]
+        },
+        {
+          "InstanceId": "i-0123456789abcdef3",
+          "InstanceType": "m5.large",
+          "State": {
+            "Name": "terminated"
+          },
+          "Placement": {
+            "AvailabilityZone": "eu-central-1c"
+          },
+          "BlockDeviceMappings": [],
+          "NetworkInterfaces": [],
+          "Tags": null
+        }
+      ]
+    },
+    {
+      "Instances": [
+        {
+          "InstanceId": "i-0123456789abcdef4",
+          "InstanceType": "m5.large",
+          "State": {
+            "Name": "running"
+          },
+          "Placement": {
+            "AvailabilityZone": "eu-central-1a"
+          },
+          "BlockDeviceMappings": [
+            {
+              "Ebs": {
+                "VolumeId": "vol-0123456789abcdef4"
+              }
+            }
+          ],
+          "NetworkInterfaces": [
+            {
+              "Ipv6AddressCount": 0
+            }
+          ],
+          "Tags": [
+            {
+              "Key": "aws:autoscaling:groupName"
+            },
+            {
+              "Key": "eks:cluster-name"
+            },
+            {
+              "Key": "eks:nodegroup-name"
+            },
+            {
+              "Key": "kubernetes.io/cluster/shop-eks"
+            }
+          ]
+        },
+        {
+          "InstanceId": "i-0123456789abcdef5",
+          "InstanceType": "m5.large",
+          "State": {
+            "Name": "running"
+          },
+          "Placement": {
+            "AvailabilityZone": "eu-central-1b"
+          },
+          "BlockDeviceMappings": [
+            {
+              "Ebs": {
+                "VolumeId": "vol-0123456789abcdef5"
+              }
+            },
+            {
+              "Ebs": {
+                "VolumeId": "vol-0123456789abcdef6"
+              }
+            }
+          ],
+          "NetworkInterfaces": [
+            {
+              "Ipv6AddressCount": 0
+            }
+          ],
+          "Tags": [
+            {
+              "Key": "Name"
+            },
+            {
+              "Key": "kubernetes.io/cluster/shop-eks"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "Instances": [
+        {
+          "InstanceId": "i-0123456789abcdef6",
+          "InstanceType": "m5.metal",
+          "State": {
+            "Name": "running"
+          },
+          "Placement": {
+            "AvailabilityZone": "eu-central-1a"
+          },
+          "BlockDeviceMappings": [],
+          "NetworkInterfaces": [
+            {
+              "Ipv6AddressCount": 0
+            }
+          ],
+          "Tags": [
+            {
+              "Key": "Name"
+            }
+          ]
+        },
+        {
+          "InstanceId": "i-0123456789abcdef7",
+          "InstanceType": "c7i.metal-24xl",
+          "State": {
+            "Name": "running"
+          },
+          "Placement": {
+            "AvailabilityZone": "eu-central-1a"
+          },
+          "BlockDeviceMappings": [],
+          "NetworkInterfaces": [
+            {
+              "Ipv6AddressCount": 0
+            }
+          ],
+          "Tags": [
+            {
+              "Key": "Name"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

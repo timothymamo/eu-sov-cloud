@@ -1,0 +1,19 @@
+[
+  {
+    "id": "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg-shop/providers/Microsoft.ServiceBus/namespaces/sb-shop/queues/sb-shop-orders",
+    "name": "sb-shop-orders",
+    "type": "Microsoft.ServiceBus/Namespaces/Queues"
+  },
+  {
+    "id": "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg-shop/providers/Microsoft.ServiceBus/namespaces/sb-shop/queues/sb-shop-invoices",
+    "name": "sb-shop-invoices",
+    "type": "Microsoft.ServiceBus/Namespaces/Queues"
+  }
+]
+[
+  {
+    "id": "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg-shop/providers/Microsoft.ServiceBus/namespaces/sb-shop/topics/sb-shop-order-events",
+    "name": "sb-shop-order-events",
+    "type": "Microsoft.ServiceBus/Namespaces/Topics"
+  }
+]

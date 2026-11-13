@@ -1,0 +1,12 @@
+{
+  "Buckets": [
+    {
+      "Name": "shop-assets-example",
+      "BucketRegion": "eu-central-1"
+    },
+    {
+      "Name": "shop-logs-example",
+      "BucketRegion": "eu-west-1"
+    }
+  ]
+}

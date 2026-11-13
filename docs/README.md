@@ -9,15 +9,17 @@ the contributor guide, the architecture and the architecture decision records. T
 1. [Install](guide/install.md): the release archives, the images, and building from source.
 2. [Try it](guide/try-it.md): a walkthrough from install to a report on a sample inventory, with the
    CLI, the image and the HTTP API, and how to read the report.
-3. [Assess an inventory](guide/assess.md): the `assess` command, its Markdown and JSON reports, the
+3. [Build an inventory from your cloud](guide/inventory.md): turn an AWS, GCP or Azure estate into
+   an inventory file with the provider's read-only CLI and `jq`.
+4. [Assess an inventory](guide/assess.md): the `assess` command, its Markdown and JSON reports, the
    comparison of several targets, and its exit codes.
-4. [Run with Docker](guide/docker.md): running the image offline as your own user, mounts, reports
+5. [Run with Docker](guide/docker.md): running the image offline as your own user, mounts, reports
    and, for live sources, credentials.
-5. [Verify a release](guide/verify-releases.md): the images' signatures, build provenance and SBOMs,
+6. [Verify a release](guide/verify-releases.md): the images' signatures, build provenance and SBOMs,
    and the releases published before the rename.
-6. [Run the HTTP API](guide/http-api.md): `shift2eu-server`, its routes, its image and example
+7. [Run the HTTP API](guide/http-api.md): `shift2eu-server`, its routes, its image and example
    requests.
-7. [Behind a reverse proxy](guide/reverse-proxy.md): deploying the server, its flags and variables,
+8. [Behind a reverse proxy](guide/reverse-proxy.md): deploying the server, its flags and variables,
    and a minimal nginx configuration.
 
 ## Contributor guide
@@ -62,6 +64,7 @@ supersedes it.
 - [0021. Propose releases with release-please and tag them with a GitHub App](adr/0021-propose-releases-with-release-please-and-tag-with-a-github-app.md)
 - [0022. Lint shell scripts with shellcheck and workflows with actionlint](adr/0022-lint-shell-scripts-and-workflows-with-shellcheck-and-actionlint.md)
 - [0023. Separate bare-metal servers from virtual machines in the taxonomy](adr/0023-separate-bare-metal-servers-from-virtual-machines-in-the-taxonomy.md)
+- [0024. Add plans, monthly EUR prices and a default region in target snapshot format version 2](adr/0024-add-plans-prices-and-a-default-region-in-target-snapshot-format-v2.md)
 - [0024. Add inventory file format version 2 for sizing, usage, workloads, relations and cost](adr/0024-json-inventory-file-format-v2.md)
 
 ## Writing a page
