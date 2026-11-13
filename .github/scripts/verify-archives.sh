@@ -77,6 +77,19 @@ details() {
   esac
 }
 
+# sift runs grep with its arguments but counts status 1, no line selected, as success, so a filter that
+# leaves nothing is not an error. Any other failure (status 2 or more: a bad pattern, an unreadable file)
+# is passed on, so a check built on it fails closed rather than reading an error as no match.
+sift() {
+  local status=0
+  grep "$@" || status=$?
+  if [ "${status}" -gt 1 ]; then
+    echo "grep $* failed with status ${status}" >&2
+    return "${status}"
+  fi
+  return 0
+}
+
 # check_archive archive own: the archive holds exactly one binary, own (or own.exe), at its root, and
 # otherwise only LICENSE, README.md, Markdown pages under docs/ and the samples (with their
 # directories, sample_dirs), each a regular file or a directory. The other binary is not on that list,
@@ -97,7 +110,12 @@ check_archive() {
   if [ "${owns}" != 1 ]; then
     problem "${archive}: holds ${owns} ${own} binaries at its root, want exactly 1"
   fi
-  stray="$(grep -vxE "${own}(\\.exe)?|LICENSE|README\\.md|docs/([^/.][^/]*/)*[^/.][^/]*\\.md|docs/([^/.][^/]*/)*" <<<"${list}" | grep -vxF -f <(printf '%s\n' "${samples[@]}" "${sample_dirs[@]}") || true)"
+  # Both greps run through sift and the pipeline's status is checked, so a grep that fails (status 2,
+  # such as an unreadable allow list) fails the run rather than reading as no stray entries.
+  if ! stray="$(sift -vxE "${own}(\\.exe)?|LICENSE|README\\.md|docs/([^/.][^/]*/)*[^/.][^/]*\\.md|docs/([^/.][^/]*/)*" <<<"${list}" | sift -vxFf "${allowed}")"; then
+    problem "${archive}: cannot match its entries against the allow list (grep failed)"
+    return
+  fi
   if [ -n "${stray}" ]; then
     problem "${archive}: holds entries outside its allow list:"$'\n'"${stray}"
   fi
@@ -115,6 +133,10 @@ for source in aws azure gcp; do
   samples+=("examples/${source}/README.md" "examples/${source}/inventory.json")
   sample_dirs+=("examples/${source}/")
 done
+# The allow list under examples/, one exact path a line, for grep -f: a file, not a process
+# substitution, whose status $? would never see.
+allowed="${work}/allowed-samples"
+printf '%s\n' "${samples[@]}" "${sample_dirs[@]}" >"${allowed}"
 
 shopt -s nullglob
 cli=("${dist}"/shift2eu_*.tar.gz "${dist}"/shift2eu_*.zip)
