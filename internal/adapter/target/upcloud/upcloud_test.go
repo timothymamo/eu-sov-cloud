@@ -112,22 +112,14 @@ func TestCatalogSnapshotHeader(t *testing.T) {
 
 	snap := catalogOf(t).Snapshot()
 
-	// UpCloud's price page refuses an automated fetch (403 to curl), so the coder
-	// cites the pricing page it could read and this test does not guess its path:
-	// it pins only the host and that the URL moved off the documentation root the
-	// snapshot cited before prices, which no price comes from (ADR 0024).
-	const (
-		host              = "https://upcloud.com/"
-		previousSourceURL = "https://upcloud.com/docs/"
-	)
-
-	switch {
-	case !strings.HasPrefix(snap.SourceURL, host):
-		t.Errorf("Snapshot().SourceURL = %s, want a URL starting with %s",
-			text.Quote(snap.SourceURL), text.Quote(host))
-	case snap.SourceURL == previousSourceURL:
-		t.Errorf("Snapshot().SourceURL = %s, want the pricing page the prices were read from, not the documentation root the snapshot cited before its pricing milestone",
-			text.Quote(snap.SourceURL))
+	// The prices were read from the maintainer's saved browser copy of the pricing
+	// page, because upcloud.com refuses automated clients outside /docs/ (403). So
+	// the snapshot cites that page exactly, not the documentation root it cited
+	// before prices, which no price comes from (ADR 0024).
+	const wantSourceURL = "https://upcloud.com/pricing/"
+	if snap.SourceURL != wantSourceURL {
+		t.Errorf("Snapshot().SourceURL = %s, want %s",
+			text.Quote(snap.SourceURL), text.Quote(wantSourceURL))
 	}
 
 	// The date the prices were taken, not the date the catalog capabilities were
