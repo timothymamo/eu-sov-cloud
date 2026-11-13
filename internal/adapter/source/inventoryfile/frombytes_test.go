@@ -476,6 +476,65 @@ func TestInventoryFromBytesErrorNeverEchoesAValue(t *testing.T) {
 			wantMentions: []string{"resources[0].monthlyCost.currency"},
 		},
 		{
+			// A vcpus count above the maximum is named by its path; the number
+			// the domain refuses is never repeated.
+			name: "a vcpus count above the maximum",
+			document: `{"schemaVersion":2,"source":"aws","resources":[` +
+				`{"id":"i-0123456789abcdef0","category":"compute.vm",` +
+				`"size":{"vcpus":4242424242}}]}`,
+			wantErr:      inventory.ErrInvalidSize,
+			value:        "4242424242",
+			wantMentions: []string{"resources[0].size.vcpus"},
+		},
+		{
+			name: "a count above the maximum",
+			document: `{"schemaVersion":2,"source":"aws","resources":[` +
+				`{"id":"i-0123456789abcdef0","category":"compute.vm",` +
+				`"size":{"count":424242}}]}`,
+			wantErr:      inventory.ErrInvalidSize,
+			value:        "424242",
+			wantMentions: []string{"resources[0].size.count"},
+		},
+		{
+			// A negative cost amount is named by its path, not by the amount.
+			name: "a negative cost amount",
+			document: `{"schemaVersion":2,"source":"aws","resources":[` +
+				`{"id":"i-0123456789abcdef0","category":"compute.vm",` +
+				`"monthlyCost":{"amount":-4242424,"currency":"EUR"}}]}`,
+			wantErr:      inventory.ErrInvalidCost,
+			value:        "4242424",
+			wantMentions: []string{"resources[0].monthlyCost.amount"},
+		},
+		{
+			// A workload the domain refuses is named by its path; the free text
+			// beside it, here leading white space before the marker, is not echoed.
+			name: "a workload with leading white space",
+			document: `{"schemaVersion":2,"source":"aws","resources":[` +
+				`{"id":"i-0123456789abcdef0","category":"compute.vm",` +
+				`"workload":" ` + marker + `"}]}`,
+			wantErr:      text.ErrInvalid,
+			value:        marker,
+			wantMentions: []string{"resources[0].workload"},
+		},
+		{
+			// The search for the faulty resource runs on the resources without
+			// their relations: a relation of a valid resource may point past the
+			// prefix the search tries, at a resource it has not reached yet. Here
+			// resources[0] is valid and its target, r2, is resources[2], so a
+			// prefix of one resource would be refused for the dangling relation
+			// and point the error at resources[0] instead of resources[1].
+			name: "an unknown category behind a relation that points forward",
+			document: `{"schemaVersion":2,"source":"aws","resources":[` +
+				`{"id":"db-primary","category":"database.postgresql",` +
+				`"relations":[{"type":"depends-on","target":"r2"}]},` +
+				`{"id":"instance-two","category":"` + marker + `"},` +
+				`{"id":"r2","category":"database.postgresql"}]}`,
+			wantErr:      taxonomy.ErrUnknownCategory,
+			value:        marker,
+			wantMentions: []string{"resources[1].category"},
+			notMentions:  []string{"resources[0]"},
+		},
+		{
 			// The guard against over-correcting: with a valid ID and only a raw
 			// type at fault, the raw type is named and the ID beside it is not.
 			name: "an invalid raw type alone",
