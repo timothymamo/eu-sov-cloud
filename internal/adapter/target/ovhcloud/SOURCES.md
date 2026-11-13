@@ -21,7 +21,8 @@ in taxonomy terms. This file records where each fact comes from, so the snapshot
   the EMEA tables carried the beta mark on 2026-11-10, so every tick relied on below is a generally
   available product.
 - **Product pages** on `www.ovhcloud.com` and **documentation** on `docs.ovhcloud.com` give the
-  capabilities. Each was read live on the retrieval date.
+  capabilities. They were read live on 2026-11-10 or, for the re-verification below, 2026-11-11; the
+  prices were read on 2026-11-13.
 - **Documentation source.** `docs.ovhcloud.com` is built from `ovh/ovhcloud-docs`. Its files were read at
   commit
   [`2df4cc152902b880880b77955ab9e52de4a2c2ff`](https://github.com/ovh/ovhcloud-docs/tree/2df4cc152902b880880b77955ab9e52de4a2c2ff)
@@ -70,9 +71,10 @@ read on 2026-11-13. "The prices page" below is <https://www.ovhcloud.com/en-ie/p
   instances (B3, C3, R3)", the storage tables say billing is "per GB/hour, based on an average of 730
   hours in a month", and the databases pricing guide
   (<https://docs.ovhcloud.com/en/guides/public-cloud/databases/pricing>) calls the hourly price the
-  "source of truth" and gives "Monthly price = Hourly price × 730 hours". No plan price needed rounding
-  (each hourly price has at most four significant fractional digits, so × 730 is exact to 4 digits); the
-  storage prices that did are worked out in their sections.
+  "source of truth" and gives "Monthly price = Hourly price × 730 hours". No plan price needed rounding:
+  each hourly price × 730, the per-node database prices included, has at most four fractional digits
+  (`Discovery B3-4`: 0.10338 × 730 = `75.4674`); the storage prices that did are worked out in their
+  sections.
 - **Monthly figures not used.** For B3, C3 and R3 instances the page's monthly column shows the price
   with a 12-month Savings Plan (`b3-8`: "12 months plan €31.77"), a commitment discount, not a list
   price. For B2 instances and Metal Instances it shows a monthly figure below hourly × 730 (`b2-7`:
@@ -85,12 +87,19 @@ read on 2026-11-13. "The prices page" below is <https://www.ovhcloud.com/en-ie/p
 - **Units.** The page gives memory in "GB" and volume prices per "GB"; the snapshot records them as GiB,
   unconverted, as OVHcloud's own tables and documentation mix the two for the same sizes (the database
   tables give memory in "GB" and storage in "GiB"; Object Storage says "1 TiB = 1024 GiB").
-- **Managed databases.** A plan is one database service: vCPU and memory are those of one node, as the
-  page lists them, and the price is the page's "Total price" for all the service's nodes. Its included
-  storage is the lower bound of the page's "Usable storage" range. The storage price is the page's "Price
-  per GB of additional storage", which is per node ("/hour/node"); the databases pricing guide bills it
-  as "100 GB × 30 days × 24 hours × 2 nodes" for a two-node service. So a GiB of a service's storage
-  costs that price × the plan's nodes × 730. The page's own data behind each storage line also carries
+- **Managed databases.** A plan is one node of a database service: vCPU and memory are those of one
+  node, as the page lists them, and **the price is per node**, the page's per-node hourly price × 730
+  (the page's data carries a "per-node" price beside the "total" for every flavour). An estimate
+  multiplies the plan price by the resource's count, which for a database is its nodes (ADR 0025). Each
+  tier runs a fixed number of nodes, as the page's tables give them: Essential/Discovery 1,
+  Business/Production 2 (in the 3-AZ regions too), Enterprise/Advanced 3. The page's "Total price" is the
+  per-node price × that count in every row read. A plan's included storage is the lower bound of the
+  page's "Usable storage" range, which is the service's data, not per node. The storage price is the
+  page's "Price per GB of additional storage", which is per node ("/hour/node"); the databases pricing
+  guide bills it as "100 GB × 30 days × 24 hours × 2 nodes" for a two-node service, since every node
+  holds the data. So the snapshot's storage price is **per GiB of the service's data, for the whole
+  service at its tier's node count**: that price × the tier's nodes × 730. An inventory's storage size
+  for a database is its data size, so the storage price is not multiplied by the count again. The page's own data behind each storage line also carries
   a monthly figure that the page does not display (€0.25, €0.37 and €0.44 a month per node) and that is
   not the displayed hourly price × 730; the displayed hourly price, which the guide calls the source of
   truth, is the one used.
@@ -120,7 +129,8 @@ read on 2026-11-13. "The prices page" below is <https://www.ovhcloud.com/en-ie/p
 - **Rule for this file and `catalog.json`:** take facts only (which product exists, in which locations, with
   which feature) and brief quotations, each in quotation marks and attributed to the page it comes from.
   Paraphrase everything else. Never copy documentation or web text in bulk, and keep it out of
-  `catalog.json`, which holds only names, taxonomy terms and region codes. A refresh follows the same rule.
+  `catalog.json`, which holds only names, taxonomy terms, region codes, and plan sizes and prices
+  recorded as numbers (facts), with no copied prose. A refresh follows the same rule.
 
 ## Rules applied
 
@@ -485,7 +495,7 @@ Category `kubernetes.managed`: Managed Kubernetes on the Standard plan in the 3-
   phase", the plans page gives a "99.99% SLA at General Availability", and the architecture page's
   comparison table gives "99.99% SLA (at GA)".
 
-- **Prices** (prices page, *Managed Kubernetes Service*, read 2026-11-13): as for *Managed Kubernetes Service*, a plan is a worker node flavour at its *Instances* price. The Kubernetes regions page's flavour table names no 3-AZ region, so the flavours follow its general rule that worker nodes "correspond to the standard OVHcloud Public Cloud catalog offered in this region and are billed at standard price": the B3, C3 and R3 flavours, which the prices page offers in Paris and Milan at the same price as elsewhere. B2 is not offered there. Every cluster here is on the Standard plan, whose control plane costs €0.09 an hour per cluster (€65.70 a month at 730 hours); a plan cannot hold a per-cluster fee, so it is left out and an estimate is that much too low per cluster (*Left out on purpose*).
+- **Prices** (prices page, *Managed Kubernetes Service*, read 2026-11-13): as for *Managed Kubernetes Service*, a plan is a worker node flavour at its *Instances* price. The Kubernetes regions page's flavour table names no 3-AZ region, so the flavours follow its general rule that worker nodes "correspond to the standard OVHcloud Public Cloud catalog offered in this region and are billed at standard price": the B3, C3 and R3 flavours, which the prices page offers in Paris and Milan at the same price as elsewhere. B2 is not offered there. These node plans are an inference from that "standard Public Cloud catalog of the region ... billed at standard price" sentence, not from a page listing the 3-AZ flavours; re-check them at the next refresh. Every cluster here is on the Standard plan, whose control plane costs €0.09 an hour per cluster (€65.70 a month at 730 hours); a plan cannot hold a per-cluster fee, so it is left out and an estimate is that much too low per cluster (*Left out on purpose*).
 
 | Plan | vCPU | Memory | Storage on the page | EUR/hour | EUR/month (× 730) | Price regions |
 |---|---|---|---|---|---|---|
@@ -541,9 +551,9 @@ Advanced* and their *3-AZ* forms. Pages: <https://www.ovhcloud.com/en/public-clo
   Databases offer is available "in all Public Cloud 1-AZ and 3-AZ regions". The 3-AZ regions are not
   listed for this plan; see *Left out on purpose*.
 
-- **Prices** (prices page, *Databases*, table "Essential/Discovery plan - Databases for MySQL", read 2026-11-13). Plans: the Gen 2 Essential flavours and the Gen 3 Discovery flavours; the page says "Gen 2 instances will still be available under our Essential/Business/Enterprise plans" and "The new Gen 3 instances are now available under our Discovery/Production/Advanced plans". The Essential flavours are priced in `GRA`, `LIM`, `SBG` and `WAW` only (no Roubaix price), the Discovery flavours in all five 1-AZ regions at one price. vCPU and memory are per node, as the page gives them; the plan's price is the page's "Total price" (excl. VAT/hour) for all 1 node, × 730. Included storage is the lower bound of the page's usable storage range (TiB × 1024).
+- **Prices** (prices page, *Databases*, table "Essential/Discovery plan - Databases for MySQL", read 2026-11-13). Plans: the Gen 2 Essential flavours and the Gen 3 Discovery flavours; the page says "Gen 2 instances will still be available under our Essential/Business/Enterprise plans" and "The new Gen 3 instances are now available under our Discovery/Production/Advanced plans". The Essential flavours are priced in `GRA`, `LIM`, `SBG` and `WAW` only (no Roubaix price), the Discovery flavours in all five 1-AZ regions at one price. vCPU and memory are per node, as the page gives them; the plan's price is the page's price per node (excl. VAT/hour), × 730, so an estimate multiplies it by the resource's count, its nodes (ADR 0025). The tier runs 1 node: the page's "Total price" is the per-node price × 1. Included storage is the lower bound of the page's usable storage range (TiB × 1024).
 
-| Plan | vCPU | Memory | Storage on the page | EUR/hour | EUR/month (× 730) | Price regions |
+| Plan | vCPU | Memory | Storage on the page | EUR/hour per node | EUR/month per node (× 730) | Price regions |
 |---|---|---|---|---|---|---|
 | `Essential DB1-4` | 2 | 4 GB × 1 node | From 80 GiB to 240 GiB | 0.0746 | `54.458` | `GRA`, `LIM`, `SBG`, `WAW` |
 | `Essential DB1-7` | 2 | 7 GB × 1 node | From 160 GiB to 480 GiB | 0.1477 | `107.821` | `GRA`, `LIM`, `SBG`, `WAW` |
@@ -557,7 +567,7 @@ Advanced* and their *3-AZ* forms. Pages: <https://www.ovhcloud.com/en/public-clo
 | `Discovery B3-128` | 32 | 128 GB × 1 node | From 2.5 TiB to 12.5 TiB | 3.1382 | `2290.886` | all |
 | `Discovery B3-256` | 64 | 256 GB × 1 node | From 5 TiB to 25 TiB | 6.2763 | `4581.699` | all |
 
-- **Storage price:** the Essential/Discovery table's "Price per GB of additional storage: €0.0004/hour/node", × 1 (one node, since every node holds the data) × 730 = `0.292` per GiB a month, in every region of the offering. The databases pricing guide bills additional storage per GB, per hour and per node (*Prices*).
+- **Storage price:** the Essential/Discovery table's "Price per GB of additional storage: €0.0004/hour/node", × 1 (one node, since every node holds the data) × 730 = `0.292` per GiB of the service's data a month, for the whole service at its tier's node count, in every region of the offering; it is not multiplied by the resource's count. The databases pricing guide bills additional storage per GB, per hour and per node (*Prices*).
 
 ### Managed MySQL Multi-node
 
@@ -586,24 +596,24 @@ the 1-AZ regions. A tier variant of *Managed MySQL* (tier-variant rule). Pages: 
   out on purpose*.
 - Regions `GRA`, `LIM`, `RBX`, `SBG`, `WAW`: as for *Managed MySQL*.
 
-- **Prices** (prices page, *Databases*, table "Business/Production plan - Databases for MySQL", read 2026-11-13). Plans: the Gen 2 Business flavours and the Gen 3 Production flavours; the page says "Gen 2 instances will still be available under our Essential/Business/Enterprise plans" and "The new Gen 3 instances are now available under our Discovery/Production/Advanced plans". The Business flavours are priced in `GRA`, `LIM`, `SBG` and `WAW` only (no Roubaix price), the Production flavours in all five 1-AZ regions at one price. vCPU and memory are per node, as the page gives them; the plan's price is the page's "Total price" (excl. VAT/hour) for all 2 nodes, × 730. Included storage is the lower bound of the page's usable storage range (TiB × 1024).
+- **Prices** (prices page, *Databases*, table "Business/Production plan - Databases for MySQL", read 2026-11-13). Plans: the Gen 2 Business flavours and the Gen 3 Production flavours; the page says "Gen 2 instances will still be available under our Essential/Business/Enterprise plans" and "The new Gen 3 instances are now available under our Discovery/Production/Advanced plans". The Business flavours are priced in `GRA`, `LIM`, `SBG` and `WAW` only (no Roubaix price), the Production flavours in all five 1-AZ regions at one price. vCPU and memory are per node, as the page gives them; the plan's price is the page's price per node (excl. VAT/hour), × 730, so an estimate multiplies it by the resource's count, its nodes (ADR 0025). The tier runs 2 nodes: the page's "Total price" is the per-node price × 2. Included storage is the lower bound of the page's usable storage range (TiB × 1024).
 
-| Plan | vCPU | Memory | Storage on the page | EUR/hour | EUR/month (× 730) | Price regions |
+| Plan | vCPU | Memory | Storage on the page | EUR/hour per node | EUR/month per node (× 730) | Price regions |
 |---|---|---|---|---|---|---|
-| `Business DB1-4` | 2 | 4 GB per node × 2 nodes | From 80 GiB to 240 GiB | 0.1898 | `138.554` | `GRA`, `LIM`, `SBG`, `WAW` |
-| `Business DB1-7` | 2 | 7 GB per node × 2 nodes | From 160 GiB to 480 GiB | 0.3798 | `277.254` | `GRA`, `LIM`, `SBG`, `WAW` |
-| `Business DB1-15` | 4 | 15 GB per node × 2 nodes | From 320 GiB to 960 GiB | 0.7594 | `554.362` | `GRA`, `LIM`, `SBG`, `WAW` |
-| `Business DB1-30` | 8 | 30 GB per node × 2 nodes | From 640 GiB to 1.875 TiB | 1.522 | `1111.06` | `GRA`, `LIM`, `SBG`, `WAW` |
-| `Business DB1-60` | 16 | 60 GB per node × 2 nodes | From 1.25 TiB to 3.75 TiB | 3.0468 | `2224.164` | `GRA`, `LIM`, `SBG`, `WAW` |
-| `Business DB1-120` | 32 | 120 GB per node × 2 nodes | From 2.5 TiB to 7.5 TiB | 6.0968 | `4450.664` | `GRA`, `LIM`, `SBG`, `WAW` |
-| `Production B3-8` | 2 | 8 GB per node × 2 nodes | From 160 GiB to 800 GiB | 0.446 | `325.58` | all |
-| `Production B3-16` | 4 | 16 GB per node × 2 nodes | From 320 GiB to 1.5625 TiB | 0.8922 | `651.306` | all |
-| `Production B3-32` | 8 | 32 GB per node × 2 nodes | From 640 GiB to 3.125 TiB | 1.7844 | `1302.612` | all |
-| `Production B3-64` | 16 | 64 GB per node × 2 nodes | From 1.25 TiB to 6.25 TiB | 3.5688 | `2605.224` | all |
-| `Production B3-128` | 32 | 128 GB per node × 2 nodes | From 2.5 TiB to 12.5 TiB | 7.1376 | `5210.448` | all |
-| `Production B3-256` | 64 | 256 GB per node × 2 nodes | From 5 TiB to 25 TiB | 14.2754 | `10421.042` | all |
+| `Business DB1-4` | 2 | 4 GB per node × 2 nodes | From 80 GiB to 240 GiB | 0.0949 | `69.277` | `GRA`, `LIM`, `SBG`, `WAW` |
+| `Business DB1-7` | 2 | 7 GB per node × 2 nodes | From 160 GiB to 480 GiB | 0.1899 | `138.627` | `GRA`, `LIM`, `SBG`, `WAW` |
+| `Business DB1-15` | 4 | 15 GB per node × 2 nodes | From 320 GiB to 960 GiB | 0.3797 | `277.181` | `GRA`, `LIM`, `SBG`, `WAW` |
+| `Business DB1-30` | 8 | 30 GB per node × 2 nodes | From 640 GiB to 1.875 TiB | 0.761 | `555.53` | `GRA`, `LIM`, `SBG`, `WAW` |
+| `Business DB1-60` | 16 | 60 GB per node × 2 nodes | From 1.25 TiB to 3.75 TiB | 1.5234 | `1112.082` | `GRA`, `LIM`, `SBG`, `WAW` |
+| `Business DB1-120` | 32 | 120 GB per node × 2 nodes | From 2.5 TiB to 7.5 TiB | 3.0484 | `2225.332` | `GRA`, `LIM`, `SBG`, `WAW` |
+| `Production B3-8` | 2 | 8 GB per node × 2 nodes | From 160 GiB to 800 GiB | 0.223 | `162.79` | all |
+| `Production B3-16` | 4 | 16 GB per node × 2 nodes | From 320 GiB to 1.5625 TiB | 0.4461 | `325.653` | all |
+| `Production B3-32` | 8 | 32 GB per node × 2 nodes | From 640 GiB to 3.125 TiB | 0.8922 | `651.306` | all |
+| `Production B3-64` | 16 | 64 GB per node × 2 nodes | From 1.25 TiB to 6.25 TiB | 1.7844 | `1302.612` | all |
+| `Production B3-128` | 32 | 128 GB per node × 2 nodes | From 2.5 TiB to 12.5 TiB | 3.5688 | `2605.224` | all |
+| `Production B3-256` | 64 | 256 GB per node × 2 nodes | From 5 TiB to 25 TiB | 7.1377 | `5210.521` | all |
 
-- **Storage price:** the Business/Production table's "Price per GB of additional storage: €0.0006/hour/node", × 2 (2 nodes, since every node holds the data) × 730 = `0.876` per GiB a month, in every region of the offering. The databases pricing guide bills additional storage per GB, per hour and per node (*Prices*).
+- **Storage price:** the Business/Production table's "Price per GB of additional storage: €0.0006/hour/node", × 2 (2 nodes, since every node holds the data) × 730 = `0.876` per GiB of the service's data a month, for the whole service at its tier's node count, in every region of the offering; it is not multiplied by the resource's count. The databases pricing guide bills additional storage per GB, per hour and per node (*Prices*).
 
 ### Managed MySQL Multi-node 3-AZ
 
@@ -637,18 +647,18 @@ Category `database.mysql`: Public Cloud Databases for MySQL on the Business/Prod
 - Regions `MIL`, `PAR`: the regions page ticks MySQL in "3-AZ Paris" and "3-AZ Milan"; the backups page lists
   EU-WEST-PAR and EU-SOUTH-MIL as service locations.
 
-- **Prices** (prices page, *Databases*, table "Business/Production plan - Databases for MySQL", read 2026-11-13). Plans: the Gen 3 Production flavours at the price the page gives with its *Locations* filter on Paris or Milan, the same in both. The page offers no Business (Gen 2) flavour there. vCPU and memory are per node, as the page gives them; the plan's price is the page's "Total price" (excl. VAT/hour) for all 2 nodes, × 730. Included storage is the lower bound of the page's usable storage range (TiB × 1024).
+- **Prices** (prices page, *Databases*, table "Business/Production plan - Databases for MySQL", read 2026-11-13). Plans: the Gen 3 Production flavours at the price the page gives with its *Locations* filter on Paris or Milan, the same in both. The page offers no Business (Gen 2) flavour there. vCPU and memory are per node, as the page gives them; the plan's price is the page's price per node (excl. VAT/hour), × 730, so an estimate multiplies it by the resource's count, its nodes (ADR 0025). The tier runs 2 nodes: the page's "Total price" is the per-node price × 2. Included storage is the lower bound of the page's usable storage range (TiB × 1024).
 
-| Plan | vCPU | Memory | Storage on the page | EUR/hour | EUR/month (× 730) | Price regions |
+| Plan | vCPU | Memory | Storage on the page | EUR/hour per node | EUR/month per node (× 730) | Price regions |
 |---|---|---|---|---|---|---|
-| `Production B3-8` | 2 | 8 GB per node × 2 nodes | From 160 GiB to 800 GiB | 0.4724 | `344.852` | all |
-| `Production B3-16` | 4 | 16 GB per node × 2 nodes | From 320 GiB to 1.5625 TiB | 0.9446 | `689.558` | all |
-| `Production B3-32` | 8 | 32 GB per node × 2 nodes | From 640 GiB to 3.125 TiB | 1.8894 | `1379.262` | all |
-| `Production B3-64` | 16 | 64 GB per node × 2 nodes | From 1.25 TiB to 6.25 TiB | 3.7788 | `2758.524` | all |
-| `Production B3-128` | 32 | 128 GB per node × 2 nodes | From 2.5 TiB to 12.5 TiB | 7.5576 | `5517.048` | all |
-| `Production B3-256` | 64 | 256 GB per node × 2 nodes | From 5 TiB to 25 TiB | 15.115 | `11033.95` | all |
+| `Production B3-8` | 2 | 8 GB per node × 2 nodes | From 160 GiB to 800 GiB | 0.2362 | `172.426` | all |
+| `Production B3-16` | 4 | 16 GB per node × 2 nodes | From 320 GiB to 1.5625 TiB | 0.4723 | `344.779` | all |
+| `Production B3-32` | 8 | 32 GB per node × 2 nodes | From 640 GiB to 3.125 TiB | 0.9447 | `689.631` | all |
+| `Production B3-64` | 16 | 64 GB per node × 2 nodes | From 1.25 TiB to 6.25 TiB | 1.8894 | `1379.262` | all |
+| `Production B3-128` | 32 | 128 GB per node × 2 nodes | From 2.5 TiB to 12.5 TiB | 3.7788 | `2758.524` | all |
+| `Production B3-256` | 64 | 256 GB per node × 2 nodes | From 5 TiB to 25 TiB | 7.5575 | `5516.975` | all |
 
-- **Storage price:** the Business/Production table's "Price per GB of additional storage: €0.0006/hour/node", × 2 (2 nodes, since every node holds the data) × 730 = `0.876` per GiB a month, in every region of the offering. The databases pricing guide bills additional storage per GB, per hour and per node (*Prices*).
+- **Storage price:** the Business/Production table's "Price per GB of additional storage: €0.0006/hour/node", × 2 (2 nodes, since every node holds the data) × 730 = `0.876` per GiB of the service's data a month, for the whole service at its tier's node count, in every region of the offering; it is not multiplied by the resource's count. The databases pricing guide bills additional storage per GB, per hour and per node (*Prices*).
 
 ### Managed MySQL Multi-node Advanced
 
@@ -679,24 +689,24 @@ Multi-node* because it adds `read-replicas`. Pages: <https://www.ovhcloud.com/en
   product page's key features give "Replication node access" as "Read-only".
 - Regions `GRA`, `LIM`, `RBX`, `SBG`, `WAW`: as for *Managed MySQL*.
 
-- **Prices** (prices page, *Databases*, table "Enterprise/Advanced plan - Databases for MySQL", read 2026-11-13). Plans: the Gen 2 Enterprise flavours and the Gen 3 Advanced flavours; the page says "Gen 2 instances will still be available under our Essential/Business/Enterprise plans" and "The new Gen 3 instances are now available under our Discovery/Production/Advanced plans". The Enterprise flavours are priced in `GRA`, `LIM`, `SBG` and `WAW` only (no Roubaix price), the Advanced flavours in all five 1-AZ regions at one price. vCPU and memory are per node, as the page gives them; the plan's price is the page's "Total price" (excl. VAT/hour) for all 3 nodes, × 730. Included storage is the lower bound of the page's usable storage range (TiB × 1024).
+- **Prices** (prices page, *Databases*, table "Enterprise/Advanced plan - Databases for MySQL", read 2026-11-13). Plans: the Gen 2 Enterprise flavours and the Gen 3 Advanced flavours; the page says "Gen 2 instances will still be available under our Essential/Business/Enterprise plans" and "The new Gen 3 instances are now available under our Discovery/Production/Advanced plans". The Enterprise flavours are priced in `GRA`, `LIM`, `SBG` and `WAW` only (no Roubaix price), the Advanced flavours in all five 1-AZ regions at one price. vCPU and memory are per node, as the page gives them; the plan's price is the page's price per node (excl. VAT/hour), × 730, so an estimate multiplies it by the resource's count, its nodes (ADR 0025). The tier runs 3 nodes: the page's "Total price" is the per-node price × 3. Included storage is the lower bound of the page's usable storage range (TiB × 1024).
 
-| Plan | vCPU | Memory | Storage on the page | EUR/hour | EUR/month (× 730) | Price regions |
+| Plan | vCPU | Memory | Storage on the page | EUR/hour per node | EUR/month per node (× 730) | Price regions |
 |---|---|---|---|---|---|---|
-| `Enterprise DB1-4` | 2 | 4 GB per node × 3 nodes | From 80 GiB to 240 GiB | 0.2892 | `211.116` | `GRA`, `LIM`, `SBG`, `WAW` |
-| `Enterprise DB1-7` | 2 | 7 GB per node × 3 nodes | From 160 GiB to 480 GiB | 0.5697 | `415.881` | `GRA`, `LIM`, `SBG`, `WAW` |
-| `Enterprise DB1-15` | 4 | 15 GB per node × 3 nodes | From 320 GiB to 960 GiB | 1.1391 | `831.543` | `GRA`, `LIM`, `SBG`, `WAW` |
-| `Enterprise DB1-30` | 8 | 30 GB per node × 3 nodes | From 640 GiB to 1.875 TiB | 2.283 | `1666.59` | `GRA`, `LIM`, `SBG`, `WAW` |
-| `Enterprise DB1-60` | 16 | 60 GB per node × 3 nodes | From 1.25 TiB to 3.75 TiB | 4.5702 | `3336.246` | `GRA`, `LIM`, `SBG`, `WAW` |
-| `Enterprise DB1-120` | 32 | 120 GB per node × 3 nodes | From 2.5 TiB to 7.5 TiB | 9.1452 | `6675.996` | `GRA`, `LIM`, `SBG`, `WAW` |
-| `Advanced B3-8` | 2 | 8 GB per node × 3 nodes | From 160 GiB to 800 GiB | 0.7212 | `526.476` | all |
-| `Advanced B3-16` | 4 | 16 GB per node × 3 nodes | From 320 GiB to 1.5625 TiB | 1.4424 | `1052.952` | all |
-| `Advanced B3-32` | 8 | 32 GB per node × 3 nodes | From 640 GiB to 3.125 TiB | 2.8848 | `2105.904` | all |
-| `Advanced B3-64` | 16 | 64 GB per node × 3 nodes | From 1.25 TiB to 6.25 TiB | 5.7696 | `4211.808` | all |
-| `Advanced B3-128` | 32 | 128 GB per node × 3 nodes | From 2.5 TiB to 12.5 TiB | 11.5392 | `8423.616` | all |
-| `Advanced B3-256` | 64 | 256 GB per node × 3 nodes | From 5 TiB to 25 TiB | 23.0784 | `16847.232` | all |
+| `Enterprise DB1-4` | 2 | 4 GB per node × 3 nodes | From 80 GiB to 240 GiB | 0.0964 | `70.372` | `GRA`, `LIM`, `SBG`, `WAW` |
+| `Enterprise DB1-7` | 2 | 7 GB per node × 3 nodes | From 160 GiB to 480 GiB | 0.1899 | `138.627` | `GRA`, `LIM`, `SBG`, `WAW` |
+| `Enterprise DB1-15` | 4 | 15 GB per node × 3 nodes | From 320 GiB to 960 GiB | 0.3797 | `277.181` | `GRA`, `LIM`, `SBG`, `WAW` |
+| `Enterprise DB1-30` | 8 | 30 GB per node × 3 nodes | From 640 GiB to 1.875 TiB | 0.761 | `555.53` | `GRA`, `LIM`, `SBG`, `WAW` |
+| `Enterprise DB1-60` | 16 | 60 GB per node × 3 nodes | From 1.25 TiB to 3.75 TiB | 1.5234 | `1112.082` | `GRA`, `LIM`, `SBG`, `WAW` |
+| `Enterprise DB1-120` | 32 | 120 GB per node × 3 nodes | From 2.5 TiB to 7.5 TiB | 3.0484 | `2225.332` | `GRA`, `LIM`, `SBG`, `WAW` |
+| `Advanced B3-8` | 2 | 8 GB per node × 3 nodes | From 160 GiB to 800 GiB | 0.2404 | `175.492` | all |
+| `Advanced B3-16` | 4 | 16 GB per node × 3 nodes | From 320 GiB to 1.5625 TiB | 0.4808 | `350.984` | all |
+| `Advanced B3-32` | 8 | 32 GB per node × 3 nodes | From 640 GiB to 3.125 TiB | 0.9616 | `701.968` | all |
+| `Advanced B3-64` | 16 | 64 GB per node × 3 nodes | From 1.25 TiB to 6.25 TiB | 1.9232 | `1403.936` | all |
+| `Advanced B3-128` | 32 | 128 GB per node × 3 nodes | From 2.5 TiB to 12.5 TiB | 3.8464 | `2807.872` | all |
+| `Advanced B3-256` | 64 | 256 GB per node × 3 nodes | From 5 TiB to 25 TiB | 7.6928 | `5615.744` | all |
 
-- **Storage price:** the Enterprise/Advanced table's "Price per GB of additional storage: €0.0007/hour/node", × 3 (3 nodes, since every node holds the data) × 730 = `1.533` per GiB a month, in every region of the offering. The databases pricing guide bills additional storage per GB, per hour and per node (*Prices*).
+- **Storage price:** the Enterprise/Advanced table's "Price per GB of additional storage: €0.0007/hour/node", × 3 (3 nodes, since every node holds the data) × 730 = `1.533` per GiB of the service's data a month, for the whole service at its tier's node count, in every region of the offering; it is not multiplied by the resource's count. The databases pricing guide bills additional storage per GB, per hour and per node (*Prices*).
 
 ### Managed MySQL Multi-node Advanced 3-AZ
 
@@ -732,18 +742,18 @@ from *Managed MySQL Multi-node 3-AZ* because it adds `read-replicas`. Pages:
 - Regions `MIL`, `PAR`: the regions page ticks MySQL in "3-AZ Paris" and "3-AZ Milan"; the backups page lists
   EU-WEST-PAR and EU-SOUTH-MIL as service locations.
 
-- **Prices** (prices page, *Databases*, table "Enterprise/Advanced plan - Databases for MySQL", read 2026-11-13). Plans: the Gen 3 Advanced flavours at the price the page gives with its *Locations* filter on Paris or Milan, the same in both. The page offers no Enterprise (Gen 2) flavour there. vCPU and memory are per node, as the page gives them; the plan's price is the page's "Total price" (excl. VAT/hour) for all 3 nodes, × 730. Included storage is the lower bound of the page's usable storage range (TiB × 1024).
+- **Prices** (prices page, *Databases*, table "Enterprise/Advanced plan - Databases for MySQL", read 2026-11-13). Plans: the Gen 3 Advanced flavours at the price the page gives with its *Locations* filter on Paris or Milan, the same in both. The page offers no Enterprise (Gen 2) flavour there. vCPU and memory are per node, as the page gives them; the plan's price is the page's price per node (excl. VAT/hour), × 730, so an estimate multiplies it by the resource's count, its nodes (ADR 0025). The tier runs 3 nodes: the page's "Total price" is the per-node price × 3. Included storage is the lower bound of the page's usable storage range (TiB × 1024).
 
-| Plan | vCPU | Memory | Storage on the page | EUR/hour | EUR/month (× 730) | Price regions |
+| Plan | vCPU | Memory | Storage on the page | EUR/hour per node | EUR/month per node (× 730) | Price regions |
 |---|---|---|---|---|---|---|
-| `Advanced B3-8` | 2 | 8 GB per node × 3 nodes | From 160 GiB to 800 GiB | 0.7635 | `557.355` | all |
-| `Advanced B3-16` | 4 | 16 GB per node × 3 nodes | From 320 GiB to 1.5625 TiB | 1.5273 | `1114.929` | all |
-| `Advanced B3-32` | 8 | 32 GB per node × 3 nodes | From 640 GiB to 3.125 TiB | 3.0546 | `2229.858` | all |
-| `Advanced B3-64` | 16 | 64 GB per node × 3 nodes | From 1.25 TiB to 6.25 TiB | 6.1089 | `4459.497` | all |
-| `Advanced B3-128` | 32 | 128 GB per node × 3 nodes | From 2.5 TiB to 12.5 TiB | 12.2181 | `8919.213` | all |
-| `Advanced B3-256` | 64 | 256 GB per node × 3 nodes | From 5 TiB to 25 TiB | 24.4359 | `17838.207` | all |
+| `Advanced B3-8` | 2 | 8 GB per node × 3 nodes | From 160 GiB to 800 GiB | 0.2545 | `185.785` | all |
+| `Advanced B3-16` | 4 | 16 GB per node × 3 nodes | From 320 GiB to 1.5625 TiB | 0.5091 | `371.643` | all |
+| `Advanced B3-32` | 8 | 32 GB per node × 3 nodes | From 640 GiB to 3.125 TiB | 1.0182 | `743.286` | all |
+| `Advanced B3-64` | 16 | 64 GB per node × 3 nodes | From 1.25 TiB to 6.25 TiB | 2.0363 | `1486.499` | all |
+| `Advanced B3-128` | 32 | 128 GB per node × 3 nodes | From 2.5 TiB to 12.5 TiB | 4.0727 | `2973.071` | all |
+| `Advanced B3-256` | 64 | 256 GB per node × 3 nodes | From 5 TiB to 25 TiB | 8.1453 | `5946.069` | all |
 
-- **Storage price:** the Enterprise/Advanced table's "Price per GB of additional storage: €0.0007/hour/node", × 3 (3 nodes, since every node holds the data) × 730 = `1.533` per GiB a month, in every region of the offering. The databases pricing guide bills additional storage per GB, per hour and per node (*Prices*).
+- **Storage price:** the Enterprise/Advanced table's "Price per GB of additional storage: €0.0007/hour/node", × 3 (3 nodes, since every node holds the data) × 730 = `1.533` per GiB of the service's data a month, for the whole service at its tier's node count, in every region of the offering; it is not multiplied by the resource's count. The databases pricing guide bills additional storage per GB, per hour and per node (*Prices*).
 
 ### Managed PostgreSQL
 
@@ -773,9 +783,9 @@ Multi-node Advanced* and their *3-AZ* forms. Pages: <https://www.ovhcloud.com/en
   Databases offer is available "in all Public Cloud 1-AZ and 3-AZ regions". The 3-AZ regions are not
   listed for this plan; see *Left out on purpose*.
 
-- **Prices** (prices page, *Databases*, table "Essential/Discovery plan - Databases for PostgreSQL", read 2026-11-13). Plans: the Gen 2 Essential flavours and the Gen 3 Discovery flavours; the page says "Gen 2 instances will still be available under our Essential/Business/Enterprise plans" and "The new Gen 3 instances are now available under our Discovery/Production/Advanced plans". The Essential flavours are priced in `GRA`, `LIM`, `SBG` and `WAW` only (no Roubaix price), the Discovery flavours in all five 1-AZ regions at one price. vCPU and memory are per node, as the page gives them; the plan's price is the page's "Total price" (excl. VAT/hour) for all 1 node, × 730. Included storage is the lower bound of the page's usable storage range (TiB × 1024).
+- **Prices** (prices page, *Databases*, table "Essential/Discovery plan - Databases for PostgreSQL", read 2026-11-13). Plans: the Gen 2 Essential flavours and the Gen 3 Discovery flavours; the page says "Gen 2 instances will still be available under our Essential/Business/Enterprise plans" and "The new Gen 3 instances are now available under our Discovery/Production/Advanced plans". The Essential flavours are priced in `GRA`, `LIM`, `SBG` and `WAW` only (no Roubaix price), the Discovery flavours in all five 1-AZ regions at one price. vCPU and memory are per node, as the page gives them; the plan's price is the page's price per node (excl. VAT/hour), × 730, so an estimate multiplies it by the resource's count, its nodes (ADR 0025). The tier runs 1 node: the page's "Total price" is the per-node price × 1. Included storage is the lower bound of the page's usable storage range (TiB × 1024).
 
-| Plan | vCPU | Memory | Storage on the page | EUR/hour | EUR/month (× 730) | Price regions |
+| Plan | vCPU | Memory | Storage on the page | EUR/hour per node | EUR/month per node (× 730) | Price regions |
 |---|---|---|---|---|---|---|
 | `Essential DB1-4` | 2 | 4 GB × 1 node | From 80 GiB to 240 GiB | 0.0746 | `54.458` | `GRA`, `LIM`, `SBG`, `WAW` |
 | `Essential DB1-7` | 2 | 7 GB × 1 node | From 160 GiB to 480 GiB | 0.1477 | `107.821` | `GRA`, `LIM`, `SBG`, `WAW` |
@@ -789,7 +799,7 @@ Multi-node Advanced* and their *3-AZ* forms. Pages: <https://www.ovhcloud.com/en
 | `Discovery B3-128` | 32 | 128 GB × 1 node | From 2.5 TiB to 12.5 TiB | 3.1382 | `2290.886` | all |
 | `Discovery B3-256` | 64 | 256 GB × 1 node | From 5 TiB to 25 TiB | 6.2763 | `4581.699` | all |
 
-- **Storage price:** the Essential/Discovery table's "Price per GB of additional storage: €0.0004/hour/node", × 1 (one node, since every node holds the data) × 730 = `0.292` per GiB a month, in every region of the offering. The databases pricing guide bills additional storage per GB, per hour and per node (*Prices*).
+- **Storage price:** the Essential/Discovery table's "Price per GB of additional storage: €0.0004/hour/node", × 1 (one node, since every node holds the data) × 730 = `0.292` per GiB of the service's data a month, for the whole service at its tier's node count, in every region of the offering; it is not multiplied by the resource's count. The databases pricing guide bills additional storage per GB, per hour and per node (*Prices*).
 
 ### Managed PostgreSQL Multi-node
 
@@ -818,24 +828,24 @@ the 1-AZ regions. A tier variant of *Managed PostgreSQL* (tier-variant rule). Pa
   out on purpose*.
 - Regions `GRA`, `LIM`, `RBX`, `SBG`, `WAW`: as for *Managed PostgreSQL*.
 
-- **Prices** (prices page, *Databases*, table "Business/Production plan - Databases for PostgreSQL", read 2026-11-13). Plans: the Gen 2 Business flavours and the Gen 3 Production flavours; the page says "Gen 2 instances will still be available under our Essential/Business/Enterprise plans" and "The new Gen 3 instances are now available under our Discovery/Production/Advanced plans". The Business flavours are priced in `GRA`, `LIM`, `SBG` and `WAW` only (no Roubaix price), the Production flavours in all five 1-AZ regions at one price. vCPU and memory are per node, as the page gives them; the plan's price is the page's "Total price" (excl. VAT/hour) for all 2 nodes, × 730. Included storage is the lower bound of the page's usable storage range (TiB × 1024).
+- **Prices** (prices page, *Databases*, table "Business/Production plan - Databases for PostgreSQL", read 2026-11-13). Plans: the Gen 2 Business flavours and the Gen 3 Production flavours; the page says "Gen 2 instances will still be available under our Essential/Business/Enterprise plans" and "The new Gen 3 instances are now available under our Discovery/Production/Advanced plans". The Business flavours are priced in `GRA`, `LIM`, `SBG` and `WAW` only (no Roubaix price), the Production flavours in all five 1-AZ regions at one price. vCPU and memory are per node, as the page gives them; the plan's price is the page's price per node (excl. VAT/hour), × 730, so an estimate multiplies it by the resource's count, its nodes (ADR 0025). The tier runs 2 nodes: the page's "Total price" is the per-node price × 2. Included storage is the lower bound of the page's usable storage range (TiB × 1024).
 
-| Plan | vCPU | Memory | Storage on the page | EUR/hour | EUR/month (× 730) | Price regions |
+| Plan | vCPU | Memory | Storage on the page | EUR/hour per node | EUR/month per node (× 730) | Price regions |
 |---|---|---|---|---|---|---|
-| `Business DB1-4` | 2 | 4 GB per node × 2 nodes | From 80 GiB to 240 GiB | 0.1898 | `138.554` | `GRA`, `LIM`, `SBG`, `WAW` |
-| `Business DB1-7` | 2 | 7 GB per node × 2 nodes | From 160 GiB to 480 GiB | 0.3798 | `277.254` | `GRA`, `LIM`, `SBG`, `WAW` |
-| `Business DB1-15` | 4 | 15 GB per node × 2 nodes | From 320 GiB to 960 GiB | 0.7594 | `554.362` | `GRA`, `LIM`, `SBG`, `WAW` |
-| `Business DB1-30` | 8 | 30 GB per node × 2 nodes | From 640 GiB to 1.875 TiB | 1.522 | `1111.06` | `GRA`, `LIM`, `SBG`, `WAW` |
-| `Business DB1-60` | 16 | 60 GB per node × 2 nodes | From 1.25 TiB to 3.75 TiB | 3.0468 | `2224.164` | `GRA`, `LIM`, `SBG`, `WAW` |
-| `Business DB1-120` | 32 | 120 GB per node × 2 nodes | From 2.5 TiB to 7.5 TiB | 6.0968 | `4450.664` | `GRA`, `LIM`, `SBG`, `WAW` |
-| `Production B3-8` | 2 | 8 GB per node × 2 nodes | From 160 GiB to 800 GiB | 0.446 | `325.58` | all |
-| `Production B3-16` | 4 | 16 GB per node × 2 nodes | From 320 GiB to 1.5625 TiB | 0.8922 | `651.306` | all |
-| `Production B3-32` | 8 | 32 GB per node × 2 nodes | From 640 GiB to 3.125 TiB | 1.7844 | `1302.612` | all |
-| `Production B3-64` | 16 | 64 GB per node × 2 nodes | From 1.25 TiB to 6.25 TiB | 3.5688 | `2605.224` | all |
-| `Production B3-128` | 32 | 128 GB per node × 2 nodes | From 2.5 TiB to 12.5 TiB | 7.1376 | `5210.448` | all |
-| `Production B3-256` | 64 | 256 GB per node × 2 nodes | From 5 TiB to 25 TiB | 14.2754 | `10421.042` | all |
+| `Business DB1-4` | 2 | 4 GB per node × 2 nodes | From 80 GiB to 240 GiB | 0.0949 | `69.277` | `GRA`, `LIM`, `SBG`, `WAW` |
+| `Business DB1-7` | 2 | 7 GB per node × 2 nodes | From 160 GiB to 480 GiB | 0.1899 | `138.627` | `GRA`, `LIM`, `SBG`, `WAW` |
+| `Business DB1-15` | 4 | 15 GB per node × 2 nodes | From 320 GiB to 960 GiB | 0.3797 | `277.181` | `GRA`, `LIM`, `SBG`, `WAW` |
+| `Business DB1-30` | 8 | 30 GB per node × 2 nodes | From 640 GiB to 1.875 TiB | 0.761 | `555.53` | `GRA`, `LIM`, `SBG`, `WAW` |
+| `Business DB1-60` | 16 | 60 GB per node × 2 nodes | From 1.25 TiB to 3.75 TiB | 1.5234 | `1112.082` | `GRA`, `LIM`, `SBG`, `WAW` |
+| `Business DB1-120` | 32 | 120 GB per node × 2 nodes | From 2.5 TiB to 7.5 TiB | 3.0484 | `2225.332` | `GRA`, `LIM`, `SBG`, `WAW` |
+| `Production B3-8` | 2 | 8 GB per node × 2 nodes | From 160 GiB to 800 GiB | 0.223 | `162.79` | all |
+| `Production B3-16` | 4 | 16 GB per node × 2 nodes | From 320 GiB to 1.5625 TiB | 0.4461 | `325.653` | all |
+| `Production B3-32` | 8 | 32 GB per node × 2 nodes | From 640 GiB to 3.125 TiB | 0.8922 | `651.306` | all |
+| `Production B3-64` | 16 | 64 GB per node × 2 nodes | From 1.25 TiB to 6.25 TiB | 1.7844 | `1302.612` | all |
+| `Production B3-128` | 32 | 128 GB per node × 2 nodes | From 2.5 TiB to 12.5 TiB | 3.5688 | `2605.224` | all |
+| `Production B3-256` | 64 | 256 GB per node × 2 nodes | From 5 TiB to 25 TiB | 7.1377 | `5210.521` | all |
 
-- **Storage price:** the Business/Production table's "Price per GB of additional storage: €0.0006/hour/node", × 2 (2 nodes, since every node holds the data) × 730 = `0.876` per GiB a month, in every region of the offering. The databases pricing guide bills additional storage per GB, per hour and per node (*Prices*).
+- **Storage price:** the Business/Production table's "Price per GB of additional storage: €0.0006/hour/node", × 2 (2 nodes, since every node holds the data) × 730 = `0.876` per GiB of the service's data a month, for the whole service at its tier's node count, in every region of the offering; it is not multiplied by the resource's count. The databases pricing guide bills additional storage per GB, per hour and per node (*Prices*).
 
 ### Managed PostgreSQL Multi-node 3-AZ
 
@@ -869,18 +879,18 @@ Category `database.postgresql`: Public Cloud Databases for PostgreSQL on the Bus
 - Regions `MIL`, `PAR`: the regions page ticks PostgreSQL in "3-AZ Paris" and "3-AZ Milan"; the backups page lists
   EU-WEST-PAR and EU-SOUTH-MIL as service locations.
 
-- **Prices** (prices page, *Databases*, table "Business/Production plan - Databases for PostgreSQL", read 2026-11-13). Plans: the Gen 3 Production flavours at the price the page gives with its *Locations* filter on Paris or Milan, the same in both. The page offers no Business (Gen 2) flavour there. vCPU and memory are per node, as the page gives them; the plan's price is the page's "Total price" (excl. VAT/hour) for all 2 nodes, × 730. Included storage is the lower bound of the page's usable storage range (TiB × 1024).
+- **Prices** (prices page, *Databases*, table "Business/Production plan - Databases for PostgreSQL", read 2026-11-13). Plans: the Gen 3 Production flavours at the price the page gives with its *Locations* filter on Paris or Milan, the same in both. The page offers no Business (Gen 2) flavour there. vCPU and memory are per node, as the page gives them; the plan's price is the page's price per node (excl. VAT/hour), × 730, so an estimate multiplies it by the resource's count, its nodes (ADR 0025). The tier runs 2 nodes: the page's "Total price" is the per-node price × 2. Included storage is the lower bound of the page's usable storage range (TiB × 1024).
 
-| Plan | vCPU | Memory | Storage on the page | EUR/hour | EUR/month (× 730) | Price regions |
+| Plan | vCPU | Memory | Storage on the page | EUR/hour per node | EUR/month per node (× 730) | Price regions |
 |---|---|---|---|---|---|---|
-| `Production B3-8` | 2 | 8 GB per node × 2 nodes | From 160 GiB to 800 GiB | 0.4724 | `344.852` | all |
-| `Production B3-16` | 4 | 16 GB per node × 2 nodes | From 320 GiB to 1.5625 TiB | 0.9446 | `689.558` | all |
-| `Production B3-32` | 8 | 32 GB per node × 2 nodes | From 640 GiB to 3.125 TiB | 1.8894 | `1379.262` | all |
-| `Production B3-64` | 16 | 64 GB per node × 2 nodes | From 1.25 TiB to 6.25 TiB | 3.7788 | `2758.524` | all |
-| `Production B3-128` | 32 | 128 GB per node × 2 nodes | From 2.5 TiB to 12.5 TiB | 7.5576 | `5517.048` | all |
-| `Production B3-256` | 64 | 256 GB per node × 2 nodes | From 5 TiB to 25 TiB | 15.115 | `11033.95` | all |
+| `Production B3-8` | 2 | 8 GB per node × 2 nodes | From 160 GiB to 800 GiB | 0.2362 | `172.426` | all |
+| `Production B3-16` | 4 | 16 GB per node × 2 nodes | From 320 GiB to 1.5625 TiB | 0.4723 | `344.779` | all |
+| `Production B3-32` | 8 | 32 GB per node × 2 nodes | From 640 GiB to 3.125 TiB | 0.9447 | `689.631` | all |
+| `Production B3-64` | 16 | 64 GB per node × 2 nodes | From 1.25 TiB to 6.25 TiB | 1.8894 | `1379.262` | all |
+| `Production B3-128` | 32 | 128 GB per node × 2 nodes | From 2.5 TiB to 12.5 TiB | 3.7788 | `2758.524` | all |
+| `Production B3-256` | 64 | 256 GB per node × 2 nodes | From 5 TiB to 25 TiB | 7.5575 | `5516.975` | all |
 
-- **Storage price:** the Business/Production table's "Price per GB of additional storage: €0.0006/hour/node", × 2 (2 nodes, since every node holds the data) × 730 = `0.876` per GiB a month, in every region of the offering. The databases pricing guide bills additional storage per GB, per hour and per node (*Prices*).
+- **Storage price:** the Business/Production table's "Price per GB of additional storage: €0.0006/hour/node", × 2 (2 nodes, since every node holds the data) × 730 = `0.876` per GiB of the service's data a month, for the whole service at its tier's node count, in every region of the offering; it is not multiplied by the resource's count. The databases pricing guide bills additional storage per GB, per hour and per node (*Prices*).
 
 ### Managed PostgreSQL Multi-node Advanced
 
@@ -911,24 +921,24 @@ Multi-node* because it adds `read-replicas`. Pages: <https://www.ovhcloud.com/en
   product page's key features give "Replication node access" as "Read-only".
 - Regions `GRA`, `LIM`, `RBX`, `SBG`, `WAW`: as for *Managed PostgreSQL*.
 
-- **Prices** (prices page, *Databases*, table "Enterprise/Advanced plan - Databases for PostgreSQL", read 2026-11-13). Plans: the Gen 2 Enterprise flavours and the Gen 3 Advanced flavours; the page says "Gen 2 instances will still be available under our Essential/Business/Enterprise plans" and "The new Gen 3 instances are now available under our Discovery/Production/Advanced plans". The Enterprise flavours are priced in `GRA`, `LIM`, `SBG` and `WAW` only (no Roubaix price), the Advanced flavours in all five 1-AZ regions at one price. vCPU and memory are per node, as the page gives them; the plan's price is the page's "Total price" (excl. VAT/hour) for all 3 nodes, × 730. Included storage is the lower bound of the page's usable storage range (TiB × 1024).
+- **Prices** (prices page, *Databases*, table "Enterprise/Advanced plan - Databases for PostgreSQL", read 2026-11-13). Plans: the Gen 2 Enterprise flavours and the Gen 3 Advanced flavours; the page says "Gen 2 instances will still be available under our Essential/Business/Enterprise plans" and "The new Gen 3 instances are now available under our Discovery/Production/Advanced plans". The Enterprise flavours are priced in `GRA`, `LIM`, `SBG` and `WAW` only (no Roubaix price), the Advanced flavours in all five 1-AZ regions at one price. vCPU and memory are per node, as the page gives them; the plan's price is the page's price per node (excl. VAT/hour), × 730, so an estimate multiplies it by the resource's count, its nodes (ADR 0025). The tier runs 3 nodes: the page's "Total price" is the per-node price × 3. Included storage is the lower bound of the page's usable storage range (TiB × 1024).
 
-| Plan | vCPU | Memory | Storage on the page | EUR/hour | EUR/month (× 730) | Price regions |
+| Plan | vCPU | Memory | Storage on the page | EUR/hour per node | EUR/month per node (× 730) | Price regions |
 |---|---|---|---|---|---|---|
-| `Enterprise DB1-4` | 2 | 4 GB per node × 3 nodes | From 80 GiB to 240 GiB | 0.2892 | `211.116` | `GRA`, `LIM`, `SBG`, `WAW` |
-| `Enterprise DB1-7` | 2 | 7 GB per node × 3 nodes | From 160 GiB to 480 GiB | 0.5697 | `415.881` | `GRA`, `LIM`, `SBG`, `WAW` |
-| `Enterprise DB1-15` | 4 | 15 GB per node × 3 nodes | From 320 GiB to 960 GiB | 1.1391 | `831.543` | `GRA`, `LIM`, `SBG`, `WAW` |
-| `Enterprise DB1-30` | 8 | 30 GB per node × 3 nodes | From 640 GiB to 1.875 TiB | 2.283 | `1666.59` | `GRA`, `LIM`, `SBG`, `WAW` |
-| `Enterprise DB1-60` | 16 | 60 GB per node × 3 nodes | From 1.25 TiB to 3.75 TiB | 4.5702 | `3336.246` | `GRA`, `LIM`, `SBG`, `WAW` |
-| `Enterprise DB1-120` | 32 | 120 GB per node × 3 nodes | From 2.5 TiB to 7.5 TiB | 9.1452 | `6675.996` | `GRA`, `LIM`, `SBG`, `WAW` |
-| `Advanced B3-8` | 2 | 8 GB per node × 3 nodes | From 160 GiB to 800 GiB | 0.7212 | `526.476` | all |
-| `Advanced B3-16` | 4 | 16 GB per node × 3 nodes | From 320 GiB to 1.5625 TiB | 1.4424 | `1052.952` | all |
-| `Advanced B3-32` | 8 | 32 GB per node × 3 nodes | From 640 GiB to 3.125 TiB | 2.8848 | `2105.904` | all |
-| `Advanced B3-64` | 16 | 64 GB per node × 3 nodes | From 1.25 TiB to 6.25 TiB | 5.7696 | `4211.808` | all |
-| `Advanced B3-128` | 32 | 128 GB per node × 3 nodes | From 2.5 TiB to 12.5 TiB | 11.5392 | `8423.616` | all |
-| `Advanced B3-256` | 64 | 256 GB per node × 3 nodes | From 5 TiB to 25 TiB | 23.0784 | `16847.232` | all |
+| `Enterprise DB1-4` | 2 | 4 GB per node × 3 nodes | From 80 GiB to 240 GiB | 0.0964 | `70.372` | `GRA`, `LIM`, `SBG`, `WAW` |
+| `Enterprise DB1-7` | 2 | 7 GB per node × 3 nodes | From 160 GiB to 480 GiB | 0.1899 | `138.627` | `GRA`, `LIM`, `SBG`, `WAW` |
+| `Enterprise DB1-15` | 4 | 15 GB per node × 3 nodes | From 320 GiB to 960 GiB | 0.3797 | `277.181` | `GRA`, `LIM`, `SBG`, `WAW` |
+| `Enterprise DB1-30` | 8 | 30 GB per node × 3 nodes | From 640 GiB to 1.875 TiB | 0.761 | `555.53` | `GRA`, `LIM`, `SBG`, `WAW` |
+| `Enterprise DB1-60` | 16 | 60 GB per node × 3 nodes | From 1.25 TiB to 3.75 TiB | 1.5234 | `1112.082` | `GRA`, `LIM`, `SBG`, `WAW` |
+| `Enterprise DB1-120` | 32 | 120 GB per node × 3 nodes | From 2.5 TiB to 7.5 TiB | 3.0484 | `2225.332` | `GRA`, `LIM`, `SBG`, `WAW` |
+| `Advanced B3-8` | 2 | 8 GB per node × 3 nodes | From 160 GiB to 800 GiB | 0.2404 | `175.492` | all |
+| `Advanced B3-16` | 4 | 16 GB per node × 3 nodes | From 320 GiB to 1.5625 TiB | 0.4808 | `350.984` | all |
+| `Advanced B3-32` | 8 | 32 GB per node × 3 nodes | From 640 GiB to 3.125 TiB | 0.9616 | `701.968` | all |
+| `Advanced B3-64` | 16 | 64 GB per node × 3 nodes | From 1.25 TiB to 6.25 TiB | 1.9232 | `1403.936` | all |
+| `Advanced B3-128` | 32 | 128 GB per node × 3 nodes | From 2.5 TiB to 12.5 TiB | 3.8464 | `2807.872` | all |
+| `Advanced B3-256` | 64 | 256 GB per node × 3 nodes | From 5 TiB to 25 TiB | 7.6928 | `5615.744` | all |
 
-- **Storage price:** the Enterprise/Advanced table's "Price per GB of additional storage: €0.0007/hour/node", × 3 (3 nodes, since every node holds the data) × 730 = `1.533` per GiB a month, in every region of the offering. The databases pricing guide bills additional storage per GB, per hour and per node (*Prices*).
+- **Storage price:** the Enterprise/Advanced table's "Price per GB of additional storage: €0.0007/hour/node", × 3 (3 nodes, since every node holds the data) × 730 = `1.533` per GiB of the service's data a month, for the whole service at its tier's node count, in every region of the offering; it is not multiplied by the resource's count. The databases pricing guide bills additional storage per GB, per hour and per node (*Prices*).
 
 ### Managed PostgreSQL Multi-node Advanced 3-AZ
 
@@ -964,18 +974,18 @@ from *Managed PostgreSQL Multi-node 3-AZ* because it adds `read-replicas`. Pages
 - Regions `MIL`, `PAR`: the regions page ticks PostgreSQL in "3-AZ Paris" and "3-AZ Milan"; the backups page lists
   EU-WEST-PAR and EU-SOUTH-MIL as service locations.
 
-- **Prices** (prices page, *Databases*, table "Enterprise/Advanced plan - Databases for PostgreSQL", read 2026-11-13). Plans: the Gen 3 Advanced flavours at the price the page gives with its *Locations* filter on Paris or Milan, the same in both. The page offers no Enterprise (Gen 2) flavour there. vCPU and memory are per node, as the page gives them; the plan's price is the page's "Total price" (excl. VAT/hour) for all 3 nodes, × 730. Included storage is the lower bound of the page's usable storage range (TiB × 1024).
+- **Prices** (prices page, *Databases*, table "Enterprise/Advanced plan - Databases for PostgreSQL", read 2026-11-13). Plans: the Gen 3 Advanced flavours at the price the page gives with its *Locations* filter on Paris or Milan, the same in both. The page offers no Enterprise (Gen 2) flavour there. vCPU and memory are per node, as the page gives them; the plan's price is the page's price per node (excl. VAT/hour), × 730, so an estimate multiplies it by the resource's count, its nodes (ADR 0025). The tier runs 3 nodes: the page's "Total price" is the per-node price × 3. Included storage is the lower bound of the page's usable storage range (TiB × 1024).
 
-| Plan | vCPU | Memory | Storage on the page | EUR/hour | EUR/month (× 730) | Price regions |
+| Plan | vCPU | Memory | Storage on the page | EUR/hour per node | EUR/month per node (× 730) | Price regions |
 |---|---|---|---|---|---|---|
-| `Advanced B3-8` | 2 | 8 GB per node × 3 nodes | From 160 GiB to 800 GiB | 0.7635 | `557.355` | all |
-| `Advanced B3-16` | 4 | 16 GB per node × 3 nodes | From 320 GiB to 1.5625 TiB | 1.5273 | `1114.929` | all |
-| `Advanced B3-32` | 8 | 32 GB per node × 3 nodes | From 640 GiB to 3.125 TiB | 3.0546 | `2229.858` | all |
-| `Advanced B3-64` | 16 | 64 GB per node × 3 nodes | From 1.25 TiB to 6.25 TiB | 6.1089 | `4459.497` | all |
-| `Advanced B3-128` | 32 | 128 GB per node × 3 nodes | From 2.5 TiB to 12.5 TiB | 12.2181 | `8919.213` | all |
-| `Advanced B3-256` | 64 | 256 GB per node × 3 nodes | From 5 TiB to 25 TiB | 24.4359 | `17838.207` | all |
+| `Advanced B3-8` | 2 | 8 GB per node × 3 nodes | From 160 GiB to 800 GiB | 0.2545 | `185.785` | all |
+| `Advanced B3-16` | 4 | 16 GB per node × 3 nodes | From 320 GiB to 1.5625 TiB | 0.5091 | `371.643` | all |
+| `Advanced B3-32` | 8 | 32 GB per node × 3 nodes | From 640 GiB to 3.125 TiB | 1.0182 | `743.286` | all |
+| `Advanced B3-64` | 16 | 64 GB per node × 3 nodes | From 1.25 TiB to 6.25 TiB | 2.0363 | `1486.499` | all |
+| `Advanced B3-128` | 32 | 128 GB per node × 3 nodes | From 2.5 TiB to 12.5 TiB | 4.0727 | `2973.071` | all |
+| `Advanced B3-256` | 64 | 256 GB per node × 3 nodes | From 5 TiB to 25 TiB | 8.1453 | `5946.069` | all |
 
-- **Storage price:** the Enterprise/Advanced table's "Price per GB of additional storage: €0.0007/hour/node", × 3 (3 nodes, since every node holds the data) × 730 = `1.533` per GiB a month, in every region of the offering. The databases pricing guide bills additional storage per GB, per hour and per node (*Prices*).
+- **Storage price:** the Enterprise/Advanced table's "Price per GB of additional storage: €0.0007/hour/node", × 3 (3 nodes, since every node holds the data) × 730 = `1.533` per GiB of the service's data a month, for the whole service at its tier's node count, in every region of the offering; it is not multiplied by the resource's count. The databases pricing guide bills additional storage per GB, per hour and per node (*Prices*).
 
 ### Metal Instances
 

@@ -113,48 +113,48 @@ Managed MySQL | database.mysql | encryption-at-rest, point-in-time-restore | GRA
   plan: Essential DB1-7 | 2 vcpu | 7 GiB | 160 GiB storage | 107.821 EUR @ GRA, LIM, SBG, WAW
   storage price: 0.292 EUR @ -
 Managed MySQL Multi-node | database.mysql | encryption-at-rest, node-high-availability, point-in-time-restore | GRA, LIM, RBX, SBG, WAW
-  plan: Business DB1-120 | 32 vcpu | 120 GiB | 2560 GiB storage | 4450.664 EUR @ GRA, LIM, SBG, WAW
-  plan: Business DB1-15 | 4 vcpu | 15 GiB | 320 GiB storage | 554.362 EUR @ GRA, LIM, SBG, WAW
-  plan: Business DB1-30 | 8 vcpu | 30 GiB | 640 GiB storage | 1111.06 EUR @ GRA, LIM, SBG, WAW
-  plan: Business DB1-4 | 2 vcpu | 4 GiB | 80 GiB storage | 138.554 EUR @ GRA, LIM, SBG, WAW
-  plan: Business DB1-60 | 16 vcpu | 60 GiB | 1280 GiB storage | 2224.164 EUR @ GRA, LIM, SBG, WAW
-  plan: Business DB1-7 | 2 vcpu | 7 GiB | 160 GiB storage | 277.254 EUR @ GRA, LIM, SBG, WAW
-  plan: Production B3-128 | 32 vcpu | 128 GiB | 2560 GiB storage | 5210.448 EUR @ -
-  plan: Production B3-16 | 4 vcpu | 16 GiB | 320 GiB storage | 651.306 EUR @ -
-  plan: Production B3-256 | 64 vcpu | 256 GiB | 5120 GiB storage | 10421.042 EUR @ -
-  plan: Production B3-32 | 8 vcpu | 32 GiB | 640 GiB storage | 1302.612 EUR @ -
-  plan: Production B3-64 | 16 vcpu | 64 GiB | 1280 GiB storage | 2605.224 EUR @ -
-  plan: Production B3-8 | 2 vcpu | 8 GiB | 160 GiB storage | 325.58 EUR @ -
+  plan: Business DB1-120 | 32 vcpu | 120 GiB | 2560 GiB storage | 2225.332 EUR @ GRA, LIM, SBG, WAW
+  plan: Business DB1-15 | 4 vcpu | 15 GiB | 320 GiB storage | 277.181 EUR @ GRA, LIM, SBG, WAW
+  plan: Business DB1-30 | 8 vcpu | 30 GiB | 640 GiB storage | 555.53 EUR @ GRA, LIM, SBG, WAW
+  plan: Business DB1-4 | 2 vcpu | 4 GiB | 80 GiB storage | 69.277 EUR @ GRA, LIM, SBG, WAW
+  plan: Business DB1-60 | 16 vcpu | 60 GiB | 1280 GiB storage | 1112.082 EUR @ GRA, LIM, SBG, WAW
+  plan: Business DB1-7 | 2 vcpu | 7 GiB | 160 GiB storage | 138.627 EUR @ GRA, LIM, SBG, WAW
+  plan: Production B3-128 | 32 vcpu | 128 GiB | 2560 GiB storage | 2605.224 EUR @ -
+  plan: Production B3-16 | 4 vcpu | 16 GiB | 320 GiB storage | 325.653 EUR @ -
+  plan: Production B3-256 | 64 vcpu | 256 GiB | 5120 GiB storage | 5210.521 EUR @ -
+  plan: Production B3-32 | 8 vcpu | 32 GiB | 640 GiB storage | 651.306 EUR @ -
+  plan: Production B3-64 | 16 vcpu | 64 GiB | 1280 GiB storage | 1302.612 EUR @ -
+  plan: Production B3-8 | 2 vcpu | 8 GiB | 160 GiB storage | 162.79 EUR @ -
   storage price: 0.876 EUR @ -
 Managed MySQL Multi-node 3-AZ | database.mysql | encryption-at-rest, node-high-availability, point-in-time-restore, zone-high-availability | MIL, PAR
-  plan: Production B3-128 | 32 vcpu | 128 GiB | 2560 GiB storage | 5517.048 EUR @ -
-  plan: Production B3-16 | 4 vcpu | 16 GiB | 320 GiB storage | 689.558 EUR @ -
-  plan: Production B3-256 | 64 vcpu | 256 GiB | 5120 GiB storage | 11033.95 EUR @ -
-  plan: Production B3-32 | 8 vcpu | 32 GiB | 640 GiB storage | 1379.262 EUR @ -
-  plan: Production B3-64 | 16 vcpu | 64 GiB | 1280 GiB storage | 2758.524 EUR @ -
-  plan: Production B3-8 | 2 vcpu | 8 GiB | 160 GiB storage | 344.852 EUR @ -
+  plan: Production B3-128 | 32 vcpu | 128 GiB | 2560 GiB storage | 2758.524 EUR @ -
+  plan: Production B3-16 | 4 vcpu | 16 GiB | 320 GiB storage | 344.779 EUR @ -
+  plan: Production B3-256 | 64 vcpu | 256 GiB | 5120 GiB storage | 5516.975 EUR @ -
+  plan: Production B3-32 | 8 vcpu | 32 GiB | 640 GiB storage | 689.631 EUR @ -
+  plan: Production B3-64 | 16 vcpu | 64 GiB | 1280 GiB storage | 1379.262 EUR @ -
+  plan: Production B3-8 | 2 vcpu | 8 GiB | 160 GiB storage | 172.426 EUR @ -
   storage price: 0.876 EUR @ -
 Managed MySQL Multi-node Advanced | database.mysql | encryption-at-rest, node-high-availability, point-in-time-restore, read-replicas | GRA, LIM, RBX, SBG, WAW
-  plan: Advanced B3-128 | 32 vcpu | 128 GiB | 2560 GiB storage | 8423.616 EUR @ -
-  plan: Advanced B3-16 | 4 vcpu | 16 GiB | 320 GiB storage | 1052.952 EUR @ -
-  plan: Advanced B3-256 | 64 vcpu | 256 GiB | 5120 GiB storage | 16847.232 EUR @ -
-  plan: Advanced B3-32 | 8 vcpu | 32 GiB | 640 GiB storage | 2105.904 EUR @ -
-  plan: Advanced B3-64 | 16 vcpu | 64 GiB | 1280 GiB storage | 4211.808 EUR @ -
-  plan: Advanced B3-8 | 2 vcpu | 8 GiB | 160 GiB storage | 526.476 EUR @ -
-  plan: Enterprise DB1-120 | 32 vcpu | 120 GiB | 2560 GiB storage | 6675.996 EUR @ GRA, LIM, SBG, WAW
-  plan: Enterprise DB1-15 | 4 vcpu | 15 GiB | 320 GiB storage | 831.543 EUR @ GRA, LIM, SBG, WAW
-  plan: Enterprise DB1-30 | 8 vcpu | 30 GiB | 640 GiB storage | 1666.59 EUR @ GRA, LIM, SBG, WAW
-  plan: Enterprise DB1-4 | 2 vcpu | 4 GiB | 80 GiB storage | 211.116 EUR @ GRA, LIM, SBG, WAW
-  plan: Enterprise DB1-60 | 16 vcpu | 60 GiB | 1280 GiB storage | 3336.246 EUR @ GRA, LIM, SBG, WAW
-  plan: Enterprise DB1-7 | 2 vcpu | 7 GiB | 160 GiB storage | 415.881 EUR @ GRA, LIM, SBG, WAW
+  plan: Advanced B3-128 | 32 vcpu | 128 GiB | 2560 GiB storage | 2807.872 EUR @ -
+  plan: Advanced B3-16 | 4 vcpu | 16 GiB | 320 GiB storage | 350.984 EUR @ -
+  plan: Advanced B3-256 | 64 vcpu | 256 GiB | 5120 GiB storage | 5615.744 EUR @ -
+  plan: Advanced B3-32 | 8 vcpu | 32 GiB | 640 GiB storage | 701.968 EUR @ -
+  plan: Advanced B3-64 | 16 vcpu | 64 GiB | 1280 GiB storage | 1403.936 EUR @ -
+  plan: Advanced B3-8 | 2 vcpu | 8 GiB | 160 GiB storage | 175.492 EUR @ -
+  plan: Enterprise DB1-120 | 32 vcpu | 120 GiB | 2560 GiB storage | 2225.332 EUR @ GRA, LIM, SBG, WAW
+  plan: Enterprise DB1-15 | 4 vcpu | 15 GiB | 320 GiB storage | 277.181 EUR @ GRA, LIM, SBG, WAW
+  plan: Enterprise DB1-30 | 8 vcpu | 30 GiB | 640 GiB storage | 555.53 EUR @ GRA, LIM, SBG, WAW
+  plan: Enterprise DB1-4 | 2 vcpu | 4 GiB | 80 GiB storage | 70.372 EUR @ GRA, LIM, SBG, WAW
+  plan: Enterprise DB1-60 | 16 vcpu | 60 GiB | 1280 GiB storage | 1112.082 EUR @ GRA, LIM, SBG, WAW
+  plan: Enterprise DB1-7 | 2 vcpu | 7 GiB | 160 GiB storage | 138.627 EUR @ GRA, LIM, SBG, WAW
   storage price: 1.533 EUR @ -
 Managed MySQL Multi-node Advanced 3-AZ | database.mysql | encryption-at-rest, node-high-availability, point-in-time-restore, read-replicas, zone-high-availability | MIL, PAR
-  plan: Advanced B3-128 | 32 vcpu | 128 GiB | 2560 GiB storage | 8919.213 EUR @ -
-  plan: Advanced B3-16 | 4 vcpu | 16 GiB | 320 GiB storage | 1114.929 EUR @ -
-  plan: Advanced B3-256 | 64 vcpu | 256 GiB | 5120 GiB storage | 17838.207 EUR @ -
-  plan: Advanced B3-32 | 8 vcpu | 32 GiB | 640 GiB storage | 2229.858 EUR @ -
-  plan: Advanced B3-64 | 16 vcpu | 64 GiB | 1280 GiB storage | 4459.497 EUR @ -
-  plan: Advanced B3-8 | 2 vcpu | 8 GiB | 160 GiB storage | 557.355 EUR @ -
+  plan: Advanced B3-128 | 32 vcpu | 128 GiB | 2560 GiB storage | 2973.071 EUR @ -
+  plan: Advanced B3-16 | 4 vcpu | 16 GiB | 320 GiB storage | 371.643 EUR @ -
+  plan: Advanced B3-256 | 64 vcpu | 256 GiB | 5120 GiB storage | 5946.069 EUR @ -
+  plan: Advanced B3-32 | 8 vcpu | 32 GiB | 640 GiB storage | 743.286 EUR @ -
+  plan: Advanced B3-64 | 16 vcpu | 64 GiB | 1280 GiB storage | 1486.499 EUR @ -
+  plan: Advanced B3-8 | 2 vcpu | 8 GiB | 160 GiB storage | 185.785 EUR @ -
   storage price: 1.533 EUR @ -
 Managed PostgreSQL | database.postgresql | encryption-at-rest, point-in-time-restore | GRA, LIM, RBX, SBG, WAW
   plan: Discovery B3-128 | 32 vcpu | 128 GiB | 2560 GiB storage | 2290.886 EUR @ -
@@ -170,48 +170,48 @@ Managed PostgreSQL | database.postgresql | encryption-at-rest, point-in-time-res
   plan: Essential DB1-7 | 2 vcpu | 7 GiB | 160 GiB storage | 107.821 EUR @ GRA, LIM, SBG, WAW
   storage price: 0.292 EUR @ -
 Managed PostgreSQL Multi-node | database.postgresql | encryption-at-rest, node-high-availability, point-in-time-restore | GRA, LIM, RBX, SBG, WAW
-  plan: Business DB1-120 | 32 vcpu | 120 GiB | 2560 GiB storage | 4450.664 EUR @ GRA, LIM, SBG, WAW
-  plan: Business DB1-15 | 4 vcpu | 15 GiB | 320 GiB storage | 554.362 EUR @ GRA, LIM, SBG, WAW
-  plan: Business DB1-30 | 8 vcpu | 30 GiB | 640 GiB storage | 1111.06 EUR @ GRA, LIM, SBG, WAW
-  plan: Business DB1-4 | 2 vcpu | 4 GiB | 80 GiB storage | 138.554 EUR @ GRA, LIM, SBG, WAW
-  plan: Business DB1-60 | 16 vcpu | 60 GiB | 1280 GiB storage | 2224.164 EUR @ GRA, LIM, SBG, WAW
-  plan: Business DB1-7 | 2 vcpu | 7 GiB | 160 GiB storage | 277.254 EUR @ GRA, LIM, SBG, WAW
-  plan: Production B3-128 | 32 vcpu | 128 GiB | 2560 GiB storage | 5210.448 EUR @ -
-  plan: Production B3-16 | 4 vcpu | 16 GiB | 320 GiB storage | 651.306 EUR @ -
-  plan: Production B3-256 | 64 vcpu | 256 GiB | 5120 GiB storage | 10421.042 EUR @ -
-  plan: Production B3-32 | 8 vcpu | 32 GiB | 640 GiB storage | 1302.612 EUR @ -
-  plan: Production B3-64 | 16 vcpu | 64 GiB | 1280 GiB storage | 2605.224 EUR @ -
-  plan: Production B3-8 | 2 vcpu | 8 GiB | 160 GiB storage | 325.58 EUR @ -
+  plan: Business DB1-120 | 32 vcpu | 120 GiB | 2560 GiB storage | 2225.332 EUR @ GRA, LIM, SBG, WAW
+  plan: Business DB1-15 | 4 vcpu | 15 GiB | 320 GiB storage | 277.181 EUR @ GRA, LIM, SBG, WAW
+  plan: Business DB1-30 | 8 vcpu | 30 GiB | 640 GiB storage | 555.53 EUR @ GRA, LIM, SBG, WAW
+  plan: Business DB1-4 | 2 vcpu | 4 GiB | 80 GiB storage | 69.277 EUR @ GRA, LIM, SBG, WAW
+  plan: Business DB1-60 | 16 vcpu | 60 GiB | 1280 GiB storage | 1112.082 EUR @ GRA, LIM, SBG, WAW
+  plan: Business DB1-7 | 2 vcpu | 7 GiB | 160 GiB storage | 138.627 EUR @ GRA, LIM, SBG, WAW
+  plan: Production B3-128 | 32 vcpu | 128 GiB | 2560 GiB storage | 2605.224 EUR @ -
+  plan: Production B3-16 | 4 vcpu | 16 GiB | 320 GiB storage | 325.653 EUR @ -
+  plan: Production B3-256 | 64 vcpu | 256 GiB | 5120 GiB storage | 5210.521 EUR @ -
+  plan: Production B3-32 | 8 vcpu | 32 GiB | 640 GiB storage | 651.306 EUR @ -
+  plan: Production B3-64 | 16 vcpu | 64 GiB | 1280 GiB storage | 1302.612 EUR @ -
+  plan: Production B3-8 | 2 vcpu | 8 GiB | 160 GiB storage | 162.79 EUR @ -
   storage price: 0.876 EUR @ -
 Managed PostgreSQL Multi-node 3-AZ | database.postgresql | encryption-at-rest, node-high-availability, point-in-time-restore, zone-high-availability | MIL, PAR
-  plan: Production B3-128 | 32 vcpu | 128 GiB | 2560 GiB storage | 5517.048 EUR @ -
-  plan: Production B3-16 | 4 vcpu | 16 GiB | 320 GiB storage | 689.558 EUR @ -
-  plan: Production B3-256 | 64 vcpu | 256 GiB | 5120 GiB storage | 11033.95 EUR @ -
-  plan: Production B3-32 | 8 vcpu | 32 GiB | 640 GiB storage | 1379.262 EUR @ -
-  plan: Production B3-64 | 16 vcpu | 64 GiB | 1280 GiB storage | 2758.524 EUR @ -
-  plan: Production B3-8 | 2 vcpu | 8 GiB | 160 GiB storage | 344.852 EUR @ -
+  plan: Production B3-128 | 32 vcpu | 128 GiB | 2560 GiB storage | 2758.524 EUR @ -
+  plan: Production B3-16 | 4 vcpu | 16 GiB | 320 GiB storage | 344.779 EUR @ -
+  plan: Production B3-256 | 64 vcpu | 256 GiB | 5120 GiB storage | 5516.975 EUR @ -
+  plan: Production B3-32 | 8 vcpu | 32 GiB | 640 GiB storage | 689.631 EUR @ -
+  plan: Production B3-64 | 16 vcpu | 64 GiB | 1280 GiB storage | 1379.262 EUR @ -
+  plan: Production B3-8 | 2 vcpu | 8 GiB | 160 GiB storage | 172.426 EUR @ -
   storage price: 0.876 EUR @ -
 Managed PostgreSQL Multi-node Advanced | database.postgresql | encryption-at-rest, node-high-availability, point-in-time-restore, read-replicas | GRA, LIM, RBX, SBG, WAW
-  plan: Advanced B3-128 | 32 vcpu | 128 GiB | 2560 GiB storage | 8423.616 EUR @ -
-  plan: Advanced B3-16 | 4 vcpu | 16 GiB | 320 GiB storage | 1052.952 EUR @ -
-  plan: Advanced B3-256 | 64 vcpu | 256 GiB | 5120 GiB storage | 16847.232 EUR @ -
-  plan: Advanced B3-32 | 8 vcpu | 32 GiB | 640 GiB storage | 2105.904 EUR @ -
-  plan: Advanced B3-64 | 16 vcpu | 64 GiB | 1280 GiB storage | 4211.808 EUR @ -
-  plan: Advanced B3-8 | 2 vcpu | 8 GiB | 160 GiB storage | 526.476 EUR @ -
-  plan: Enterprise DB1-120 | 32 vcpu | 120 GiB | 2560 GiB storage | 6675.996 EUR @ GRA, LIM, SBG, WAW
-  plan: Enterprise DB1-15 | 4 vcpu | 15 GiB | 320 GiB storage | 831.543 EUR @ GRA, LIM, SBG, WAW
-  plan: Enterprise DB1-30 | 8 vcpu | 30 GiB | 640 GiB storage | 1666.59 EUR @ GRA, LIM, SBG, WAW
-  plan: Enterprise DB1-4 | 2 vcpu | 4 GiB | 80 GiB storage | 211.116 EUR @ GRA, LIM, SBG, WAW
-  plan: Enterprise DB1-60 | 16 vcpu | 60 GiB | 1280 GiB storage | 3336.246 EUR @ GRA, LIM, SBG, WAW
-  plan: Enterprise DB1-7 | 2 vcpu | 7 GiB | 160 GiB storage | 415.881 EUR @ GRA, LIM, SBG, WAW
+  plan: Advanced B3-128 | 32 vcpu | 128 GiB | 2560 GiB storage | 2807.872 EUR @ -
+  plan: Advanced B3-16 | 4 vcpu | 16 GiB | 320 GiB storage | 350.984 EUR @ -
+  plan: Advanced B3-256 | 64 vcpu | 256 GiB | 5120 GiB storage | 5615.744 EUR @ -
+  plan: Advanced B3-32 | 8 vcpu | 32 GiB | 640 GiB storage | 701.968 EUR @ -
+  plan: Advanced B3-64 | 16 vcpu | 64 GiB | 1280 GiB storage | 1403.936 EUR @ -
+  plan: Advanced B3-8 | 2 vcpu | 8 GiB | 160 GiB storage | 175.492 EUR @ -
+  plan: Enterprise DB1-120 | 32 vcpu | 120 GiB | 2560 GiB storage | 2225.332 EUR @ GRA, LIM, SBG, WAW
+  plan: Enterprise DB1-15 | 4 vcpu | 15 GiB | 320 GiB storage | 277.181 EUR @ GRA, LIM, SBG, WAW
+  plan: Enterprise DB1-30 | 8 vcpu | 30 GiB | 640 GiB storage | 555.53 EUR @ GRA, LIM, SBG, WAW
+  plan: Enterprise DB1-4 | 2 vcpu | 4 GiB | 80 GiB storage | 70.372 EUR @ GRA, LIM, SBG, WAW
+  plan: Enterprise DB1-60 | 16 vcpu | 60 GiB | 1280 GiB storage | 1112.082 EUR @ GRA, LIM, SBG, WAW
+  plan: Enterprise DB1-7 | 2 vcpu | 7 GiB | 160 GiB storage | 138.627 EUR @ GRA, LIM, SBG, WAW
   storage price: 1.533 EUR @ -
 Managed PostgreSQL Multi-node Advanced 3-AZ | database.postgresql | encryption-at-rest, node-high-availability, point-in-time-restore, read-replicas, zone-high-availability | MIL, PAR
-  plan: Advanced B3-128 | 32 vcpu | 128 GiB | 2560 GiB storage | 8919.213 EUR @ -
-  plan: Advanced B3-16 | 4 vcpu | 16 GiB | 320 GiB storage | 1114.929 EUR @ -
-  plan: Advanced B3-256 | 64 vcpu | 256 GiB | 5120 GiB storage | 17838.207 EUR @ -
-  plan: Advanced B3-32 | 8 vcpu | 32 GiB | 640 GiB storage | 2229.858 EUR @ -
-  plan: Advanced B3-64 | 16 vcpu | 64 GiB | 1280 GiB storage | 4459.497 EUR @ -
-  plan: Advanced B3-8 | 2 vcpu | 8 GiB | 160 GiB storage | 557.355 EUR @ -
+  plan: Advanced B3-128 | 32 vcpu | 128 GiB | 2560 GiB storage | 2973.071 EUR @ -
+  plan: Advanced B3-16 | 4 vcpu | 16 GiB | 320 GiB storage | 371.643 EUR @ -
+  plan: Advanced B3-256 | 64 vcpu | 256 GiB | 5120 GiB storage | 5946.069 EUR @ -
+  plan: Advanced B3-32 | 8 vcpu | 32 GiB | 640 GiB storage | 743.286 EUR @ -
+  plan: Advanced B3-64 | 16 vcpu | 64 GiB | 1280 GiB storage | 1486.499 EUR @ -
+  plan: Advanced B3-8 | 2 vcpu | 8 GiB | 160 GiB storage | 185.785 EUR @ -
   storage price: 1.533 EUR @ -
 Metal Instances | compute.baremetal | ipv6, snapshots | GRA, LIM, SBG, WAW
   plan: bm-l1 | 16 vcpu | 128 GiB | 1920 GiB storage | 1058.50 EUR @ -
