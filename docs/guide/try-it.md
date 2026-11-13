@@ -141,6 +141,10 @@ Add `--format json` or `--target all` as before. With a rootless runtime, pass `
 ([Mounts, users and reports](docker.md#mounts-users-and-reports)). To build the image from the clone
 instead, `make image` and use `shift2eu` in place of `ghcr.io/timothymamo/shift2eu:v0.2.0`.
 
+A tag can be moved to another image. To verify the image first, see
+[Verify releases](verify-releases.md): it resolves the tag to a digest and verifies that digest; run
+`ghcr.io/timothymamo/shift2eu@<digest>` in place of the tag.
+
 ## Ask the HTTP API
 
 `shift2eu-server` answers the same assessments over HTTP, byte for byte what `assess` prints for the
@@ -154,25 +158,31 @@ export SHIFT2EU_SERVER_TOKEN="$(openssl rand -hex 32)"
 curl -sS http://127.0.0.1:8080/readyz   # {"status":"ready"} once the catalogs have loaded
 ```
 
-A request holds the inventory document and the target keys; `jq` wraps the sample in one:
+A request holds the inventory document and the target keys; `jq` wraps the sample in one. The
+request body goes to a temporary file, outside the clone, so a request made from a real inventory
+cannot end up in a commit:
 
 ```bash
+req="$(mktemp)"
+
 # The JSON report against Scaleway, the same as --format json above.
-jq '{inventory: ., targets: ["scaleway"]}' examples/aws/inventory.json > request.json
+jq '{inventory: ., targets: ["scaleway"]}' examples/aws/inventory.json > "$req"
 printf 'Authorization: Bearer %s\n' "$SHIFT2EU_SERVER_TOKEN" |
   curl -sS -X POST http://127.0.0.1:8080/v1/assessments -H @- \
     -H 'Content-Type: application/json' \
-    --data-binary @request.json
+    --data-binary @"$req"
 
 # The Markdown comparison of every target, the same as --target all above.
-jq '{inventory: ., targets: ["all"]}' examples/aws/inventory.json > request.json
+jq '{inventory: ., targets: ["all"]}' examples/aws/inventory.json > "$req"
 printf 'Authorization: Bearer %s\n' "$SHIFT2EU_SERVER_TOKEN" |
   curl -sS -X POST http://127.0.0.1:8080/v1/assessments -H @- \
     -H 'Content-Type: application/json' -H 'Accept: text/markdown' \
-    --data-binary @request.json
+    --data-binary @"$req"
 
 # The targets and their catalog snapshots.
 printf 'Authorization: Bearer %s\n' "$SHIFT2EU_SERVER_TOKEN" | curl -sS -H @- http://127.0.0.1:8080/v1/targets
+
+rm -f "$req"
 ```
 
 Stop the server with `kill %1` (or `kill` and its process ID) when you are done.
@@ -190,16 +200,24 @@ the target has for that category, a **fit** and the reasons for it. The fit is o
 
 Regions are not compared: a fit says what the target offers, not where.
 
-Where several offerings fit equally well, the others are named as a tie. From the Scaleway report:
+A direct row and an unclassified row, from the Scaleway report:
 
 ```markdown
 | `shop-assets` | `AWS::S3::Bucket` | `storage.object` | direct | `Object Storage` | `Object Storage` offers every capability the resource uses |
 | `shop-cdn` | `AWS::CloudFront::Distribution` | `unclassified` | none |  | not classified |
 ```
 
+Where several offerings fit equally well, the others are named as a tie:
+
 ```markdown
 | `shop-web-asg` | `AWS::AutoScaling::AutoScalingGroup` | `compute.vm` | partial | `Elastic Metal` (tie: `Instances`) | `Elastic Metal` does not offer `autoscaling`; `Elastic Metal` does not offer `zone-high-availability` |
 ```
+
+Offerings tie when they have the same fit and lack as many of the resource's capabilities; among
+them, the best offering is simply the first by name. Here `Elastic Metal` and `Instances` both lack
+`autoscaling` and `zone-high-availability`, so the reasons and required changes name `Elastic Metal`
+only because it sorts first: either one needs the same changes. Tied offerings lack the same number of
+capabilities, not always the same ones, so check a tie's own capabilities before you pick it.
 
 **Required changes** lists every partial resource with the capabilities its best offering lacks: what
 you would have to replace, rebuild or do without on that target.
