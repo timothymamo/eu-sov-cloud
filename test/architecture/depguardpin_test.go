@@ -272,7 +272,21 @@ var pinnedDepguardRules = []check.DepguardRule{
 			"!$test",
 		},
 		Allow: []string{
-			"$gostd",
+			"bytes$",
+			"context$",
+			"errors$",
+			"flag$",
+			"fmt$",
+			"io$",
+			"io/fs$",
+			"maps$",
+			"os$",
+			"path/filepath$",
+			"slices$",
+			"strconv$",
+			"strings$",
+			"unicode$",
+			"unicode/utf8$",
 			"github.com/timothymamo/shift2eu/internal/app/analysis$",
 			"github.com/timothymamo/shift2eu/internal/domain/assessment$",
 			"github.com/timothymamo/shift2eu/internal/domain/catalog$",
@@ -284,26 +298,37 @@ var pinnedDepguardRules = []check.DepguardRule{
 		},
 		Deny: []string{
 			"github.com/timothymamo/shift2eu/internal/adapter",
-			"net$",
-			"net/http$",
-			"net/http/cgi$",
-			"net/http/cookiejar$",
-			"net/http/fcgi$",
-			"net/http/httptest$",
-			"net/http/httptrace$",
-			"net/http/httputil$",
-			"net/http/pprof$",
-			"net/mail$",
-			"net/rpc$",
-			"net/rpc/jsonrpc$",
-			"net/smtp$",
-			"net/textproto$",
-			"crypto/tls$",
-			"os/exec$",
-			"os/user$",
-			"syscall$",
-			"plugin$",
 		},
+	},
+	{
+		// The build metadata (issue #152, the security audit's M-3). Both
+		// driving adapters print internal/version, and no rule held it: a probe
+		// that imported os and os/exec there passed lint. A composition root that
+		// may not read the environment or start a process could hand either to a
+		// version package nobody had thought to deny, and the call happened one
+		// import deeper. The rule is a strict allow list of exactly what the
+		// package imports today, each entry exact: fmt, which String formats the
+		// build line with. The three variables the build sets through -X are not
+		// imports, so the list never needs one for them.
+		//
+		// The files: entry takes the _test.go file out (!$test), as the finding
+		// states it: the build line's test imports strings and testing, which a
+		// strict allow list of the package's own imports would refuse, and a
+		// second list for one test file buys nothing. RuleDirs reads the
+		// directory with no test files, so TestReleaseTargetDependencies holds
+		// the package's production imports to this list, package by package for
+		// every release target, and the CLI's release listing must hold the
+		// package (internal/cli imports it), so the check cannot pass over it.
+		Name:     "version-is-build-metadata",
+		ListMode: "strict",
+		Files: []string{
+			"**/internal/version/**",
+			"!$test",
+		},
+		Allow: []string{
+			"fmt$",
+		},
+		Deny: nil,
 	},
 	{
 		// The composition root (issue #101): main wires every adapter into the
@@ -847,7 +872,10 @@ var pinnedDepguardRules = []check.DepguardRule{
 		// reads, which is why it is no strict rule
 		// (TestEveryStrictRuleIsChecked). syscall/js is pinned here and by no
 		// probe line, as it builds for js/wasm only
-		// (TestCompositionRootTestsReachNoForeignCodeProbe).
+		// (TestCompositionRootTestsReachNoForeignCodeProbe). os/user is denied
+		// since issue #152: a test that looks a user up in the OS database reads
+		// the home directory os.Getenv and os.UserHomeDir are refused for, one
+		// package further out.
 		Name:     "composition-root-tests",
 		ListMode: "lax",
 		Files: []string{
@@ -855,17 +883,135 @@ var pinnedDepguardRules = []check.DepguardRule{
 			"**/cmd/shift2eu/**/*_test.go",
 			"**/cmd/shift2eu-server/*_test.go",
 			"**/cmd/shift2eu-server/**/*_test.go",
+			"**/internal/cli/*_test.go",
+			"**/internal/cli/**/*_test.go",
+			"**/internal/httpapi/*_test.go",
+			"**/internal/httpapi/**/*_test.go",
 		},
 		Allow: nil,
 		Deny: []string{
 			"go/build",
 			"net/http/cgi",
 			"os/exec",
+			"os/user",
 			"plugin",
 			"runtime/cgo",
 			"syscall/js",
 			"unsafe",
 		},
+	},
+	{
+		// The runtime configuration a composition root reads (issue #152,
+		// the auditor's finding M-A): internal/config loads it from flags,
+		// the environment and an optional file, so it announces the environment
+		// reads that need a forbidigo group of its own and an ADR before it may
+		// import os. It has no code yet, so its allow list is the smallest
+		// AllowList reads: check.AllowList refuses an empty one. The day it
+		// imports a package, the rule names it here in the same commit.
+		Name:     "config-is-pure",
+		ListMode: "strict",
+		Files: []string{
+			"**/internal/config/**",
+			"!$test",
+		},
+		Allow: []string{
+			"errors$",
+		},
+	},
+	{
+		// The target subtree's own documentation package (issue #152, the
+		// auditor's finding M-A): internal/adapter/target holds doc.go and no
+		// code, and its providers have strict rules of their own, which the
+		// negated globs take out here. It imports nothing, so its allow list
+		// is the smallest AllowList reads. A provider added under it is named
+		// here or in embedded-snapshot-targets-stay-offline in the same commit.
+		Name:     "target-docs-are-pure",
+		ListMode: "strict",
+		Files: []string{
+			"**/internal/adapter/target/**",
+			"!**/internal/adapter/target/ovhcloud/**",
+			"!**/internal/adapter/target/scaleway/**",
+			"!**/internal/adapter/target/upcloud/**",
+			"!**/internal/adapter/target/snapshot/**",
+			"!**/internal/adapter/target/targettest/**",
+			"!$test",
+		},
+		Allow: []string{
+			"errors$",
+		},
+	},
+	{
+		// The contract suites every adapter runs (issue #152, the auditor's
+		// finding L-A): they are production packages, and any _test.go file
+		// may import them, so they may import only what they import today.
+		// sourcetest and targettest are taken out of
+		// cloud-adapters-reach-the-cloud-through-the-sdk by name; this is the
+		// rule that holds them. time$ is targettest's, and the one entry the
+		// shared rule lets sourcetest widen by.
+		Name:     "contract-suites-are-pure",
+		ListMode: "strict",
+		Files: []string{
+			"**/internal/adapter/source/sourcetest/**",
+			"**/internal/adapter/target/targettest/**",
+			"!$test",
+		},
+		Allow: []string{
+			"context$",
+			"errors$",
+			"fmt$",
+			"slices$",
+			"testing$",
+			"time$",
+			"github.com/timothymamo/shift2eu/internal/app/analysis$",
+			"github.com/timothymamo/shift2eu/internal/domain/catalog$",
+			"github.com/timothymamo/shift2eu/internal/domain/inventory$",
+			"github.com/timothymamo/shift2eu/internal/domain/taxonomy$",
+			"github.com/timothymamo/shift2eu/internal/domain/text$",
+		},
+	},
+	{
+		// The test trees' own documentation packages (issue #152, the auditor's
+		// finding H-1): test/apiparity, test/architecture, test/container,
+		// test/devenv, test/docs and test/lint hold doc.go and no code, and each
+		// is a production package a composition root can import, because the
+		// roots' allow lists name the module path as a prefix entry. Go's internal
+		// rule keeps test/internal/... and test/architecture/internal/... out of
+		// cmd/ and internal/ and nothing keeps these out, so they get a rule of
+		// their own. It is one shared strict allow list, the smallest AllowList
+		// reads (check.AllowList refuses an empty one, the place S1 records); the
+		// day one of these packages imports a package, it names it here and in
+		// .golangci.yml in the same commit. test/e2e belongs here too since issue
+		// #152 (the reviewer's B1, the auditor's L-1): its doc.go carries no build
+		// tag, so test/e2e is a production package a composition root may import,
+		// and e2e-is-black-box, the only rule that held it, allows $gostd. An
+		// untagged file there that read os.Getenv and started exec.Command stayed
+		// lint green with every test passing. !$test takes the e2e test files out
+		// (depguard applies negated globs whatever their position), so they stay on
+		// e2e-is-black-box alone, which is the black-box rule with a $gostd of its
+		// own. That same negation takes out the other test files, whose imports
+		// these packages' tests would not fit this list: a test of
+		// test/architecture reads the repository, go-cmp included. The nested
+		// internal tree under test/architecture is taken out with a negated glob,
+		// as a rule's files: list cannot say "this directory only": without it the
+		// rule would hold test/architecture/internal/check, which reads os and
+		// os/exec, and refuse them.
+		Name:     testDocsRule,
+		ListMode: "strict",
+		Files: []string{
+			"**/test/apiparity/**",
+			"**/test/architecture/**",
+			"!**/test/architecture/internal/**",
+			"**/test/container/**",
+			"**/test/devenv/**",
+			"**/test/docs/**",
+			"**/test/e2e/**",
+			"**/test/lint/**",
+			"!$test",
+		},
+		Allow: []string{
+			"errors$",
+		},
+		Deny: nil,
 	},
 }
 
@@ -891,6 +1037,199 @@ func TestDepguardRulesArePinned(t *testing.T) {
 		t.Errorf("%s\n"+
 			"the depguard rules are pinned: if .golangci.yml changed on purpose, update pinnedDepguardRules in this file in the same commit, and a reviewer reads that edit as a change to the architecture rules", message)
 	}
+}
+
+// cliImportRule is the name of the rule that holds internal/cli's production
+// imports (issue #152).
+const cliImportRule = "cli-gets-adapters-from-cmd"
+
+// cliImportRuleDenied are the packages the CLI's import rule must never allow,
+// now that it is a strict allow list: a process start (os/exec, syscall and
+// plugin, whose code runs in the CLI's process), a raw system call, a pointer
+// taken apart (unsafe), a signal handler that is not os/signal's, and the
+// packages a root's test may not import either.
+var cliImportRuleDenied = []string{
+	"os/exec",
+	"syscall",
+	"unsafe",
+	"plugin",
+	"runtime/cgo",
+	"os/signal",
+	"net/http/cgi",
+	"go/build",
+}
+
+// TestCLIImportRuleAllowsNoProcessOrPointer pins the shape issue #152 gave
+// cli-gets-adapters-from-cmd: a strict allow list that names what internal/cli
+// may import, instead of $gostd with a deny list beside it. $gostd allowed every
+// standard package nobody had thought to deny, unsafe among them: a composition
+// root that may not start a process or read the environment itself could hand
+// the call to the CLI, and the deny list kept out only the names it listed. The
+// allow list names os, which the CLI reads the inventory a user names with and
+// creates the report the user asked for with, and neither syscall, unsafe nor
+// os/exec, which it names for no purpose.
+//
+// The exact entries are pinned by TestDepguardRulesArePinned, whose copy the
+// commit that edits .golangci.yml updates; this one holds the property the
+// issue is about, so a rule rewritten entry by entry still has to keep it.
+func TestCLIImportRuleAllowsNoProcessOrPointer(t *testing.T) {
+	t.Parallel()
+
+	rules, err := check.DepguardRules(readRepositoryFile(t, ".golangci.yml"))
+	if err != nil {
+		t.Fatalf("DepguardRules(.golangci.yml): %v", err)
+	}
+
+	var rule check.DepguardRule
+	found := false
+	for _, r := range rules {
+		if r.Name == cliImportRule {
+			rule, found = r, true
+			break
+		}
+	}
+	if !found {
+		t.Fatalf(".golangci.yml holds no depguard rule %s, so nothing holds internal/cli's imports", cliImportRule)
+	}
+
+	if rule.ListMode != "strict" {
+		t.Errorf("the depguard rule %s has list-mode %q; a strict allow list says what the CLI may import, so a package added to the standard library later is refused until the list names it", cliImportRule, rule.ListMode)
+	}
+	if slices.Contains(rule.Allow, "$gostd") {
+		t.Errorf("the depguard rule %s allows $gostd, which allows every standard package, syscall and unsafe among them; name the packages the CLI imports today, each ending in $", cliImportRule)
+	}
+
+	// allows reports whether an allow entry admits pkg, as depguard reads the
+	// entries: one ending in $ is exact, and any other is a prefix. $gostd is
+	// read above, so an entry here is a package path.
+	allows := func(pkg string) bool {
+		for _, entry := range rule.Allow {
+			if exact, ok := strings.CutSuffix(entry, "$"); ok {
+				if exact == pkg {
+					return true
+				}
+				continue
+			}
+			if pkg == entry || strings.HasPrefix(pkg, entry) {
+				return true
+			}
+		}
+		return false
+	}
+
+	if !allows("os") {
+		t.Errorf("the depguard rule %s does not allow os, which the CLI reads the inventory a user names (--inventory) and creates the report the user asked for (--output) with", cliImportRule)
+	}
+	for _, pkg := range cliImportRuleDenied {
+		if allows(pkg) {
+			t.Errorf("the depguard rule %s allows %s, which the CLI may not import: a root that may not start a process, read a directory from the environment or take a pointer apart could hand it the call", cliImportRule, pkg)
+		}
+	}
+}
+
+// versionRule is the name of the rule that holds internal/version's production
+// imports (issue #152, the security audit's M-3).
+const versionRule = "version-is-build-metadata"
+
+// versionRuleDenied are the packages the build metadata's rule must never
+// allow: everything a composition root or a driving adapter may not reach, which
+// a version package nobody held could have handed it one import deeper. The
+// allow list refuses them already, as a strict list refuses everything it does
+// not name; this names the ones a careless widening (an os$ entry that lost its
+// $, or a $gostd) would let back in.
+var versionRuleDenied = []string{
+	"os",
+	"os/exec",
+	"os/user",
+	"os/signal",
+	"syscall",
+	"unsafe",
+	"plugin",
+	"net/http",
+	"runtime/debug",
+	"io/ioutil",
+	"go/build",
+}
+
+// TestVersionRuleIsBuildMetadata pins the shape issue #152 gave
+// version-is-build-metadata. internal/version is the build metadata internal/cli
+// prints, and both driving adapters' import rules allow it, yet no rule held what
+// it imports: a probe that imported os and os/exec there passed lint. A package
+// allowed by a strict rule is a delegation path, because the rule says nothing of
+// what that package does, so the build metadata gets a strict allow list of its
+// own: exactly the packages it imports today, each ending in $, which is fmt
+// alone (String formats the build line), and no $gostd.
+//
+// The exact entries are pinned by TestDepguardRulesArePinned, whose copy the
+// commit that edits .golangci.yml updates; this one holds the property the
+// finding is about, so a rule rewritten entry by entry still has to keep it.
+func TestVersionRuleIsBuildMetadata(t *testing.T) {
+	t.Parallel()
+
+	rules, err := check.DepguardRules(readRepositoryFile(t, ".golangci.yml"))
+	if err != nil {
+		t.Fatalf("DepguardRules(.golangci.yml): %v", err)
+	}
+
+	var rule check.DepguardRule
+	found := false
+	for _, r := range rules {
+		if r.Name == versionRule {
+			rule, found = r, true
+			break
+		}
+	}
+	if !found {
+		t.Fatalf(".golangci.yml holds no depguard rule %s, so nothing holds internal/version's imports: both driving adapters may import it, and a composition root that may not read the environment or start a process could hand either to it", versionRule)
+	}
+
+	if rule.ListMode != "strict" {
+		t.Errorf("the depguard rule %s has list-mode %q; a strict allow list says what the build metadata may import, so a package added to the standard library later is refused until the list names it", versionRule, rule.ListMode)
+	}
+	if slices.Contains(rule.Allow, "$gostd") {
+		t.Errorf("the depguard rule %s allows $gostd, which allows every standard package, os, syscall and unsafe among them; name the packages internal/version imports today, each ending in $", versionRule)
+	}
+
+	// allows reports whether an allow entry admits pkg, as depguard reads the
+	// entries: one ending in $ is exact, and any other is a prefix.
+	allows := func(pkg string) bool {
+		for _, entry := range rule.Allow {
+			if exact, ok := strings.CutSuffix(entry, "$"); ok {
+				if exact == pkg {
+					return true
+				}
+				continue
+			}
+			if pkg == entry || strings.HasPrefix(pkg, entry) {
+				return true
+			}
+		}
+		return false
+	}
+
+	for _, pkg := range versionRuleDenied {
+		if allows(pkg) {
+			t.Errorf("the depguard rule %s allows %s, which the build metadata may not import: a composition root that may not read the environment, start a process or take a pointer apart could hand it the call one import deeper", versionRule, pkg)
+		}
+	}
+
+	if got := entriesWithoutDollar(rule.Allow); !slices.Equal(got, []string{"fmt"}) {
+		t.Errorf("the depguard rule %s allows %v, want [fmt]: the build metadata imports fmt and nothing else, so a new package here is a widening a reviewer reads in the same commit", versionRule, got)
+	}
+}
+
+// entriesWithoutDollar returns the allow entries without their trailing $, which
+// fail here when one is missing: an entry without $ is a prefix, which allows a
+// whole tree of packages.
+func entriesWithoutDollar(entries []string) []string {
+	out := make([]string, 0, len(entries))
+	for _, entry := range entries {
+		if exact, ok := strings.CutSuffix(entry, "$"); ok {
+			out = append(out, exact)
+		}
+	}
+	slices.Sort(out)
+	return out
 }
 
 // TestDepguardPinCatchesMutations proves the pin of TestDepguardRulesArePinned

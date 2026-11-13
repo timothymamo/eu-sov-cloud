@@ -66,9 +66,11 @@ release builds, with cgo off and on, and with no build tag, `e2e`, `integration`
 
 Every strict rule in `.golangci.yml` must be a layer of that check or a skip with a written reason
 (`TestEveryStrictRuleIsChecked`): `cli-gets-adapters-from-cmd` allows `$gostd`, which no package list
-can spell out, `e2e-is-black-box` holds a directory of test files only, which `go list -deps`
-does not list as a layer (`app-tests-use-fakes-not-adapters`, which holds the test files of a layer's
-packages, is checked: *Amended (issue #144)*, below), and `composition-root` is held on its own (*Amended (issue #101)*, below).
+can spell out, `e2e-is-black-box` holds the test files of `test/e2e`, which `go list -deps` does
+not list as a layer (its untagged `doc.go` is held by `test-docs-are-pure` too since issue #152;
+`app-tests-use-fakes-not-adapters`, which holds the test files of a layer's
+packages, is checked: *Amended (issue #144)*, below), and `composition-root` is held on its own
+(*Amended (issue #101)*, below).
 
 *Amended (issue #79):* the check first required every allow entry to end in `$` and every rule to
 name `!$test`, so it skipped `cloud-adapters-reach-the-cloud-through-the-sdk`, whose allow list
@@ -142,10 +144,12 @@ for a `SIG*` constant and `syscall.Signal`), `TestCompositionRootsLinkNoForeignS
 `//go:linkname` in the roots), `TestCompositionRootPassesLookupEnvToRun` (`os.LookupEnv` in
 `cmd/shift2eu-server/main.go` only as the call `os.LookupEnv(tokenEnvVar)` that the token source
 passed to `run` returns) and `TestCompositionRootsNameNoEnvironmentPath` (no `/proc/` or `/dev/fd/`
-literal in the roots). The roots' `_test.go` files, which the strict composition-root rules skip, are
+literal in the roots; since issue #152 the segments `proc` and `dev/fd`, with or without a slash
+on either side, in the roots, both driving adapters and the inventory-file reader). The roots' `_test.go` files, which the strict composition-root rules skip, are
 held by the lax depguard rule `composition-root-tests` (no `go/build`, `net/http/cgi`, `os/exec`,
-`plugin`, `runtime/cgo`, `syscall/js` or `unsafe`). The gap is narrowed, not closed: a root can delegate an environment read to
-`internal/cli`, which may import `os`; a `/proc` path built at run time passes the literal check; and
+`plugin`, `runtime/cgo`, `syscall/js` or `unsafe`). The gap is narrowed, not closed: a root could
+delegate an environment read to `internal/cli`, which may import `os` (closed by *Amended (issue
+#152)* below); a `/proc` path built at run time passes the literal check; and
 `net/http`'s `DefaultTransport` reads the proxy variables implicitly, which is accepted
 (docs/architecture.md, Composition-root process and environment rule, Known gaps).
 The check anchors a rule's `**/<dir>/**` and `!**/<dir>/**` at the module root, while depguard
@@ -316,9 +320,139 @@ application test is what `internal/testutil` can do through `os` (file access, t
 `t.Output`, and `t.Setenv` and `t.Chdir`). No import or call rule can refuse
 `os.ReadFile("/proc/self/environ")` or another hard-coded path there, so any new file path or `os`,
 `fmt`, `time` or `flag` call in `internal/testutil` is a widening a reviewer must read.
-`testing.T.Setenv` and `testing.T.Chdir`, which application tests and `internal/testutil` can still
-call, are left to follow-up issue #153. `test/lint`'s `TestTestutilImportsProbe` pins both rules on a probe module, and
+`testing.T.Setenv` and `testing.T.Chdir`, which application tests and `internal/testutil` could still
+call, were left to follow-up issue #153 (*Amended (issue #153)* below). `test/lint`'s `TestTestutilImportsProbe` pins both rules on a probe module, and
 `TestAppTestsUseFakesNotAdaptersProbe` now runs a second time for `darwin/amd64` with cgo off.
+
+*Amended (issue #152):* a composition root that may not read the environment or start a process
+could hand the call to `internal/cli`, whose rule `cli-gets-adapters-from-cmd` allowed `$gostd` and
+denied a list beside it, so it could import `os`, `syscall` without a deny entry for every name, and
+`unsafe`, which nobody had denied. The rule is now a strict allow list, closing the class rather than
+naming members: the module's packages it allowed before and exactly the standard packages
+`internal/cli` imports today (`bytes`, `context`, `errors`, `flag`, `fmt`, `io`, `io/fs`, `maps`, `os`,
+`path/filepath`, `slices`, `strconv`, `strings`, `unicode`, `unicode/utf8`), every entry exact; the
+standard-library deny entries are gone, since nothing allows those packages, and the adapter deny
+stays for its message. `os` stays because the CLI reads the inventory a user names and creates the
+report the user asked for. An import rule sees no call, so the forbidigo group
+`cli-no-env-or-process` refuses, under `internal/cli/` with its tests (one `path-except` exclusion
+rule), the `os` reads the roots and `testutil-no-env` refuse: `os.Getenv`, `os.LookupEnv`,
+`os.ExpandEnv`, `os.Environ`, `os.StartProcess`, `os.UserHomeDir`, `os.UserConfigDir`,
+`os.UserCacheDir` and `os.TempDir`, with no exception, as the CLI reads no named variable. The
+CLI's tests may import `syscall` (for `syscall.Mkfifo`), so a second entry refuses the roots'
+`syscall` names there: the environment reads, the process starts, the windows entry points and DLL
+loaders, the raw system calls and the `SYS_*` numbers, in one entry whose windows names are pinned
+offline, since the probe's windows run lints `cmd/` alone. The writes (`os.Setenv`, `os.Unsetenv`,
+`os.Clearenv`) were in the first version of the group and moved to `tests-no-process-state` with
+issue #153, so no line is reported by two groups.
+
+The lax depguard rule `composition-root-tests` now also holds the `_test.go` files of `internal/cli`
+and `internal/httpapi`, and denies `os/user` besides. The first version of this amendment said that
+gave the driving adapters' tests the limits the roots' tests have; it gave them the import half only,
+and a test of either adapter could still call `os.Getenv` or `syscall.Exec` with lint green. The call
+half is `cli-no-env-or-process` for the CLI and a new forbidigo group,
+`httpapi-tests-no-env-or-process`, with the same `os` and `syscall` names, for the HTTP API's tests
+(`path-except: ^internal/httpapi/.*_test\.go$`); its production files need none, as their strict
+allow list leaves `os` and `syscall` out. The `//go:linkname` and `/proc` literal source checks read
+both driving adapters (`TestRootsAndCLILinkNoForeignSymbol`, `TestRootsAndCLINameNoEnvironmentPath`).
+
+Both driving adapters may import `internal/version`, which no rule held, so it was a delegation path
+of its own. A strict depguard rule, `version-is-build-metadata`, holds it to `fmt`, the one package it
+imports. `test/architecture` no longer skips `cli-gets-adapters-from-cmd` in its per-release-target
+`go list` check, so every package `internal/cli` reaches, `internal/version` included, is held by a
+strict rule on every release target.
+
+The rules are pinned by `TestCLIImportsProbe`, `TestCLINoEnvOrProcessForbidigoPatterns`,
+`TestHTTPAPITestsNoEnvOrProcessForbidigoPatterns`, `TestCompositionRootForbidigoProbe`,
+`TestCompositionRootTestsReachNoForeignCodeProbe`, `TestVersionImportsProbe`,
+`TestForbidigoExclusionsDropOneGroup`, `TestDepguardRulesArePinned`,
+`TestVersionRuleIsBuildMetadata`, `TestReleaseTargetDependencies` and
+`TestCLIImportRuleAllowsNoProcessOrPointer`, which holds the property (strict, no `$gostd`, `os`
+allowed, no `os/exec`, `syscall`, `unsafe`, `plugin`, `runtime/cgo`, `os/signal`, `net/http/cgi` or
+`go/build`) whatever the exact entries.
+
+The named members were not the class. Both roots allow every module package through the prefix
+`github.com/timothymamo/shift2eu/`, and the next audit found more packages a root could delegate to:
+`internal/config` (a `doc.go` only) and the contract suites `sourcetest` and `targettest`, which any
+`_test.go` file may import, had no strict rule, so a probe in `internal/config` called `os.Getenv`
+and `exec.Command` with lint green; and `inventoryfile`, which `cmd/shift2eu` imports, is allowed `os`
+with no call rule. Properties in `test/architecture` now close the class, over every package
+`go list` reports for every release target with the `e2e` and `integration` tags:
+`TestEveryModulePackageIsHeldByAStrictRule` fails for a non-test module package that no strict
+depguard rule holds, over `go list ./...` (first only `internal/` and `cmd/`; the round-4 audit of
+#152 found that a doc-only `test/*` package or a new top-level `pkg/` could take a root's delegated
+call with lint green, so the property now leaves out only the packages Go's internal rule hides from
+`cmd/` and `internal/`: a path with an `internal` element whose parent is not the module root, such
+as `test/internal/...` and `test/architecture/internal/...`), and `TestEveryOsAllowingRuleHasAnEnvironmentGroup`
+fails for a package whose strict rule allows `os` but which no forbidigo group in scope holds to the
+nine `os` reads (`Getenv`, `LookupEnv`, `ExpandEnv`, `Environ`, `StartProcess`, `UserHomeDir`,
+`UserConfigDir`, `UserCacheDir`, `TempDir`; extending it to the `syscall` reads and to `$gostd` is
+follow-up issue #167). A third, `TestNoPackageIsHeldOnlyByAGostdRule`, came from the final review
+and audit of #152 (the reviewer's B1, the auditor's L-1): `test/e2e`'s `doc.go` carries no build tag,
+so it is a production package a root can import, and `e2e-is-black-box`, the only rule that held it,
+allows `$gostd`, so an untagged file there read `os.Getenv` and started `exec.Command` with lint
+green. No package a root can import is now held only through a rule that allows `$gostd`: each is
+held by at least one strict rule that does not, or is named with its reason in `gostdOnlyExempt`,
+which is empty. The composition-root skips in the per-release-target
+check no longer claim the packages a root reaches have strict rules of their own; the first property
+holds that.
+
+The properties called for four changes. `contract-suites-are-pure` holds both suites (`!$test`) to
+exactly what they import. `config-is-pure` and `target-docs-are-pure` hold `internal/config` and the
+doc-only `internal/adapter/target` to `errors$`: an empty allow list would say it better, but
+`check.AllowList` refuses a strict rule with none, and `errors$` is the smallest it reads (follow-up
+issue #166 lets it accept an empty list). `test-docs-are-pure` holds the doc-only `test/apiparity`,
+`test/architecture` (minus its `internal/` tree), `test/container`, `test/devenv`, `test/docs`,
+`test/e2e` and `test/lint` to the same placeholder, their tests left out with `!$test`: it takes the
+e2e test files out too (depguard applies negated globs whatever their position), so they stay on
+`e2e-is-black-box` alone. A future
+`os` import in `internal/config` must come with a forbidigo group for its reads, and any read of a
+named variable with an exception decided in an ADR. The forbidigo group `inventoryfile-no-env`
+refuses the nine reads under `internal/adapter/source/inventoryfile/`, tests included; and
+`composition-root-env` gains `os.UserHomeDir`, `os.UserConfigDir`, `os.UserCacheDir` and `os.TempDir`
+in an entry of its own, which the roots, alone of the packages allowed `os`, did not refuse. The
+`/proc` literal check reads the inventory-file reader too and matches the path segments `proc` and
+`dev/fd`, at the start of a literal or after a `/`, with or without a trailing `/`, so
+`fs.ReadFile(os.DirFS("/"), "proc/self/environ")`, `os.DirFS("/proc")` and `os.Open("/dev/fd")` are
+refused, while `myproc/...` and `/procfs/...` pass.
+`TestDepguardRulesArePinned`, `TestContractSuitesArePureProbe`, `TestInventoryFileNoEnvProbe`,
+`TestInventoryFileNoEnvForbidigoPatterns`, `TestCompositionRootForbidigoProbe`,
+`TestCompositionRootForbidigoPatterns`, `TestForbidigoExclusionsDropOneGroup`,
+`TestEnvironmentPathProblems` and `TestStrictRuleCoverageHolds` pin them.
+
+*Amended (issue #153):* `t.Setenv` and `os.Setenv` change the environment of the whole test binary
+and `t.Chdir` and `os.Chdir` the working directory every `t.Parallel` test shares. The forbidigo group
+`tests-no-process-state` refuses them with two entries. The first,
+`pattern: '^(?:[\w*()\[\]]+\.)+(?:Setenv|Chdir)$'` with no `pkg`, matches any function or method so
+named, whatever its receiver: `analyze-types` renders a call on the type the method is found on, so
+it covers `*testing.T`, `*testing.B`, `*testing.F`, a helper's `testing.TB`, a method value, `os.Setenv`,
+`os.Chdir`, a struct embedding `*testing.T` and a named interface `t` is assigned to. The group's first
+version named `testing.(T|B|F|TB)` only and missed the last two. The second entry,
+`pattern: '^(?:os|syscall)\.(?:Unsetenv|Clearenv|Fchdir)$'` with `pkg: '^(?:os|syscall)$'`, refuses
+`os.Unsetenv`, `os.Clearenv`, `syscall.Unsetenv`, `syscall.Clearenv` and `syscall.Fchdir`; its first
+version named `os` only, and the review of #153 found that `syscall` writes the same environment and
+working directory. forbidigo renders nothing for a call through an interface literal or a type
+parameter, so `test/lint` refuses every selector named `Setenv`, `Chdir`, `Unsetenv`, `Clearenv` or
+`Fchdir` on the AST in the group's scope (`TestTestsChangeNoProcessStateByNoSelector`); the three
+later names were added with the `syscall` writes, and no selector so named exists outside `test/lint`,
+which the check leaves out, so the widening has no false positive. A method called through
+`reflect.MethodByName` remains a gap (docs/architecture.md, Known gaps). The group owns the writes:
+`testutil-no-env` and `cli-no-env-or-process` leave them out, so no line is reported by two groups.
+
+The group's first scope was five named areas (`internal/app`, `internal/testutil`, the driving
+adapters and the roots). It now holds everywhere but `test/lint` and `test/architecture`, through one
+exclusion rule, `path: ^test/(?:lint|architecture)/`, so the adapters', the domain's and the e2e tests
+are held too, and a source adapter's test cannot set `AWS_PROFILE`. Those two harnesses call
+`t.Setenv` on purpose, to run the go command in a known environment (`GOCACHE`, `GOFLAGS`, `HOME`) in
+test binaries of their own. `os.MkdirTemp("", ...)`, `os.CreateTemp("", ...)` and `t.TempDir()` read
+`$TMPDIR` implicitly through `os.TempDir`; this is accepted beside `net/http`'s proxy variables
+(docs/architecture.md, Known gaps), because they return only a fresh temporary path, never a home,
+config or credential path, and `t.TempDir` itself goes through the same read, so refusing them would
+leave no way to get a temporary directory. `os.TempDir` named directly stays refused where
+`testutil-no-env`, `cli-no-env-or-process` and `httpapi-tests-no-env-or-process` refuse it, though
+that is no confidentiality control: `filepath.Dir` of a temporary path recovers `$TMPDIR`, which holds
+no secret. `TestTestsNoProcessStateProbe`, `TestTestsNoProcessStateForbidigoPatterns`,
+`TestProcessStateSelectorFindings` and `TestForbidigoExclusionsDropOneGroup` pin the group, its
+patterns, the selector check and its scope.
 
 The checks are ordinary tests, so `make test`, `make check` and CI's `make cover` run them with no
 workflow change.
@@ -363,10 +497,12 @@ workflow change.
     `composition-root` (issue #101) refuses one in `cmd/shift2eu`.
   - **I/O through functions of allowed packages** (`fmt.Print*`, `time.Now`, ...), which no import
     rule sees. Review holds that line, as the comment on `domain-is-pure` says.
-  - **The imports of layers without a checked strict rule** (the CLI, whose rule allows `$gostd`,
-    and the target and report adapters): the release-binary pass checks their sources and
-    directories, not their imports. `cmd/shift2eu` is no longer among them: its `composition-root` rule
-    is checked on its own (issue #101).
+  - **The imports of layers without a checked strict rule** (the target and report adapters): the
+    release-binary pass checks their sources and directories, not their imports. `cmd/shift2eu` is
+    no longer among them: its `composition-root` rule is checked on its own (issue #101), and the
+    CLI's rule is a strict allow list checked package by package since issue #152, when
+    `TestEveryModulePackageIsHeldByAStrictRule` began holding every non-test module package a
+    root can import to some strict rule.
 - The repository tests in `test/architecture` run `go list` 162 times: 96 for the layers and the
   binary (6 platforms, cgo off and on, 4 tag sets, one listing each), 48 for the composition root
   (the same 6 platforms, cgo modes and tag sets, issue #101), and 18 for the three probes (the

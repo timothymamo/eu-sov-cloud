@@ -47,11 +47,17 @@ func syscalls() {
 	_ = syscall.SYS_EXECVE                             // want "composition-root-no-exec: "
 }
 
-// environment reads one named variable, which the composition-root-env group
-// refuses everywhere but cmd/shift2eu-server/main.go.
+// environment reads one named variable, or locates a directory from an unnamed
+// one, and the composition-root-env group refuses both everywhere but
+// cmd/shift2eu-server/main.go.
 func environment() {
 	_ = os.Getenv("SHIFT2EU_TOKEN")         // want "composition-root-env: "
 	_, _ = os.LookupEnv("SHIFT2EU_TOKEN")   // want "composition-root-env: "
 	_, _ = syscall.Getenv("SHIFT2EU_TOKEN") // want "composition-root-env: "
 	_ = os.ExpandEnv("$SHIFT2EU_TOKEN")     // want "composition-root-env: "
+
+	_, _ = os.UserHomeDir()   // want "composition-root-env: "
+	_, _ = os.UserConfigDir() // want "composition-root-env: "
+	_, _ = os.UserCacheDir()  // want "composition-root-env: "
+	_ = os.TempDir()          // want "composition-root-env: "
 }

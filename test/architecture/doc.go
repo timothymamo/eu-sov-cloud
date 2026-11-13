@@ -73,7 +73,14 @@
 // layer's _test.go files, is no skip either (issue #144): RuleDirs reads its
 // pair of test-file globs as the test files of internal/app, and
 // TestReleaseTargetDependencies holds the test imports of every package there
-// to its allow list on every release platform.
+// to its allow list on every release platform. cli-gets-adapters-from-cmd, the
+// strict allow list of internal/cli's production files, is no skip since issue
+// #152, which replaced its $gostd with exact entries: the check holds the CLI's
+// imports on every release platform. version-is-build-metadata, the strict allow
+// list of the build metadata, is read the same way: TestVersionRuleIsBuildMetadata
+// pins its shape and TestReleaseTargetDependencies holds internal/version's
+// imports to it, while the CLI's release listing must name the package (the
+// server reaches no internal/version).
 //
 // TestCloudAdapterSDKRuleIsChecked pins that the SDK-only rule,
 // cloud-adapters-reach-the-cloud-through-the-sdk, is no skip (issue #79): the
@@ -88,13 +95,18 @@
 // reported. The exemption reads the strict allow lists only: the lax deny
 // rules (go-cmp-only-in-tests, cloud-sdks-only-in-provider-adapters,
 // composition-root-tests) are held by depguard in make lint alone. A third-party import in internal/cli is
-// refused by depguard alone, whose strict rule there allows only $gostd and
-// named module packages. One in cmd/shift2eu is refused by the strict rule
+// refused by depguard alone, whose strict rule there is an allow list of exact
+// entries and named module packages (issue #152, which took its $gostd away so
+// the rule is no skip). One in internal/version is refused by depguard alone too:
+// version-is-build-metadata, a strict allow list of fmt and nothing else, because
+// the driving adapters may import the build metadata and no rule held what it does
+// (the same issue). One in cmd/shift2eu is refused by the strict rule
 // composition-root (issue #101), which allows the module path as its one prefix
 // entry and the standard packages cmd/shift2eu imports today, each exact:
 // TestCompositionRootRuleIsChecked pins its shape and that it is a reasoned
 // skip of the shared layer listing, since go list -deps ./cmd/shift2eu/... also
-// lists internal/cli and internal/version, which no rule the check reads holds.
+// lists internal/cli, internal/version and the adapters, which each stand in a
+// dependency tree the shared layer listing does not read.
 // TestCompositionRootIsHeldToItsRuleForEveryReleaseTarget holds the real
 // cmd/shift2eu to it on every release platform, with cgo off and on and every tag
 // set TestReleaseTargetDependencies reads (cgoModes and tagSets, shared so the
@@ -114,6 +126,26 @@
 // and TestCompositionRootRulesHoldTheirProbesForEveryReleaseTarget fails a
 // fixture cmd/shift2eu-server that imports a third-party library or a stand-in
 // SDK.
+// Both roots allow every module package through that prefix, so a root can
+// hand a call it may not make to any of them. Two properties close the class
+// (issue #152), over every package go list reports for every release target
+// with the e2e and integration tags: TestEveryModulePackageIsHeldByAStrictRule
+// fails for a non-test module package a root can import that no strict
+// depguard rule holds (only a package under an internal directory the roots
+// cannot import is left out); TestEveryOsAllowingRuleHasAnEnvironmentGroup fails
+// for a package whose strict rule allows os but which no forbidigo group in
+// scope holds to the nine os reads (Getenv, LookupEnv, ExpandEnv, Environ,
+// StartProcess, UserHomeDir, UserConfigDir, UserCacheDir, TempDir); and
+// TestNoPackageIsHeldOnlyByAGostdRule fails for such a package whose only
+// holding strict rules allow $gostd, and so os/exec, syscall and unsafe, unless
+// gostdOnlyExempt (empty) names it with a reason. That last one found test/e2e:
+// its doc.go carries no build tag, and e2e-is-black-box allows $gostd, so
+// test-docs-are-pure holds it as well. TestStrictRuleCoverageHolds pins their
+// helpers. The properties brought three strict rules: config-is-pure and
+// target-docs-are-pure hold internal/config and the doc-only
+// internal/adapter/target to errors$, the smallest allow list check.AllowList
+// reads, and contract-suites-are-pure holds sourcetest and targettest, which any
+// _test.go file may import, to what they import today.
 // The exemption trusts the import path, which is sound because nothing can
 // substitute other code for an allowed path: TestRootModuleHasNoReplace reads
 // the root go.mod with the go command's own parser (go mod edit -json) and

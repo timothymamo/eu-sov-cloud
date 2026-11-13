@@ -20,7 +20,7 @@ import (
 // linters.settings.forbidigo). The tags of the two composition-root groups,
 // compositionRootTags, are pinned by what their rules select instead of by the
 // text of a path regexp, in TestCompositionRootExclusions.
-var forbidigoTags = []string{"cloud-read-only", "domain-is-pure", testutilNoEnvTag}
+var forbidigoTags = []string{"cloud-read-only", "domain-is-pure", testutilNoEnvTag, cliNoEnvOrProcessTag, httpapiTestsNoEnvOrProcessTag, inventoryFileNoEnvTag, testsNoProcessStateTag}
 
 // exclusionRule is one rule of linters.exclusions.rules in .golangci.yml.
 type exclusionRule struct {
@@ -88,6 +88,37 @@ func TestForbidigoExclusionsDropOneGroup(t *testing.T) {
 		// and nowhere else.
 		testutilNoEnvTag: {
 			{"path-except": `^internal/testutil/`, "text": groupText(testutilNoEnvTag)},
+		},
+		// The CLI's production code (issue #152): one rule, for every path
+		// outside internal/cli/, so the group holds where the CLI is and
+		// nowhere else. The roots' own groups take over under cmd/.
+		cliNoEnvOrProcessTag: {
+			{"path-except": `^internal/cli/`, "text": groupText(cliNoEnvOrProcessTag)},
+		},
+		// The HTTP API's tests (issue #152): one rule, for every path outside
+		// the handler's _test.go files, so the group holds there and nowhere
+		// else. The handler's production files make no call the roots' groups
+		// refuse, and a rule that held them would need an exception of its own
+		// the day it reads the request's own directory; the tests run in the
+		// process the composition root runs in.
+		httpapiTestsNoEnvOrProcessTag: {
+			{"path-except": `^internal/httpapi/.*_test\.go$`, "text": groupText(httpapiTestsNoEnvOrProcessTag)},
+		},
+		// The inventory-file reader (issue #152): one rule, for every path
+		// outside internal/adapter/source/inventoryfile/, so the group holds
+		// where the reader is and nowhere else. It holds the reader's
+		// _test.go files too, as cli-no-env-or-process holds the CLI's.
+		inventoryFileNoEnvTag: {
+			{"path-except": `^internal/adapter/source/inventoryfile/`, "text": groupText(inventoryFileNoEnvTag)},
+		},
+		// Every test that belongs to this project (issue #153): one rule, for
+		// the two test binaries that deliberately set the go command's own
+		// variables (GOCACHE, GOFLAGS, HOME) to run it in a known environment.
+		// The group holds for every other path, the adapters' and the domain's
+		// tests and the e2e ones included, so a future source adapter test that
+		// sets AWS_PROFILE is refused rather than left to review.
+		testsNoProcessStateTag: {
+			{"path": `^test/(?:lint|architecture)/`, "text": groupText(testsNoProcessStateTag)},
 		},
 	}
 	if diff := cmp.Diff(want, got); diff != "" {

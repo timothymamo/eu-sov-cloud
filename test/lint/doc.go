@@ -67,9 +67,48 @@
 // (testdata/testutilimports) holds internal/testutil, production and _test.go
 // files alike, to the strict testutil-imports rule (net/http and os/exec are
 // refused, os and path/filepath for the golden files pass) and runs forbidigo's
-// testutil-no-env group on env.go, whose environment reads and writes and
-// os.StartProcess must each be refused; TestTestutilNoEnvForbidigoPatterns
+// testutil-no-env group on env.go, whose environment reads, home, config,
+// cache and temp lookups and os.StartProcess must each be refused (the writes
+// are tests-no-process-state's since issue #153); TestTestutilNoEnvForbidigoPatterns
 // pins that group's pattern against lists of refused and allowed names.
+// TestCLIImportsProbe (testdata/cliimports) holds internal/cli to the strict
+// cli-gets-adapters-from-cmd rule (issue #152): os/exec, syscall and unsafe are
+// refused in its production files, the packages the CLI imports today pass; the
+// forbidigo group cli-no-env-or-process refuses the CLI's environment reads,
+// home, config, cache and temp lookups, os.StartProcess and, for its tests,
+// which import syscall for syscall.Mkfifo, the roots' syscall names, on the
+// internal/cli of TestCompositionRootForbidigoProbe's module (an aliased os
+// import included), and TestCLINoEnvOrProcessForbidigoPatterns pins its
+// patterns, the windows names offline. The group
+// httpapi-tests-no-env-or-process does the same for internal/httpapi's
+// _test.go files, on the same module's internal/httpapi, and
+// TestHTTPAPITestsNoEnvOrProcessForbidigoPatterns pins it.
+// TestVersionImportsProbe (testdata/versionimports) holds internal/version to
+// the strict version-is-build-metadata rule: fmt passes, os and os/exec are
+// refused. TestContractSuitesArePureProbe (testdata/contractsuites) holds the
+// contract suites sourcetest and targettest to the strict
+// contract-suites-are-pure rule (issue #152): net, os, os/exec, syscall and
+// unsafe are refused, the packages they import today pass.
+// TestInventoryFileNoEnvProbe (testdata/inventoryfile) runs the forbidigo group
+// inventoryfile-no-env (issue #152) on the inventory-file reader, whose
+// environment reads, home, config, cache and temp lookups and os.StartProcess
+// must each be refused, and TestInventoryFileNoEnvForbidigoPatterns pins its
+// pattern.
+// TestTestsNoProcessStateProbe (testdata/testsprocessstate) runs the forbidigo
+// group tests-no-process-state (issue #153) on t.Setenv, t.Chdir, os.Setenv,
+// os.Unsetenv, os.Clearenv, os.Chdir, syscall.Unsetenv, syscall.Clearenv and
+// syscall.Fchdir, and on a struct that embeds
+// *testing.T, in the application layer, the test helpers, the driving
+// adapters, the roots, a source adapter, the domain and the e2e tier, where
+// each must be refused, while t.TempDir, os.MkdirTemp and os.CreateTemp pass;
+// its first entry matches any Setenv or Chdir whatever the receiver.
+// TestTestsNoProcessStateForbidigoPatterns pins its patterns.
+// forbidigo renders no call through an interface literal or a type
+// parameter, so TestTestsChangeNoProcessStateByNoSelector refuses every
+// selector named Setenv, Chdir, Unsetenv, Clearenv or Fchdir in the group's
+// scope, every file but those of test/lint and test/architecture, on the AST,
+// and
+// TestProcessStateSelectorFindings pins that check on fixtures.
 // TestCloudReadOnlyPatterns and
 // TestCloudReadOnlyPackages check the group's allowlist patterns, read from
 // .golangci.yml, against lists of write and read names and of import paths,
@@ -87,20 +126,28 @@
 // Syscall6, 9, 12, 15, 18 and N, RawSyscall, RawSyscall6) and syscall.SYS_*,
 // and any use of unsafe; composition-root-env refuses reading a named variable
 // (os.Getenv, os.LookupEnv, os.ExpandEnv, syscall.Getenv,
-// syscall.GetEnvironmentVariable). The probe lints the roots natively and for
+// syscall.GetEnvironmentVariable) and, since issue #152, locating a home,
+// config, cache or temp directory (os.UserHomeDir, os.UserConfigDir,
+// os.UserCacheDir, os.TempDir). The probe lints the roots natively and for
 // windows/amd64. Those names are defence in depth: the comprehensive guard is
 // TestCompositionRootsUseSyscallOnlyForSignals, an AST check under which the
 // roots, tests included, use package syscall for a ^SIG[A-Z0-9]+$ constant and
-// the type syscall.Signal only, and TestCompositionRootsLinkNoForeignSymbol
-// refuses //go:linkname in them. TestCompositionRootPassesLookupEnvToRun holds
+// the type syscall.Signal only, and TestRootsAndCLILinkNoForeignSymbol
+// refuses //go:linkname in them and in both driving adapters, internal/cli
+// and internal/httpapi. TestCompositionRootPassesLookupEnvToRun holds
 // cmd/shift2eu-server/main.go to one os.LookupEnv call, with the identifier
 // tokenEnvVar, as the sole return of the func() (string, bool) token source it
 // passes to run, so run reads no other variable, and
-// TestCompositionRootsNameNoEnvironmentPath refuses a /proc/ or /dev/fd/
-// literal in the roots; no group can state either. The depguard rule
-// composition-root-tests refuses go/build, net/http/cgi, os/exec, plugin,
-// runtime/cgo, syscall/js and unsafe in the roots' _test.go files, which the
-// strict composition-root rules skip; TestCompositionRootTestsReachNoForeignCodeProbe
+// TestRootsAndCLINameNoEnvironmentPath refuses a literal holding the path
+// segment proc or dev/fd, at its start or after a /, with or without a
+// trailing /, but not myproc, in the roots, both driving adapters and the
+// inventory-file reader (proc/self/environ read through os.DirFS("/") has no
+// leading slash, and os.DirFS("/proc") no trailing one); no group can state
+// either.
+// The depguard rule composition-root-tests refuses go/build, net/http/cgi,
+// os/exec, os/user, plugin, runtime/cgo, syscall/js and unsafe in the roots'
+// _test.go files, which the strict composition-root rules skip, and in the
+// driving adapters' _test.go files; TestCompositionRootTestsReachNoForeignCodeProbe
 // runs it on a probe module (testdata/compositionroottests). TestCompositionRootExclusions
 // pins their one path-except each and the env group's one exception, whose text
 // is the group's form with the os.LookupEnv entry's exact msg in place of

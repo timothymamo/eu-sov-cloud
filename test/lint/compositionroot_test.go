@@ -38,6 +38,13 @@ import (
 // once for windows, which is where the windows names type-check.
 var compositionRootTags = []string{"composition-root-no-exec", "composition-root-env"}
 
+// probeTags are the tags of forbidigo's groups TestCompositionRootForbidigoProbe
+// covers: the two composition-root groups, the CLI's own group (issue #152),
+// which takes over in internal/cli where the roots' groups stop, and the HTTP
+// API's tests group, which holds the one place under internal/httpapi/ no group
+// of the two reached before.
+var probeTags = slices.Concat(compositionRootTags, []string{cliNoEnvOrProcessTag, httpapiTestsNoEnvOrProcessTag})
+
 // TestCompositionRootForbidigoProbe runs forbidigo, with the repository's
 // .golangci.yml, on the two composition roots and a CLI package
 // (testdata/compositionroot), twice: once for the host's platform, and once for
@@ -50,9 +57,16 @@ var compositionRootTags = []string{"composition-root-no-exec", "composition-root
 // other refusal kinds of the env group in main.go keep the file from being
 // exempt as a whole. A _test.go file of a composition root must be refused too:
 // its tests are compiled into the same package and run with the same
-// environment. Every call the groups refuse, in internal/cli, must pass: a group
-// that lost its path-except scope is refused by the probe's strictness, which
-// reports every issue the probe does not expect.
+// environment. Every call the CLI's own group refuses, in internal/cli, has a
+// line there with a want of that group, the CLI's _test.go file included, and
+// the calls internal/cli is for — os opening the inventory a user names, reading
+// it, creating the report and taking the FIFO's syscall.Mkfifo — must pass: a
+// group that lost its path-except scope, or one of the roots' that lost its own
+// scope and reached internal/cli, is refused by the probe's strictness, which
+// reports every issue the probe does not expect. The HTTP API's _test.go file is
+// held the same way by httpapi-tests-no-env-or-process, which no other group
+// reaches: internal/httpapi's production files make no call of the two roots'
+// groups, and the calls a test of the handler is for must pass beside them.
 //
 // A file for one platform builds on that platform only, so each run reads the
 // want comments of its own files, and an entry of a group need refuse a line in
@@ -63,13 +77,13 @@ func TestCompositionRootForbidigoProbe(t *testing.T) {
 
 	host := runForbidigoProbe(t, forbidigoProbe{
 		dir:             "compositionroot",
-		tags:            compositionRootTags,
+		tags:            probeTags,
 		files:           probeFilesForHost,
 		noEntryCoverage: true,
 	})
 	windows := runForbidigoProbe(t, forbidigoProbe{
 		dir:             "compositionroot",
-		tags:            compositionRootTags,
+		tags:            probeTags,
 		goos:            "windows",
 		goarch:          "amd64",
 		packages:        []string{"./cmd/..."},
@@ -78,7 +92,7 @@ func TestCompositionRootForbidigoProbe(t *testing.T) {
 	})
 
 	for _, e := range forbidigoEntries(t, moduleRoot(t)) {
-		if !slices.ContainsFunc(compositionRootTags, func(tag string) bool { return strings.HasPrefix(e.msg, tag+": ") }) {
+		if !slices.ContainsFunc(probeTags, func(tag string) bool { return strings.HasPrefix(e.msg, tag+": ") }) {
 			continue
 		}
 		if !host[e.msg] && !windows[e.msg] {
@@ -96,11 +110,14 @@ func probeFilesForHost(rel string) bool {
 }
 
 // probeFilesForWindows reports whether the windows run lints the probe file at
-// rel: the files for windows, and the _test.go files, which name no platform's
-// function and build for every platform. The windows run lints ./cmd/... only,
-// as the files of internal/cli name unix functions of syscall.
+// rel: the files for windows, and the _test.go files of the commands the run
+// lints, which name no platform's function and build for every platform. The
+// windows run lints ./cmd/... only, as the files of internal/cli and
+// internal/httpapi name unix functions of syscall (the CLI's test takes
+// syscall.Mkfifo), and the wants of a file the run does not lint are no wants of
+// it.
 func probeFilesForWindows(rel string) bool {
-	return strings.HasSuffix(rel, "_windows.go") || strings.HasSuffix(rel, "_test.go")
+	return strings.HasSuffix(rel, "_windows.go") || strings.HasPrefix(rel, "cmd/") && strings.HasSuffix(rel, "_test.go")
 }
 
 // rootName is a name as forbidigo renders it, with the import path its pkg is
@@ -197,11 +214,18 @@ var noExecAllowed = []rootName{
 	{"example.com/otherexec", "exec.Command"},
 }
 
-// envRefused lists every name the composition-root-env group must refuse.
+// envRefused lists every name the composition-root-env group must refuse: every
+// read of a named variable, and the four lookups that locate a home, config, cache
+// or temp directory from an unnamed one (issue #152, the auditor's finding M-B:
+// without them a root could read ~/.aws/credentials with lint green).
 var envRefused = []rootRefused{
 	{rootName{"os", "os.Getenv"}, "composition-root-env: "},
 	{rootName{"os", "os.LookupEnv"}, "composition-root-env: "},
 	{rootName{"os", "os.ExpandEnv"}, "composition-root-env: "},
+	{rootName{"os", "os.UserHomeDir"}, "composition-root-env: "},
+	{rootName{"os", "os.UserConfigDir"}, "composition-root-env: "},
+	{rootName{"os", "os.UserCacheDir"}, "composition-root-env: "},
+	{rootName{"os", "os.TempDir"}, "composition-root-env: "},
 	{rootName{"syscall", "syscall.Getenv"}, "composition-root-env: "},
 	{rootName{"syscall", "syscall.GetEnvironmentVariable"}, "composition-root-env: "},
 }
@@ -210,6 +234,7 @@ var envRefused = []rootRefused{
 // process names, the whole environment (which the other group refuses, on unix
 // as syscall.Environ and on windows as syscall.GetEnvironmentStrings), the names
 // that only extend a refused one (os.Getenvs, os.LookupEnvs, os.ExpandEnvs,
+// os.UserHomeDirs, os.UserConfigDirs, os.UserCacheDirs, os.TempDirs,
 // syscall.Getenvs, syscall.GetEnvironmentVariables) catch a pattern that lost
 // its $, and a package named os or syscall elsewhere is no composition root's.
 var envAllowed = []rootName{
@@ -228,6 +253,10 @@ var envAllowed = []rootName{
 	{"os", "os.Getenvs"},
 	{"os", "os.LookupEnvs"},
 	{"os", "os.ExpandEnvs"},
+	{"os", "os.UserHomeDirs"},
+	{"os", "os.UserConfigDirs"},
+	{"os", "os.UserCacheDirs"},
+	{"os", "os.TempDirs"},
 	{"syscall", "syscall.Getenvs"},
 	{"syscall", "syscall.GetEnvironmentVariables"},
 	{"example.com/otheros", "os.Getenv"},

@@ -24,16 +24,26 @@ const (
 	modulePath = "github.com/timothymamo/shift2eu"
 )
 
+// testDocsRule is the strict depguard rule that holds the test trees' own
+// documentation packages, test/apiparity, test/architecture, test/container,
+// test/devenv, test/docs and test/lint (issue #152, the auditor's finding H-1):
+// each is a non-test package a composition root can import, and Go's internal
+// rule keeps only the nested internal trees out of reach. It is skipped below,
+// with the reason the package check cannot read it as a layer.
+const testDocsRule = "test-docs-are-pure"
+
 // skippedStrictRules are the strict rules of .golangci.yml the package check
 // cannot hold, each with the reason it cannot. Every other strict rule is one
 // the check reads a layer from: TestEveryStrictRuleIsChecked requires that, and
 // TestReleaseTargetDependencies lists the packages of its directories. A strict
-// rule in neither fails TestEveryStrictRuleIsChecked.
+// rule in neither fails TestEveryStrictRuleIsChecked. Since issue #152 neither
+// cli-gets-adapters-from-cmd nor version-is-build-metadata is skipped: both are
+// strict allow lists of exact entries, which the check reads package by package.
 var skippedStrictRules = map[string]string{
-	"cli-gets-adapters-from-cmd": "it allows $gostd, which depguard expands to one prefix entry per top-level directory of GOROOT/src, so no allow list of package-by-package imports can say what it means",
-	"e2e-is-black-box":           "test/e2e holds test files only, so go list -deps reaches no package of it: it is no layer of the production packages the check holds, and a package only a test file imports is never listed at all",
-	compositionRootRule:          "go list -deps ./cmd/shift2eu/... lists the composition root's whole dependency tree, internal/cli and internal/version included, and no rule the check reads holds those (internal/cli's own rule allows $gostd and is skipped), so listing the composition root beside the other layers would flag them as outside every directory the check holds. TestCompositionRootRulesAreHeldToTheirRuleForEveryReleaseTarget holds cmd/shift2eu to this rule's allow list instead, on every release target",
-	serverCompositionRootRule:    "go list -deps ./cmd/shift2eu-server/... lists the server's whole dependency tree, the target adapters and the report adapters included, and the lax rule adapters-are-built-in-cmd holds those, which the check does not read, so listing the server's root beside the layers would flag them as outside every directory the check holds. TestCompositionRootRulesAreHeldToTheirRuleForEveryReleaseTarget holds cmd/shift2eu-server to this rule's allow list instead, on every release target",
+	"e2e-is-black-box":        "its allow list names $gostd, which check.AllowList refuses as it is no import path, so the package check cannot read the rule's imports; its production files are test/e2e/doc.go alone, which test-docs-are-pure holds since issue #152 (the reviewer's B1, the auditor's L-1): doc.go carries no build tag, so test/e2e is a package go list lists, and the e2e test files, which import go-cmp and internal/testutil, are the rule's own business",
+	testDocsRule:              "the doc.go-only test packages import nothing, so there is no import of theirs to hold, and the pattern that would list them, ./test/architecture/..., also reaches test/architecture/internal/check, which reads os, os/exec and test/internal/releasetarget: a rule's files: list holds a directory, not a package, so holding ./test/architecture/... to this allow list would flag that package and the test/internal/... packages it imports, which Go's internal rule keeps out of reach of the roots and no depguard rule holds. The property that does hold these packages, TestEveryModulePackageIsHeldByAStrictRule, reads .golangci.yml directly rather than through go list",
+	compositionRootRule:       "go list -deps ./cmd/shift2eu/... lists the composition root's whole dependency tree, which the shared layer listing does not read: the adapters, internal/cli, internal/version and the standard library stand in no rule directory the listing holds, so listing the root beside the layers would flag them. TestCompositionRootRulesAreHeldToTheirRuleForEveryReleaseTarget holds cmd/shift2eu to this rule's allow list instead, on every release target. What it reaches is held too, but not by this listing: TestEveryModulePackageIsHeldByAStrictRule holds every non-test module package a composition root can import to a strict rule of its own, so a package the root reaches cannot fall through unheld (issue #152)",
+	serverCompositionRootRule: "go list -deps ./cmd/shift2eu-server/... lists the server's whole dependency tree, which the shared layer listing does not read: the adapters, internal/httpapi, internal/version and the standard library stand in no rule directory the listing holds, and the lax rule adapters-are-built-in-cmd holds the adapters, which the check does not read. TestCompositionRootRulesAreHeldToTheirRuleForEveryReleaseTarget holds cmd/shift2eu-server to this rule's allow list instead, on every release target, and TestEveryModulePackageIsHeldByAStrictRule holds every non-test module package it reaches to a strict rule of its own (issue #152)",
 }
 
 // sdkRule is the strict depguard rule that holds every cloud source adapter, and
@@ -407,7 +417,11 @@ func checkLayers(
 // its listing must hold: without them the listing would pass over a binary
 // that carries none of the packages the check exists for. The CLI, Main, is
 // built from internal/cli and the server, ServerMain (PRD #103), from
-// internal/httpapi, and both carry the three target adapters.
+// internal/httpapi, and both carry the three target adapters. The CLI carries
+// the build metadata too, internal/version, which only it imports today, and
+// which the strict rule version-is-build-metadata holds (issue #152); the
+// server reaches no package of its own there, and its listing must not be asked
+// for one.
 var releaseBinaries = []struct {
 	main     string
 	required []string
@@ -419,6 +433,7 @@ var releaseBinaries = []struct {
 			modulePath + "/internal/adapter/target/scaleway",
 			modulePath + "/internal/adapter/target/upcloud",
 			modulePath + "/internal/cli",
+			modulePath + "/internal/version",
 		},
 	},
 	{
@@ -1103,10 +1118,11 @@ func TestCompositionRootRulesHoldTheirProbesForEveryReleaseTarget(t *testing.T) 
 // heldByRules returns the packages of pkgs that sit in a directory one of rules
 // holds and none it excludes, the way check.Packages holds a package. It is for
 // the composition root alone: go list -deps on its directory lists every package
-// of the module it reaches, internal/cli and internal/version among them, and no
-// rule the check reads holds those (internal/cli's own rule allows $gostd and is
-// skipped), so passing the whole listing would flag them for being outside every
-// directory. Every other layer's listing reaches only layers, which
+// of the module it reaches, each of which a strict rule of its own holds
+// (cli-gets-adapters-from-cmd since issue #152, version-is-build-metadata for the
+// build metadata), and the shared layer listing reads no rule's dependency tree,
+// so passing the whole listing would flag them for being outside every directory
+// it holds. Every other layer's listing reaches only layers, which
 // TestReleaseTargetDependencies holds as a whole.
 func heldByRules(module string, rules []check.Rule, pkgs []check.Package) []check.Package {
 	var held []check.Package

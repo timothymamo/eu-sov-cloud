@@ -270,10 +270,10 @@ linters:
         # application test is what internal/testutil can do through os (file
         # access, the golden files), fmt, time and flag, whose own imports
         # testutil-imports holds, and what testing itself offers (t.TempDir,
-        # test output, and t.Setenv/t.Chdir until #153). No import or call
-        # rule can refuse a hard-coded path, so a new file path or os, fmt,
-        # time or flag call in internal/testutil is a widening a reviewer
-        # must read. The deny list is the one
+        # test output; tests-no-process-state refuses t.Setenv and t.Chdir).
+        # No import or call rule can refuse a hard-coded path, so a new file
+        # path or os, fmt, time or flag call in internal/testutil is a
+        # widening a reviewer must read. The deny list is the one
         # app-uses-ports-not-adapters writes, shared through *app-deny: under
         # a strict list it only says why.
         #
@@ -345,18 +345,46 @@ linters:
             - github.com/timothymamo/shift2eu/internal/testutil$
         # The driving adapter gets its adapters from the composition root
         # through cli.Deps and never constructs one, so it imports only the
-        # application, the domain, the build metadata and the standard library.
-        # The application and domain packages are named one by one, each
-        # ending in $, for the reason given at domain-is-pure: a prefix entry
-        # would also admit a package under testdata or a _ directory, which
-        # make lint never visits. A new application package needs an entry.
+        # application, the domain, the build metadata and the standard
+        # packages it needs today. The rule is a strict allow list (issue
+        # #152), each entry ending in $ so it covers that package only, for
+        # the reason given at domain-is-pure: a prefix entry would also admit
+        # a package under testdata or a _ directory, which make lint never
+        # visits. Before #152 it allowed $gostd and denied a list beside it,
+        # so a composition root, which may not start a process or take a
+        # pointer apart itself, could hand the call to the CLI through a
+        # package nobody had thought to deny (unsafe among them). Now
+        # syscall, unsafe, os/exec, plugin, the network and every other
+        # package the CLI does not import today are refused because nothing
+        # here names them. os is named because the CLI reads the inventory a
+        # user names (--inventory) and creates the report the user asked for
+        # (--output); the forbidigo group cli-no-env-or-process refuses the
+        # calls of os that reach the environment or start a process. A new
+        # standard or module package needs an entry here; os/signal and
+        # syscall need a reason, as they reach signals and system calls.
+        # The adapter deny entry stays for its message: the allow list
+        # refuses an adapter already.
         cli-gets-adapters-from-cmd:
           list-mode: strict
           files:
             - "**/internal/cli/**"
             - "!$test"
           allow:
-            - $gostd
+            - bytes$
+            - context$
+            - errors$
+            - flag$
+            - fmt$
+            - io$
+            - io/fs$
+            - maps$
+            - os$
+            - path/filepath$
+            - slices$
+            - strconv$
+            - strings$
+            - unicode$
+            - unicode/utf8$
             - github.com/timothymamo/shift2eu/internal/app/analysis$
             - github.com/timothymamo/shift2eu/internal/domain/assessment$
             - github.com/timothymamo/shift2eu/internal/domain/catalog$
@@ -368,55 +396,23 @@ linters:
           deny:
             - pkg: github.com/timothymamo/shift2eu/internal/adapter
               desc: the CLI gets its adapters through cli.Deps; construct them in cmd/shift2eu
-            # The CLI reads one file and writes one report: it resolves no
-            # name, opens no connection and starts no process. depguard
-            # expands $gostd to one prefix entry per top-level directory of
-            # GOROOT/src, so its allow entry for net is no longer than a deny
-            # of net, and the deny wins for every net/... package, net/url and
-            # net/netip included. Those parse values, do no I/O and stay
-            # allowed, so each package that does I/O is denied by its own
-            # name, ending in $: net$ is net itself, and each net subpackage
-            # is listed, not only its parent.
-            - pkg: net$
-              desc: the CLI has no network access; an adapter behind a port does
-            - pkg: net/http$
-              desc: the CLI makes no HTTP calls; an adapter behind a port does
-            - pkg: net/http/cgi$
-              desc: the CLI serves no HTTP
-            - pkg: net/http/cookiejar$
-              desc: the CLI makes no HTTP calls; an adapter behind a port does
-            - pkg: net/http/fcgi$
-              desc: the CLI serves no HTTP
-            - pkg: net/http/httptest$
-              desc: the CLI makes no HTTP calls; an adapter behind a port does
-            - pkg: net/http/httptrace$
-              desc: the CLI makes no HTTP calls; an adapter behind a port does
-            - pkg: net/http/httputil$
-              desc: the CLI makes no HTTP calls; an adapter behind a port does
-            - pkg: net/http/pprof$
-              desc: the CLI serves no HTTP
-            - pkg: net/mail$
-              desc: the CLI parses no mail
-            - pkg: net/rpc$
-              desc: the CLI makes no RPC calls; an adapter behind a port does
-            - pkg: net/rpc/jsonrpc$
-              desc: the CLI makes no RPC calls; an adapter behind a port does
-            - pkg: net/smtp$
-              desc: the CLI sends no mail
-            - pkg: net/textproto$
-              desc: the CLI speaks no network protocol; an adapter behind a port does
-            - pkg: crypto/tls$
-              desc: the CLI opens no TLS connection; an adapter behind a port does
-            - pkg: os/exec$
-              desc: the CLI starts no processes
-            - pkg: os/user$
-              desc: the CLI looks up no OS users
-            # The CLI's tests create a FIFO with syscall.Mkfifo; they are left
-            # out of this rule by !$test.
-            - pkg: syscall$
-              desc: the CLI makes no raw system calls; os, io/fs and os/signal cover what it needs
-            - pkg: plugin$
-              desc: the CLI loads no code at run time; adapters are wired in cmd/shift2eu
+        # internal/version is the build metadata: three variables the release
+        # sets with -X and the one function that formats them. Both driving
+        # adapters may import it, so without a rule of its own it would be a
+        # delegation path (issue #152): a root hands the work to the CLI, the
+        # CLI calls internal/version, and a package nobody had thought to
+        # deny would do there what the root and the CLI may not. The rule is
+        # a strict allow list of what the package imports today, fmt, each
+        # entry ending in $ for the reason given at domain-is-pure; os,
+        # syscall, os/exec, unsafe and everything else are refused because
+        # nothing here names them. Its test is held by the test rules.
+        version-is-build-metadata:
+          list-mode: strict
+          files:
+            - "**/internal/version/**"
+            - "!$test"
+          allow:
+            - fmt$
         # The composition root constructs the adapters, hands them to the CLI
         # and does nothing else (issue #101). So its imports are a strict
         # allow list: the module's own packages and the standard packages it
@@ -899,8 +895,10 @@ linters:
         #
         # An allowed package can still hold a function that reaches further
         # than the rule means, which an import rule cannot see: os is allowed
-        # for os.Open, and the reader must not call os.Getenv, os.StartProcess
-        # or fmt.Print*. Review holds that line.
+        # for os.Open, and the forbidigo group inventoryfile-no-env (issue
+        # #152) refuses its environment reads, home, config, cache and temp
+        # lookups and os.StartProcess, so cmd/shift2eu cannot hand the reader
+        # a call it may not make itself. fmt.Print* is left to review.
         inventory-file-reader-reads-one-file:
           list-mode: strict
           files:
@@ -1264,6 +1262,20 @@ linters:
         # rule is lax, so its deny list alone decides and no allow list has to
         # follow every pure import a test makes. syscall/js builds for js/wasm
         # only and is denied all the same.
+        #
+        # os/user is denied too: a lookup returns a user's home directory,
+        # where the environment's variables and credential files point.
+        #
+        # Since issue #152 the rule also holds the _test.go files of the two
+        # driving adapters, internal/cli and internal/httpapi: a root hands
+        # them the work, and their tests run in the same process as the code
+        # under test. This import rule is half of the roots' limits; the call
+        # half is forbidigo's: composition-root-no-exec and composition-root-env
+        # hold under cmd/ only, cli-no-env-or-process holds every file of
+        # internal/cli, its tests included, and httpapi-tests-no-env-or-process
+        # holds internal/httpapi's tests. The CLI's tests import syscall for
+        # syscall.Mkfifo (output_unix_test.go), which neither this deny list
+        # nor cli-no-env-or-process names.
         composition-root-tests:
           list-mode: lax
           files:
@@ -1271,6 +1283,10 @@ linters:
             - "**/cmd/shift2eu/**/*_test.go"
             - "**/cmd/shift2eu-server/*_test.go"
             - "**/cmd/shift2eu-server/**/*_test.go"
+            - "**/internal/cli/*_test.go"
+            - "**/internal/cli/**/*_test.go"
+            - "**/internal/httpapi/*_test.go"
+            - "**/internal/httpapi/**/*_test.go"
           deny:
             - pkg: go/build
               desc: a composition root's test builds no package; it runs the root's code in process
@@ -1286,6 +1302,8 @@ linters:
               desc: a composition root's test calls no JavaScript host function
             - pkg: unsafe
               desc: a composition root's test takes no pointer apart, which is how a raw system call or a linknamed symbol is reached
+            - pkg: os/user
+              desc: a composition root's test looks up no OS user, whose home directory is where the environment's variables point
         # The e2e tier builds the binary and runs it as a black box, offline,
         # against the fixtures in test/e2e/testdata. It imports only the
         # standard library, go-cmp and internal/testutil: no adapter,
@@ -1312,6 +1330,106 @@ linters:
               desc: the e2e tier runs offline and calls no cloud SDK
             - pkg: google.golang.org/api
               desc: the e2e tier runs offline and calls no cloud SDK
+        # internal/config loads flags, the environment and an optional file
+        # (its doc.go), but has no code yet. A composition root may import any
+        # module package, so without a strict rule it was a delegation path
+        # (issue #152): a root could hand it an os.Getenv or exec.Command with
+        # lint green. test/architecture's TestEveryModulePackageIsHeldByAStrictRule
+        # now holds every module package under internal/ and cmd/ to a strict
+        # rule. The allow list is errors$, the smallest one
+        # check.AllowList reads (it refuses a strict rule with none). A future
+        # os import is added here together with a forbidigo group that refuses
+        # its environment reads, as inventoryfile-no-env does
+        # (TestEveryOsAllowingRuleHasAnEnvironmentGroup fails until it has
+        # one), and any read of a named variable needs an exception decided
+        # in an ADR, as composition-root-env's for SHIFT2EU_SERVER_TOKEN
+        # (ADR 0019).
+        config-is-pure:
+          list-mode: strict
+          files:
+            - "**/internal/config/**"
+            - "!$test"
+          allow:
+            - errors$
+        # internal/adapter/target holds a doc.go and no code; its providers,
+        # the snapshot reader and the contract suite have rules of their own,
+        # which the negated globs take out. Without a rule it was a package
+        # no strict rule held (TestEveryModulePackageIsHeldByAStrictRule,
+        # issue #152). The allow list is errors$, the smallest one
+        # check.AllowList reads. A provider added under it is named in this
+        # rule's negated globs and in embedded-snapshot-targets-stay-offline
+        # in the same commit.
+        target-docs-are-pure:
+          list-mode: strict
+          files:
+            - "**/internal/adapter/target/**"
+            - "!**/internal/adapter/target/ovhcloud/**"
+            - "!**/internal/adapter/target/scaleway/**"
+            - "!**/internal/adapter/target/upcloud/**"
+            - "!**/internal/adapter/target/snapshot/**"
+            - "!**/internal/adapter/target/targettest/**"
+            - "!$test"
+          allow:
+            - errors$
+        # The contract suites, internal/adapter/source/sourcetest and
+        # internal/adapter/target/targettest, are production packages, not
+        # _test packages, and any _test.go file of the module may import
+        # them, so without a strict rule a scoped test could delegate a call
+        # through them (issue #152). The allow list is exactly what they
+        # import today; time$ is targettest's and the one widening sourcetest
+        # gets from the shared rule. !$test leaves the suites' own _test.go
+        # files to the module-wide rules: they run in the suites' own test
+        # binaries and are handed to no root.
+        contract-suites-are-pure:
+          list-mode: strict
+          files:
+            - "**/internal/adapter/source/sourcetest/**"
+            - "**/internal/adapter/target/targettest/**"
+            - "!$test"
+          allow:
+            - context$
+            - errors$
+            - fmt$
+            - slices$
+            - testing$
+            - time$
+            - github.com/timothymamo/shift2eu/internal/app/analysis$
+            - github.com/timothymamo/shift2eu/internal/domain/catalog$
+            - github.com/timothymamo/shift2eu/internal/domain/inventory$
+            - github.com/timothymamo/shift2eu/internal/domain/taxonomy$
+            - github.com/timothymamo/shift2eu/internal/domain/text$
+        # The test trees' own documentation packages (issue #152, the auditor's finding H-1):
+        # test/apiparity, test/architecture, test/container, test/devenv, test/docs and test/lint
+        # each hold doc.go and no code, and each is a production package a composition root can
+        # import, because the roots' allow lists name the module path as a prefix entry. Go's
+        # internal rule keeps test/internal/... and test/architecture/internal/... out of reach of
+        # cmd/ and internal/, and nothing keeps these out, so they get a rule of their own: one
+        # shared strict allow list, the smallest AllowList reads (check.AllowList refuses an empty
+        # one; issue #166 would let it be empty). The day one of them imports a package, it names
+        # it here and in the pin in the same commit. test/e2e is held here too since #152 (the
+        # reviewer's B1, the auditor's L-1): its doc.go carries no build tag, so it is a
+        # production package a root can import, and e2e-is-black-box, which holds it as well,
+        # allows $gostd, so a root could hand os.Getenv or exec.Command to an untagged file there.
+        # !$test takes the e2e test files out (depguard applies negated globs whatever their
+        # position), so they stay on e2e-is-black-box alone.
+        # !$test takes the test files out, whose imports these lists would not fit, and the
+        # nested internal tree under test/architecture is taken out with a negated glob, because a
+        # files: list cannot say "this directory only" and test/architecture/internal/check reads
+        # os and os/exec.
+        test-docs-are-pure:
+          list-mode: strict
+          files:
+            - "**/test/apiparity/**"
+            - "**/test/architecture/**"
+            - "!**/test/architecture/internal/**"
+            - "**/test/container/**"
+            - "**/test/devenv/**"
+            - "**/test/docs/**"
+            - "**/test/e2e/**"
+            - "**/test/lint/**"
+            - "!$test"
+          allow:
+            - errors$
     exhaustive:
       default-signifies-exhaustive: true
     # forbidigo refuses calls, which an import rule cannot see. Its entries
@@ -1595,7 +1713,12 @@ linters:
         # 0019); run, setUp and readToken see only the token, never a lookup
         # by name. test/lint's TestCompositionRootPassesLookupEnvToRun pins
         # that shape. The entry stands alone, so the exception's exclusion
-        # rule names its msg and drops no other entry's issue.
+        # rule names its msg and drops no other entry's issue. Since issue
+        # #152 the group also refuses os.UserHomeDir, os.UserConfigDir,
+        # os.UserCacheDir and os.TempDir, which read $HOME, $XDG_CONFIG_HOME,
+        # $XDG_CACHE_HOME and $TMPDIR without naming them, in an entry of
+        # their own, so every package allowed os is held to the same nine
+        # reads (test/architecture's TestEveryOsAllowingRuleHasAnEnvironmentGroup).
         #
         # Scope of both: every file under cmd/shift2eu/ and
         # cmd/shift2eu-server/, _test.go files included. A test of a
@@ -1603,11 +1726,21 @@ linters:
         # same environment, and the server's tests hand run a fake token
         # source, so none needs a real one. Elsewhere the depguard rules keep os/exec out
         # by layer; these groups only add the call-level rule depguard cannot
-        # state for the roots. The environment is not kept out elsewhere: the
-        # CLI's rule (cli-gets-adapters-from-cmd) allows $gostd, so
-        # internal/cli may import os and read a variable a root delegates to
-        # it, a known gap (docs/architecture.md). internal/httpapi's strict
-        # allow list leaves os and syscall out.
+        # state for the roots. A root cannot delegate a read to the driving
+        # adapter it hands the work to either: internal/cli's strict allow
+        # list leaves syscall, unsafe and os/exec out and the group
+        # cli-no-env-or-process refuses the calls of os and syscall that
+        # reach the environment or start a process, in its tests too (issue
+        # #152); internal/httpapi's strict allow list leaves os and syscall
+        # out, and httpapi-tests-no-env-or-process holds its tests;
+        # internal/version, which the CLI imports, is held to fmt by
+        # depguard's version-is-build-metadata; the inventory-file reader is
+        # held by inventoryfile-no-env; and every other non-test module
+        # package a root can import, under internal/, cmd/, test/ or a new
+        # top-level directory, is held by a strict depguard rule
+        # (TestEveryModulePackageIsHeldByAStrictRule), internal/config by
+        # config-is-pure and the doc-only test/* packages by
+        # test-docs-are-pure.
         #
         # No-exec also refuses the windows entry points of syscall
         # (CreateProcess, CreateProcessAsUser, GetEnvironmentStrings, LoadDLL,
@@ -1648,6 +1781,9 @@ linters:
         - pattern: '^os\.(?:Getenv|ExpandEnv)$'
           pkg: '^os$'
           msg: 'composition-root-env: a composition root reads no environment variable; take the value as a flag'
+        - pattern: '^os\.(?:UserHomeDir|UserConfigDir|UserCacheDir|TempDir)$'
+          pkg: '^os$'
+          msg: 'composition-root-env: a composition root locates no home, config, cache or temp directory, where a credentials file sits; take the value as a flag'
         - pattern: '^os\.LookupEnv$'
           pkg: '^os$'
           msg: 'composition-root-env: os.LookupEnv is called in cmd/shift2eu-server/main.go only, for SHIFT2EU_SERVER_TOKEN, in the token source it hands to run (ADR 0019); take any other value as a flag'
@@ -1663,12 +1799,121 @@ linters:
         # UserHomeDir, UserConfigDir, UserCacheDir and TempDir read $HOME,
         # $XDG_CONFIG_HOME, $XDG_CACHE_HOME and $TMPDIR without naming them,
         # so a helper could build the path to a credentials file. The group
-        # refuses those calls. Scope: every file under
+        # refuses those calls. The writes (Setenv, Unsetenv, Clearenv, Chdir)
+        # are tests-no-process-state's since issue #153, which holds here too,
+        # so no line is reported by two groups. Scope: every file under
         # internal/testutil/, _test.go files included; its exclusion rule
         # drops it everywhere else.
-        - pattern: '^os\.(?:Getenv|LookupEnv|ExpandEnv|Environ|Setenv|Unsetenv|Clearenv|StartProcess|UserHomeDir|UserConfigDir|UserCacheDir|TempDir)$'
+        - pattern: '^os\.(?:Getenv|LookupEnv|ExpandEnv|Environ|StartProcess|UserHomeDir|UserConfigDir|UserCacheDir|TempDir)$'
           pkg: '^os$'
           msg: 'testutil-no-env: a test helper reads no environment variable, locates no home, config, cache or temp directory and starts no process, where credentials live; take what it needs as a parameter (CLAUDE.md rule 3)'
+        # Group cli-no-env-or-process (issue #152): the CLI's code reads and
+        # hands over no environment variable, locates no home, config, cache
+        # or temp directory, starts no process and makes no raw system call.
+        # A composition root may not do any of that itself
+        # (composition-root-env, composition-root-no-exec), and without this
+        # group it could hand the call to the CLI, where it would happen one
+        # call deeper with lint green. cli-gets-adapters-from-cmd must allow
+        # os, which the CLI reads the inventory a user names and creates the
+        # report with, and os also reaches the environment, where credentials
+        # live (CLAUDE.md rule 3). The os entry mirrors the roots' and
+        # testutil-no-env's reads; the writes (Setenv, Unsetenv, Clearenv,
+        # Chdir) are tests-no-process-state's, which holds here too, so no
+        # line is reported by two groups. In production files syscall, unsafe
+        # and os/exec are refused at the import by the CLI's strict allow
+        # list; its tests may import syscall, for syscall.Mkfifo
+        # (output_unix_test.go), so the syscall entry holds the roots' names
+        # there: the environment reads, the process starts, the windows
+        # entry points and DLL loaders, the raw system calls and the SYS_*
+        # numbers. It is one entry with one msg, not the roots' three: the
+        # windows names exist on windows only, test/lint's windows probe
+        # lints cmd/ alone, and test/lint pins every name of the pattern
+        # offline instead. depguard's composition-root-tests keeps unsafe,
+        # os/exec and os/user out of the tests. The CLI reads no named
+        # variable today, so the group has no exception. Scope: every file
+        # under internal/cli/, _test.go files included; its exclusion rule
+        # drops it everywhere else.
+        - pattern: '^os\.(?:Getenv|LookupEnv|ExpandEnv|Environ|StartProcess|UserHomeDir|UserConfigDir|UserCacheDir|TempDir)$'
+          pkg: '^os$'
+          msg: 'cli-no-env-or-process: the CLI reads, writes and hands over no environment variable, locates no home, config, cache or temp directory and starts no process, where credentials live; the composition root passes what it needs as a flag value (CLAUDE.md rule 3)'
+        - pattern: '^syscall\.(?:Getenv|GetEnvironmentVariable|Environ|Exec|ForkExec|StartProcess|CreateProcess|CreateProcessAsUser|GetEnvironmentStrings|LoadDLL|MustLoadDLL|NewLazyDLL|LoadLibrary|GetProcAddress|(?:(?:Raw)?Syscall(?:6|9|12|15|18|N)?|SYS_\w+))$'
+          pkg: '^syscall$'
+          msg: 'cli-no-env-or-process: the CLI has no call that starts or replaces a process, makes a raw system call or reads the environment, in its tests either; pass the value to the code under test (CLAUDE.md rule 3)'
+        # Group httpapi-tests-no-env-or-process (issue #152): the HTTP API's
+        # tests read no environment variable, locate no home, config, cache or
+        # temp directory, start no process and make no raw system call. The
+        # production files need no group: internal/httpapi's strict allow list
+        # (httpapi-gets-adapters-from-cmd) leaves os and syscall out. Its
+        # tests are compiled into the same package and run in the same process
+        # as the code a root hands the work to, so they get the roots' call
+        # limits, with the same names and for the same reasons as
+        # cli-no-env-or-process (one syscall entry, pinned offline). The
+        # writes are tests-no-process-state's; depguard's composition-root-tests
+        # keeps unsafe, os/exec and os/user out. Scope: the _test.go files
+        # under internal/httpapi/; its exclusion rule drops it everywhere else.
+        - pattern: '^os\.(?:Getenv|LookupEnv|ExpandEnv|Environ|StartProcess|UserHomeDir|UserConfigDir|UserCacheDir|TempDir)$'
+          pkg: '^os$'
+          msg: 'httpapi-tests-no-env-or-process: a test of the HTTP API reads no environment variable and locates no home, config, cache or temp directory, where credentials live; pass the value to the code under test (CLAUDE.md rule 3)'
+        - pattern: '^syscall\.(?:Getenv|GetEnvironmentVariable|Environ|Exec|ForkExec|StartProcess|CreateProcess|CreateProcessAsUser|GetEnvironmentStrings|LoadDLL|MustLoadDLL|NewLazyDLL|LoadLibrary|GetProcAddress|(?:(?:Raw)?Syscall(?:6|9|12|15|18|N)?|SYS_\w+))$'
+          pkg: '^syscall$'
+          msg: 'httpapi-tests-no-env-or-process: a test of the HTTP API starts or replaces no process, makes a raw system call or reads the environment; pass the value to the code under test (CLAUDE.md rule 3)'
+        # Group tests-no-process-state (issue #153): a test changes no
+        # environment variable and no working directory. t.Setenv and
+        # os.Setenv change the environment of the whole test binary, so every
+        # test in the process sees the variable, a credential's name among
+        # them (CLAUDE.md rule 3), and t.Chdir and os.Chdir change the
+        # directory a t.Parallel test shares. A test passes the value it wants
+        # to the code under test, through a fake, a parameter, a flag or the
+        # request.
+        #
+        # The first entry has no pkg and matches any method or function named
+        # Setenv or Chdir, whatever its receiver. analyze-types renders a call
+        # on the type the method is found on: testing.T.Setenv,
+        # testing.TB.Setenv, a method value, os.Setenv and os.Chdir, but also
+        # pkg.wrapper.Setenv for a struct that embeds *testing.T and
+        # pkg.iface.Setenv for a named interface t is assigned to (probed on
+        # the golangci-lint version CI pins). A testing-only entry missed the
+        # last two. forbidigo renders nothing for a call through an interface
+        # literal or a type parameter, so test/lint refuses every selector
+        # named Setenv, Chdir, Unsetenv, Clearenv or Fchdir in the group's
+        # scope on the AST (TestTestsChangeNoProcessStateByNoSelector). The
+        # second entry refuses os.Unsetenv, os.Clearenv, syscall.Unsetenv,
+        # syscall.Clearenv and syscall.Fchdir (issue #153's review: syscall
+        # writes the same environment and working directory os does; os has
+        # no Fchdir, the pattern refuses one all the same). A method called
+        # through reflect stays a gap (docs/architecture.md, Known gaps). This
+        # group owns the writes: testutil-no-env and cli-no-env-or-process
+        # leave them out, so no line is reported twice.
+        #
+        # Scope: every file of the module but test/lint and test/architecture,
+        # through one path exclusion rule: the adapters', domain's and e2e
+        # tests are held too, so a source adapter's test cannot set
+        # AWS_PROFILE. Those two harnesses call t.Setenv on purpose, to run
+        # the go command in a known environment (GOCACHE, GOFLAGS, HOME) in a
+        # test binary of their own. t.TempDir, os.MkdirTemp("", ...) and
+        # os.CreateTemp("", ...) stay allowed: they read $TMPDIR implicitly
+        # and return a fresh temporary path, never a home, config or
+        # credential path (docs/architecture.md, Known gaps).
+        - pattern: '^(?:[\w*()\[\]]+\.)+(?:Setenv|Chdir)$'
+          msg: 'tests-no-process-state: a test changes no environment variable and no working directory, which every test of the process shares; pass the value to the code under test through a fake or a parameter (CLAUDE.md rule 3)'
+        - pattern: '^(?:os|syscall)\.(?:Unsetenv|Clearenv|Fchdir)$'
+          pkg: '^(?:os|syscall)$'
+          msg: 'tests-no-process-state: a test changes no environment variable and no working directory of the process, which every test in it shares; pass the value to the code under test through a fake or a parameter (CLAUDE.md rule 3)'
+        # Group inventoryfile-no-env (issue #152): the inventory-file reader
+        # reads no environment variable, locates no home, config, cache or
+        # temp directory and starts no process. inventory-file-reader-reads-one-file
+        # must allow os, for os.Open, and cmd/shift2eu imports the reader, so
+        # without this group a root could hand it a call it may not make
+        # itself. The names are testutil-no-env's and cli-no-env-or-process's:
+        # every module package whose strict rule allows os is held by such a
+        # group (test/architecture's TestEveryOsAllowingRuleHasAnEnvironmentGroup).
+        # The writes are tests-no-process-state's, which holds here too, so no
+        # line is reported by two groups. Scope: every file under
+        # internal/adapter/source/inventoryfile/, _test.go files included; its
+        # exclusion rule drops it everywhere else.
+        - pattern: '^os\.(?:Getenv|LookupEnv|ExpandEnv|Environ|StartProcess|UserHomeDir|UserConfigDir|UserCacheDir|TempDir)$'
+          pkg: '^os$'
+          msg: 'inventoryfile-no-env: the inventory-file reader reads no environment variable, locates no home, config, cache or temp directory and starts no process, where credentials live; cmd/shift2eu passes the file it names (CLAUDE.md rule 3)'
     gosec:
       excludes:
         - G104 # unchecked errors are already reported by errcheck
@@ -1754,6 +1999,27 @@ linters:
         linters:
           - forbidigo
         text: 'because "testutil-no-env: [^"]*"$'
+      # cli-no-env-or-process: the group holds for every file under
+      # internal/cli/, _test.go files included, and nowhere else; the roots'
+      # own groups hold under cmd/.
+      - path-except: ^internal/cli/
+        linters:
+          - forbidigo
+        text: 'because "cli-no-env-or-process: [^"]*"$'
+      # httpapi-tests-no-env-or-process: the group holds for the _test.go
+      # files under internal/httpapi/ and nowhere else; the production files
+      # are held by their strict import rule.
+      - path-except: ^internal/httpapi/.*_test\.go$
+        linters:
+          - forbidigo
+        text: 'because "httpapi-tests-no-env-or-process: [^"]*"$'
+      # tests-no-process-state: the group holds for every file but those of
+      # test/lint and test/architecture, which set the go command's own
+      # variables on purpose.
+      - path: ^test/(?:lint|architecture)/
+        linters:
+          - forbidigo
+        text: 'because "tests-no-process-state: [^"]*"$'
       # The one exception (ADR 0019): os.LookupEnv(tokenEnvVar), the call the
       # token source that main.go passes to run makes for
       # SHIFT2EU_SERVER_TOKEN, in cmd/shift2eu-server/main.go alone. text is
@@ -1763,6 +2029,13 @@ linters:
         linters:
           - forbidigo
         text: 'because "composition-root-env: os\.LookupEnv is called in cmd/shift2eu-server/main\.go only, for SHIFT2EU_SERVER_TOKEN, in the token source it hands to run \(ADR 0019\); take any other value as a flag"$'
+      # inventoryfile-no-env: the group holds for every file under
+      # internal/adapter/source/inventoryfile/, _test.go files included, and
+      # nowhere else.
+      - path-except: ^internal/adapter/source/inventoryfile/
+        linters:
+          - forbidigo
+        text: 'because "inventoryfile-no-env: [^"]*"$'
 
 formatters:
   enable:
