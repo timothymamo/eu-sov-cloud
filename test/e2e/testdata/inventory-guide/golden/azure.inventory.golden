@@ -128,6 +128,12 @@
       "region": "westeurope"
     },
     {
+      "id": "shop-hana-1",
+      "rawType": "Microsoft.AzureLargeInstance/azureLargeInstances",
+      "category": "compute.baremetal",
+      "region": "westeurope"
+    },
+    {
       "id": "shop-thumbnail-jobs",
       "rawType": "Microsoft.Storage/storageAccounts/queueServices/queues",
       "category": "messaging.queue",

@@ -3,6 +3,15 @@
   "source": "gcp",
   "resources": [
     {
+      "id": "pvc-00000000-0000-0000-0000-000000000001",
+      "rawType": "compute.googleapis.com/Disk",
+      "category": "storage.block",
+      "region": "europe-west1",
+      "capabilities": [
+        "encryption-at-rest"
+      ]
+    },
+    {
       "id": "shop-assets-example",
       "rawType": "storage.googleapis.com/Bucket",
       "category": "storage.object",

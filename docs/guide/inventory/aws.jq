@@ -29,9 +29,10 @@
 #
 # The nodes of an EKS cluster are left out, the cluster stands for them: the Auto
 # Scaling groups of its managed node groups, and instances and Auto Scaling groups
-# tagged eks:cluster-name or kubernetes.io/cluster/<name>, with the volumes that
-# are deleted with such an instance (a persistent volume, which outlives its
-# node, stays).
+# tagged eks:cluster-name or kubernetes.io/cluster/<name>. An instance an Auto
+# Scaling group launched is left out too, the group stands for it. The volumes
+# deleted with an instance left out go with it (a persistent volume, which
+# outlives its instance, stays).
 
 # The CloudFormation types the service calls above cover. AWS Config lists them
 # too; those entries are dropped, so a resource is not listed twice. An Aurora
@@ -92,15 +93,18 @@ def inventory($source):
 | ([$docs[] | .Snapshots? // empty | .[] | .VolumeId] | unique) as $snapshotted
 | ([$docs[] | select(.Bucket? and has("Versioning")) | select(.Versioning.Status? == "Enabled") | .Bucket] | unique) as $versioned
 | [$docs[] | .nodegroup? // empty] as $nodegroups
-| [$docs[] | .Reservations? // empty | .[].Instances[]? | select(is_node) | .InstanceId] as $nodes
+| [$docs[] | .Reservations? // empty | .[].Instances[]?
+   | select(is_node or ([.Tags[]?.Key] | index("aws:autoscaling:groupName")))
+   | .InstanceId] as $leftout
 | ([$nodegroups[] | .resources.autoScalingGroups[]?.name]
    + [$docs[] | .AutoScalingGroups? // empty | .[] | select(is_node) | .AutoScalingGroupName]
    | unique) as $nodegroupasgs
 | [
     # EC2 instances. One launched by an Auto Scaling group is left out: the group
     # stands for it. A Kubernetes node is left out: its cluster stands for it.
-    # An instance of a bare-metal instance type (*.metal) is a dedicated
-    # physical server, compute.baremetal (ADR 0023); any other is compute.vm.
+    # An instance of a bare-metal instance type (*.metal, or a sized
+    # *.metal-* such as c7i.metal-24xl) is a dedicated physical server,
+    # compute.baremetal (ADR 0023); any other is compute.vm.
     ($docs[] | .Reservations? // empty | .[].Instances[]?
       | select(.State.Name != "terminated" and .State.Name != "shutting-down")
       | select([.Tags[]?.Key] | index("aws:autoscaling:groupName") | not)
@@ -108,7 +112,7 @@ def inventory($source):
       | {
           id: .InstanceId,
           rawType: "AWS::EC2::Instance",
-          category: (if (.InstanceType // "") | endswith(".metal") then "compute.baremetal" else "compute.vm" end),
+          category: (if (.InstanceType // "") | test("\\.metal(-|$)") then "compute.baremetal" else "compute.vm" end),
           region: (.Placement.AvailabilityZone | zone_region),
           capabilities: [
             cap("ipv6"; any(.NetworkInterfaces[]?;
@@ -117,10 +121,11 @@ def inventory($source):
           ]
         }),
 
-    # EBS volumes. A Kubernetes node's root volume, deleted with the node, is
-    # left out.
+    # EBS volumes. A volume deleted with an instance left out (a Kubernetes
+    # node or an Auto Scaling group member), such as its root volume, is left
+    # out with it.
     ($docs[] | .Volumes? // empty | .[]
-      | select(any(.Attachments[]?; .DeleteOnTermination == true and (.InstanceId | IN($nodes[]))) | not)
+      | select(any(.Attachments[]?; .DeleteOnTermination == true and (.InstanceId | IN($leftout[]))) | not)
       | {
           id: .VolumeId,
           rawType: "AWS::EC2::Volume",

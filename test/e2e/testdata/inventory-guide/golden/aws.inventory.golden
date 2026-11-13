@@ -30,6 +30,12 @@
       "region": "eu-central-1"
     },
     {
+      "id": "i-0123456789abcdef7",
+      "rawType": "AWS::EC2::Instance",
+      "category": "compute.baremetal",
+      "region": "eu-central-1"
+    },
+    {
       "id": "shop-alb",
       "rawType": "AWS::ElasticLoadBalancingV2::LoadBalancer",
       "category": "unclassified",

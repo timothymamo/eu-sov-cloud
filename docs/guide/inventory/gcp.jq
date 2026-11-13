@@ -26,7 +26,8 @@
 #
 # The nodes of a GKE cluster are left out, the cluster stands for them: the
 # managed instance groups its node pools name (instanceGroupUrls), and instances
-# and disks labelled goog-gke-node.
+# and disks labelled goog-gke-node. An instance a managed instance group created
+# is left out with its boot disk, the group stands for it.
 
 # A key that names the same resource in an asset name
 # (//compute.googleapis.com/projects/p/zones/z/instances/n), a selfLink
@@ -87,6 +88,9 @@ def details(f; k): map(select(f)) | INDEX(k);
 | ($all | details((.name? // "") | test("^projects/[^/]+/subscriptions/"); .name | key)) as $subscriptions
 | ([$all[] | select(.kind? == "compute#snapshot") | .sourceDisk? // empty | key] | unique) as $snapshotted
 | ([$clusters[] | .nodePools[]?.instanceGroupUrls[]? | key] | unique) as $nodegroups
+# The boot disks of the instances a managed instance group created.
+| ([$instances[] | select([.metadata.items[]?.key] | index("created-by"))
+    | .disks[]? | select(.boot == true) | .source // empty | key] | unique) as $groupdisks
 | [
     $all[] | select(.assetType? and ((.name? // "") | startswith("//")))
     # A GKE node or its disk: the cluster stands for it.
@@ -118,8 +122,10 @@ def details(f; k): map(select(f)) | INDEX(k);
         # (ADR 0023).
         $base + {category: "compute.baremetal"}
       elif .assetType == "compute.googleapis.com/Disk" then
+        # The boot disk of a managed instance group's instance goes with it.
         # Google Cloud encrypts all data at rest.
-        $base + {category: "storage.block", capabilities: [
+        select($key | IN($groupdisks[]) | not)
+        | $base + {category: "storage.block", capabilities: [
           "encryption-at-rest",
           cap("snapshots"; $key | IN($snapshotted[]))
         ]}
