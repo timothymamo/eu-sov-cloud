@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.5.0](https://github.com/timothymamo/shift2eu/compare/v0.4.0...v0.5.0) (2026-11-13)
+
+
+### Features
+
+* **taxonomy:** separate bare-metal servers from virtual machines ([#187](https://github.com/timothymamo/shift2eu/issues/187)) ([efd7496](https://github.com/timothymamo/shift2eu/commit/efd74964bd4ab0b6fae06bc8284dc1a5cf0136d9))
+
+
+### Bug Fixes
+
+* **lint:** make make check pass on main again ([#177](https://github.com/timothymamo/shift2eu/issues/177)) ([#180](https://github.com/timothymamo/shift2eu/issues/180)) ([a9573fd](https://github.com/timothymamo/shift2eu/commit/a9573fdf0a66230cb0e64e98d60585fd8e81504c))
+
 ## [0.4.0](https://github.com/timothymamo/shift2eu/compare/v0.3.0...v0.4.0) (2026-11-13)
 
 
