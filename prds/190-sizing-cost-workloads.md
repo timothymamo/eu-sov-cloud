@@ -192,7 +192,7 @@ Each milestone ships as one PR, in dependency order. Milestones 3, 4 and 5 can r
    `SOURCES.md`. Depends on 2.
 4. [ ] **Scaleway plans and prices** (monthly) and its default region, in its snapshot and
    `SOURCES.md`. Depends on 2.
-5. [ ] **UpCloud plans and prices** (monthly) and its default region, in its snapshot and `SOURCES.md`.
+5. [x] **UpCloud plans and prices** (monthly) and its default region, in its snapshot and `SOURCES.md`.
    Depends on 2.
 6. [ ] **Plan matching, estimates and regions.** Domain: the plan per verdict, the monthly estimate, the
    "not estimated" reasons and the totals, per assessment and in the comparison. Availability in a

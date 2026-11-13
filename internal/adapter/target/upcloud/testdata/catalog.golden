@@ -1,6 +1,6 @@
 target: UpCloud
-sourceURL: https://upcloud.com/docs/
-retrievedOn: 2026-11-11
+sourceURL: https://upcloud.com/pricing/
+retrievedOn: 2026-11-13
 Block Storage | storage.block | snapshots | de-fra1, dk-cph1, es-mad1, fi-hel1, fi-hel2, nl-ams1, pl-waw1, se-sto1
 Block Storage Encrypted | storage.block | encryption-at-rest, snapshots | de-fra1, dk-cph1, es-mad1, fi-hel1, fi-hel2, nl-ams1, pl-waw1, se-sto1
 Cloud Servers | compute.vm | ipv6, snapshots | de-fra1, dk-cph1, es-mad1, fi-hel1, fi-hel2, nl-ams1, pl-waw1, se-sto1

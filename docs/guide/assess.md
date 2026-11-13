@@ -55,7 +55,7 @@ one. Its start looks like this:
 - Source: `aws`
 - Catalog: `OVHcloud` snapshot from `https://www.ovhcloud.com/en-ie/public-cloud/prices/`, retrieved 2026-11-13
 - Catalog: `Scaleway` snapshot from `https://www.scaleway.com/en/docs/`, retrieved 2026-11-11
-- Catalog: `UpCloud` snapshot from `https://upcloud.com/docs/`, retrieved 2026-11-11
+- Catalog: `UpCloud` snapshot from `https://upcloud.com/pricing/`, retrieved 2026-11-13
 
 ## Comparison
 

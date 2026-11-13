@@ -497,8 +497,8 @@
       "target": {
         "name": "UpCloud",
         "snapshot": {
-          "source": "https://upcloud.com/docs/",
-          "retrieved": "2026-11-11"
+          "source": "https://upcloud.com/pricing/",
+          "retrieved": "2026-11-13"
         }
       },
       "summary": {
