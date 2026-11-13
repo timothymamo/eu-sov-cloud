@@ -4,13 +4,13 @@
 # what it should. The CLI's archives, shift2eu_<version>_<os>_<arch>, hold shift2eu (shift2eu.exe on
 # Windows) and not shift2eu-server; the server's, shift2eu-server_<version>_<os>_<arch>, hold
 # shift2eu-server (.exe) and not shift2eu. Besides its own binary an archive may hold only LICENSE,
-# README.md, Markdown pages under docs/, and the samples under examples/: its Markdown pages and the
-# sample inventories, examples/<source>/inventory.json (no path segment may start with a dot, so no ., ..
-# or hidden file): any other entry fails the run, so a stray file under docs/ or examples/ never ships
-# unnoticed. Each archive must also hold the samples docs/guide/try-it.md runs on (issue #188):
-# examples/README.md and, for each of aws, azure and gcp, examples/<source>/README.md and
-# examples/<source>/inventory.json. Every entry must
-# be a regular file or a directory: a symbolic link, hard link or device fails the run too. Every built
+# README.md, Markdown pages under docs/ (no path segment may start with a dot, so no ., .. or hidden
+# file), and exactly the samples docs/guide/try-it.md runs on (issue #188): examples/README.md and, for
+# each of aws, azure and gcp, examples/<source>/README.md and examples/<source>/inventory.json, with
+# their directories. Any other entry fails the run, so a stray file under docs/, or any file under
+# examples/ that is not a known sample (a real inventory committed as examples/<name>/inventory.json),
+# never ships unnoticed. Each archive must hold every sample too. Every entry must be a regular file or
+# a directory: a symbolic link, hard link or device fails the run too. Every built
 # platform has one archive of each, and checksums.txt lists and matches every archive. checksums.txt also
 # lists, exactly once, shift2eu-server_openapi.json, the bundled OpenAPI document the release publishes
 # beside the archives (issue #139), with the sha256 of the committed api/openapi.bundled.json. GoReleaser
@@ -78,10 +78,10 @@ details() {
 }
 
 # check_archive archive own: the archive holds exactly one binary, own (or own.exe), at its root, and
-# otherwise only LICENSE, README.md, Markdown pages under docs/ and examples/ and the sample inventories
-# examples/<source>/inventory.json (with their directories), each a regular file or a directory. The
-# other binary is not on that list, so an archive holding it fails too. It must hold every sample in
-# samples, too.
+# otherwise only LICENSE, README.md, Markdown pages under docs/ and the samples (with their
+# directories, sample_dirs), each a regular file or a directory. The other binary is not on that list,
+# so an archive holding it fails too. Under examples/ it may hold only the samples, and it must hold
+# every one of them: one list, so a file there that is not a known sample fails the run.
 check_archive() {
   local archive="$1" own="$2" list long special owns stray sample
   list="$(entries "${archive}")" || { problem "${archive}: cannot list its entries"; return; }
@@ -97,7 +97,7 @@ check_archive() {
   if [ "${owns}" != 1 ]; then
     problem "${archive}: holds ${owns} ${own} binaries at its root, want exactly 1"
   fi
-  stray="$(grep -vxE "${own}(\\.exe)?|LICENSE|README\\.md|docs/([^/.][^/]*/)*[^/.][^/]*\\.md|docs/([^/.][^/]*/)*|examples/([^/.][^/]*/)*[^/.][^/]*\\.md|examples/[^/.][^/]*/inventory\\.json|examples/([^/.][^/]*/)*" <<<"${list}" || true)"
+  stray="$(grep -vxE "${own}(\\.exe)?|LICENSE|README\\.md|docs/([^/.][^/]*/)*[^/.][^/]*\\.md|docs/([^/.][^/]*/)*" <<<"${list}" | grep -vxF -f <(printf '%s\n' "${samples[@]}" "${sample_dirs[@]}") || true)"
   if [ -n "${stray}" ]; then
     problem "${archive}: holds entries outside its allow list:"$'\n'"${stray}"
   fi
@@ -106,10 +106,14 @@ check_archive() {
   done
 }
 
-# The samples docs/guide/try-it.md runs on (issue #188), which every archive must hold.
+# The samples docs/guide/try-it.md runs on (issue #188): every archive must hold each of them, and
+# examples/ in an archive may hold nothing else but their directories (sample_dirs), so a new sample is
+# added here as well as to .goreleaser.yaml.
 samples=(examples/README.md)
+sample_dirs=(examples/)
 for source in aws azure gcp; do
   samples+=("examples/${source}/README.md" "examples/${source}/inventory.json")
+  sample_dirs+=("examples/${source}/")
 done
 
 shopt -s nullglob
@@ -224,4 +228,4 @@ fi
 if [ "${fail}" != 0 ]; then
   exit 1
 fi
-echo "${#cli[@]} CLI and ${#server[@]} server archives, one per built platform, each holding exactly its own binary, LICENSE, README.md, docs/**/*.md and the samples under examples/, all in checksums.txt with ${bundle_asset}"
+echo "${#cli[@]} CLI and ${#server[@]} server archives, one per built platform, each holding exactly its own binary, LICENSE, README.md, docs/**/*.md and exactly the samples under examples/, all in checksums.txt with ${bundle_asset}"
