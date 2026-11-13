@@ -7,6 +7,7 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/timothymamo/shift2eu/test/internal/openapibundle"
 	"github.com/timothymamo/shift2eu/test/internal/yamlread"
 )
 
@@ -162,10 +163,14 @@ var (
 	}
 
 	// goreleaserSteps are the goreleaser job's steps: no repository code runs
-	// before goreleaser, which is asked for exactly release --clean, and the
-	// archives and checksums.txt leave the job as a workflow artifact for the
-	// attest-archives and publish jobs, kept a week so a failed attestation or
-	// publication is recovered by re-running the failed jobs (issue #163).
+	// before goreleaser, which is asked for exactly release --clean; the job
+	// then copies the bundled OpenAPI document into dist/ under the name the
+	// release publishes it as, since GoReleaser copies neither
+	// release.extra_files nor checksum.extra_files there (issue #139); and the
+	// archives, the document and checksums.txt leave the job as a workflow
+	// artifact for the attest-archives and publish jobs, kept a week so a
+	// failed attestation or publication is recovered by re-running the failed
+	// jobs (issue #163).
 	goreleaserSteps = []releaseStep{
 		fullCheckoutStep,
 		setupGoStep,
@@ -179,6 +184,11 @@ var (
 			env: []string{"GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}"},
 		},
 		{
+			what: "the copy of the OpenAPI document beside the archives",
+			name: "Put the OpenAPI document beside the archives",
+			run:  "cp " + openapibundle.Path + " dist/" + bundleName,
+		},
+		{
 			what: "actions/upload-artifact (the archives)", uses: uploadArtifactAction,
 			with: map[string]*regexp.Regexp{
 				"name":              exactly(archivesArtifact),
@@ -190,26 +200,30 @@ var (
 	}
 )
 
-// The release's archives and checksums.txt: the workflow artifact that hands
-// them from the goreleaser job to the attest-archives and publish jobs, and
-// the patterns of the files that job attests, which verify-archives verifies
-// on the published release (issue #163).
+// The release's archives, the bundled OpenAPI document and checksums.txt: the
+// workflow artifact that hands them from the goreleaser job to the
+// attest-archives and publish jobs, and the patterns of the files that job
+// attests, which verify-archives verifies on the published release (issues
+// #139, #163).
 const archivesArtifact = "archives"
 
 // attestedArchives are the files handed on and attested, each archive named by
 // its extension: a bare shift2eu_* in dist/ also matches GoReleaser's build
 // directories (dist/shift2eu_linux_amd64_v1/ ...), and would hand on and
-// attest the bare binaries beside the archives.
+// attest the bare binaries beside the archives. The bundled OpenAPI document
+// is named exactly, bundleName, the name the release publishes it as.
 var attestedArchives = []string{
 	"shift2eu_*.tar.gz", "shift2eu_*.zip",
 	"shift2eu-server_*.tar.gz", "shift2eu-server_*.zip",
+	bundleName,
 	"checksums.txt",
 }
 
 // attestArchivesSteps are the attest-archives job's steps: GitHub's own
 // download of the archives' workflow artifact, the check of the archives
 // against checksums.txt, and one build provenance attestation of every
-// archive and of checksums.txt itself, by path, so each file is a subject.
+// archive, of the bundled OpenAPI document and of checksums.txt itself, by
+// path, so each file is a subject.
 var attestArchivesSteps = []releaseStep{
 	{
 		what: "actions/download-artifact (the archives)", uses: downloadArtifactAction,
@@ -800,16 +814,19 @@ var releaseJobs = func() []releaseJob {
 //   - the test job's steps are exactly actions/checkout of the whole history,
 //     the guard that the tagged commit is on main (an exact run: script),
 //     actions/setup-go and make test; the goreleaser job's exactly
-//     actions/checkout, actions/setup-go, goreleaser/goreleaser-action and
+//     actions/checkout, actions/setup-go, goreleaser/goreleaser-action, the
+//     copy of the bundled OpenAPI document into dist/ under the name the
+//     release publishes it as (exactly cp api/openapi.bundled.json
+//     dist/shift2eu-server_openapi.json, issue #139) and
 //     actions/upload-artifact of the archives, each named by its extension,
-//     and checksums.txt (archives, kept seven days so a failed attestation or
-//     publication can be re-run); setup-go with cache: false in both jobs,
+//     that document and checksums.txt (archives, kept seven days so a failed
+//     attestation or publication can be re-run); setup-go with cache: false in both jobs,
 //     goreleaser asked for exactly release --clean at an exact version, with
 //     an env: of exactly GITHUB_TOKEN from secrets.GITHUB_TOKEN;
 //   - the attest-archives job's steps are exactly actions/download-artifact
 //     of that artifact, sha256sum -c checksums.txt and
 //     actions/attest-build-provenance with a subject-path of every archive,
-//     by its extension, and checksums.txt;
+//     by its extension, the bundled OpenAPI document and checksums.txt;
 //   - the publish job's steps are exactly actions/download-artifact of that
 //     artifact, and one step that checks the draft release (an exact run:
 //     script under set -euo pipefail, reading the API's list of the

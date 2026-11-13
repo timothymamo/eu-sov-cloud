@@ -9,14 +9,15 @@
 # must be a regular file or a directory: a symbolic link, hard link or device fails the run too. Every built platform has one archive of each, and checksums.txt lists and
 # matches every archive. checksums.txt also lists, exactly once, shift2eu-server_openapi.json, the bundled
 # OpenAPI document the release publishes beside the archives (issue #139), with the sha256 of the
-# committed api/openapi.bundled.json. A copy in dist/ must match it too, a defensive guard only: GoReleaser
-# v2.20.1 copies neither checksum nor release extra files into dist/, and the release pipe does not run in
-# a snapshot, so today there is none.
+# committed api/openapi.bundled.json. GoReleaser v2.20.1 copies neither checksum nor release extra files
+# into dist/, so, as release.yml's goreleaser job does after GoReleaser, this copies the committed file into
+# dist/ as shift2eu-server_openapi.json (a copy GoReleaser itself left there must already be that file),
+# and checksums.txt must then pass sha256sum -c in dist/ as a whole.
 # It then mirrors release.yml's hand-over of the archives to attest-archives
-# (issues #156 and #163): the files its patterns pick must pass sha256sum -c checksums.txt, and the
-# subjects they attest must be exactly the archives and checksums.txt, which must also be exactly what
-# GoReleaser would upload to the release (artifacts.json), or release.yml's publish job would refuse the
-# draft. check.GoReleaserArchives pins the configuration itself, and check.GitHubRelease its draft release.
+# (issues #139, #156 and #163): the files its patterns pick must pass sha256sum -c checksums.txt, and the
+# subjects they attest must be exactly the archives, the OpenAPI document and checksums.txt, which must
+# also be exactly what GoReleaser would upload to the release (artifacts.json, plus the OpenAPI document,
+# which a snapshot never records there), or release.yml's publish job would refuse the draft. check.GoReleaserArchives pins the configuration itself, and check.GitHubRelease its draft release.
 #
 # GoReleaser writes into a temporary directory, removed on exit, so the caller's dist/ is left alone.
 #
@@ -145,36 +146,40 @@ if [ "$(grep -c . <<<"${bundle_lines}")" != 1 ]; then
 elif [ "${bundle_lines%% *}" != "${want_sum}" ]; then
   problem "checksums.txt lists ${bundle_asset} with ${bundle_lines%% *}, want ${want_sum}, the sha256 of ${bundle}"
 fi
-# A defensive guard: GoReleaser v2.20.1 copies neither checksum.extra_files nor release.extra_files into
-# dist/, and the release pipe does not run in a snapshot, so no copy exists today. Should a later
-# GoReleaser put one there, it must still be the committed file.
+# GoReleaser v2.20.1 copies neither checksum.extra_files nor release.extra_files into dist/, and the
+# release pipe does not run in a snapshot, so no copy exists today. Should a later GoReleaser put one
+# there, it must already be the committed file: release.yml's cp replaces it with the file it attests,
+# while GoReleaser uploads its own.
 if [ -e "${dist}/${bundle_asset}" ] && [ "$(sha256sum "${dist}/${bundle_asset}" | cut -d' ' -f1)" != "${want_sum}" ]; then
-  problem "${dist}/${bundle_asset} is not ${bundle}"
+  problem "GoReleaser left a ${dist}/${bundle_asset} that is not ${bundle}"
 fi
-
-# Every other line is a file in dist/ and must match it.
-grep -vE "  ${bundle_asset//./\\.}$" "${dist}/checksums.txt" >"${work}/archives.sha256" || true
-(cd "${dist}" && sha256sum --quiet -c "${work}/archives.sha256") || problem "checksums.txt does not match the archives"
+# The copy release.yml's goreleaser job makes, the step Put the OpenAPI document beside the archives:
+# from here on dist/ holds what that job hands on, and every line of checksums.txt is a file in it.
+cp "${bundle}" "${dist}/${bundle_asset}"
+(cd "${dist}" && sha256sum --quiet -c checksums.txt) ||
+  problem "checksums.txt does not match the archives and ${bundle_asset} in dist/"
 
 # The release's hand-over of the archives (issues #156 and #163), on this snapshot: release.yml's
 # goreleaser job uploads the files its patterns match, dist/shift2eu_*.tar.gz, dist/shift2eu_*.zip,
-# dist/shift2eu-server_*.tar.gz, dist/shift2eu-server_*.zip and dist/checksums.txt, as the workflow
+# dist/shift2eu-server_*.tar.gz, dist/shift2eu-server_*.zip, the OpenAPI document it copied there,
+# dist/shift2eu-server_openapi.json, and dist/checksums.txt, as the workflow
 # artifact archives; attest-archives downloads it, runs sha256sum -c checksums.txt in it and attests
 # every file the same patterns match, directories descended into, as actions/upload-artifact and
 # actions/attest-build-provenance both expand them. A bare dist/shift2eu_* would also match
 # GoReleaser's build directories (dist/shift2eu_linux_amd64_v1/ ...) and hand on their binaries.
 # The artifact must pass sha256sum -c, so checksums.txt may list nothing the patterns leave out, and the
-# subjects must be exactly the archives checksums.txt lists and checksums.txt itself: an archive left
-# unattested, or a file attested that the release never ships, fails here and not in a release.
+# subjects must be exactly the files checksums.txt lists (the archives and the OpenAPI document) and
+# checksums.txt itself: a file left unattested, or one attested that the release never ships, fails here
+# and not in a release.
 artifact="${work}/artifact"
 mkdir "${artifact}"
-(cd "${dist}" && cp -R shift2eu_*.tar.gz shift2eu_*.zip shift2eu-server_*.tar.gz shift2eu-server_*.zip checksums.txt "${artifact}/")
+(cd "${dist}" && cp -R shift2eu_*.tar.gz shift2eu_*.zip shift2eu-server_*.tar.gz shift2eu-server_*.zip "${bundle_asset}" checksums.txt "${artifact}/")
 (cd "${artifact}" && sha256sum --quiet -c checksums.txt) ||
   problem "checksums.txt does not pass sha256sum -c in the archives artifact release.yml hands to attest-archives"
-subjects="$(cd "${artifact}" && find shift2eu_*.tar.gz shift2eu_*.zip shift2eu-server_*.tar.gz shift2eu-server_*.zip checksums.txt -type f | LC_ALL=C sort)"
+subjects="$(cd "${artifact}" && find shift2eu_*.tar.gz shift2eu_*.zip shift2eu-server_*.tar.gz shift2eu-server_*.zip "${bundle_asset}" checksums.txt -type f | LC_ALL=C sort)"
 want="$({ echo checksums.txt; awk '{ print $2 }' "${dist}/checksums.txt"; } | LC_ALL=C sort)"
 if [ "${subjects}" != "${want}" ]; then
-  problem "attest-archives would attest these files:"$'\n'"${subjects}"$'\n'"want exactly checksums.txt and the archives it lists:"$'\n'"${want}"
+  problem "attest-archives would attest these files:"$'\n'"${subjects}"$'\n'"want exactly checksums.txt and the files it lists:"$'\n'"${want}"
 fi
 
 # What GoReleaser would upload to the draft release, read from its own record of the run: every
@@ -185,14 +190,18 @@ fi
 # before a release is left a draft. release.extra_files does not: GoReleaser adds those only in the
 # release pipe's publish step, which --snapshot skips, so artifacts.json never lists them. release: is a
 # closed section that check.GitHubRelease lets hold only the bundled OpenAPI document there (issue #139),
-# and the publish job's draft check sees what it uploads. It fails closed: an artifact type this does not
-# know counts as uploaded.
-uploads="$(jq -r '.[]
-  | select(.type != "Metadata")
-  | select((.type == "Binary" and .name == (.extra.Binary + .extra.Ext)) | not)
-  | .name' "${dist}/artifacts.json" | LC_ALL=C sort)"
+# so that one file, and nothing else, is added to the list here by its asset name: should artifacts.json
+# ever list it too, it is listed twice and fails. It fails closed: an artifact type this does not know
+# counts as uploaded.
+uploads="$({
+  jq -r '.[]
+    | select(.type != "Metadata")
+    | select((.type == "Binary" and .name == (.extra.Binary + .extra.Ext)) | not)
+    | .name' "${dist}/artifacts.json"
+  echo "${bundle_asset}"
+} | LC_ALL=C sort)"
 if [ "${uploads}" != "${want}" ]; then
-  problem "GoReleaser would upload these files to the release:"$'\n'"${uploads}"$'\n'"want exactly checksums.txt and the archives it lists, what attest-archives attests:"$'\n'"${want}"
+  problem "GoReleaser would upload these files to the release:"$'\n'"${uploads}"$'\n'"want exactly checksums.txt and the files it lists, what attest-archives attests:"$'\n'"${want}"
 fi
 
 if [ "${fail}" != 0 ]; then

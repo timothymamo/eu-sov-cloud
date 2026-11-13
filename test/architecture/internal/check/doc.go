@@ -45,11 +45,13 @@
 // git could commit, and a release workflow read as a closed schema of one
 // release at a time and twelve jobs: the tests, behind the guard that the
 // tagged commit is on main; a goreleaser job that runs no repository code,
-// sets no environment for the go command, uploads to a draft release and hands
-// the archives on as a workflow artifact; an attest-archives job that attests
-// every archive and checksums.txt with GitHub build provenance and cannot
-// write the repository; a publish job, contents: write alone, that publishes
-// the draft last (issues #156, #163); and, for each of the two images, the
+// sets no environment for the go command, uploads to a draft release, puts the
+// bundled OpenAPI document beside the archives in dist/ (issue #139) and hands
+// the archives, the document and checksums.txt on as a workflow artifact; an
+// attest-archives job that attests every archive, the document and
+// checksums.txt with GitHub build provenance and cannot write the repository;
+// a publish job, contents: write alone, that publishes the draft last (issues
+// #156, #163); and, for each of the two images, the
 // CLI's and the HTTP API's (PRD #103), an image job that builds and pushes the
 // image and can do nothing more, an sbom job that can only read the registry,
 // and a sign job, the only one with an OIDC token, that signs and attests the
