@@ -15,9 +15,11 @@
 // environment because the go command needs it, and print none of it.
 //
 // CheckEnvironLiterals refuses every string literal of the file whose value
-// names a /proc/<something>/environ path, which reads the same environment
-// without starting a child: the file's comments are not literals and pass, and
-// so does every other /proc path.
+// is a /proc/<something>/environ path, with or without its leading slash, which
+// reads the same environment without starting a child: the file's comments are
+// not literals and pass, and so does every other /proc path, and a literal that
+// only holds such a path among other text, as another rule's probe source or
+// expected message does, names no file and passes.
 //
 // test/lint runs both rules over the repository, in TestE2ETestsSetExecEnv and
 // TestTestTreeNamesNoProcEnviron; their probes are the .go.txt files of this
