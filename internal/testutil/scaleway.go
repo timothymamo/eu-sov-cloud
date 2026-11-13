@@ -43,12 +43,12 @@ func ScalewayOfferings() []catalog.Offering {
 			Regions:      []string{"fr-par", "nl-ams", "pl-waw"},
 		},
 		{
-			// Elastic Metal here is invented test data: compute.vm with IPv6,
-			// but no autoscaling, so it ties with Instances and the renderers'
-			// tie notes stay covered. The real snapshot serves it as
-			// compute.baremetal (issue #187, ADR 0023).
+			// Elastic Metal is a dedicated physical server: compute.baremetal,
+			// never compute.vm, exactly as the real snapshot classifies it
+			// (issue #187, ADR 0023). Instances is therefore this fixture's only
+			// compute.vm offering, and a VM is never mapped onto bare metal.
 			Name:         "Elastic Metal",
-			Categories:   []taxonomy.Category{taxonomy.ComputeVM},
+			Categories:   []taxonomy.Category{taxonomy.ComputeBareMetal},
 			Capabilities: []taxonomy.Capability{taxonomy.IPv6},
 			Regions:      []string{"fr-par", "nl-ams"},
 		},

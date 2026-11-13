@@ -145,49 +145,52 @@ func TestMap(t *testing.T) {
 			resource:  computeResource("i-0123456789abcdef0", taxonomy.IPv6),
 			offerings: scaleway,
 			wantFit:   mapping.Direct,
-			wantCands: []mapping.Candidate{
-				{Offering: elasticMetal, Fit: mapping.Direct},
-				{Offering: instances, Fit: mapping.Direct},
-			},
-			wantReas: []mapping.Reason{{Code: mapping.AllCapabilities, Offering: "Elastic Metal"}},
+			wantCands: []mapping.Candidate{{Offering: instances, Fit: mapping.Direct}},
+			wantReas:  []mapping.Reason{{Code: mapping.AllCapabilities, Offering: "Instances"}},
 		},
 		{
 			// A resource that uses no capabilities is direct with any offering
-			// that serves its category.
+			// that serves its category. The fixture's other compute offering,
+			// Elastic Metal, is a bare-metal server, so it is not a candidate for
+			// a virtual machine (issue #187, ADR 0023).
 			name:      "resource using no capabilities is direct",
 			resource:  computeResource("i-0123456789abcdef0"),
 			offerings: scaleway,
 			wantFit:   mapping.Direct,
-			wantCands: []mapping.Candidate{
-				{Offering: elasticMetal, Fit: mapping.Direct},
-				{Offering: instances, Fit: mapping.Direct},
-			},
-			wantReas: []mapping.Reason{{Code: mapping.AllCapabilities, Offering: "Elastic Metal"}},
+			wantCands: []mapping.Candidate{{Offering: instances, Fit: mapping.Direct}},
+			wantReas:  []mapping.Reason{{Code: mapping.AllCapabilities, Offering: "Instances"}},
 		},
 		{
-			// A capability no candidate offers makes the fit partial. Instances
-			// misses fewer capabilities than Elastic Metal, so Instances is the
-			// best candidate even though Elastic Metal sorts first, and the reason
-			// is the best candidate's one missing capability.
+			// A capability the only VM offering lacks makes the fit partial, and
+			// the reason names that one missing capability.
 			name:      "missing capabilities make it partial",
 			resource:  computeResource("i-0123456789abcdef0", taxonomy.Autoscaling, taxonomy.IPv6, taxonomy.Snapshots),
 			offerings: scaleway,
 			wantFit:   mapping.Partial,
-			wantCands: []mapping.Candidate{
-				{
-					Offering: instances,
-					Fit:      mapping.Partial,
-					Missing:  []taxonomy.Capability{taxonomy.Snapshots},
-				},
-				{
-					Offering: elasticMetal,
-					Fit:      mapping.Partial,
-					Missing:  []taxonomy.Capability{taxonomy.Autoscaling, taxonomy.Snapshots},
-				},
-			},
+			wantCands: []mapping.Candidate{{
+				Offering: instances,
+				Fit:      mapping.Partial,
+				Missing:  []taxonomy.Capability{taxonomy.Snapshots},
+			}},
 			wantReas: []mapping.Reason{
 				{Code: mapping.MissingCapability, Offering: "Instances", Capability: taxonomy.Snapshots},
 			},
+		},
+		{
+			// The category split is symmetric: a bare-metal resource is served
+			// only by the bare-metal offering, never by a virtual machine.
+			name: "bare metal resource is served by the bare metal offering",
+			resource: inventory.Resource{
+				ID:           "i-0123456789abcdef0",
+				RawType:      "AWS::EC2::Instance",
+				Category:     taxonomy.ComputeBareMetal,
+				Region:       "eu-west-1",
+				Capabilities: []taxonomy.Capability{taxonomy.IPv6},
+			},
+			offerings: scaleway,
+			wantFit:   mapping.Direct,
+			wantCands: []mapping.Candidate{{Offering: elasticMetal, Fit: mapping.Direct}},
+			wantReas:  []mapping.Reason{{Code: mapping.AllCapabilities, Offering: "Elastic Metal"}},
 		},
 		{
 			name:      "direct comes before a partial that sorts first",

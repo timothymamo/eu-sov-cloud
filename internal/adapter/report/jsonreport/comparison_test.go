@@ -81,7 +81,9 @@ func comparisonResources() []inventory.Resource {
 }
 
 // twoTargetResources is the inventory the no-shared-blocker document assesses:
-// OVHcloud and Scaleway both serve everything in it.
+// OVHcloud and Scaleway both serve everything in it. It is the Markdown
+// reporter's two-target inventory, db-example included, so both reporters assess
+// the same resources.
 func twoTargetResources() []inventory.Resource {
 	return []inventory.Resource{
 		{
@@ -90,6 +92,13 @@ func twoTargetResources() []inventory.Resource {
 			Category:     taxonomy.StorageObject,
 			Region:       "eu-west-1",
 			Capabilities: []taxonomy.Capability{taxonomy.ObjectVersioning},
+		},
+		{
+			ID:           "db-example",
+			RawType:      "AWS::RDS::DBInstance",
+			Category:     taxonomy.DatabasePostgreSQL,
+			Region:       "eu-west-1",
+			Capabilities: []taxonomy.Capability{taxonomy.PointInTimeRestore, taxonomy.ReadReplicas},
 		},
 		{
 			ID:           "partial-example",

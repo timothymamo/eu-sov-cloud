@@ -77,15 +77,13 @@
       "category": "compute.vm",
       "region": "eu-west-1",
       "fit": "direct",
-      "bestOffering": "Elastic Metal",
-      "ties": [
-        "Instances"
-      ],
+      "bestOffering": "Instances",
+      "ties": [],
       "reasons": [
         {
           "code": "all-capabilities",
-          "text": "Elastic Metal offers every capability the resource uses",
-          "offering": "Elastic Metal"
+          "text": "Instances offers every capability the resource uses",
+          "offering": "Instances"
         }
       ],
       "requiredChanges": []
@@ -112,21 +110,19 @@
       "category": "compute.vm",
       "region": "eu-west-1",
       "fit": "partial",
-      "bestOffering": "Elastic Metal",
-      "ties": [
-        "Instances"
-      ],
+      "bestOffering": "Instances",
+      "ties": [],
       "reasons": [
         {
           "code": "missing-capability",
-          "text": "Elastic Metal does not offer node-high-availability",
-          "offering": "Elastic Metal",
+          "text": "Instances does not offer node-high-availability",
+          "offering": "Instances",
           "capability": "node-high-availability"
         },
         {
           "code": "missing-capability",
-          "text": "Elastic Metal does not offer snapshots",
-          "offering": "Elastic Metal",
+          "text": "Instances does not offer snapshots",
+          "offering": "Instances",
           "capability": "snapshots"
         }
       ],
