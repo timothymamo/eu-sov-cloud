@@ -145,7 +145,8 @@ func TestCatalogSnapshotHeader(t *testing.T) {
 // also lists a storage price, so the estimate can price the disk above what the
 // plan includes from the same offering. leftOut names the offerings those rules
 // are waived for, with the reason, because the snapshot cannot express their price
-// as a plan or a storage price.
+// as a plan or a storage price; extraStorageLeftOut waives that storage-price rule
+// alone for an offering whose plans must still be pinned.
 func TestCatalogPlansAndPrices(t *testing.T) {
 	t.Parallel()
 
@@ -206,6 +207,22 @@ func TestCatalogPlansAndPrices(t *testing.T) {
 		"Managed PostgreSQL Multi-node": multiNodeDatabaseLeftOut,
 	}
 
+	// kubernetesWorkerStorageLeftOut is why both managed Kubernetes offerings are
+	// waived from the extra-storage rule: the reason is the same for both.
+	const kubernetesWorkerStorageLeftOut = "UpCloud publishes no per-GiB price for worker-node storage, " +
+		"and its node-group example does not match a Cloud Server storage tier; see SOURCES.md"
+
+	// extraStorageLeftOut waives only the extra-storage rule, never the plan rule or
+	// the price rules, and gives the reason. The managed Kubernetes offerings keep
+	// the plans their nodes run on pinned, because the snapshot does price those;
+	// only the storage above what a plan includes has no price the snapshot can
+	// record. It is a finding to explain in this test and in SOURCES.md, not a way
+	// past a refresh.
+	extraStorageLeftOut := map[string]string{
+		"Managed Kubernetes":            kubernetesWorkerStorageLeftOut,
+		"Managed Kubernetes Production": kubernetesWorkerStorageLeftOut,
+	}
+
 	for _, o := range cat.Offerings() {
 		reason, exempt := leftOut[o.Name]
 		if exempt {
@@ -228,7 +245,12 @@ func TestCatalogPlansAndPrices(t *testing.T) {
 		// offering as the plan, so an offering that sells plans servers and
 		// clusters run on needs both, or every sized resource asking for more disk
 		// than the plan includes would be "not estimated".
-		if !exempt && servesAny(o, planStorageCategories) && len(o.Plans) > 0 && len(o.StoragePrices) == 0 {
+		extraStorageReason, extraStorageExempt := extraStorageLeftOut[o.Name]
+		if extraStorageExempt {
+			t.Logf("offering %s is left out of the extra-storage rule: %s", text.Quote(o.Name), extraStorageReason)
+		}
+
+		if !exempt && !extraStorageExempt && servesAny(o, planStorageCategories) && len(o.Plans) > 0 && len(o.StoragePrices) == 0 {
 			t.Errorf("offering %s lists plans but no storage price, want at least one: the monthly estimate prices the storage above a plan's included storage per GiB, from the same offering",
 				text.Quote(o.Name))
 		}
