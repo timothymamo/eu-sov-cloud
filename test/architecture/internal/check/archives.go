@@ -69,7 +69,11 @@ var archiveFiles = []string{"LICENSE", "README.md", "docs/*.md", "docs/**/*"}
 //   - an entry holds no key beyond id, ids, name_template, formats,
 //     format_overrides and files;
 //   - checksum: holds exactly name_template: checksums.txt, one file covering
-//     every archive.
+//     every archive, and extra_files: with exactly the bundled OpenAPI
+//     document the release publishes beside the archives,
+//     BundleGlob (./api/openapi.bundled.json) as
+//     shift2eu-server_openapi.json (issue #139), so checksums.txt covers it
+//     too.
 func GoReleaserArchives(goreleaser []byte) []string {
 	r := &schemaReader{}
 
@@ -420,7 +424,8 @@ func (r *schemaReader) archiveFiles(entries []yamlread.Entry, path string) {
 }
 
 // checksum checks that the checksum section holds exactly
-// name_template: checksums.txt, one file covering every archive.
+// name_template: checksums.txt, one file covering every archive, and the
+// bundle's extra file, so that file covers it too.
 func (r *schemaReader) checksum(top []yamlread.Entry) {
 	section, ok := child(top, "checksum")
 	if !ok {
@@ -442,9 +447,13 @@ func (r *schemaReader) checksum(top []yamlread.Entry) {
 	}
 
 	for _, e := range entries {
-		if e.Key != "name_template" {
-			r.fail("line %d: checksum holds the key %s, want only name_template: %s, one file covering every archive", e.Num, e.Key, checksumsFile)
+		if e.Key != "name_template" && e.Key != "extra_files" {
+			r.fail("line %d: checksum holds the key %s, want only name_template: %s, one file covering every archive, and extra_files", e.Num, e.Key, checksumsFile)
 		}
+	}
+
+	if err := bundleExtraFile(entries, "checksum"); err != nil {
+		r.fail("%v", err)
 	}
 
 	e, ok := child(entries, "name_template")

@@ -127,6 +127,10 @@ lint: ## Lint natively and for every release target, incl. the architecture (dep
 tidy: ## Tidy go.mod and go.sum
 	go mod tidy
 
+.PHONY: openapi
+openapi: ## Regenerate api/openapi.bundled.json, the self-contained OpenAPI document each release publishes (issue #139)
+	go test -count=1 ./test/openapibundle -update
+
 ##@ Testing
 
 .PHONY: test

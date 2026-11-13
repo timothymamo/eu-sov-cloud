@@ -109,9 +109,12 @@ const goreleaserJobHead = `  # A job of its own, on a fresh runner: no go env fi
 `
 
 // goreleaserSteps are the goreleaser job's steps: no repository code runs
-// before goreleaser, which is asked for exactly release --clean, and the
-// archives and their checksums leave the job as a workflow artifact for the
-// attest job to attest on a runner of its own (issue #163).
+// before goreleaser, which is asked for exactly release --clean and copies the
+// release's extra files into neither dist/ nor the workflow artifact, so the
+// job puts the bundled OpenAPI document beside the archives itself, and the
+// archives, their checksums and the document leave the job as a workflow
+// artifact for the attest job to attest on a runner of its own (issues #139,
+// #163).
 var goreleaserSteps = []string{
 	`      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -131,11 +134,19 @@ var goreleaserSteps = []string{
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 `,
-	`      # The archives and their checksums leave the job as a workflow
-      # artifact, for the attest job to attest on a runner of its own (issue
-      # #163). GoReleaser's own dist/ is never handed on: what is attested is
-      # what this run wrote. The archives are named by their extension, not by
-      # their name alone: dist/shift2eu_* also matches GoReleaser's build
+	`      # GoReleaser copies the release's extra files into neither dist/ nor the
+      # workflow artifact, so the bundled OpenAPI document is put beside the
+      # archives here, under the name the release publishes it as, before the
+      # artifact below hands dist/ on and attest-archives attests every file of
+      # it (issue #139).
+      - name: Put the OpenAPI document beside the archives
+        run: cp api/openapi.bundled.json dist/shift2eu-server_openapi.json
+`,
+	`      # The archives, their checksums and the OpenAPI document leave the job as
+      # a workflow artifact, for the attest job to attest on a runner of its
+      # own (issues #139, #163). What is handed on is what this run wrote in
+      # dist/ and nothing else. The archives are named by their extension, not
+      # by their name alone: dist/shift2eu_* also matches GoReleaser's build
       # directories (dist/shift2eu_linux_amd64_v1/ ...), and would hand on 12
       # bare binaries beside the archives. It is kept a week, so a failed
       # attestation or publication is recovered by re-running the failed jobs.
@@ -147,6 +158,7 @@ var goreleaserSteps = []string{
             dist/shift2eu_*.zip
             dist/shift2eu-server_*.tar.gz
             dist/shift2eu-server_*.zip
+            dist/shift2eu-server_openapi.json
             dist/checksums.txt
           if-no-files-found: error
           retention-days: 7
@@ -176,8 +188,8 @@ const attestArchivesJobHead = `  # Attests every archive and checksums.txt with 
 
 // attestArchivesSteps are the attest-archives job's steps: GitHub's own
 // download of the archives' workflow artifact, the check of the archives
-// against checksums.txt, and one attestation covering every archive and
-// checksums.txt itself.
+// against checksums.txt, and one attestation covering every archive, the
+// bundled OpenAPI document and checksums.txt itself (issues #139, #163).
 var attestArchivesSteps = []string{
 	`      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
@@ -188,11 +200,11 @@ var attestArchivesSteps = []string{
       - name: Check the archives against checksums.txt
         run: sha256sum -c checksums.txt
 `,
-	`      # One attestation covers every archive and checksums.txt itself, so a
-      # release whose archives were replaced fails verification (issue #163).
-      # Every subject is an archive or checksums.txt, named by its extension: a
-      # bare shift2eu_* also matches GoReleaser's build directories, and would
-      # attest the 12 bare binaries beside the archives.
+	`      # One attestation covers every archive, their checksums and the bundled
+      # OpenAPI document, so a release whose files were replaced fails
+      # verification (issues #139, #163). The archives are subjects named by
+      # their extension: a bare shift2eu_* also matches GoReleaser's build
+      # directories, and would attest the 12 bare binaries beside the archives.
       - name: Attest the archives
         uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
         with:
@@ -201,6 +213,7 @@ var attestArchivesSteps = []string{
             shift2eu_*.zip
             shift2eu-server_*.tar.gz
             shift2eu-server_*.zip
+            shift2eu-server_openapi.json
             checksums.txt
 `,
 }
@@ -1278,15 +1291,15 @@ func TestReleaseWorkflow(t *testing.T) {
 		},
 
 		// The probes of the review and audit, each before the goreleaser step.
-		{name: "probe: go env -w GOFLAGS", workflow: beforeGoreleaser(`run: go env -w "G""OFLAGS=-tags=sneaky"`), wantIn: "holds 5 steps"},
+		{name: "probe: go env -w GOFLAGS", workflow: beforeGoreleaser(`run: go env -w "G""OFLAGS=-tags=sneaky"`), wantIn: "goreleaser: steps holds 6 steps, want exactly 5"},
 		{name: "probe: GOFLAGS to github.env", workflow: beforeGoreleaser(`run: echo "G""OFLAGS=-tags=x" >> "${{ github.env }}"`), wantIn: "github.env"},
-		{name: "probe: GITHUB_ENV spelled at run time", workflow: beforeGoreleaser(`run: n=GITHUB_E; n=${n}NV; echo X=1 >> "${!n}"`), wantIn: "holds 5 steps"},
-		{name: "probe: go work init", workflow: beforeGoreleaser(`run: go work init .`), wantIn: "holds 5 steps"},
-		{name: "probe: go mod vendor", workflow: beforeGoreleaser(`run: go mod vendor`), wantIn: "holds 5 steps"},
-		{name: "probe: another goreleaser document copied in", workflow: beforeGoreleaser(`run: cp build/other.yaml .goreleaser.yaml`), wantIn: "holds 5 steps"},
-		{name: "probe: an action that sets the environment", workflow: beforeGoreleaser(`uses: example/sets-env@0123456789abcdef0123456789abcdef01234567`), wantIn: "holds 5 steps"},
-		{name: "probe: a repository script", workflow: beforeGoreleaser(`run: ./scripts/prepare.sh`), wantIn: "holds 5 steps"},
-		{name: "probe: make test back in the goreleaser job", workflow: beforeGoreleaser(`run: make test`), wantIn: "holds 5 steps"},
+		{name: "probe: GITHUB_ENV spelled at run time", workflow: beforeGoreleaser(`run: n=GITHUB_E; n=${n}NV; echo X=1 >> "${!n}"`), wantIn: "goreleaser: steps holds 6 steps, want exactly 5"},
+		{name: "probe: go work init", workflow: beforeGoreleaser(`run: go work init .`), wantIn: "goreleaser: steps holds 6 steps, want exactly 5"},
+		{name: "probe: go mod vendor", workflow: beforeGoreleaser(`run: go mod vendor`), wantIn: "goreleaser: steps holds 6 steps, want exactly 5"},
+		{name: "probe: another goreleaser document copied in", workflow: beforeGoreleaser(`run: cp build/other.yaml .goreleaser.yaml`), wantIn: "goreleaser: steps holds 6 steps, want exactly 5"},
+		{name: "probe: an action that sets the environment", workflow: beforeGoreleaser(`uses: example/sets-env@0123456789abcdef0123456789abcdef01234567`), wantIn: "goreleaser: steps holds 6 steps, want exactly 5"},
+		{name: "probe: a repository script", workflow: beforeGoreleaser(`run: ./scripts/prepare.sh`), wantIn: "goreleaser: steps holds 6 steps, want exactly 5"},
+		{name: "probe: make test back in the goreleaser job", workflow: beforeGoreleaser(`run: make test`), wantIn: "goreleaser: steps holds 6 steps, want exactly 5"},
 		{name: "a step added to the test job", workflow: inTestJob(`run: go env -w GOFLAGS=-x`), wantIn: "holds 5 steps, want exactly 4"},
 		{
 			name:     "a step replaced in the goreleaser job",
@@ -1417,7 +1430,7 @@ func TestReleaseWorkflow(t *testing.T) {
 		{name: "a draft check that trusts the draft's checksums.txt", workflow: in("publish", "            echo \"the draft release's checksums.txt is not the one this run attested\" >&2\n", "            echo \"the draft release's checksums.txt is the attested one\" >&2\n"), wantIn: "the draft release's checksums.txt is not the one this run attested"},
 		{name: "a separate publish step by tag", workflow: steps("publish", slices.Concat(publishSteps, []string{publishByTagStep})), wantIn: "holds 3 steps, want exactly 2"},
 		{name: "an extra step in the publish job", workflow: steps("publish", beforeStep(t, publishSteps, "      - name: Check the draft's assets and publish it", "run: ./scripts/prepare.sh")), wantIn: "holds 3 steps, want exactly 2"},
-		{name: "the publish step in the goreleaser job", workflow: steps("goreleaser", beforeStep(t, goreleaserSteps, "      - uses: actions/upload-artifact@", "name: Check the draft's assets and publish it\n        run: "+publishByID)), wantIn: "jobs: goreleaser: steps holds 5 steps, want exactly 4"},
+		{name: "the publish step in the goreleaser job", workflow: steps("goreleaser", beforeStep(t, goreleaserSteps, "      - uses: actions/upload-artifact@", "name: Check the draft's assets and publish it\n        run: "+publishByID)), wantIn: "jobs: goreleaser: steps holds 6 steps, want exactly 5"},
 		{name: "the publish step in the test job", workflow: inTestJob("name: Check the draft's assets and publish it\n        run: " + publishByID), wantIn: "holds 5 steps, want exactly 4"},
 
 		// The jobs are a closed list: the image that publishes, the SBOM that
@@ -1837,11 +1850,49 @@ func TestReleaseWorkflow(t *testing.T) {
 		{name: "the archives not checked against checksums.txt", workflow: in("attest-archives", "        run: sha256sum -c checksums.txt\n", "        run: sha256sum checksums.txt\n"), wantIn: "sha256sum -c checksums.txt"},
 		{name: "the attest action pinned by tag", workflow: in("attest-archives", "actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8", "actions/attest-build-provenance@v4"), wantIn: "attest-build-provenance@v4"},
 		{name: "another action in place of the provenance attestation", workflow: steps("attest-archives", slices.Replace(slices.Clone(attestArchivesSteps), 2, 3, "      - uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2\n")), wantIn: "attest-build-provenance"},
-		{name: "checksums.txt not attested", workflow: in("attest-archives", "            shift2eu-server_*.zip\n            checksums.txt\n", "            shift2eu-server_*.zip\n"), wantIn: "subject-path"},
+		{name: "checksums.txt not attested", workflow: in("attest-archives", "            shift2eu-server_*.zip\n            shift2eu-server_openapi.json\n            checksums.txt\n", "            shift2eu-server_*.zip\n            shift2eu-server_openapi.json\n"), wantIn: "subject-path"},
 		{name: "the server's archives not attested", workflow: in("attest-archives", "            shift2eu_*.zip\n            shift2eu-server_*.tar.gz\n            shift2eu-server_*.zip\n", "            shift2eu_*.zip\n"), wantIn: "subject-path"},
 		{name: "a bare shift2eu_* subject pattern", workflow: in("attest-archives", "            shift2eu_*.tar.gz\n", "            shift2eu_*\n"), wantIn: "subject-path"},
-		{name: "the archives attested by digest instead", workflow: in("attest-archives", "          subject-path: |\n            shift2eu_*.tar.gz\n            shift2eu_*.zip\n            shift2eu-server_*.tar.gz\n            shift2eu-server_*.zip\n            checksums.txt\n", "          subject-digest: sha256:0000000000000000000000000000000000000000000000000000000000000000\n"), wantIn: `no "subject-path"`},
-		{name: "the archives not handed on by goreleaser", workflow: steps("goreleaser", withoutStep(t, goreleaserSteps, "actions/upload-artifact@")), wantIn: "holds 3 steps, want exactly 4"},
+		{name: "the archives attested by digest instead", workflow: in("attest-archives", "          subject-path: |\n            shift2eu_*.tar.gz\n            shift2eu_*.zip\n            shift2eu-server_*.tar.gz\n            shift2eu-server_*.zip\n            shift2eu-server_openapi.json\n            checksums.txt\n", "          subject-digest: sha256:0000000000000000000000000000000000000000000000000000000000000000\n"), wantIn: `no "subject-path"`},
+		{name: "the archives not handed on by goreleaser", workflow: steps("goreleaser", withoutStep(t, goreleaserSteps, "actions/upload-artifact@")), wantIn: "holds 4 steps, want exactly 5"},
+		// The bundled OpenAPI document is a release asset like the archives, and
+		// GoReleaser copies neither release.extra_files nor checksum.extra_files
+		// into dist/, so the goreleaser job puts it beside them itself, under the
+		// name the release publishes it as, before the artifact and the
+		// attestation of dist/ (issue #139). What the artifact hands on and what
+		// attest-archives attests is every archive, the document and
+		// checksums.txt: a document missing from either is never attested.
+		{name: "the OpenAPI document not put beside the archives", workflow: steps("goreleaser", withoutStep(t, goreleaserSteps, "name: Put the OpenAPI document beside the archives")), wantIn: "holds 4 steps, want exactly 5"},
+		{
+			name:     "the OpenAPI document copied from another file",
+			workflow: in("goreleaser", "cp api/openapi.bundled.json dist/shift2eu-server_openapi.json", "cp api/openapi.json dist/shift2eu-server_openapi.json"),
+			wantIn:   `want exactly "cp api/openapi.bundled.json dist/shift2eu-server_openapi.json"`,
+		},
+		{
+			name:     "the OpenAPI document copied from the release's glob",
+			workflow: in("goreleaser", "cp api/openapi.bundled.json dist/shift2eu-server_openapi.json", "cp ./api/openapi.bundled.json dist/shift2eu-server_openapi.json"),
+			wantIn:   `want exactly "cp api/openapi.bundled.json dist/shift2eu-server_openapi.json"`,
+		},
+		{
+			name:     "the OpenAPI document copied under another name",
+			workflow: in("goreleaser", "cp api/openapi.bundled.json dist/shift2eu-server_openapi.json", "cp api/openapi.bundled.json dist/openapi.json"),
+			wantIn:   `want exactly "cp api/openapi.bundled.json dist/shift2eu-server_openapi.json"`,
+		},
+		{
+			name:     "the OpenAPI document put beside the archives after the artifact",
+			workflow: steps("goreleaser", swappedSteps(t, goreleaserSteps, "name: Put the OpenAPI document beside the archives", "actions/upload-artifact@")),
+			wantIn:   "want the copy of the OpenAPI document beside the archives",
+		},
+		{
+			name:     "the OpenAPI document not handed on by goreleaser",
+			workflow: in("goreleaser", "            dist/shift2eu-server_openapi.json\n", ""),
+			wantIn:   "with: path",
+		},
+		{
+			name:     "the OpenAPI document not attested",
+			workflow: in("attest-archives", "            shift2eu-server_openapi.json\n", ""),
+			wantIn:   "with: subject-path",
+		},
 		// The archives artifact is kept a week, so a failed attestation or
 		// publication is recovered by re-running the failed jobs; the SBOM
 		// artifacts stay a day.

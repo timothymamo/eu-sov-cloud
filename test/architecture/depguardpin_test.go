@@ -970,31 +970,29 @@ var pinnedDepguardRules = []check.DepguardRule{
 		},
 	},
 	{
-		// The test trees' own documentation packages (issue #152, the auditor's
-		// finding H-1): test/apiparity, test/architecture, test/container,
-		// test/devenv, test/docs and test/lint hold doc.go and no code, and each
-		// is a production package a composition root can import, because the
-		// roots' allow lists name the module path as a prefix entry. Go's internal
-		// rule keeps test/internal/... and test/architecture/internal/... out of
-		// cmd/ and internal/ and nothing keeps these out, so they get a rule of
-		// their own. It is one shared strict allow list, the smallest AllowList
-		// reads (check.AllowList refuses an empty one, the place S1 records); the
-		// day one of these packages imports a package, it names it here and in
-		// .golangci.yml in the same commit. test/e2e belongs here too since issue
-		// #152 (the reviewer's B1, the auditor's L-1): its doc.go carries no build
-		// tag, so test/e2e is a production package a composition root may import,
-		// and e2e-is-black-box, the only rule that held it, allows $gostd. An
-		// untagged file there that read os.Getenv and started exec.Command stayed
-		// lint green with every test passing. !$test takes the e2e test files out
-		// (depguard applies negated globs whatever their position), so they stay on
-		// e2e-is-black-box alone, which is the black-box rule with a $gostd of its
-		// own. That same negation takes out the other test files, whose imports
-		// these packages' tests would not fit this list: a test of
-		// test/architecture reads the repository, go-cmp included. The nested
-		// internal tree under test/architecture is taken out with a negated glob,
-		// as a rule's files: list cannot say "this directory only": without it the
-		// rule would hold test/architecture/internal/check, which reads os and
-		// os/exec, and refuse them.
+		// The test trees' own documentation packages (issue #152, the auditor's finding
+		// H-1): test/apiparity, test/architecture, test/container, test/devenv,
+		// test/docs, test/lint and test/openapibundle (issue #139) hold doc.go and no
+		// code, and each is a production package a composition root can import, because
+		// the roots' allow lists name the module path as a prefix entry. Go's internal
+		// rule keeps test/internal/... and test/architecture/internal/... out of cmd/
+		// and internal/ and nothing keeps these out, so they get a rule of their own. It
+		// is one shared strict allow list, the smallest AllowList reads (check.AllowList
+		// refuses an empty one, the place S1 records); the day one of these packages
+		// imports a package, it names it here and in .golangci.yml in the same commit.
+		// test/e2e belongs here too since issue #152 (the reviewer's B1, the auditor's
+		// L-1): its doc.go carries no build tag, so test/e2e is a production package a
+		// composition root may import, and e2e-is-black-box, the only rule that held it,
+		// allows $gostd. An untagged file there that read os.Getenv and started
+		// exec.Command stayed lint green with every test passing. !$test takes the e2e
+		// test files out (depguard applies negated globs whatever their position), so
+		// they stay on e2e-is-black-box alone, which is the black-box rule with a $gostd
+		// of its own. That same negation takes out the other test files, whose imports
+		// these packages' tests would not fit this list: a test of test/architecture
+		// reads the repository, go-cmp included. The nested internal tree under
+		// test/architecture is taken out with a negated glob, as a rule's files: list
+		// cannot say "this directory only": without it the rule would hold
+		// test/architecture/internal/check, which reads os and os/exec, and refuse them.
 		Name:     testDocsRule,
 		ListMode: "strict",
 		Files: []string{
@@ -1006,6 +1004,7 @@ var pinnedDepguardRules = []check.DepguardRule{
 			"**/test/docs/**",
 			"**/test/e2e/**",
 			"**/test/lint/**",
+			"**/test/openapibundle/**",
 			"!$test",
 		},
 		Allow: []string{

@@ -206,6 +206,28 @@ moves or deletes a tag.
    In the report, give the maintainer the recovery ADR 0015 states, which only they carry out: mark the
    GitHub release as bad, point `latest` (and `X.Y` if wrong) back at the last good release's digest or
    delete the bad image tag, and fix forward with a new patch release.
+
+   Then confirm the release publishes the bundled OpenAPI document (issue #139). CI's snapshot dry run
+   (`.github/scripts/verify-archives.sh`) never exercises `release.extra_files`, because GoReleaser
+   skips the release pipe under `--snapshot`, but the release itself already holds the asset to account
+   (#172): the `publish` job refuses a draft whose assets are not exactly the names `checksums.txt`
+   lists plus `checksums.txt`, which lists the document, and `verify-archives` checks its digest and
+   attestation. This step is an independent cross-check that the published bytes are the tag's
+   committed `api/openapi.bundled.json`. The release must list the asset `shift2eu-server_openapi.json`:
+   `gh release view vX.Y.Z --json assets --jq '.assets[].name'`. Its `checksums.txt` must hold exactly
+   one line for it, with the sha256 of `api/openapi.bundled.json` at the tag:
+
+   ```bash
+   TAG=vX.Y.Z
+   gh release download "$TAG" --pattern checksums.txt --output - | grep -E '  shift2eu-server_openapi\.json$'
+   git -C <repository root> show "$TAG:api/openapi.bundled.json" | sha256sum
+   ```
+
+   The two sums must be equal. A missing asset, a missing or repeated line or a different sum is a
+   failed release: report what you found and stop, as for a failed `verify` job. The asset's digest
+   and build provenance need no check of their own: `attest-archives` attests it with the archives,
+   and `verify-archives`, whose result is reported above, verifies every asset `checksums.txt` lists,
+   this one included.
 8. Check the published image yourself; do not hand this to the user. The Lima VM has cosign, a `gh`
    with `gh attestation`, `crane` and rootless `nerdctl` (ADR 0017); this is "Verify the image" in
    `docs/guide/verify-releases.md`, in its VM form, for the new tag. Run it from the repository root,

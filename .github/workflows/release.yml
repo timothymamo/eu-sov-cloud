@@ -83,11 +83,18 @@ jobs:
           args: release --clean
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      # The archives and their checksums leave the job as a workflow
-      # artifact, for the attest job to attest on a runner of its own (issue
-      # #163). GoReleaser's own dist/ is never handed on: what is attested is
-      # what this run wrote. The archives are named by their extension, not by
-      # their name alone: dist/shift2eu_* also matches GoReleaser's build
+      # GoReleaser copies the release's extra files into neither dist/ nor the
+      # workflow artifact, so the bundled OpenAPI document is put beside the
+      # archives here, under the name the release publishes it as, before the
+      # artifact below hands dist/ on and attest-archives attests every file of
+      # it (issue #139).
+      - name: Put the OpenAPI document beside the archives
+        run: cp api/openapi.bundled.json dist/shift2eu-server_openapi.json
+      # The archives, their checksums and the OpenAPI document leave the job as
+      # a workflow artifact, for the attest job to attest on a runner of its
+      # own (issues #139, #163). What is handed on is what this run wrote in
+      # dist/ and nothing else. The archives are named by their extension, not
+      # by their name alone: dist/shift2eu_* also matches GoReleaser's build
       # directories (dist/shift2eu_linux_amd64_v1/ ...), and would hand on 12
       # bare binaries beside the archives. It is kept a week, so a failed
       # attestation or publication is recovered by re-running the failed jobs.
@@ -99,6 +106,7 @@ jobs:
             dist/shift2eu_*.zip
             dist/shift2eu-server_*.tar.gz
             dist/shift2eu-server_*.zip
+            dist/shift2eu-server_openapi.json
             dist/checksums.txt
           if-no-files-found: error
           retention-days: 7
@@ -124,11 +132,11 @@ jobs:
       # through the workflow artifact fails here, before anything is signed.
       - name: Check the archives against checksums.txt
         run: sha256sum -c checksums.txt
-      # One attestation covers every archive and checksums.txt itself, so a
-      # release whose archives were replaced fails verification (issue #163).
-      # Every subject is an archive or checksums.txt, named by its extension: a
-      # bare shift2eu_* also matches GoReleaser's build directories, and would
-      # attest the 12 bare binaries beside the archives.
+      # One attestation covers every archive, their checksums and the bundled
+      # OpenAPI document, so a release whose files were replaced fails
+      # verification (issues #139, #163). The archives are subjects named by
+      # their extension: a bare shift2eu_* also matches GoReleaser's build
+      # directories, and would attest the 12 bare binaries beside the archives.
       - name: Attest the archives
         uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
         with:
@@ -137,6 +145,7 @@ jobs:
             shift2eu_*.zip
             shift2eu-server_*.tar.gz
             shift2eu-server_*.zip
+            shift2eu-server_openapi.json
             checksums.txt
 
   # The release is published last (issue #156): GoReleaser uploads every asset

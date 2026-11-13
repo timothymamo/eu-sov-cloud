@@ -27,7 +27,9 @@ only the one you need. The `shift2eu-server_*` archives start with the first rel
 `shift2eu-server`. [Verify a release](verify-releases.md#verify-an-archive) shows how to check an
 archive against `checksums.txt`, which detects a corrupted download, and against the build provenance
 the release workflow attests for it, which detects a tampered release (from the first release after
-`v0.3.0`).
+`v0.3.0`). Beside the archives, each release from the first after `v0.3.0` publishes
+`shift2eu-server_openapi.json`, the HTTP API's self-contained OpenAPI document
+([Run the HTTP API](http-api.md)), also listed in `checksums.txt` and attested like the archives.
 
 ## The images
 

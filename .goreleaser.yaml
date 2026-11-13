@@ -87,8 +87,13 @@ archives:
       - docs/*.md
       - docs/**/*
 
+# The bundled OpenAPI document is published beside the archives as
+# shift2eu-server_openapi.json and listed in checksums.txt (issue #139).
 checksum:
   name_template: checksums.txt
+  extra_files:
+    - glob: ./api/openapi.bundled.json
+      name_template: shift2eu-server_openapi.json
 
 changelog:
   use: github
@@ -120,3 +125,7 @@ release:
   draft: true
   prerelease: auto
   replace_existing_draft: true
+  # The bundled OpenAPI document as a release asset (issue #139).
+  extra_files:
+    - glob: ./api/openapi.bundled.json
+      name_template: shift2eu-server_openapi.json

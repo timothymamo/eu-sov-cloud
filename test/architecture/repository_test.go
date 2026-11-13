@@ -1209,7 +1209,9 @@ func TestReleaseArchivesHoldOneBinary(t *testing.T) {
 // release.yml (issue #156), and release.prerelease: auto, so a tag with a
 // pre-release suffix (v0.1.0-rc.2) is a GitHub pre-release and never the
 // latest release, as it gets no X.Y and no latest image tag (issue #92, ADR
-// 0015).
+// 0015), and release holds the one extra file the release publishes beside
+// the archives, the bundled OpenAPI document api/openapi.bundled.json as
+// shift2eu-server_openapi.json (issue #139).
 func TestRCTagsArePreReleases(t *testing.T) {
 	t.Parallel()
 

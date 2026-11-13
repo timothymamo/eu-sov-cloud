@@ -1399,19 +1399,20 @@ linters:
             - github.com/timothymamo/shift2eu/internal/domain/taxonomy$
             - github.com/timothymamo/shift2eu/internal/domain/text$
         # The test trees' own documentation packages (issue #152, the auditor's finding H-1):
-        # test/apiparity, test/architecture, test/container, test/devenv, test/docs and test/lint
-        # each hold doc.go and no code, and each is a production package a composition root can
-        # import, because the roots' allow lists name the module path as a prefix entry. Go's
-        # internal rule keeps test/internal/... and test/architecture/internal/... out of reach of
-        # cmd/ and internal/, and nothing keeps these out, so they get a rule of their own: one
-        # shared strict allow list, the smallest AllowList reads (check.AllowList refuses an empty
-        # one; issue #166 would let it be empty). The day one of them imports a package, it names
-        # it here and in the pin in the same commit. test/e2e is held here too since #152 (the
-        # reviewer's B1, the auditor's L-1): its doc.go carries no build tag, so it is a
-        # production package a root can import, and e2e-is-black-box, which holds it as well,
-        # allows $gostd, so a root could hand os.Getenv or exec.Command to an untagged file there.
-        # !$test takes the e2e test files out (depguard applies negated globs whatever their
-        # position), so they stay on e2e-is-black-box alone.
+        # test/apiparity, test/architecture, test/container, test/devenv, test/docs, test/lint and
+        # test/openapibundle (issue #139) each hold doc.go and no code, and each is a production
+        # package a composition root can import, because the roots' allow lists name the module
+        # path as a prefix entry. Go's internal rule keeps test/internal/... and
+        # test/architecture/internal/... out of reach of cmd/ and internal/, and nothing keeps
+        # these out, so they get a rule of their own: one shared strict allow list, the smallest
+        # AllowList reads (check.AllowList refuses an empty one; issue #166 would let it be
+        # empty). The day one of them imports a package, it names it here and in the pin in the
+        # same commit. test/e2e is held here too since #152 (the reviewer's B1, the auditor's
+        # L-1): its doc.go carries no build tag, so it is a production package a root can import,
+        # and e2e-is-black-box, which holds it as well, allows $gostd, so a root could hand
+        # os.Getenv or exec.Command to an untagged file there. !$test takes the e2e test files out
+        # (depguard applies negated globs whatever their position), so they stay on
+        # e2e-is-black-box alone.
         # !$test takes the test files out, whose imports these lists would not fit, and the
         # nested internal tree under test/architecture is taken out with a negated glob, because a
         # files: list cannot say "this directory only" and test/architecture/internal/check reads
@@ -1427,6 +1428,7 @@ linters:
             - "**/test/docs/**"
             - "**/test/e2e/**"
             - "**/test/lint/**"
+            - "**/test/openapibundle/**"
             - "!$test"
           allow:
             - errors$
