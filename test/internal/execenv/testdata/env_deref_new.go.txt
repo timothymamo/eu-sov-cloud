@@ -1,0 +1,9 @@
+package probe
+
+import "os/exec"
+
+func envDerefNew() error {
+	cmd := exec.Command("sh")
+	cmd.Env = *new([]string)
+	return cmd.Run()
+}

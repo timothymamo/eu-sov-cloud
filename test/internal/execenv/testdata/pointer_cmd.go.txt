@@ -1,0 +1,14 @@
+package probe
+
+import "os/exec"
+
+type pointerHolder struct {
+	cmd *exec.Cmd
+}
+
+func pointerCmd(p *exec.Cmd) *exec.Cmd {
+	var local *exec.Cmd
+	_ = local
+	_ = p.Run()
+	return p
+}

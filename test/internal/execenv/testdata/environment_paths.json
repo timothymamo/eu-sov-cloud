@@ -1,0 +1,92 @@
+[
+	{
+		"name": "the environ file of this process",
+		"value": "/proc/self/environ",
+		"segment": "proc",
+		"found": true
+	},
+	{
+		"name": "the environ file of another process",
+		"value": "/proc/1/environ",
+		"segment": "proc",
+		"found": true
+	},
+	{
+		"name": "a descriptor of this process",
+		"value": "/dev/fd/3",
+		"segment": "dev/fd",
+		"found": true
+	},
+	{
+		"name": "the environ file, without the leading slash",
+		"value": "proc/self/environ",
+		"segment": "proc",
+		"found": true
+	},
+	{
+		"name": "a descriptor, without the leading slash",
+		"value": "dev/fd/3",
+		"segment": "dev/fd",
+		"found": true
+	},
+	{
+		"name": "the directory itself",
+		"value": "/proc",
+		"segment": "proc",
+		"found": true
+	},
+	{
+		"name": "the directory itself, without the leading slash",
+		"value": "proc",
+		"segment": "proc",
+		"found": true
+	},
+	{
+		"name": "a descriptor directory, named without a trailing slash",
+		"value": "/dev/fd",
+		"segment": "dev/fd",
+		"found": true
+	},
+	{
+		"name": "the directory with a trailing slash only",
+		"value": "/proc/",
+		"segment": "proc",
+		"found": true
+	},
+	{
+		"name": "another file of the process, deeper in /proc",
+		"value": "/proc/self/status",
+		"segment": "proc",
+		"found": true
+	},
+	{
+		"name": "a nested entry of the process",
+		"value": "/proc/self/task/1/environ",
+		"segment": "proc",
+		"found": true
+	},
+	{
+		"name": "a path of the root's own",
+		"value": "/etc/shift2eu/config.json",
+		"segment": "",
+		"found": false
+	},
+	{
+		"name": "a name that only ends in one",
+		"value": "myproc/self/environ",
+		"segment": "",
+		"found": false
+	},
+	{
+		"name": "a directory that only starts with one",
+		"value": "/procfs/self/environ",
+		"segment": "",
+		"found": false
+	},
+	{
+		"name": "no path at all",
+		"value": "",
+		"segment": "",
+		"found": false
+	}
+]

@@ -1,0 +1,7 @@
+package probe
+
+import "os/exec"
+
+type embeddedPointer struct {
+	*exec.Cmd
+}

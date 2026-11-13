@@ -1,0 +1,23 @@
+package probe
+
+import "os/exec"
+
+// cmd is a package variable a loop runs before this function binds it: source
+// order and run order differ, so the binding is no command the check can
+// follow.
+var cmd *exec.Cmd
+
+func loopBeforeBinding(rounds int) error {
+	for i := 0; i < rounds; i++ {
+		if i == 1 {
+			if err := cmd.Run(); err != nil {
+				return err
+			}
+		}
+	}
+
+	cmd = exec.Command("sh")
+	cmd.Env = []string{"PATH=/usr/bin"}
+
+	return nil
+}

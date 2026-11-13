@@ -1,0 +1,5 @@
+package probe
+
+import "os/exec"
+
+type C = exec.Cmd

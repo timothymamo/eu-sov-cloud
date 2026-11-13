@@ -1,0 +1,7 @@
+package probe
+
+import "os/exec"
+
+type valueField struct {
+	cmd exec.Cmd
+}

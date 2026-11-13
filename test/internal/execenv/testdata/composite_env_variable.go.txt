@@ -1,0 +1,10 @@
+package probe
+
+import "os/exec"
+
+// env is nil, so the Env key inherits the whole environment of the test
+// process as a missing key does.
+func compositeEnvVariable() *exec.Cmd {
+	var env []string
+	return &exec.Cmd{Path: "/bin/sh", Env: env}
+}

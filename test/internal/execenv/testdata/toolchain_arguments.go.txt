@@ -1,0 +1,21 @@
+package probe
+
+import (
+	"context"
+	"os/exec"
+	"path/filepath"
+)
+
+// These are the shapes the e2e tier runs: flags the exemption refuses none of,
+// and positional arguments the source builds at run time.
+func toolchainArguments(ctx context.Context, binaryPath string) error {
+	build := exec.Command("go", "build", "-trimpath", "-o", binaryPath, filepath.Join("..", "..", "cmd", "x"))
+	if out, err := build.CombinedOutput(); err != nil {
+		_ = out
+		return err
+	}
+
+	list := exec.CommandContext(ctx, "go", "list", "-deps", "./cmd/x")
+	_, err := list.Output()
+	return err
+}

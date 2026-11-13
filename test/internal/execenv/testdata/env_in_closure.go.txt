@@ -1,0 +1,12 @@
+package probe
+
+import "os/exec"
+
+// The closure captures the command, so the Env it assigns is a finding of its
+// own. The assignment still counts as setting Env (the check follows the
+// source, not the flow), so the run below is accepted.
+func envInClosure() error {
+	cmd := exec.Command("sh")
+	go func() { cmd.Env = []string{"PATH=/usr/bin"} }()
+	return cmd.Run()
+}

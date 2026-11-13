@@ -1,0 +1,11 @@
+package probe
+
+import "os/exec"
+
+func mk[T any]() *T {
+	return new(T)
+}
+
+func cmdTypeArgument() {
+	_ = mk[exec.Cmd]()
+}

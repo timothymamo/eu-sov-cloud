@@ -26,14 +26,26 @@ import (
 // writes.
 //
 // A finding's line is the line a reader fixes: the Run, Start, Output or
-// CombinedOutput call for CheckExecEnv, the call, assignment or import that
-// hands the command on, and the literal for CheckEnvironLiterals. Its message
-// is not pinned, only that it says something, so the wording can change
-// without touching a probe.
+// CombinedOutput call for CheckExecEnv, the construction, type, assignment or
+// import that hands the command on, and the literal for CheckEnvironLiterals.
+// Its message is not pinned, only that it says something, so the wording can
+// change without touching a probe.
+//
+// One shape yields one finding, at the earliest statement a reader fixes, even
+// where two rules of the checker meet on it: an exec.Cmd composite literal with
+// no Env is refused once as a literal and once as the command type it names,
+// and the probe expects the one finding. An Env assigned a value that inherits
+// the environment is a finding at the assignment and leaves the command's Env
+// unset, so a run after it is a finding too.
 
 // noExemption refuses no command name, the exemption function of a caller that
 // lets nothing inherit the environment.
 func noExemption(string, string) bool { return false }
+
+// nameOnlyExemption admits every command named go, whatever its subcommand, so
+// a probe shows that a subcommand the source does not write as a literal is
+// exempt by nothing.
+func nameOnlyExemption(name, _ string) bool { return name == "go" }
 
 // toolchainExemption admits the go toolchain's two commands whose calls in the
 // e2e tier inherit the environment because the go command needs it (`go build`
@@ -76,6 +88,14 @@ func TestCheckExecEnv(t *testing.T) {
 			name:  "a chained Command call is refused, though it binds no name to hold an Env",
 			probe: "chained.go.txt",
 			want:  find("chained.go.txt", 6),
+		},
+		{
+			// No site chains an exempt command to its run method, and the
+			// exemption no longer reaches a chained run.
+			name:   "an exempt command chained to its run method is refused",
+			probe:  "chained_exempt.go.txt",
+			exempt: toolchainExemption,
+			want:   find("chained_exempt.go.txt", 8),
 		},
 		{
 			name:  "an Env assigned before the call is accepted",
@@ -143,15 +163,76 @@ func TestCheckExecEnv(t *testing.T) {
 		},
 		{
 			// A composite literal is a command the checker never saw built:
-			// it states its own Path and, with no Env key, inherits the
-			// environment.
-			name:  "a composite literal of exec.Cmd with no Env is refused, with the value and with the pointer",
+			// it states its own Path and, with no Env key or a nil one,
+			// inherits the environment. Each literal is one finding, not one
+			// for the literal and one for the exec.Cmd type it names.
+			name:  "a composite literal of exec.Cmd with no Env is refused, with the value, with the pointer and with a nil Env key",
 			probe: "composite.go.txt",
-			want:  find("composite.go.txt", 6, 7),
+			want:  find("composite.go.txt", 6, 7, 8),
 		},
 		{
 			name:  "a composite literal of exec.Cmd with an Env key is accepted",
 			probe: "composite_env.go.txt",
+		},
+		{
+			// A zero value of exec.Cmd is never followed, so no Env is ever
+			// assigned to it: the type expression itself is refused, in every
+			// shape that names it.
+			name:  "a value variable of exec.Cmd is refused",
+			probe: "cmd_value_var.go.txt",
+			want:  find("cmd_value_var.go.txt", 6),
+		},
+		{
+			name:  "an array of exec.Cmd values is refused",
+			probe: "cmd_value_array.go.txt",
+			want:  find("cmd_value_array.go.txt", 6),
+		},
+		{
+			name:  "a struct field of the exec.Cmd value type is refused",
+			probe: "cmd_value_field.go.txt",
+			want:  find("cmd_value_field.go.txt", 6),
+		},
+		{
+			name:  "an embedded exec.Cmd value is refused",
+			probe: "cmd_embedded.go.txt",
+			want:  find("cmd_embedded.go.txt", 6),
+		},
+		{
+			// The pointer is safe as a field, parameter or var, but as an
+			// embedded field its methods are the struct's, and a struct value
+			// cannot be followed.
+			name:  "an embedded *exec.Cmd field is refused",
+			probe: "cmd_embedded_pointer.go.txt",
+			want:  find("cmd_embedded_pointer.go.txt", 6),
+		},
+		{
+			name:  "an alias of exec.Cmd is refused",
+			probe: "cmd_alias.go.txt",
+			want:  find("cmd_alias.go.txt", 5),
+		},
+		{
+			name:  "a type defined on exec.Cmd is refused",
+			probe: "cmd_defined_type.go.txt",
+			want:  find("cmd_defined_type.go.txt", 5),
+		},
+		{
+			name:  "exec.Cmd as a type argument is refused",
+			probe: "cmd_type_argument.go.txt",
+			want:  find("cmd_type_argument.go.txt", 10),
+		},
+		{
+			// new(exec.Cmd) is one of the shapes the type rule covers, and it
+			// is one finding, not one for the call and one for the type.
+			name:  "new(exec.Cmd) is refused",
+			probe: "new_cmd.go.txt",
+			want:  find("new_cmd.go.txt", 6),
+		},
+		{
+			// server_test.go's serverRun holds one, and startServerBinary
+			// takes one: a nil pointer runs nothing, so a *exec.Cmd field,
+			// parameter, result and var are all accepted.
+			name:  "a *exec.Cmd field, parameter, result and var are accepted",
+			probe: "pointer_cmd.go.txt",
 		},
 		{
 			name:  "a blank import of os/exec is refused, not silently skipped",
@@ -211,11 +292,75 @@ func TestCheckExecEnv(t *testing.T) {
 			want:  find("shadowing.go.txt", 12),
 		},
 		{
-			// A nil Env is the value that inherits the environment, so
-			// assigning it is no assignment.
-			name:  "Env assigned nil, or as a nil slice, is refused",
+			// A nil Env is the value that inherits the environment, so the
+			// assignment is a finding of its own and sets no Env: the run
+			// after it is refused too, at both the nil and the nil slice.
+			name:  "Env assigned nil, or as a nil slice, is refused at the assignment and at the run",
 			probe: "env_nil.go.txt",
-			want:  find("env_nil.go.txt", 8, 12),
+			want:  find("env_nil.go.txt", 7, 8, 11, 12),
+		},
+		{
+			name:  "Env assigned a nil variable is refused at the assignment and at the run",
+			probe: "env_nil_variable.go.txt",
+			want:  find("env_nil_variable.go.txt", 9, 10),
+		},
+		{
+			name:  "Env assigned a dereferenced pointer to a nil slice is refused at the assignment and at the run",
+			probe: "env_deref_new.go.txt",
+			want:  find("env_deref_new.go.txt", 7, 8),
+		},
+		{
+			// The same rule as an Env assignment, on a composite literal's
+			// key: a nil variable there inherits the environment as a
+			// missing key does.
+			name:  "a composite literal whose Env key is a nil variable is refused",
+			probe: "composite_env_variable.go.txt",
+			want:  find("composite_env_variable.go.txt", 9),
+		},
+		{
+			// The command's own Env is set and its run is accepted, so only a
+			// rule about the address itself can refuse these two.
+			name:  "the address of an Env field is refused wherever it appears",
+			probe: "env_address.go.txt",
+			want:  find("env_address.go.txt", 10),
+		},
+		{
+			name:  "a pointer to an Env field is refused wherever it appears",
+			probe: "env_address_var.go.txt",
+			want:  find("env_address_var.go.txt", 10),
+		},
+		{
+			// Run order can no longer differ from source order once the
+			// command has gone somewhere the check cannot follow.
+			name:  "an Env assigned after the command was deferred is refused",
+			probe: "env_after_capture.go.txt",
+			want:  find("env_after_capture.go.txt", 11),
+		},
+		{
+			name:  "an Env assigned after the command was aliased is refused, an accepted value too",
+			probe: "env_after_alias.go.txt",
+			want:  find("env_after_alias.go.txt", 12),
+		},
+		{
+			// The field assignment is a use of a captured command; the
+			// assignment still counts as setting Env, the check following the
+			// source, so the run after it is accepted.
+			name:  "an Env assigned to a command a closure captured is refused",
+			probe: "env_in_closure.go.txt",
+			want:  find("env_in_closure.go.txt", 10),
+		},
+		{
+			// The values the e2e tier's sites assign, which the check must
+			// prove are not nil: an empty composite literal, a make call and
+			// an append whose first argument is an accepted literal.
+			name:  "an Env that is an empty literal, a make or an append of a literal is accepted",
+			probe: "env_accepted_forms.go.txt",
+		},
+		{
+			// assess_test.go's emptyEnv: a call to a function of the same file
+			// whose return expression is an accepted literal.
+			name:  "an Env that a helper of the same file returns as a literal is accepted",
+			probe: "env_helper.go.txt",
 		},
 		{
 			// The accepted gap: the checker follows the source, not the
@@ -242,10 +387,41 @@ func TestCheckExecEnv(t *testing.T) {
 		{
 			// exec.Command hands back a fresh *exec.Cmd, with a nil Env, so an
 			// Env assigned before the variable was rebuilt says nothing about
-			// the command that runs.
-			name:  "an Env assigned before the command was rebuilt is refused",
+			// the command that runs. The rebuild assigns to a name that exists
+			// already, which declares nothing, so it is refused at the
+			// construction, the run after it being no command the check can
+			// follow.
+			name:  "an Env assigned before the command was rebuilt is refused, at the rebuild",
 			probe: "reassigned.go.txt",
-			want:  find("reassigned.go.txt", 10),
+			want:  find("reassigned.go.txt", 9),
+		},
+		{
+			// test/e2e is a multi-file package, and the check resolves one
+			// file on its own: the target of this assignment names no object,
+			// so the construction is one the check cannot follow.
+			name:  "a command assigned to a package variable another file declares is refused",
+			probe: "package_var_other_file.go.txt",
+			want:  find("package_var_other_file.go.txt", 8),
+		},
+		{
+			// A declaration cannot be seen by the closure written above it, so
+			// only a declaration counts as a binding and this assignment to a
+			// name that exists already is refused.
+			name:  "a command bound to a name a closure above it captured is refused at the binding",
+			probe: "closure_before_binding.go.txt",
+			want:  find("closure_before_binding.go.txt", 13),
+		},
+		{
+			name:  "a command bound below the loop that runs it is refused at the binding",
+			probe: "loop_before_binding.go.txt",
+			want:  find("loop_before_binding.go.txt", 19),
+		},
+		{
+			// A followed name that is assigned something else holds no
+			// command the check built, so the rebinding is refused.
+			name:  "a followed name rebound to a command the file did not build is refused at the rebinding",
+			probe: "rebind_non_command.go.txt",
+			want:  find("rebind_non_command.go.txt", 10),
 		},
 		{
 			name:  "a function literal in a package-level var is a function of its own and is checked",
@@ -256,6 +432,58 @@ func TestCheckExecEnv(t *testing.T) {
 			name:  "a function literal nested in a function body is checked as a function of its own",
 			probe: "funclit_nested.go.txt",
 			want:  find("funclit_nested.go.txt", 8),
+		},
+		{
+			// The exemption is keyed on the name and the subcommand, both
+			// literals, so a call whose subcommand the source builds at run
+			// time is exempt by no name, however the caller's function is
+			// written.
+			name:   "an exemption that admits on the name alone exempts no non-literal subcommand",
+			probe:  "name_only_exemption.go.txt",
+			exempt: nameOnlyExemption,
+			want:   find("name_only_exemption.go.txt", 10),
+		},
+		{
+			name:   "a parenthesised exempt command is the same command and is accepted",
+			probe:  "paren_exempt.go.txt",
+			exempt: toolchainExemption,
+		},
+		{
+			// The shapes test/e2e runs: the flags it passes are none of the
+			// ones that spoil the exemption, and a positional argument the
+			// source builds at run time (an output path, a package) is no
+			// reason to lose it. A non-literal argument holding -toolexec is
+			// beyond a rule of literals, and review holds it.
+			name:   "an exempt go build and go list keep the exemption with non-literal positional arguments",
+			probe:  "toolchain_arguments.go.txt",
+			exempt: toolchainExemption,
+		},
+		{
+			// Each of these hands the go command's environment to a program
+			// the arguments name, so the exemption is lost and the run is
+			// refused as any command with a nil Env is.
+			name:   "a -toolexec argument, apart or with =, takes the exemption away",
+			probe:  "toolchain_toolexec.go.txt",
+			exempt: toolchainExemption,
+			want:   find("toolchain_toolexec.go.txt", 9, 14),
+		},
+		{
+			name:   "a -exec argument, apart or with =, takes the exemption away",
+			probe:  "toolchain_exec.go.txt",
+			exempt: toolchainExemption,
+			want:   find("toolchain_exec.go.txt", 9, 14),
+		},
+		{
+			name:   "a -overlay argument, apart or with =, takes the exemption away",
+			probe:  "toolchain_overlay.go.txt",
+			exempt: toolchainExemption,
+			want:   find("toolchain_overlay.go.txt", 9, 14),
+		},
+		{
+			name:   "a spread tail takes the exemption away",
+			probe:  "toolchain_spread.go.txt",
+			exempt: toolchainExemption,
+			want:   find("toolchain_spread.go.txt", 9),
 		},
 		{
 			name:    "a source that does not parse is an error, not a finding",

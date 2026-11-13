@@ -1,0 +1,8 @@
+package probe
+
+import "os/exec"
+
+func cmdValueArray() {
+	var array [1]exec.Cmd
+	_ = array
+}

@@ -26,8 +26,14 @@ import (
 // environment", where the agents' keys and tokens live (CLAUDE.md rule 3), and
 // what the child prints can reach a t.Log call or a golden file. The exemption
 // is keyed on the name and the subcommand, both string literals, so a `go run`
-// or a `go env` call is let through by nothing; the e2e-no-env forbidigo group
-// and review hold the rest.
+// or a `go env` call is let through by nothing; the checker itself takes the
+// exemption away from a call with a spread argument, or with a literal argument
+// that is, or starts with, -toolexec, --toolexec, -exec, --exec, -overlay or
+// --overlay, which hand the go command's environment to a program the argument
+// names. A resulting argument the source builds at run time (an output path, a
+// package) keeps the exemption, so an argument that holds one of those flags
+// without being a literal is left to review, as the e2e-no-env forbidigo group
+// leaves its own gaps.
 var e2eToolchainCommands = []string{"go build", "go list"}
 
 // e2eExecExempt reports whether the e2e tier may start the command named name
@@ -40,8 +46,8 @@ func e2eExecExempt(name, sub string) bool {
 // command it runs carries an Env of its own. The tier imports os/exec on
 // purpose, so forbidigo's e2e-no-env group cannot refuse the import; it refuses
 // (*exec.Cmd).Environ, the one call that dumps the environment, but nothing
-// refuses a command built with a nil Env, which inherits all of it. Every run of
-// the binary sets cmd.Env today, and only review keeps it so (issue #195).
+// refuses a command built with a nil Env, which inherits all of it. This test
+// keeps every run of the binary setting cmd.Env (issue #195).
 // execenv.CheckExecEnv is the checker; the go toolchain's calls are exempt
 // (e2eToolchainCommands).
 //
@@ -121,21 +127,17 @@ func skipTestdataDir(_ *os.Root, _, name string) (bool, error) {
 // The walk skips nothing, testdata directories included: a literal there would
 // be a probe of some other rule, and the probes of this one are .go.txt files
 // under test/internal/execenv/testdata, which are no Go files and which this
-// scan therefore never meets. One Go file is left out by name
-// (environPathsPinnedBy), and the scan fails if the name matches no file, so a
-// rename cannot widen the exception quietly.
+// scan therefore never meets. No name is left out: the cases of the matcher
+// both tiers read are values in a JSON file there, so the file that pins them,
+// test/internal/execenv/environmentpath_test.go, is scanned like every other
+// Go file under test/ (issue #195 round 3).
 func TestTestTreeNamesNoProcEnviron(t *testing.T) {
 	t.Parallel()
 
 	root := moduleRoot(t)
 
 	var scanned []string
-	pinned := 0
 	refused, err := walkGoFiles(filepath.Join(root, "test"), nil, func(rel string, src []byte) error {
-		if rel == environPathsPinnedBy {
-			pinned++
-			return nil
-		}
 		scanned = append(scanned, rel)
 		tier := execenv.TierTest
 		if strings.HasPrefix(rel, "e2e/") {
@@ -159,30 +161,21 @@ func TestTestTreeNamesNoProcEnviron(t *testing.T) {
 		t.Error(problem)
 	}
 
-	// Guard the exception: exactly one file is left out, and it is the file that
-	// pins the matcher this rule runs on.
-	if pinned != 1 {
-		t.Errorf("the walk met %s %d times, want it once; the exception of that file is stale", environPathsPinnedBy, pinned)
-	}
-
-	// Guard the walk itself: it must reach the tier this rule is about and a
-	// testdata directory, which it does not skip.
-	for _, rel := range []string{"e2e/assess_test.go", "lint/doc.go", "lint/testdata/e2enoenv/mod/test/e2e/probe.go"} {
+	// Guard the walk itself: it must reach the tier this rule is about, a
+	// testdata directory, which it does not skip, and the file that pins the
+	// matcher on values in a JSON file beside the probes.
+	for _, rel := range []string{
+		"e2e/assess_test.go",
+		"lint/doc.go",
+		"lint/testdata/e2enoenv/mod/test/e2e/probe.go",
+		"internal/execenv/environmentpath_test.go",
+	} {
 		if !slices.Contains(scanned, rel) {
 			t.Errorf("the scan skipped %s; it reads every Go file under test/", rel)
 		}
 	}
 	t.Logf("checked %d Go files under test/", len(scanned))
 }
-
-// environPathsPinnedBy is the one Go file under test/ that
-// TestTestTreeNamesNoProcEnviron leaves out, as a path relative to test/: the
-// file that pins execenv.EnvironmentPathIn, the matcher of the e2e tier's rule,
-// which names every path the rule refuses as a value, a bare literal being
-// exactly what the rule refuses. Its sibling execenv_test.go holds no path of
-// its own: the probes of both files are .go.txt files under testdata, which are
-// no Go files and which the walk therefore never reads.
-const environPathsPinnedBy = "internal/execenv/environmentpath_test.go"
 
 // findingLine renders one refusal of a checker as the line a reader sees in a
 // test failure.
