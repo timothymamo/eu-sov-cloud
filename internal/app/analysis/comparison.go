@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"io"
 
-	"github.com/timothymamo/shift2eu/internal/domain/assessment"
 	"github.com/timothymamo/shift2eu/internal/domain/text"
 )
 
@@ -23,6 +22,10 @@ type Target struct {
 	Key string
 	// Catalog is the source of the target's catalog.
 	Catalog CatalogSource
+	// Region is the one region of this target to assess and estimate in, and ""
+	// for every region (PRD #190). Comparison.RunWith checks it against the
+	// target's catalog once loaded (*RegionError).
+	Region string
 }
 
 // Comparison is the use case that assesses one source inventory against several
@@ -106,47 +109,9 @@ func validTarget(target Target) error {
 // the next target instead of loading the remaining catalogs.
 //
 // Blockers are a result, not an error.
+//
+// Run is RunWith with the zero ComparisonOptions: no estimates, each target in
+// its Target.Region, a region the target does not list being a *RegionError.
 func (c *Comparison) Run(ctx context.Context, w io.Writer, meta ReportMeta) error {
-	if err := meta.validate(); err != nil {
-		return err
-	}
-
-	if err := ctx.Err(); err != nil {
-		return fmt.Errorf("cancelled before loading the inventory: %w", err)
-	}
-
-	inv, err := c.inventory.Inventory(ctx)
-	if err != nil {
-		return fmt.Errorf("load inventory: %w", err)
-	}
-
-	assessed := make([]assessment.TargetAssessment, 0, len(c.targets))
-
-	for _, target := range c.targets {
-		if err := ctx.Err(); err != nil {
-			return fmt.Errorf("target %s: cancelled before loading the catalog: %w", text.Quote(target.Key), err)
-		}
-
-		cat, err := target.Catalog.Catalog(ctx)
-		if err != nil {
-			return fmt.Errorf("target %s: load catalog: %w", text.Quote(target.Key), err)
-		}
-
-		assessed = append(assessed, assessment.TargetAssessment{
-			Key:        target.Key,
-			Assessment: assessment.Assess(inv, cat),
-		})
-	}
-
-	comparison := assessment.Compare(assessed)
-
-	if err := ctx.Err(); err != nil {
-		return fmt.Errorf("cancelled before rendering the report: %w", err)
-	}
-
-	if err := c.reporter.ReportComparison(ctx, w, comparison, meta); err != nil {
-		return fmt.Errorf("render report: %w", err)
-	}
-
-	return nil
+	return c.RunWith(ctx, w, meta, ComparisonOptions{})
 }

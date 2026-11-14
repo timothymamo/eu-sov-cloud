@@ -7,8 +7,11 @@
 // Candidates are ordered best first (direct before partial, partial candidates
 // missing fewer capabilities first, remaining ties by offering name), and every
 // fit comes with the reasons behind it: the capabilities the best candidate
-// lacks, the missing offering, or the missing classification. Regions are not
-// compared.
+// lacks, the missing offering, or the missing classification. Map compares no
+// regions: an offering in any of the target's regions counts. MapIn scopes the
+// mapping to one target region the user chose (PRD #190, ADR 0027): offerings
+// elsewhere are not candidates, and a resource left with none has fit none and
+// the reason "not offered in <region>".
 //
 // A reason is plain text split into parts at the names it mentions. The domain
 // never escapes them: renderers build their output from Reason.Parts and escape

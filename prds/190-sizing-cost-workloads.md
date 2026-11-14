@@ -196,7 +196,7 @@ Each milestone ships as one PR, in dependency order. Milestones 3, 4 and 5 can r
 5. [x] **UpCloud plans and prices** (monthly) and its default region, in its snapshot and `SOURCES.md`.
    Paid Kubernetes control-plane fees are recorded as the offering's `fixedFees` (ADR 0026), not left
    out. Depends on 2.
-6. [ ] **Plan matching, estimates and regions.** Domain: the plan per verdict, the monthly estimate, the
+6. [x] **Plan matching, estimates and regions.** Domain: the plan per verdict, the monthly estimate, the
    "not estimated" reasons and the totals, per assessment and in the comparison. Availability in a
    chosen region, with the "not offered in `<region>`" reason, and the estimate's region (the chosen one
    or the default). Estimates can be switched off. The application layer passes both choices through;
@@ -204,7 +204,9 @@ Each milestone ships as one PR, in dependency order. Milestones 3, 4 and 5 can r
    `Offering.FixedFee(region)` in the estimate region, once per resource (one cluster), never multiplied
    by its `count` (its nodes), and scaled by hours / 730 as plan prices are; a fee alone never makes an
    estimate: a resource with no plan price for the region stays "not estimated" (ADR 0026,
-   *Estimates*). Depends on 1 and 2.
+   *Estimates*). Design and API: ADR
+   [0027](../docs/adr/0027-match-plans-and-estimate-monthly-prices-in-a-domain-package.md). Depends on 1
+   and 2.
 7. [ ] **Workloads and relations in the assessment.** Domain: per-workload summaries and estimates, and
    the "affected by a blocker" notes. Depends on 6.
 8. [ ] **Markdown and JSON reports, CLI and API options.** Both renderers, the comparison, JSON report

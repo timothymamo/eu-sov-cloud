@@ -57,7 +57,8 @@ linters:
         # standard package, the ones that do I/O and the ones added in later
         # Go releases included, so a deny list would have to keep up with
         # every release. net/netip and net/url parse values and open no
-        # connection; net itself is not allowed. Add a standard package only
+        # connection; net itself is not allowed. math/big holds the exact
+        # money of estimates (ADR 0027) and does no I/O. Add a standard package only
         # when the domain needs it, never one that does I/O.
         #
         # The domain packages are named one by one as well, not by the prefix
@@ -91,6 +92,7 @@ linters:
           allow:
             - errors$
             - fmt$
+            - math/big$
             - net/netip$
             - net/url$
             - slices$
@@ -101,6 +103,7 @@ linters:
             - unicode/utf8$
             - github.com/timothymamo/shift2eu/internal/domain/assessment$
             - github.com/timothymamo/shift2eu/internal/domain/catalog$
+            - github.com/timothymamo/shift2eu/internal/domain/estimate$
             - github.com/timothymamo/shift2eu/internal/domain/inventory$
             - github.com/timothymamo/shift2eu/internal/domain/mapping$
             - github.com/timothymamo/shift2eu/internal/domain/taxonomy$
@@ -141,6 +144,7 @@ linters:
             - strings$
             - github.com/timothymamo/shift2eu/internal/domain/assessment$
             - github.com/timothymamo/shift2eu/internal/domain/catalog$
+            - github.com/timothymamo/shift2eu/internal/domain/estimate$
             - github.com/timothymamo/shift2eu/internal/domain/inventory$
             - github.com/timothymamo/shift2eu/internal/domain/mapping$
             - github.com/timothymamo/shift2eu/internal/domain/taxonomy$
@@ -301,6 +305,7 @@ linters:
             - github.com/timothymamo/shift2eu/internal/app/analysis$
             - github.com/timothymamo/shift2eu/internal/domain/assessment$
             - github.com/timothymamo/shift2eu/internal/domain/catalog$
+            - github.com/timothymamo/shift2eu/internal/domain/estimate$
             - github.com/timothymamo/shift2eu/internal/domain/inventory$
             - github.com/timothymamo/shift2eu/internal/domain/mapping$
             - github.com/timothymamo/shift2eu/internal/domain/taxonomy$
@@ -388,6 +393,7 @@ linters:
             - github.com/timothymamo/shift2eu/internal/app/analysis$
             - github.com/timothymamo/shift2eu/internal/domain/assessment$
             - github.com/timothymamo/shift2eu/internal/domain/catalog$
+            - github.com/timothymamo/shift2eu/internal/domain/estimate$
             - github.com/timothymamo/shift2eu/internal/domain/inventory$
             - github.com/timothymamo/shift2eu/internal/domain/mapping$
             - github.com/timothymamo/shift2eu/internal/domain/taxonomy$
@@ -667,6 +673,7 @@ linters:
             - github.com/timothymamo/shift2eu/internal/app/analysis$
             - github.com/timothymamo/shift2eu/internal/domain/assessment$
             - github.com/timothymamo/shift2eu/internal/domain/catalog$
+            - github.com/timothymamo/shift2eu/internal/domain/estimate$
             - github.com/timothymamo/shift2eu/internal/domain/inventory$
             - github.com/timothymamo/shift2eu/internal/domain/mapping$
             - github.com/timothymamo/shift2eu/internal/domain/taxonomy$
