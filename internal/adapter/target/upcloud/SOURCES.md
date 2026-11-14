@@ -386,16 +386,16 @@ capability follows from that.
   costs "€0/mo" on the pricing page (saved copy of <https://upcloud.com/pricing/>, read 2026-11-13,
   *Managed Kubernetes*, *Control plane*) and is "Free of charge" on the billing page (fetched 2026-11-14).
   It is recorded as an explicit `0.00` in every zone of the offering, as the OVHcloud snapshot records its
-  free control plane, so an estimate reads it as known to be free rather than unknown. Worker nodes are Cloud Servers: the billing page says the data plane "is billed by the
-  Worker node according to the selected configuration" and "Worker nodes can use Starter, Premium, Cloud
-  Native and GPU plans with at least 2 GB of memory". So a plan is a **worker node plan at its *Cloud
-  Servers* price**, and an estimate counts nodes. The plans are every *Cloud Servers* plan with at least
-  2 GB of memory, except the Cloud Native plans: 31 of the 75 (`STARTER-1xCPU-1GB` and
-  `PREMIUM-1xCPU-1GB` are below the minimum), at the same monthly list prices: the data plane table says
-  "All node plans are billed by the starting hour, maximum of 28 days per month". The 42 Cloud Native
-  plans include no storage, every node needs a disk, and this offering has no storage price, so a Cloud
-  Native plan would price a node without its disk; GPU plans are left out too (*Left out on purpose*). Included storage is as
-  for *Cloud Servers*.
+  free control plane, so an estimate reads it as known to be free rather than unknown. Worker nodes are
+  Cloud Servers: the billing page says the data plane "is billed by the Worker node according to the
+  selected configuration" and "Worker nodes can use Starter, Premium, Cloud Native and GPU plans with at
+  least 2 GB of memory". So a plan is a **worker node plan at its *Cloud Servers* price**, and an estimate
+  counts nodes. The plans are every *Cloud Servers* plan with at least 2 GB of memory, except the Cloud
+  Native plans: 31 of the 75 (`STARTER-1xCPU-1GB` and `PREMIUM-1xCPU-1GB` are below the minimum), at the
+  same monthly list prices: the data plane table says "All node plans are billed by the starting hour,
+  maximum of 28 days per month". The 42 Cloud Native plans include no storage, every node needs a disk,
+  and this offering has no storage price, so a Cloud Native plan would price a node without its disk; GPU
+  plans are left out too (*Left out on purpose*). Included storage is as for *Cloud Servers*.
 - **No storage price.** Worker-node storage beyond a plan's included storage is not priced: no page read
   on 2026-11-13 gives a per-GiB price for it (*Left out on purpose*). A sized node needing more disk than
   its plan includes is "not estimated" (PRD #190 milestone 6).
@@ -644,25 +644,25 @@ nodes, which the documentation calls a multi-node plan. Pages:
 
 | Plan | Family | CPU cores | Memory | Page price, 1 node | Single node, stored | Per node at 2 nodes, stored |
 |---|---|---|---|---|---|---|
-| `rdb.standard.2CPU-8GB` | Standard | 2 | 8 GB | €60/mo | 60.8333 | `57.7916` |
-| `rdb.standard.4CPU-16GB` | Standard | 4 | 16 GB | €140/mo | 141.9444 | `134.8472` |
-| `rdb.standard.8CPU-32GB` | Standard | 8 | 32 GB | €317/mo | 321.4028 | `305.3327` |
-| `rdb.standard.12CPU-48GB` | Standard | 12 | 48 GB | €485/mo | 491.7361 | `467.1493` |
-| `rdb.standard.16CPU-64GB` | Standard | 16 | 64 GB | €665/mo | 674.2361 | `640.5243` |
-| `rdb.standard.24CPU-96GB` | Standard | 24 | 96 GB | €993/mo | 1006.7917 | `956.4521` |
-| `rdb.standard.32CPU-128GB` | Standard | 32 | 128 GB | €1317/mo | 1335.2917 | `1268.5271` |
-| `rdb.standard.48CPU-192GB` | Standard | 48 | 192 GB | €2017/mo | 2045.0139 | `1942.7632` |
-| `rdb.standard.64CPU-256GB` | Standard | 64 | 256 GB | €2669/mo | 2706.0694 | `2570.7659` |
-| `rdb.standard.80CPU-320GB` | Standard | 80 | 320 GB | €3429/mo | 3476.625 | `3302.7938` |
-| `rdb.memory.2CPU-16GB` | High Memory | 2 | 16 GB | €126/mo | 127.75 | `121.3625` |
-| `rdb.memory.4CPU-32GB` | High Memory | 4 | 32 GB | €283/mo | 286.9306 | `272.5841` |
-| `rdb.memory.8CPU-64GB` | High Memory | 8 | 64 GB | €593/mo | 601.2361 | `571.1743` |
-| `rdb.memory.12CPU-96GB` | High Memory | 12 | 96 GB | €883/mo | 895.2639 | `850.5007` |
-| `rdb.memory.16CPU-128GB` | High Memory | 16 | 128 GB | €1173/mo | 1189.2917 | `1129.8271` |
-| `rdb.memory.24CPU-192GB` | High Memory | 24 | 192 GB | €1800/mo | 1825.00 | `1733.75` |
-| `rdb.memory.32CPU-256GB` | High Memory | 32 | 256 GB | €2380/mo | 2413.0556 | `2292.4028` |
-| `rdb.memory.48CPU-384GB` | High Memory | 48 | 384 GB | €3655/mo | 3705.7639 | `3520.4757` |
-| `rdb.memory.64CPU-512GB` | High Memory | 64 | 512 GB | €4855/mo | 4922.4306 | `4676.3091` |
+| `rdb.standard.2CPU-8GB` | Standard | 2 | 8 GB | €60/mo | `60.8333` | `57.7916` |
+| `rdb.standard.4CPU-16GB` | Standard | 4 | 16 GB | €140/mo | `141.9444` | `134.8472` |
+| `rdb.standard.8CPU-32GB` | Standard | 8 | 32 GB | €317/mo | `321.4028` | `305.3327` |
+| `rdb.standard.12CPU-48GB` | Standard | 12 | 48 GB | €485/mo | `491.7361` | `467.1493` |
+| `rdb.standard.16CPU-64GB` | Standard | 16 | 64 GB | €665/mo | `674.2361` | `640.5243` |
+| `rdb.standard.24CPU-96GB` | Standard | 24 | 96 GB | €993/mo | `1006.7917` | `956.4521` |
+| `rdb.standard.32CPU-128GB` | Standard | 32 | 128 GB | €1317/mo | `1335.2917` | `1268.5271` |
+| `rdb.standard.48CPU-192GB` | Standard | 48 | 192 GB | €2017/mo | `2045.0139` | `1942.7632` |
+| `rdb.standard.64CPU-256GB` | Standard | 64 | 256 GB | €2669/mo | `2706.0694` | `2570.7659` |
+| `rdb.standard.80CPU-320GB` | Standard | 80 | 320 GB | €3429/mo | `3476.625` | `3302.7938` |
+| `rdb.memory.2CPU-16GB` | High Memory | 2 | 16 GB | €126/mo | `127.75` | `121.3625` |
+| `rdb.memory.4CPU-32GB` | High Memory | 4 | 32 GB | €283/mo | `286.9306` | `272.5841` |
+| `rdb.memory.8CPU-64GB` | High Memory | 8 | 64 GB | €593/mo | `601.2361` | `571.1743` |
+| `rdb.memory.12CPU-96GB` | High Memory | 12 | 96 GB | €883/mo | `895.2639` | `850.5007` |
+| `rdb.memory.16CPU-128GB` | High Memory | 16 | 128 GB | €1173/mo | `1189.2917` | `1129.8271` |
+| `rdb.memory.24CPU-192GB` | High Memory | 24 | 192 GB | €1800/mo | `1825.00` | `1733.75` |
+| `rdb.memory.32CPU-256GB` | High Memory | 32 | 256 GB | €2380/mo | `2413.0556` | `2292.4028` |
+| `rdb.memory.48CPU-384GB` | High Memory | 48 | 384 GB | €3655/mo | `3705.7639` | `3520.4757` |
+| `rdb.memory.64CPU-512GB` | High Memory | 64 | 512 GB | €4855/mo | `4922.4306` | `4676.3091` |
 
 ### Managed Object Storage
 
@@ -841,25 +841,25 @@ or three nodes, which the documentation calls a multi-node plan. Pages:
 
 | Plan | Family | CPU cores | Memory | Page price, 1 node | Single node, stored | Per node at 2 nodes, stored |
 |---|---|---|---|---|---|---|
-| `rdb.standard.2CPU-8GB` | Standard | 2 | 8 GB | €60/mo | 60.8333 | `57.7916` |
-| `rdb.standard.4CPU-16GB` | Standard | 4 | 16 GB | €140/mo | 141.9444 | `134.8472` |
-| `rdb.standard.8CPU-32GB` | Standard | 8 | 32 GB | €317/mo | 321.4028 | `305.3327` |
-| `rdb.standard.12CPU-48GB` | Standard | 12 | 48 GB | €485/mo | 491.7361 | `467.1493` |
-| `rdb.standard.16CPU-64GB` | Standard | 16 | 64 GB | €665/mo | 674.2361 | `640.5243` |
-| `rdb.standard.24CPU-96GB` | Standard | 24 | 96 GB | €993/mo | 1006.7917 | `956.4521` |
-| `rdb.standard.32CPU-128GB` | Standard | 32 | 128 GB | €1317/mo | 1335.2917 | `1268.5271` |
-| `rdb.standard.48CPU-192GB` | Standard | 48 | 192 GB | €2017/mo | 2045.0139 | `1942.7632` |
-| `rdb.standard.64CPU-256GB` | Standard | 64 | 256 GB | €2669/mo | 2706.0694 | `2570.7659` |
-| `rdb.standard.80CPU-320GB` | Standard | 80 | 320 GB | €3429/mo | 3476.625 | `3302.7938` |
-| `rdb.memory.2CPU-16GB` | High Memory | 2 | 16 GB | €126/mo | 127.75 | `121.3625` |
-| `rdb.memory.4CPU-32GB` | High Memory | 4 | 32 GB | €283/mo | 286.9306 | `272.5841` |
-| `rdb.memory.8CPU-64GB` | High Memory | 8 | 64 GB | €593/mo | 601.2361 | `571.1743` |
-| `rdb.memory.12CPU-96GB` | High Memory | 12 | 96 GB | €883/mo | 895.2639 | `850.5007` |
-| `rdb.memory.16CPU-128GB` | High Memory | 16 | 128 GB | €1173/mo | 1189.2917 | `1129.8271` |
-| `rdb.memory.24CPU-192GB` | High Memory | 24 | 192 GB | €1800/mo | 1825.00 | `1733.75` |
-| `rdb.memory.32CPU-256GB` | High Memory | 32 | 256 GB | €2380/mo | 2413.0556 | `2292.4028` |
-| `rdb.memory.48CPU-384GB` | High Memory | 48 | 384 GB | €3655/mo | 3705.7639 | `3520.4757` |
-| `rdb.memory.64CPU-512GB` | High Memory | 64 | 512 GB | €4855/mo | 4922.4306 | `4676.3091` |
+| `rdb.standard.2CPU-8GB` | Standard | 2 | 8 GB | €60/mo | `60.8333` | `57.7916` |
+| `rdb.standard.4CPU-16GB` | Standard | 4 | 16 GB | €140/mo | `141.9444` | `134.8472` |
+| `rdb.standard.8CPU-32GB` | Standard | 8 | 32 GB | €317/mo | `321.4028` | `305.3327` |
+| `rdb.standard.12CPU-48GB` | Standard | 12 | 48 GB | €485/mo | `491.7361` | `467.1493` |
+| `rdb.standard.16CPU-64GB` | Standard | 16 | 64 GB | €665/mo | `674.2361` | `640.5243` |
+| `rdb.standard.24CPU-96GB` | Standard | 24 | 96 GB | €993/mo | `1006.7917` | `956.4521` |
+| `rdb.standard.32CPU-128GB` | Standard | 32 | 128 GB | €1317/mo | `1335.2917` | `1268.5271` |
+| `rdb.standard.48CPU-192GB` | Standard | 48 | 192 GB | €2017/mo | `2045.0139` | `1942.7632` |
+| `rdb.standard.64CPU-256GB` | Standard | 64 | 256 GB | €2669/mo | `2706.0694` | `2570.7659` |
+| `rdb.standard.80CPU-320GB` | Standard | 80 | 320 GB | €3429/mo | `3476.625` | `3302.7938` |
+| `rdb.memory.2CPU-16GB` | High Memory | 2 | 16 GB | €126/mo | `127.75` | `121.3625` |
+| `rdb.memory.4CPU-32GB` | High Memory | 4 | 32 GB | €283/mo | `286.9306` | `272.5841` |
+| `rdb.memory.8CPU-64GB` | High Memory | 8 | 64 GB | €593/mo | `601.2361` | `571.1743` |
+| `rdb.memory.12CPU-96GB` | High Memory | 12 | 96 GB | €883/mo | `895.2639` | `850.5007` |
+| `rdb.memory.16CPU-128GB` | High Memory | 16 | 128 GB | €1173/mo | `1189.2917` | `1129.8271` |
+| `rdb.memory.24CPU-192GB` | High Memory | 24 | 192 GB | €1800/mo | `1825.00` | `1733.75` |
+| `rdb.memory.32CPU-256GB` | High Memory | 32 | 256 GB | €2380/mo | `2413.0556` | `2292.4028` |
+| `rdb.memory.48CPU-384GB` | High Memory | 48 | 384 GB | €3655/mo | `3705.7639` | `3520.4757` |
+| `rdb.memory.64CPU-512GB` | High Memory | 64 | 512 GB | €4855/mo | `4922.4306` | `4676.3091` |
 
 ## Left out on purpose
 
