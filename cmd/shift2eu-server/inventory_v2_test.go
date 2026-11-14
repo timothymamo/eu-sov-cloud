@@ -78,7 +78,7 @@ func decodeErrorMessage(t *testing.T, body []byte) errorMessage {
 
 // TestServerAcceptsInventoryVersion2 pins that POST /v1/assessments takes a
 // version 2 inventory, as it takes its version 1 twin, and that the version 2
-// fields change no verdict: both documents are the version 2 report (ADR 0029)
+// fields change no verdict: both documents are the version 2 report (ADR 0030)
 // with the same fits, summary, required changes and blockers. The reports
 // themselves differ, because a version 2 inventory's relations, workloads and
 // sizes reach them (PRD #190 milestone 8), which a byte comparison would miss.
@@ -119,7 +119,7 @@ func TestServerAcceptsInventoryVersion2(t *testing.T) {
 		}
 
 		if header.SchemaVersion != 2 {
-			t.Errorf("the %s report declares schemaVersion %d, want 2 (docs/adr/0029)",
+			t.Errorf("the %s report declares schemaVersion %d, want 2 (docs/adr/0030)",
 				name, header.SchemaVersion)
 		}
 	}

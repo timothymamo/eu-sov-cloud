@@ -393,7 +393,7 @@ func TestAssessJSONFormat(t *testing.T) {
 			}
 
 			if header.SchemaVersion != 2 {
-				t.Errorf("schemaVersion = %d, want 2 (docs/adr/0029)", header.SchemaVersion)
+				t.Errorf("schemaVersion = %d, want 2 (docs/adr/0030)", header.SchemaVersion)
 			}
 
 			if header.Kind != tc.kind {

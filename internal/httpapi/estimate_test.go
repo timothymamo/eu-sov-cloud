@@ -193,7 +193,7 @@ func TestAssessRegions(t *testing.T) {
 // does not list, or a region named for a target the request does not select, is
 // 400 with the error envelope, the message names the region and the target's
 // regions, and nothing is assessed. The region is echoed only when it is
-// region-shaped (ADR 0029): every other value comes back as "the region", and a
+// region-shaped (ADR 0030): every other value comes back as "the region", and a
 // regions key the API does not support is never echoed at all.
 func TestAssessBadRegion(t *testing.T) {
 	t.Parallel()
