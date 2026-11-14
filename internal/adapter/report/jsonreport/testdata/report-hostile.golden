@@ -35,7 +35,12 @@
         }
       ],
       "requiredChanges": [],
-      "relations": [],
+      "relations": [
+        {
+          "type": "depends-on",
+          "target": "db-\"rel\"\\\n\t\u0000\u001b\u2028\u003c/script\u003e�"
+        }
+      ],
       "affectedBy": []
     },
     {
@@ -103,5 +108,18 @@
       }
     }
   ],
-  "workloads": []
+  "workloads": [
+    {
+      "name": "ws|`x`[a](b)\"\\\n\t\u0000\u001b\u2028\u003c/script\u003e�",
+      "noWorkload": false,
+      "resources": 1,
+      "summary": {
+        "direct": 1,
+        "partial": 0,
+        "none": 0,
+        "total": 1
+      },
+      "blockers": []
+    }
+  ]
 }

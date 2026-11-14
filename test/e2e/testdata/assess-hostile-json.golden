@@ -33,7 +33,12 @@
         }
       ],
       "requiredChanges": [],
-      "relations": [],
+      "relations": [
+        {
+          "type": "depends-on",
+          "target": "a|b"
+        }
+      ],
       "affectedBy": [],
       "estimate": {
         "estimated": false,
@@ -116,24 +121,46 @@
   "blockers": [],
   "workloads": [
     {
-      "name": "",
-      "noWorkload": true,
-      "resources": 4,
+      "name": "ws|`x`[a](b) # h",
+      "noWorkload": false,
+      "resources": 1,
       "summary": {
-        "direct": 3,
-        "partial": 1,
+        "direct": 1,
+        "partial": 0,
         "none": 0,
-        "total": 4
+        "total": 1
       },
       "blockers": [],
       "estimate": {
         "amount": "0.00",
         "estimated": 0,
-        "resources": 4
+        "resources": 1
       },
       "sourceCost": {
         "covered": 0,
-        "resources": 4,
+        "resources": 1,
+        "currencies": []
+      }
+    },
+    {
+      "name": "",
+      "noWorkload": true,
+      "resources": 3,
+      "summary": {
+        "direct": 2,
+        "partial": 1,
+        "none": 0,
+        "total": 3
+      },
+      "blockers": [],
+      "estimate": {
+        "amount": "0.00",
+        "estimated": 0,
+        "resources": 3
+      },
+      "sourceCost": {
+        "covered": 0,
+        "resources": 3,
         "currencies": []
       }
     }

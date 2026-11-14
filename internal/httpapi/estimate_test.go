@@ -192,10 +192,15 @@ func TestAssessRegions(t *testing.T) {
 // TestAssessBadRegion pins the validation the CLI shares: a region the target
 // does not list, or a region named for a target the request does not select, is
 // 400 with the error envelope, the message names the region and the target's
-// regions, and nothing is assessed.
+// regions, and nothing is assessed. The region is echoed only when it is
+// region-shaped (ADR 0029): every other value comes back as "the region", and a
+// regions key the API does not support is never echoed at all.
 func TestAssessBadRegion(t *testing.T) {
 	t.Parallel()
 
+	// longRegion is a region-shaped value at the cap, and tooLongRegion one byte
+	// past it: the message names the first and not the second.
+	longRegion := strings.Repeat("a", 64)
 	tests := []struct {
 		name string
 		// opts are the request's options.
@@ -204,6 +209,12 @@ func TestAssessBadRegion(t *testing.T) {
 		targets []string
 		// want is what the error message must name.
 		want []string
+		// never are values the error message must not hold: a value the request
+		// sent that is not region-shaped, in either its raw or its escaped form.
+		never []string
+		// rawNever are strings the raw response body must not hold, for a value
+		// encoding/json would escape there.
+		rawNever []string
 	}{
 		{
 			name:    "a region the target does not list",
@@ -216,6 +227,52 @@ func TestAssessBadRegion(t *testing.T) {
 			opts:    assessOptions{Regions: map[string]string{betaKey: fixtureRegion}},
 			targets: []string{alphaKey},
 			want:    []string{betaKey},
+		},
+		{
+			name:    "a region with markup",
+			opts:    assessOptions{Regions: map[string]string{alphaKey: "<b>x</b>"}},
+			targets: []string{alphaKey},
+			want:    []string{"the region", fixtureRegion},
+			never:   []string{"<b>x</b>"},
+		},
+		{
+			// The escaped form too: a message that quoted the value with %q would
+			// hold the backslash and the letter, not the line ending.
+			name:    "a region with a line ending",
+			opts:    assessOptions{Regions: map[string]string{alphaKey: "a\nb"}},
+			targets: []string{alphaKey},
+			want:    []string{"the region", fixtureRegion},
+			never:   []string{"\n", `\n`},
+		},
+		{
+			name:    "a region longer than the cap",
+			opts:    assessOptions{Regions: map[string]string{alphaKey: longRegion + "a"}},
+			targets: []string{alphaKey},
+			want:    []string{"the region", fixtureRegion},
+			never:   []string{longRegion + "a"},
+		},
+		{
+			name:    "a region that is not ASCII",
+			opts:    assessOptions{Regions: map[string]string{alphaKey: "é"}},
+			targets: []string{alphaKey},
+			want:    []string{"the region", fixtureRegion},
+			never:   []string{"é"},
+		},
+		{
+			name:    "a region-shaped region at the cap is named",
+			opts:    assessOptions{Regions: map[string]string{alphaKey: longRegion}},
+			targets: []string{alphaKey},
+			want:    []string{longRegion, fixtureRegion},
+		},
+		{
+			// The key is client data too, and the API names a regions key only when
+			// it is one of its own target keys.
+			name:     "a regions key that is not a target",
+			opts:     assessOptions{Regions: map[string]string{"<x>": fixtureRegion}},
+			targets:  []string{alphaKey},
+			want:     []string{alphaKey},
+			never:    []string{"<x>"},
+			rawNever: []string{`\u003cx`},
 		},
 	}
 
@@ -253,6 +310,19 @@ func TestAssessBadRegion(t *testing.T) {
 			for _, want := range tc.want {
 				if !strings.Contains(doc.Error.Message, want) {
 					t.Errorf("the error message = %q, want it to name %q", doc.Error.Message, want)
+				}
+			}
+
+			for _, never := range tc.never {
+				if strings.Contains(doc.Error.Message, never) {
+					t.Errorf("the error message = %q, want it not to hold the client's value %q",
+						doc.Error.Message, never)
+				}
+			}
+
+			for _, never := range tc.rawNever {
+				if strings.Contains(rec.Body.String(), never) {
+					t.Errorf("the response body = %q, want it not to hold %q either", rec.Body.String(), never)
 				}
 			}
 

@@ -44,6 +44,9 @@ const (
 	// hostileInventoryName is a file name whose Markdown syntax must reach the
 	// report as text.
 	hostileInventoryName = "inv|`x`[y](z).json"
+	// hostileWorkload is a workload name with the Markdown syntax a workload
+	// heading and the table of its resources must not read as syntax.
+	hostileWorkload = "ws|`x`[a](b) # h"
 	// scalewayTarget is the display name of the fixture catalog, as the test cases
 	// that build their own catalog spell it.
 	scalewayTarget = "Scaleway"
@@ -79,6 +82,7 @@ func hostileValues() []string {
 		hostileInventoryName,
 		hostileSource,
 		hostileSourceURL,
+		hostileWorkload,
 		// IDs and raw types from the earlier hostile fixture.
 		"[l](javascript:x)",
 		"`tick`",
@@ -156,7 +160,9 @@ func awsResources() []inventory.Resource {
 // renderer: an ID with link syntax, an ID with a pipe, an ID with a backslash, a
 // raw type with HTML, a raw type that looks like a heading, math, a mention, a
 // reference, an emoji, a task list, a bare link and an HTML character reference.
-// A value must reach the report verbatim, inside a code span.
+// Its first resource also names a hostile workload and relates to another
+// hostile ID, so the workload heading and the relations table cell are reached
+// with syntax too. A value must reach the report verbatim, inside a code span.
 func hostileResources() []inventory.Resource {
 	return []inventory.Resource{
 		{
@@ -164,6 +170,10 @@ func hostileResources() []inventory.Resource {
 			RawType:  "$\\Huge X$",
 			Category: taxonomy.ServerlessFunction,
 			Region:   "eu-west-1",
+			Workload: hostileWorkload,
+			// The relation target is an existing ID of this inventory, with a
+			// pipe and link syntax of its own.
+			Relations: []inventory.Relation{{Type: inventory.DependsOn, Target: "[l](javascript:x)"}},
 		},
 		{
 			ID:       "[ ] x",
@@ -366,7 +376,8 @@ func TestReportHostileValues(t *testing.T) {
 	testutil.Golden(t, "testdata/report-hostile.golden", got)
 
 	checkTableShape(t, got)
-	checkHeadings(t, got, "# Migration assessment: ``Evil | `x` <b> [a](b) *s*``", analysisSections()...)
+	checkHeadings(t, got, "# Migration assessment: ``Evil | `x` <b> [a](b) *s*``",
+		append(analysisSections(), "## Workloads")...)
 
 	spans := codeSpans(string(got))
 	for _, value := range hostileValues() {

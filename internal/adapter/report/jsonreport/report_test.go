@@ -671,6 +671,12 @@ var (
 	hostileReasonCode = mapping.ReasonCode("reason\"\\\n\t\x00\x1b\u2028</script>\xff")
 	// hostileBlockedID is the blocked resource's ID, which the blocker repeats.
 	hostileBlockedID = "fn\"\\\n\t\x00\x1b\u2028</script>\xff"
+	// hostileWorkload is a workload name, which a report shows as a heading in
+	// Markdown and as the name of a workload object in JSON.
+	hostileWorkload = "ws|`x`[a](b)\"\\\n\t\x00\x1b\u2028</script>\xff"
+	// hostileRelationTarget is the ID a relation points at, which a report shows
+	// in a table cell in Markdown and as the target of a relation object in JSON.
+	hostileRelationTarget = "db-\"rel\"\\\n\t\x00\x1b\u2028</script>\xff"
 )
 
 // hostileCategory is the category of the hostile resources: a value the
@@ -688,7 +694,8 @@ func hostileMetadata() analysis.ReportMeta {
 // verdict with two tied candidates, a partial verdict with a missing capability,
 // and a blocked verdict with an unknown reason code and a no-offering reason
 // that repeats the hostile target and category. Its blockers repeat the blocked
-// resource's hostile ID.
+// resource's hostile ID, its direct resource names a hostile workload and
+// relates to a hostile ID, and one workload group carries that name.
 func hostileAssessment() assessment.Assessment {
 	category := hostileCategory()
 
@@ -706,6 +713,8 @@ func hostileAssessment() assessment.Assessment {
 					Category:     category,
 					Region:       hostileRegion,
 					Capabilities: []taxonomy.Capability{hostileCapability},
+					Workload:     hostileWorkload,
+					Relations:    []inventory.Relation{{Type: inventory.DependsOn, Target: hostileRelationTarget}},
 				},
 				Fit:          mapping.Direct,
 				BestOffering: hostileOffering,
@@ -752,6 +761,11 @@ func hostileAssessment() assessment.Assessment {
 			{ResourceID: hostileBlockedID, Reason: noOffering},
 		},
 		Summary: assessment.Summary{Total: 3, Direct: 1, Partial: 1, None: 1},
+		Workloads: []assessment.WorkloadSummary{{
+			Name:        hostileWorkload,
+			ResourceIDs: []string{hostileID},
+			Summary:     assessment.Summary{Total: 1, Direct: 1},
+		}},
 	}
 }
 
@@ -782,6 +796,17 @@ func TestReportHostileValues(t *testing.T) {
 		{name: "target name", path: []any{"target", "name"}, want: hostileTarget},
 		{name: "snapshot source", path: []any{"target", "snapshot", "source"}, want: hostileSourceURL},
 		{name: "resource ID", path: []any{"resources", 0, "id"}, want: hostileID},
+		{
+			name: "relation type",
+			path: []any{"resources", 0, "relations", 0, "type"},
+			want: string(inventory.DependsOn),
+		},
+		{
+			name: "relation target",
+			path: []any{"resources", 0, "relations", 0, "target"},
+			want: hostileRelationTarget,
+		},
+		{name: "workload name", path: []any{"workloads", 0, "name"}, want: hostileWorkload},
 		{name: "raw type", path: []any{"resources", 0, "rawType"}, want: hostileRawType},
 		{name: "region", path: []any{"resources", 0, "region"}, want: hostileRegion},
 		{name: "category", path: []any{"resources", 0, "category"}, want: string(hostileCategory())},

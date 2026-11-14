@@ -801,7 +801,8 @@ func TestAssessHostileInventory(t *testing.T) {
 }
 
 // hostileValues returns every value of the hostile fixture that a renderer would
-// otherwise rewrite.
+// otherwise rewrite, including the relation's target and the workload name,
+// which reach the relations table cell and a workload heading.
 func hostileValues() []string {
 	return []string{
 		"#1",
@@ -812,6 +813,7 @@ func hostileValues() []string {
 		"<b>",
 		"tick`x",
 		":x:",
+		"ws|`x`[a](b) # h",
 	}
 }
 
