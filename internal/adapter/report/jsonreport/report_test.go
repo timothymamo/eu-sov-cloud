@@ -7,6 +7,7 @@ import (
 	"errors"
 	"io"
 	"maps"
+	"path/filepath"
 	"slices"
 	"strconv"
 	"strings"
@@ -286,7 +287,7 @@ func TestReportDocumentShape(t *testing.T) {
 				path: nil,
 				want: []string{
 					"blockers", "inventoryName", "kind", "resources", "schemaVersion", "source", "summary",
-					"target",
+					"target", "workloads",
 				},
 			},
 			{name: "the target", path: []any{"target"}, want: []string{"name", "snapshot"}},
@@ -304,8 +305,8 @@ func TestReportDocumentShape(t *testing.T) {
 				name: "a direct resource",
 				path: []any{"resources", 0},
 				want: []string{
-					"bestOffering", "category", "fit", "id", "rawType", "reasons", "region", "requiredChanges",
-					"ties",
+					"affectedBy", "bestOffering", "category", "fit", "id", "rawType", "reasons", "region",
+					"relations", "requiredChanges", "ties",
 				},
 			},
 			{
@@ -1574,7 +1575,9 @@ func TestReportWithEstimates(t *testing.T) {
 					}
 				}
 
-				var blocked []string
+				// A group without blockers writes [], so the collected list is
+				// empty rather than nil.
+				blocked := []string{}
 
 				for j := range arrayAt(t, document, extend(at, "blockers")...) {
 					id, ok := valueAt(t, document, extend(at, "blockers", j, "resourceId")...).(string)
@@ -1608,6 +1611,71 @@ func TestReportWithEstimates(t *testing.T) {
 	})
 
 	testutil.Golden(t, "testdata/report-estimates.golden", got)
+}
+
+// TestReportNamesTheChosenRegion pins that a document names the region a run
+// chose, at the top level, with or without estimates (PRD #190 milestone 8: the
+// report header names the region per target), and names none when no region was
+// chosen: the estimate basis is not in a document without estimates, so the
+// top-level key is all such a document has to say about the region.
+func TestReportNamesTheChosenRegion(t *testing.T) {
+	t.Parallel()
+
+	meta := analysis.ReportMeta{InventoryName: inventoryFileName}
+
+	tests := []struct {
+		name string
+		opts assessment.Options
+		// want is the region the document must name, and "" for no region key.
+		want string
+	}{
+		{
+			name: "a chosen region without estimates",
+			opts: assessment.Options{Region: testutil.ReportSecondRegion},
+			want: testutil.ReportSecondRegion,
+		},
+		{
+			name: "no chosen region without estimates",
+			opts: assessment.Options{},
+			want: "",
+		},
+		{
+			name: "a chosen region with estimates",
+			opts: assessment.Options{Region: testutil.ReportSecondRegion, Estimate: true},
+			want: testutil.ReportSecondRegion,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			a := assessment.AssessWith(newInventory(t, sourceName, estimateResources()), testutil.ReportCatalog(t), tc.opts)
+			got := render(t, a, meta)
+			checkDocument(t, got)
+
+			document := decodeJSON(t, got)
+
+			if _, ok := document["region"]; ok != (tc.want != "") {
+				t.Errorf("the document holds a region key = %t, want %t: %q",
+					ok, tc.want != "", objectKeysAt(t, document))
+			}
+
+			if tc.want != "" {
+				if diff := cmp.Diff(tc.want, valueAt(t, document, "region")); diff != "" {
+					t.Errorf("region mismatch (-want +got):\n%s", diff)
+				}
+			}
+
+			// The document must stay one the schema file describes: a key it
+			// declares no property for fails closed objects.
+			s := readSchema(t, filepath.Join("schema", schemaFileFor("assessment", currentSchemaVersion)))
+
+			for _, problem := range s.validate(document, "$") {
+				t.Errorf("the document does not match the schema: %s", problem)
+			}
+		})
+	}
 }
 
 // TestReportWithoutEstimateKeys pins that a document without estimates holds no

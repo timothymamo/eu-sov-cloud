@@ -885,16 +885,18 @@ func estimateSections() []string {
 	return append(analysisSections(), "## Workloads", "## Cost estimate")
 }
 
-// checkHeadings asserts that the only lines that start a Markdown heading are the
-// title it is given and the sections in layout order, so no value can forge one
-// or move a section.
+// checkHeadings asserts that the only lines that start a Markdown heading of the
+// report's own layout are the title it is given and the sections in layout
+// order, so no value can forge one or move a section. The subheadings of a
+// section, such as the per-workload "###" headings of "## Workloads", are left
+// to the test that pins that section's body.
 func checkHeadings(t *testing.T, out []byte, title string, sections ...string) {
 	t.Helper()
 
 	var headings []string
 
 	for _, line := range strings.Split(string(out), "\n") {
-		if strings.HasPrefix(line, "#") {
+		if strings.HasPrefix(line, "#") && !strings.HasPrefix(line, "###") {
 			headings = append(headings, line)
 		}
 	}

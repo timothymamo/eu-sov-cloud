@@ -3,6 +3,7 @@ package jsonreport_test
 import (
 	"bytes"
 	"errors"
+	"path/filepath"
 	"slices"
 	"strings"
 	"testing"
@@ -259,7 +260,7 @@ func TestReportComparisonShape(t *testing.T) {
 			{
 				name: "a target entry",
 				path: []any{"targets", 0},
-				want: []string{"blockers", "key", "resources", "summary", "target"},
+				want: []string{"blockers", "key", "resources", "summary", "target", "workloads"},
 			},
 			{name: "a target's target", path: []any{"targets", 0, "target"}, want: []string{"name", "snapshot"}},
 			{
@@ -276,8 +277,8 @@ func TestReportComparisonShape(t *testing.T) {
 				name: "a target's resource",
 				path: []any{"targets", 0, "resources", 0},
 				want: []string{
-					"bestOffering", "category", "fit", "id", "rawType", "reasons", "region", "requiredChanges",
-					"ties",
+					"affectedBy", "bestOffering", "category", "fit", "id", "rawType", "reasons", "region",
+					"relations", "requiredChanges", "ties",
 				},
 			},
 			{
@@ -912,6 +913,63 @@ func assessReportTargets(t *testing.T, keys []string) []assessment.TargetAssessm
 	}
 
 	return targets
+}
+
+// TestReportComparisonNamesTheChosenRegions pins that every target entry of a
+// comparison names the region a run chose for that target, with or without
+// estimates, exactly as a single-target document does at its top level (PRD #190
+// milestone 8).
+func TestReportComparisonNamesTheChosenRegions(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name string
+		// region is the region chosen for the example target; the north target
+		// always chooses its own default region.
+		region   string
+		estimate bool
+	}{
+		{name: "without estimates", region: testutil.ReportSecondRegion},
+		{name: "with estimates", region: testutil.ReportSecondRegion, estimate: true},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			inv := newInventory(t, sourceName, estimateResources())
+			chosen := []string{tc.region, testutil.ReportSecondRegion}
+
+			targets := make([]assessment.TargetAssessment, 0, len(chosen))
+
+			for i, key := range []string{reportKey, reportNorthKey} {
+				targets = append(targets, assessment.TargetAssessment{
+					Key: key,
+					Assessment: assessment.AssessWith(inv, reportComparisonCatalog(t, key),
+						assessment.Options{Region: chosen[i], Estimate: tc.estimate}),
+				})
+			}
+
+			got := renderComparison(t, assessment.Compare(targets), analysis.ReportMeta{InventoryName: inventoryFileName})
+			checkDocument(t, got)
+
+			document := decodeJSON(t, got)
+
+			for i, region := range chosen {
+				at := []any{"targets", i}
+
+				if diff := cmp.Diff(region, valueAt(t, document, extend(at, "region")...)); diff != "" {
+					t.Errorf("targets[%d].region mismatch (-want +got):\n%s", i, diff)
+				}
+			}
+
+			s := readSchema(t, filepath.Join("schema", schemaFileFor("comparison", currentSchemaVersion)))
+
+			for _, problem := range s.validate(document, "$") {
+				t.Errorf("the document does not match the schema: %s", problem)
+			}
+		})
+	}
 }
 
 // TestReportComparisonWithEstimates pins the schema version 2 comparison of two

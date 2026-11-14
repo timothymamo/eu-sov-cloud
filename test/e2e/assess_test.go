@@ -1523,12 +1523,14 @@ func demotedReportLines(t *testing.T, singleTargetReport string) []string {
 	return demoted
 }
 
-// TestAssessInventoryVersion2 pins that inventory format version 2 changes no
-// report (PRD #190, milestone 1): the built binary, run on a version 2
-// inventory with every new field set, writes the report its version 1 twin gets,
-// byte for byte, as Markdown and as JSON. The twins sit in directories of their
-// own, so both files have the same base name and the reports differ only if the
-// new fields reach them - which no report shows yet.
+// TestAssessInventoryVersion2 pins that the built binary accepts an inventory
+// format version 2, as it accepts its version 1 twin, and that the version 2
+// fields change no verdict (PRD #190, milestones 1 and 8): both runs exit 0, and
+// the two reports hold the same fits, summary, required changes and blockers. The
+// reports themselves differ, because a version 2 inventory's relations, workloads
+// and sizes reach them since milestone 8, so the twins are compared on the
+// verdicts alone, never byte for byte. The twins sit in directories of their own,
+// so both files have the same base name.
 func TestAssessInventoryVersion2(t *testing.T) {
 	t.Parallel()
 
@@ -1557,13 +1559,99 @@ func TestAssessInventoryVersion2(t *testing.T) {
 					}
 				}
 
-				if version1.stdout != version2.stdout {
-					t.Errorf("the version 2 report differs from its version 1 twin:\nversion 1:\n%s\nversion 2:\n%s",
-						version1.stdout, version2.stdout)
+				if format == jsonFormat {
+					v1, v2 := decodeVerdicts(t, version1.stdout), decodeVerdicts(t, version2.stdout)
+
+					if diff := cmp.Diff(v1.Summary, v2.Summary); diff != "" {
+						t.Errorf("the version 2 inventory's summary differs from its version 1 twin (-v1 +v2):\n%s", diff)
+					}
+
+					if diff := cmp.Diff(v1.Resources, v2.Resources); diff != "" {
+						t.Errorf("the version 2 fits and required changes differ from the version 1 twin's (-v1 +v2):\n%s",
+							diff)
+					}
+
+					if diff := cmp.Diff(v1.Blockers, v2.Blockers); diff != "" {
+						t.Errorf("the version 2 inventory's blockers differ from its version 1 twin (-v1 +v2):\n%s", diff)
+					}
+
+					return
+				}
+
+				sections1, sections2 := markdownSections(version1.stdout), markdownSections(version2.stdout)
+
+				// A report without estimates keeps today's four sections; one with
+				// them adds the workloads and the cost summary. Only the sections
+				// both reports hold are compared, and the three that carry the
+				// verdicts must be there.
+				for _, heading := range []string{summaryHeading, "## Required changes", "## Blockers"} {
+					body1, ok := sections1[heading]
+					if !ok {
+						t.Fatalf("the version 1 report holds no %q section:\n%s", heading, version1.stdout)
+					}
+
+					if diff := cmp.Diff(body1, sections2[heading]); diff != "" {
+						t.Errorf("%q differs between the twins (-version 1 +version 2):\n%s", heading, diff)
+					}
 				}
 			})
 		}
 	}
+}
+
+// verdicts are the parts of a JSON report two inventories must agree on: the
+// verdict per resource, its required changes and its reasons, and the blockers -
+// never the estimate, the relations or the workloads, which a version 2
+// inventory adds.
+type verdicts struct {
+	Summary   json.RawMessage `json:"summary"`
+	Resources []struct {
+		ID              string          `json:"id"`
+		Fit             string          `json:"fit"`
+		RequiredChanges []string        `json:"requiredChanges"`
+		Reasons         json.RawMessage `json:"reasons"`
+	} `json:"resources"`
+	Blockers json.RawMessage `json:"blockers"`
+}
+
+// decodeVerdicts decodes the verdict part of a JSON report, failing the test on a
+// report that holds no resource.
+func decodeVerdicts(t *testing.T, report string) verdicts {
+	t.Helper()
+
+	var v verdicts
+	if err := json.Unmarshal([]byte(report), &v); err != nil {
+		t.Fatalf("decoding the JSON report %q: %v", report, err)
+	}
+
+	if len(v.Resources) == 0 {
+		t.Fatalf("the JSON report holds no resource:\n%s", report)
+	}
+
+	return v
+}
+
+// markdownSections splits a Markdown report into its "##" sections, keyed by the
+// heading line and holding the lines below it up to the next "##" heading. The
+// "###" subheadings of a section stay in its body.
+func markdownSections(report string) map[string]string {
+	sections := map[string]string{}
+
+	heading := ""
+
+	for line := range strings.SplitSeq(report, "\n") {
+		if strings.HasPrefix(line, "## ") {
+			heading = line
+
+			continue
+		}
+
+		if heading != "" {
+			sections[heading] += line + "\n"
+		}
+	}
+
+	return sections
 }
 
 // TestAssessInvalidRelationWritesNoReport pins the other half of the version 2

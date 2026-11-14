@@ -803,6 +803,10 @@ func checkGoldenAgainstSchema(t *testing.T, path, schemaFile string) {
 var optionalProperties = []string{
 	"target", "category", "offering", "capability",
 	"plan", "estimate", "amount", "breakdown", "reason", "price",
+	// A document names the region a run chose, at the top level and per
+	// comparison target, only when --region chose one; sourceCost is written
+	// only with estimates on.
+	"region", "sourceCost",
 }
 
 // TestSchemaObjectsAreClosed pins that every schema of this package describes
