@@ -1,6 +1,7 @@
 package assessment_test
 
 import (
+	"fmt"
 	"slices"
 	"strings"
 	"testing"
@@ -712,4 +713,105 @@ func TestComparisonValidateWorkloads(t *testing.T) {
 			}
 		})
 	}
+}
+
+// TestComparisonValidateWorkloadsErrorIsShort pins that Validate's workload
+// mismatch error stays readable for the largest group an inventory can hold: it
+// names the target, the group and what differs, and never formats the groups'
+// whole ResourceIDs, which is hundreds of kilobytes for 10,000 resources and
+// tens of megabytes for the 50,000 an inventory may hold (PRD #190 M7, security
+// audit).
+func TestComparisonValidateWorkloadsErrorIsShort(t *testing.T) {
+	t.Parallel()
+
+	// maxValidateErrorLen is the most bytes the error may take: room for a
+	// sentence naming a target key, a workload name, a position and a resource
+	// ID, and far less than the group it is about.
+	const maxValidateErrorLen = 1024
+
+	// manyIDs is already 70 KB of formatted resource IDs per group.
+	const manyIDs = 10000
+
+	tests := []struct {
+		// change returns the later target's group from the first target's.
+		change func(ids []string) []string
+		name   string
+	}{
+		{
+			name: "the last resource of a group differs",
+			change: func(ids []string) []string {
+				out := slices.Clone(ids)
+				out[len(out)-1] = "r-99999"
+
+				return out
+			},
+		},
+		{
+			name: "a later target's group holds one resource more",
+			change: func(ids []string) []string {
+				return append(slices.Clone(ids), "r-99999")
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			ids := numberedResourceIDs(manyIDs)
+
+			c := assessment.Comparison{Targets: []assessment.TargetAssessment{
+				{
+					Key: ovhcloudKey,
+					Assessment: assessment.Assessment{Workloads: []assessment.WorkloadSummary{
+						{Name: "shop", ResourceIDs: ids},
+					}},
+				},
+				{
+					Key: upcloudKey,
+					Assessment: assessment.Assessment{Workloads: []assessment.WorkloadSummary{
+						{Name: "shop", ResourceIDs: tt.change(ids)},
+					}},
+				},
+			}}
+
+			err := c.Validate()
+			if err == nil {
+				t.Fatalf("Validate() = nil, want an error for a comparison whose %s", tt.name)
+			}
+
+			msg := err.Error()
+
+			for _, want := range []string{upcloudKey, "shop"} {
+				if !strings.Contains(msg, want) {
+					t.Errorf("Validate() error %q does not name %q", prefix(msg, maxValidateErrorLen), want)
+				}
+			}
+
+			if len(msg) > maxValidateErrorLen {
+				t.Fatalf("Validate() error is %d bytes, want at most %d for a group of %d resources; it starts %q",
+					len(msg), maxValidateErrorLen, len(ids), prefix(msg, 200))
+			}
+		})
+	}
+}
+
+// numberedResourceIDs returns n invented resource IDs in ID order.
+func numberedResourceIDs(n int) []string {
+	ids := make([]string, 0, n)
+	for i := range n {
+		ids = append(ids, fmt.Sprintf("r-%05d", i+1))
+	}
+
+	return ids
+}
+
+// prefix returns at most n bytes of s, for a failure message that would
+// otherwise print the whole of a long error.
+func prefix(s string, n int) string {
+	if len(s) <= n {
+		return s
+	}
+
+	return s[:n] + "..."
 }
