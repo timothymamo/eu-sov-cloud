@@ -107,6 +107,7 @@ func Parse(data []byte) (Document, error) {
 			Regions:       o.regions,
 			Plans:         o.plans,
 			StoragePrices: o.storagePrices,
+			FixedFees:     o.fixedFees,
 		}
 	}
 
@@ -125,8 +126,9 @@ func Parse(data []byte) (Document, error) {
 }
 
 // document is a snapshot of schema version 2 as the walk reads it, before its
-// values are checked. Every field is required by the format; the walk refuses a
-// document that leaves one out or gives it as null.
+// values are checked. Every field but an offering's fixedFees is required by
+// the format (ADR 0026); the walk refuses a document that leaves one out or
+// gives any field, fixedFees included, as null.
 type document struct {
 	target        string
 	sourceURL     string
@@ -145,10 +147,12 @@ type offering struct {
 	regions       []string
 	plans         []catalog.Plan
 	storagePrices []catalog.Price
+	// fixedFees is nil when the offering has no fixedFees key (ADR 0026).
+	fixedFees []catalog.Price
 }
 
-// The keys of schema version 2, spelt exactly as ADR 0007 and ADR 0024 record
-// them.
+// The keys of schema version 2, spelt exactly as ADR 0007, ADR 0024 and ADR
+// 0026 record them.
 const (
 	keySchemaVersion = "schemaVersion"
 	keyTarget        = "target"
@@ -162,6 +166,7 @@ const (
 	keyDefaultRegion = "defaultRegion"
 	keyPlans         = "plans"
 	keyStoragePrices = "storagePrices"
+	keyFixedFees     = "fixedFees"
 	keyVCPUs         = "vcpus"
 	keyMemoryGiB     = "memoryGiB"
 	keyStorageGiB    = "storageGiB"
@@ -171,8 +176,9 @@ const (
 )
 
 // documentKeys, offeringKeys, planKeys and priceKeys list the keys of the
-// document object, an offering, a plan and a price, every one of them required:
-// the format has no optional field. They are never modified.
+// document object, an offering, a plan and a price, every one of them required
+// but one: an offering's fixedFees, the format's only optional key, a recorded
+// exception to ADR 0007 (ADR 0026). They are never modified.
 var (
 	documentKeys = []jsondoc.Key{
 		{Name: keySchemaVersion, Required: true},
@@ -190,6 +196,7 @@ var (
 		{Name: keyRegions, Required: true},
 		{Name: keyPlans, Required: true},
 		{Name: keyStoragePrices, Required: true},
+		{Name: keyFixedFees, Required: false},
 	}
 	planKeys = []jsondoc.Key{
 		{Name: keyName, Required: true},

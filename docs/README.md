@@ -66,6 +66,7 @@ supersedes it.
 - [0023. Separate bare-metal servers from virtual machines in the taxonomy](adr/0023-separate-bare-metal-servers-from-virtual-machines-in-the-taxonomy.md)
 - [0024. Add plans, monthly EUR prices and a default region in target snapshot format version 2](adr/0024-add-plans-prices-and-a-default-region-in-target-snapshot-format-v2.md)
 - [0025. Add inventory file format version 2 for sizing, usage, workloads, relations and cost](adr/0025-json-inventory-file-format-v2.md)
+- [0026. Add an optional fixed monthly fee per offering to target snapshot format version 2](adr/0026-add-an-optional-fixed-monthly-fee-per-offering-to-snapshot-format-v2.md)
 
 ## Writing a page
 

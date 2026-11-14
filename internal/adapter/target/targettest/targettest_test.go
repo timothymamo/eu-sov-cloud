@@ -179,6 +179,30 @@ func catalogWithPlanPrice(t *testing.T, amount catalog.Amount) catalog.Catalog {
 	return newCatalog(t, scalewayTarget, offerings)
 }
 
+// feeOfferings is the Scaleway fixture offerings with amount as the fixed
+// monthly fee per instance of the Instances offering, so two catalogs can differ
+// in a fixed fee alone.
+func feeOfferings(amount catalog.Amount) []catalog.Offering {
+	offerings := testutil.ScalewayOfferings()
+
+	for i, o := range offerings {
+		if o.Name == "Instances" {
+			offerings[i].FixedFees = []catalog.Price{{Amount: amount, Currency: catalog.EUR}}
+		}
+	}
+
+	return offerings
+}
+
+// catalogWithFixedFee is the Scaleway fixture catalog whose Instances offering
+// charges amount as a fixed monthly fee per instance, built through catalog.New
+// like every catalog an adapter returns.
+func catalogWithFixedFee(t *testing.T, amount catalog.Amount) catalog.Catalog {
+	t.Helper()
+
+	return newCatalog(t, scalewayTarget, feeOfferings(amount))
+}
+
 // catalogWithStoragePrice is the priced fixture catalog with its first storage
 // price changed, so two catalogs can differ in a storage price alone.
 func catalogWithStoragePrice(t *testing.T, amount catalog.Amount) catalog.Catalog {
@@ -497,6 +521,19 @@ func TestCheck(t *testing.T) {
 			tgt:          &fakeTarget{catalogs: []catalog.Catalog{priced, catalogWithStoragePrice(t, 1)}},
 			wantErr:      true,
 			wantMentions: [][]string{{"repeat"}},
+		},
+		// A fixed monthly fee per instance is part of an offering, so an adapter
+		// that rewrites the amount alone between calls is not stable. The violation
+		// names the fee: both catalogues' FixedFees are shown as Amount.String
+		// renders them.
+		{
+			name: "changes one offering's fixed fee between calls",
+			tgt: &fakeTarget{catalogs: []catalog.Catalog{
+				catalogWithFixedFee(t, 150000),
+				catalogWithFixedFee(t, 250000),
+			}},
+			wantErr:      true,
+			wantMentions: [][]string{{"repeat"}, {"FixedFees"}, {"15.00"}, {"25.00"}},
 		},
 		{
 			// The default region is part of the snapshot the catalog describes, so a

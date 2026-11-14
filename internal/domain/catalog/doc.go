@@ -28,7 +28,10 @@
 // a plan without a usable name, with sizes out of range or without a price, a
 // duplicate plan name, a price that is negative, above MaxAmount, not in EUR or
 // in a region the offering is not in, and two prices of one list that apply to
-// the same region (a price with no region applies to every one). It keeps each
+// the same region (a price with no region applies to every one). An offering's
+// fixed fees, its monthly fee per instance such as a Kubernetes control plane
+// (ADR 0026), are a price list too, and when there are any they must cover
+// every region of the offering, so no region reads as free by omission. It keeps each
 // offering's plans sorted by name and every price list sorted by first region,
 // the every-region price first, and a snapshot's default region as given. A
 // zero Catalog has not been validated; later layers only receive catalogs built

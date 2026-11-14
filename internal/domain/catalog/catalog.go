@@ -56,6 +56,32 @@ type Offering struct {
 	// storage, by region. In a Catalog they are sorted by their first region,
 	// the every-region price first, and nil when there are none.
 	StoragePrices []Price
+	// FixedFees lists the offering's fixed monthly fee per instance (one
+	// Kubernetes cluster), charged on top of its plans and storage, by region.
+	// When the offering has fees, they cover every region of the offering exactly
+	// once. In a Catalog they are sorted by their first region, the every-region
+	// fee first, and nil when the offering charges no fixed fee.
+	FixedFees []Price
+}
+
+// FixedFee returns the fixed monthly fee the offering charges per instance in
+// region, and true. It returns 0 and false when the offering charges no fixed
+// fee (FixedFees is nil) or region is not one of its regions. region is
+// compared exactly with the offering's regions and the fees' regions, as plan
+// prices are: no case folding, no trimming. A fee whose Regions is nil applies
+// to every region of the offering.
+func (o Offering) FixedFee(region string) (Amount, bool) {
+	if len(o.FixedFees) == 0 || !slices.Contains(o.Regions, region) {
+		return 0, false
+	}
+
+	for _, fee := range o.FixedFees {
+		if fee.Regions == nil || slices.Contains(fee.Regions, region) {
+			return fee.Amount, true
+		}
+	}
+
+	return 0, false
 }
 
 // Has reports whether the offering provides capability c.
@@ -592,8 +618,8 @@ func validateName(name string) error {
 	return nil
 }
 
-// normalise checks the categories, capabilities, regions, plans and storage
-// prices of an offering with a valid name and returns a copy of it whose slices
+// normalise checks the categories, capabilities, regions, plans, storage
+// prices and fixed fees of an offering with a valid name and returns a copy of it whose slices
 // are sorted, de-duplicated and nil when empty.
 func normalise(o Offering) (Offering, error) {
 	if len(o.Categories) == 0 {
@@ -643,12 +669,18 @@ func normalise(o Offering) (Offering, error) {
 		return Offering{}, err
 	}
 
+	fixedFees, err := normaliseFixedFees(o.FixedFees, regions)
+	if err != nil {
+		return Offering{}, err
+	}
+
 	o = clone(o)
 	o.Categories = sortedUnique(o.Categories)
 	o.Capabilities = sortedUnique(withImplied(o.Capabilities))
 	o.Regions = sortedUnique(o.Regions)
 	o.Plans = plans
 	o.StoragePrices = storagePrices
+	o.FixedFees = fixedFees
 
 	return o, nil
 }
@@ -693,6 +725,7 @@ func clone(o Offering) Offering {
 	o.Regions = slices.Clone(o.Regions)
 	o.Plans = clonePlans(o.Plans)
 	o.StoragePrices = clonePrices(o.StoragePrices)
+	o.FixedFees = clonePrices(o.FixedFees)
 
 	return o
 }

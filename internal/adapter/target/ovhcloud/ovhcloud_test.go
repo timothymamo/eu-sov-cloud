@@ -1,6 +1,7 @@
 // Package ovhcloud_test pins the OVHcloud catalog adapter: the target contract in
 // internal/adapter/target/targettest, the snapshot header the catalog reports, the
-// plans and prices the snapshot records and the default region they estimate in, a
+// plans, prices and fixed monthly fees the snapshot records and the default region
+// they estimate in, a
 // golden change detector for the parsed catalog, the declared EU regions, that a
 // cancelled run reads nothing, that no error of one target names the other, and
 // the two verdicts PRD 11 asks of the data: categories OVHcloud does not serve
@@ -213,6 +214,91 @@ func TestCatalogPlansAndPrices(t *testing.T) {
 		if slices.Contains(o.Regions, wantRegion) && len(o.StoragePrices) > 0 && !anyPriceAppliesIn(o.StoragePrices, wantRegion) {
 			t.Errorf("offering %s lists storage prices but none for the default region %s, want one applying there: they apply to %s",
 				text.Quote(o.Name), text.Quote(wantRegion), regionsListed(o.StoragePrices))
+		}
+	}
+}
+
+// TestCatalogFixedFees pins the fixed monthly fee per Kubernetes cluster the
+// snapshot records (ADR 0026): OVHcloud charges the Standard control plane
+// 0.09 EUR an hour in RBX, PAR and MIL, which is 65.70 EUR a month at 730 hours,
+// and includes it in GRA, LIM, SBG and WAW, where the offering stands for the
+// Free plan. Every other offering charges no fixed fee, so no estimate adds one
+// where OVHcloud publishes none. One cluster on Managed Kubernetes Service in RBX
+// therefore carries 65.70 EUR, and the free regions carry 0.00 and not "no fee":
+// the boolean of FixedFee tells the two apart.
+func TestCatalogFixedFees(t *testing.T) {
+	t.Parallel()
+
+	cat := catalogOf(t)
+
+	// feePerRegion is the control-plane fee each offering charges in each of its
+	// regions: the Standard plan's 65.70 EUR where it is the plan the offering
+	// stands for, and 0.00 where OVHcloud includes the control plane.
+	const standardControlPlane = catalog.Amount(657000)
+
+	feePerRegion := map[string]map[string]catalog.Amount{
+		"Managed Kubernetes Service": {
+			"GRA": 0,
+			"LIM": 0,
+			"RBX": standardControlPlane,
+			"SBG": 0,
+			"WAW": 0,
+		},
+		// The 3-AZ offering sells the Standard plan only, so it charges its
+		// control plane in both of its regions.
+		"Managed Kubernetes Service 3-AZ": {
+			"MIL": standardControlPlane,
+			"PAR": standardControlPlane,
+		},
+	}
+
+	for _, o := range cat.Offerings() {
+		want, charges := feePerRegion[o.Name]
+
+		if !charges {
+			if o.FixedFees != nil {
+				t.Errorf("offering %s lists fixed fees %v, want none: OVHcloud publishes a control-plane fee for its Kubernetes offerings only",
+					text.Quote(o.Name), o.FixedFees)
+			}
+
+			for _, region := range o.Regions {
+				if fee, ok := o.FixedFee(region); ok {
+					t.Errorf("offering %s reports a fixed fee %s in region %s, want none",
+						text.Quote(o.Name), fee, text.Quote(region))
+				}
+			}
+
+			continue
+		}
+
+		for _, region := range o.Regions {
+			wantFee, ok := want[region]
+			if !ok {
+				t.Errorf("offering %s: the expectation has no fee for its region %s",
+					text.Quote(o.Name), text.Quote(region))
+
+				continue
+			}
+
+			got, ok := o.FixedFee(region)
+			if !ok {
+				t.Errorf("offering %s reports no fixed fee in region %s, want %s",
+					text.Quote(o.Name), text.Quote(region), wantFee)
+
+				continue
+			}
+
+			if got != wantFee {
+				t.Errorf("offering %s: FixedFee(%s) = %s, want %s",
+					text.Quote(o.Name), text.Quote(region), got, wantFee)
+			}
+		}
+
+		for region := range want {
+			if !slices.Contains(o.Regions, region) {
+				t.Errorf("offering %s: the expectation has a fee for region %s, which is not one of its regions %v",
+					text.Quote(o.Name), text.Quote(region), o.Regions)
+			}
 		}
 	}
 }
