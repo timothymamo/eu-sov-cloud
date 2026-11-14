@@ -161,8 +161,9 @@ func TestRunWithUnknownRegion(t *testing.T) {
 	const unknown = "xx-zz"
 
 	rep := &fakeReporter{body: reportBody}
+	invFake := &fakeInventory{inv: pricedInventory(t)}
 
-	useCase, err := analysis.New(&fakeInventory{inv: pricedInventory(t)}, &fakeCatalog{cat: pricedCatalog(t)}, rep)
+	useCase, err := analysis.New(invFake, &fakeCatalog{cat: pricedCatalog(t)}, rep)
 	if err != nil {
 		t.Fatalf("New() returned unexpected error: %v", err)
 	}
@@ -211,6 +212,11 @@ func TestRunWithUnknownRegion(t *testing.T) {
 
 	if rep.calls != 0 {
 		t.Errorf("Report() called %d times, want 0: a bad region is refused before anything is assessed", rep.calls)
+	}
+
+	if invFake.calls != 0 {
+		t.Errorf("Inventory() called %d times, want 0: a bad region is refused before the inventory is read",
+			invFake.calls)
 	}
 
 	if got := buf.String(); got != "" {
@@ -347,9 +353,10 @@ func TestComparisonRegionErrors(t *testing.T) {
 	t.Parallel()
 
 	const (
-		goodKey = "alpha"
-		badKey  = "bravo"
-		bad     = "xx-zz"
+		firstKey  = "alpha"
+		secondKey = "charlie"
+		badKey    = "bravo"
+		bad       = "xx-zz"
 	)
 
 	cat := pricedCatalog(t)
@@ -380,13 +387,17 @@ func TestComparisonRegionErrors(t *testing.T) {
 			t.Parallel()
 
 			rep := &fakeComparisonReporter{body: comparisonBody}
+			invFake := &fakeInventory{inv: pricedInventory(t)}
 
+			// The bad region is the last target's: the run must refuse it before it
+			// assesses any target, not after the ones before it.
 			targets := []analysis.Target{
-				{Key: goodKey, Catalog: &fakeCatalog{cat: cat}, Region: "xx-par"},
+				{Key: firstKey, Catalog: &fakeCatalog{cat: cat}, Region: "xx-par"},
+				{Key: secondKey, Catalog: &fakeCatalog{cat: cat}, Region: "xx-ams"},
 				{Key: badKey, Catalog: &fakeCatalog{cat: cat}, Region: bad},
 			}
 
-			comparison, err := analysis.NewComparison(&fakeInventory{inv: pricedInventory(t)}, targets, rep)
+			comparison, err := analysis.NewComparison(invFake, targets, rep)
 			if err != nil {
 				t.Fatalf("NewComparison() returned unexpected error: %v", err)
 			}
@@ -427,6 +438,11 @@ func TestComparisonRegionErrors(t *testing.T) {
 
 			if rep.calls != 0 {
 				t.Errorf("ReportComparison() called %d times, want 0: a bad region renders nothing", rep.calls)
+			}
+
+			if invFake.calls != 0 {
+				t.Errorf("Inventory() called %d times, want 0: a bad region is refused before the inventory is read",
+					invFake.calls)
 			}
 
 			if got := buf.String(); got != "" {

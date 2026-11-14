@@ -1,6 +1,7 @@
 package estimate_test
 
 import (
+	"math"
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
@@ -154,13 +155,20 @@ func TestFor(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
-		name        string
-		resource    inventory.Resource
+		name     string
+		resource inventory.Resource
+		// handBuilt builds the resource without inventory.New, as only a caller
+		// that skips the validation can: a size or usage may then hold a number
+		// the validation would have refused.
+		handBuilt   bool
 		offerings   []catalog.Offering
 		region      string
 		want        estimate.Estimate
 		wantMonthly string
 		wantExact   string
+		// wantPlanExact is pinned when the plan part of the breakdown is what the
+		// case is about.
+		wantPlanExact string
 	}{
 		// The worked examples of the contract, one per priced category.
 		{
@@ -986,13 +994,171 @@ func TestFor(t *testing.T) {
 				Plan:     unpricedPlan("NK-1", 4, 8000, 50),
 			},
 		},
+
+		// A resource built without inventory.New can carry a number the validation
+		// would have refused. A size or usage that is not a positive finite number
+		// is no size at all: such a resource is never estimated with 0 EUR, and
+		// never with a negative amount.
+		{
+			name:      "no-size: a hand-built compute.vm with NaN vCPUs",
+			resource:  computeResource(&inventory.Size{VCPUs: f(math.NaN()), MemoryGiB: f(4)}, nil),
+			handBuilt: true,
+			offerings: testutil.PricedOfferings(),
+			region:    testutil.PricedDefaultRegion,
+			want:      estimate.Estimate{Region: testutil.PricedDefaultRegion, Reason: estimate.NoSize},
+		},
+		{
+			name:      "no-size: a hand-built compute.vm with infinite vCPUs",
+			resource:  computeResource(&inventory.Size{VCPUs: f(math.Inf(1)), MemoryGiB: f(4)}, nil),
+			handBuilt: true,
+			offerings: testutil.PricedOfferings(),
+			region:    testutil.PricedDefaultRegion,
+			want:      estimate.Estimate{Region: testutil.PricedDefaultRegion, Reason: estimate.NoSize},
+		},
+		{
+			name:      "no-size: a hand-built compute.vm with negative vCPUs",
+			resource:  computeResource(&inventory.Size{VCPUs: f(-2), MemoryGiB: f(4)}, nil),
+			handBuilt: true,
+			offerings: testutil.PricedOfferings(),
+			region:    testutil.PricedDefaultRegion,
+			want:      estimate.Estimate{Region: testutil.PricedDefaultRegion, Reason: estimate.NoSize},
+		},
+		{
+			name:      "no-size: a hand-built compute.vm with NaN memory",
+			resource:  computeResource(&inventory.Size{VCPUs: f(2), MemoryGiB: f(math.NaN())}, nil),
+			handBuilt: true,
+			offerings: testutil.PricedOfferings(),
+			region:    testutil.PricedDefaultRegion,
+			want:      estimate.Estimate{Region: testutil.PricedDefaultRegion, Reason: estimate.NoSize},
+		},
+		{
+			name:      "no-size: a hand-built compute.vm with infinite memory",
+			resource:  computeResource(&inventory.Size{VCPUs: f(2), MemoryGiB: f(math.Inf(1))}, nil),
+			handBuilt: true,
+			offerings: testutil.PricedOfferings(),
+			region:    testutil.PricedDefaultRegion,
+			want:      estimate.Estimate{Region: testutil.PricedDefaultRegion, Reason: estimate.NoSize},
+		},
+		{
+			name:      "no-size: a hand-built compute.vm with negative memory",
+			resource:  computeResource(&inventory.Size{VCPUs: f(2), MemoryGiB: f(-4)}, nil),
+			handBuilt: true,
+			offerings: testutil.PricedOfferings(),
+			region:    testutil.PricedDefaultRegion,
+			want:      estimate.Estimate{Region: testutil.PricedDefaultRegion, Reason: estimate.NoSize},
+		},
+		{
+			name:      "no-size: a hand-built compute.vm with NaN hours",
+			resource:  computeResource(&inventory.Size{VCPUs: f(2), MemoryGiB: f(4)}, &inventory.Usage{HoursPerMonth: f(math.NaN())}),
+			handBuilt: true,
+			offerings: testutil.PricedOfferings(),
+			region:    testutil.PricedDefaultRegion,
+			want:      estimate.Estimate{Region: testutil.PricedDefaultRegion, Reason: estimate.NoSize},
+		},
+		{
+			name:      "no-size: a hand-built compute.vm with infinite hours",
+			resource:  computeResource(&inventory.Size{VCPUs: f(2), MemoryGiB: f(4)}, &inventory.Usage{HoursPerMonth: f(math.Inf(1))}),
+			handBuilt: true,
+			offerings: testutil.PricedOfferings(),
+			region:    testutil.PricedDefaultRegion,
+			want:      estimate.Estimate{Region: testutil.PricedDefaultRegion, Reason: estimate.NoSize},
+		},
+		{
+			name:      "no-size: a hand-built compute.vm with minus infinite hours",
+			resource:  computeResource(&inventory.Size{VCPUs: f(2), MemoryGiB: f(4)}, &inventory.Usage{HoursPerMonth: f(math.Inf(-1))}),
+			handBuilt: true,
+			offerings: testutil.PricedOfferings(),
+			region:    testutil.PricedDefaultRegion,
+			want:      estimate.Estimate{Region: testutil.PricedDefaultRegion, Reason: estimate.NoSize},
+		},
+		{
+			name:      "no-size: a hand-built compute.vm with negative hours",
+			resource:  computeResource(&inventory.Size{VCPUs: f(2), MemoryGiB: f(4)}, &inventory.Usage{HoursPerMonth: f(-1)}),
+			handBuilt: true,
+			offerings: testutil.PricedOfferings(),
+			region:    testutil.PricedDefaultRegion,
+			want:      estimate.Estimate{Region: testutil.PricedDefaultRegion, Reason: estimate.NoSize},
+		},
+		{
+			name:      "no-size: a hand-built compute.vm with a negative count",
+			resource:  computeResource(&inventory.Size{VCPUs: f(2), MemoryGiB: f(4), Count: n(-3)}, nil),
+			handBuilt: true,
+			offerings: testutil.PricedOfferings(),
+			region:    testutil.PricedDefaultRegion,
+			want:      estimate.Estimate{Region: testutil.PricedDefaultRegion, Reason: estimate.NoSize},
+		},
+		{
+			name:      "no-size: a hand-built storage.object with NaN stored GiB",
+			resource:  objectResource(&inventory.Size{StorageGiB: f(math.NaN())}),
+			handBuilt: true,
+			offerings: testutil.PricedOfferings(),
+			region:    testutil.PricedDefaultRegion,
+			want:      estimate.Estimate{Region: testutil.PricedDefaultRegion, Reason: estimate.NoSize},
+		},
+		{
+			name:      "no-size: a hand-built storage.object with infinite stored GiB",
+			resource:  objectResource(&inventory.Size{StorageGiB: f(math.Inf(1))}),
+			handBuilt: true,
+			offerings: testutil.PricedOfferings(),
+			region:    testutil.PricedDefaultRegion,
+			want:      estimate.Estimate{Region: testutil.PricedDefaultRegion, Reason: estimate.NoSize},
+		},
+		{
+			name:      "no-size: a hand-built storage.object with negative stored GiB",
+			resource:  objectResource(&inventory.Size{StorageGiB: f(-100)}),
+			handBuilt: true,
+			offerings: testutil.PricedOfferings(),
+			region:    testutil.PricedDefaultRegion,
+			want:      estimate.Estimate{Region: testutil.PricedDefaultRegion, Reason: estimate.NoSize},
+		},
+
+		// A number is read to six fractional digits, rounded half away from zero,
+		// before the exact arithmetic, so no float can make the fractions grow
+		// (ADR 0027).
+		{
+			name:      "reading a number: 5e-324 hours are read as no hours at all",
+			resource:  computeResource(&inventory.Size{VCPUs: f(2), MemoryGiB: f(4)}, &inventory.Usage{HoursPerMonth: f(5e-324)}),
+			offerings: []catalog.Offering{singlePlanOffering("P-1", 2, 4000, 0, 250000)},
+			region:    testutil.PricedDefaultRegion,
+			want: estimate.Estimate{
+				Region:       testutil.PricedDefaultRegion,
+				Estimated:    true,
+				Offering:     "Example Virtual Machines",
+				Plan:         pricedPlan("P-1", 2, 4000, 0, 250000),
+				CountAssumed: true,
+			},
+			wantMonthly:   "0.00",
+			wantExact:     "0",
+			wantPlanExact: "0",
+		},
+		{
+			name:      "reading a number: stored GiB beyond the sixth decimal are dropped",
+			resource:  objectResource(&inventory.Size{StorageGiB: f(100.0000004)}),
+			offerings: testutil.PricedOfferings(),
+			region:    testutil.PricedDefaultRegion,
+			want: estimate.Estimate{
+				Region:    testutil.PricedDefaultRegion,
+				Estimated: true,
+				Offering:  "Example Object Storage",
+				// 100 GiB × 0.015 EUR, not 100.0000004 GiB × 0.015 EUR.
+				Monthly:   estimate.Ratio(3, 2),
+				Breakdown: estimate.Breakdown{Storage: estimate.Ratio(3, 2)},
+			},
+			wantMonthly:   "1.50",
+			wantExact:     "3/2",
+			wantPlanExact: "0",
+		},
 	}
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 
-			resource := newResource(t, tc.resource)
+			resource := tc.resource
+			if !tc.handBuilt {
+				resource = newResource(t, tc.resource)
+			}
+
 			cat := newCatalog(t, tc.offerings)
 
 			got := estimate.For(mapping.Map(resource, cat), tc.region)
@@ -1009,6 +1175,12 @@ func TestFor(t *testing.T) {
 			if tc.wantExact != "" {
 				if got := got.Monthly.Exact(); got != tc.wantExact {
 					t.Errorf("Monthly.Exact() = %q, want %q", got, tc.wantExact)
+				}
+			}
+
+			if tc.wantPlanExact != "" {
+				if got := got.Breakdown.Plan.Exact(); got != tc.wantPlanExact {
+					t.Errorf("Breakdown.Plan.Exact() = %q, want %q", got, tc.wantPlanExact)
 				}
 			}
 		})
