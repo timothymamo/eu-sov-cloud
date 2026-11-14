@@ -12,7 +12,7 @@ import (
 )
 
 // schemaVersion is the version of the JSON report format this package writes,
-// the schemaVersion of every document (docs/adr/0018, docs/adr/0029).
+// the schemaVersion of every document (docs/adr/0018, docs/adr/0030).
 const schemaVersion = 2
 
 // The kinds of document the format defines.

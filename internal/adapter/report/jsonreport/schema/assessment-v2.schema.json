@@ -7,7 +7,7 @@
   "properties": {
     "schemaVersion": {
       "type": "integer",
-      "description": "The format version (docs/adr/0018, docs/adr/0029).",
+      "description": "The format version (docs/adr/0018, docs/adr/0030).",
       "const": 2
     },
     "kind": {

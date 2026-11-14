@@ -1,6 +1,6 @@
 // Package jsonreport renders an assessment, or a comparison of several targets'
 // assessments, as a stable, versioned JSON document for other tools to consume:
-// the JSON report format, schemaVersion 2 (docs/adr/0018, docs/adr/0029). It implements the
+// the JSON report format, schemaVersion 2 (docs/adr/0018, docs/adr/0030). It implements the
 // analysis.Reporter and analysis.ComparisonReporter ports. The CLI writes it
 // with --format json, and the HTTP API (PRD #103) serves the same documents.
 //

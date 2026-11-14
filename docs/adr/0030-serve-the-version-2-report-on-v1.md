@@ -1,4 +1,4 @@
-# 0029. Serve the version 2 report on /v1, with estimates, relations and workloads
+# 0030. Serve the version 2 report on /v1, with estimates, relations and workloads
 
 - Status: Accepted (amends [ADR 0019](0019-serve-assessments-over-a-versioned-http-api-from-a-separate-binary.md), Versioning and the no-echo rule for a region; builds on [ADR 0018](0018-version-the-json-report-format-for-the-cli-and-the-api.md))
 - Date: 2026-11-14

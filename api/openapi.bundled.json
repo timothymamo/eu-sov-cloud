@@ -818,7 +818,7 @@
           },
           "schemaVersion": {
             "const": 2,
-            "description": "The format version (docs/adr/0018, docs/adr/0029).",
+            "description": "The format version (docs/adr/0018, docs/adr/0030).",
             "type": "integer"
           },
           "source": {
@@ -1514,7 +1514,7 @@
           },
           "schemaVersion": {
             "const": 2,
-            "description": "The format version (docs/adr/0018, docs/adr/0029).",
+            "description": "The format version (docs/adr/0018, docs/adr/0030).",
             "type": "integer"
           },
           "sharedBlockers": {
@@ -1848,7 +1848,7 @@
                 }
               }
             },
-            "description": "The report. The JSON report is schemaVersion 2 (docs/adr/0018, docs/adr/0029); a client reads schemaVersion to know which version it holds.",
+            "description": "The report. The JSON report is schemaVersion 2 (docs/adr/0018, docs/adr/0030); a client reads schemaVersion to know which version it holds.",
             "headers": {
               "Cache-Control": {
                 "$ref": "#/components/headers/Cache-Control"

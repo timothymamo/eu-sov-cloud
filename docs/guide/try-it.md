@@ -94,7 +94,7 @@ lower ([`aws-all.md.golden`](../../test/examples/testdata/aws-all.md.golden)):
 ```
 
 `--format json` writes the same content as a versioned document for scripts and other tools
-([ADR 0018](../adr/0018-version-the-json-report-format-for-the-cli-and-the-api.md), schema version 2 from [ADR 0029](../adr/0029-serve-the-version-2-report-on-v1.md)). Each resource
+([ADR 0018](../adr/0018-version-the-json-report-format-for-the-cli-and-the-api.md), schema version 2 from [ADR 0030](../adr/0030-serve-the-version-2-report-on-v1.md)). Each resource
 carries its fit, best offering, reasons with a stable `code`, and required changes
 ([`aws-scaleway.json.golden`](../../test/examples/testdata/aws-scaleway.json.golden)):
 

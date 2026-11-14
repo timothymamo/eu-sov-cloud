@@ -234,14 +234,14 @@ func (a *api) checkRegionTargets(regions map[string]string, selected []string) e
 	return nil
 }
 
-// maxEchoedRegion is the longest region a message names (ADR 0029).
+// maxEchoedRegion is the longest region a message names (ADR 0030).
 const maxEchoedRegion = 64
 
 // regionMessage words err, a region a target's catalog does not list, for
 // the client: the target (one of the API's own keys) and the target's regions,
 // which are the catalog's. The region the client sent is named only when it
 // is region-shaped (isRegionName), so a message holds no markup, control
-// character or long text from the request (ADR 0029 amends ADR 0019's
+// character or long text from the request (ADR 0030 amends ADR 0019's
 // no-echo rule for this one value).
 func regionMessage(err *analysis.RegionError, selected []string) string {
 	key := err.Target
