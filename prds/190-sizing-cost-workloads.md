@@ -196,7 +196,7 @@ Each milestone ships as one PR, in dependency order. Milestones 3, 4 and 5 can r
 5. [ ] **UpCloud plans and prices** (monthly) and its default region, in its snapshot and `SOURCES.md`.
    Paid Kubernetes control-plane fees are recorded as the offering's `fixedFees` (ADR 0026), not left
    out. Depends on 2.
-6. [ ] **Plan matching, estimates and regions.** Domain: the plan per verdict, the monthly estimate, the
+6. [x] **Plan matching, estimates and regions.** Domain: the plan per verdict, the monthly estimate, the
    "not estimated" reasons and the totals, per assessment and in the comparison. Availability in a
    chosen region, with the "not offered in `<region>`" reason, and the estimate's region (the chosen one
    or the default). Estimates can be switched off. The application layer passes both choices through;
