@@ -565,8 +565,8 @@ func docTreesOf(t *testing.T, root string) (held, takenOut []string) {
 // the probes and TestDocPackageSkippedDirSymlinkProbe read: the files the go
 // command's ./... pattern reaches, which skipDir leaves out of ./... (a
 // testdata directory, a directory whose name starts with . or _, the root of
-// another module, which is a go.mod regular file and no directory of that
-// name), and, beside them, every symlink the tree holds at any depth,
+// another module, which is a go.mod that is no directory, symlinks and FIFOs
+// included), and, beside them, every symlink the tree holds at any depth,
 // testdata, _ and . directories included. A non-Go file under testdata is no
 // source of a held package, but a symlink there is one: an import of its path
 // follows it and the toolchain builds the source it finds, so the exemptions of
@@ -666,11 +666,11 @@ func TestDocEntries(t *testing.T) {
 			want: []docPath{{rel: "test/e2e/doc.go"}},
 		},
 		{
-			// Only a go.mod regular file is the root of another module, as the
-			// go command's own search reads it, so a DIRECTORY named go.mod
-			// hides no subtree: ./... still reaches the package beside it, and
-			// the file it holds under that name. The walk must read the
-			// directory's contents and its siblings, not skip them.
+			// A go.mod that is no directory is the root of another module,
+			// as the go command's own search reads it, so a DIRECTORY named
+			// go.mod hides no subtree: ./... still reaches the package beside
+			// it, and the file it holds under that name. The walk must read
+			// the directory's contents and its siblings, not skip them.
 			name: "a directory named go.mod is no module root",
 			files: map[string]string{
 				"test/e2e/sub/x_amd64.s":   "\n",
@@ -678,6 +678,34 @@ func TestDocEntries(t *testing.T) {
 			},
 			want: []docPath{
 				{rel: "test/e2e/sub/go.mod/keep"},
+				{rel: "test/e2e/sub/x_amd64.s"},
+			},
+		},
+		{
+			// A symlink named go.mod counts by what it points to, as the go
+			// command's own search reads it: one that points at a file is a
+			// module root, so nothing under it is returned, the link itself
+			// included, and the target's own path stays out of ./... under
+			// testdata.
+			name: "a go.mod symlink to a file is a module root",
+			files: map[string]string{
+				"test/e2e/testdata/real.mod": "module example.com/real\n",
+			},
+			symlinks: map[string]string{"test/e2e/sub/go.mod": "../testdata/real.mod"},
+		},
+		{
+			// A symlink named go.mod that points at a DIRECTORY is no module
+			// root either, so the walk goes into the subtree and returns the
+			// link, which is no .go file and counts as a link, beside the
+			// sources of the package it sits in.
+			name: "a go.mod symlink to a directory is no module root",
+			files: map[string]string{
+				"test/e2e/sub/testdata/held/keep": "\n",
+				"test/e2e/sub/x_amd64.s":          "\n",
+			},
+			symlinks: map[string]string{"test/e2e/sub/go.mod": "testdata/held"},
+			want: []docPath{
+				{rel: "test/e2e/sub/go.mod", symlink: true},
 				{rel: "test/e2e/sub/x_amd64.s"},
 			},
 		},
