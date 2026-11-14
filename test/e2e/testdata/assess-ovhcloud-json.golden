@@ -36,7 +36,11 @@
       ],
       "requiredChanges": [],
       "relations": [],
-      "affectedBy": []
+      "affectedBy": [],
+      "estimate": {
+        "estimated": false,
+        "reason": "no-size"
+      }
     },
     {
       "id": "cluster-example",
@@ -55,7 +59,11 @@
       ],
       "requiredChanges": [],
       "relations": [],
-      "affectedBy": []
+      "affectedBy": [],
+      "estimate": {
+        "estimated": false,
+        "reason": "no-size"
+      }
     },
     {
       "id": "db-autoscaling-example",
@@ -82,7 +90,11 @@
         "autoscaling"
       ],
       "relations": [],
-      "affectedBy": []
+      "affectedBy": [],
+      "estimate": {
+        "estimated": false,
+        "reason": "no-size"
+      }
     },
     {
       "id": "db-example",
@@ -103,7 +115,11 @@
       ],
       "requiredChanges": [],
       "relations": [],
-      "affectedBy": []
+      "affectedBy": [],
+      "estimate": {
+        "estimated": false,
+        "reason": "no-size"
+      }
     },
     {
       "id": "db-node-example",
@@ -126,7 +142,11 @@
       ],
       "requiredChanges": [],
       "relations": [],
-      "affectedBy": []
+      "affectedBy": [],
+      "estimate": {
+        "estimated": false,
+        "reason": "no-size"
+      }
     },
     {
       "id": "db-zone-example",
@@ -147,7 +167,11 @@
       ],
       "requiredChanges": [],
       "relations": [],
-      "affectedBy": []
+      "affectedBy": [],
+      "estimate": {
+        "estimated": false,
+        "reason": "no-size"
+      }
     },
     {
       "id": "fn-example",
@@ -167,7 +191,11 @@
       ],
       "requiredChanges": [],
       "relations": [],
-      "affectedBy": []
+      "affectedBy": [],
+      "estimate": {
+        "estimated": false,
+        "reason": "no-fit"
+      }
     },
     {
       "id": "fn-ipv6-example",
@@ -187,7 +215,11 @@
       ],
       "requiredChanges": [],
       "relations": [],
-      "affectedBy": []
+      "affectedBy": [],
+      "estimate": {
+        "estimated": false,
+        "reason": "no-fit"
+      }
     },
     {
       "id": "i-0123456789abcdef0",
@@ -206,7 +238,11 @@
       ],
       "requiredChanges": [],
       "relations": [],
-      "affectedBy": []
+      "affectedBy": [],
+      "estimate": {
+        "estimated": false,
+        "reason": "no-size"
+      }
     },
     {
       "id": "misc-example",
@@ -224,7 +260,11 @@
       ],
       "requiredChanges": [],
       "relations": [],
-      "affectedBy": []
+      "affectedBy": [],
+      "estimate": {
+        "estimated": false,
+        "reason": "no-fit"
+      }
     },
     {
       "id": "partial-example",
@@ -246,7 +286,11 @@
         "node-high-availability"
       ],
       "relations": [],
-      "affectedBy": []
+      "affectedBy": [],
+      "estimate": {
+        "estimated": false,
+        "reason": "no-size"
+      }
     }
   ],
   "blockers": [
@@ -313,7 +357,38 @@
             "text": "not classified"
           }
         }
-      ]
+      ],
+      "estimate": {
+        "amount": "0.00",
+        "estimated": 0,
+        "resources": 11
+      },
+      "sourceCost": {
+        "covered": 0,
+        "resources": 11,
+        "currencies": []
+      }
     }
-  ]
+  ],
+  "estimate": {
+    "region": "GRA",
+    "regionChosen": false,
+    "priceDate": "2026-11-13",
+    "currency": "EUR",
+    "excluded": [
+      "VAT",
+      "discounts"
+    ],
+    "hoursBasis": 730,
+    "total": {
+      "amount": "0.00",
+      "estimated": 0,
+      "resources": 11
+    }
+  },
+  "sourceCost": {
+    "covered": 0,
+    "resources": 11,
+    "currencies": []
+  }
 }
