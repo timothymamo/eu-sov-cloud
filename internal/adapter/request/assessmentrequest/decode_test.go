@@ -343,6 +343,13 @@ func TestDecodeErrors(t *testing.T) {
 			body: []byte(`{"inventory":{},"targets":["scaleway"],"regions":{"scaleway":null}}`),
 		},
 		{
+			// A region is at least one character, as the CLI's --region requires: an
+			// empty one would otherwise mean "every region", so a client that thought
+			// it pinned one would get an estimate in the default region instead.
+			name: "a region is empty",
+			body: []byte(`{"inventory":{},"targets":["scaleway"],"regions":{"scaleway":""}}`),
+		},
+		{
 			name: "duplicate regions key",
 			body: []byte(`{"inventory":{},"targets":["scaleway"],"regions":{"scaleway":"fr-par"},` +
 				`"regions":{"scaleway":"nl-ams"}}`),
@@ -385,6 +392,78 @@ func TestDecodeErrors(t *testing.T) {
 			}
 
 			if msg := err.Error(); strings.ContainsAny(msg, "\r\n") {
+				t.Errorf("Decode() error = %q, want a single line", msg)
+			}
+
+			// A refused body yields nothing: a caller that ignores the error must
+			// not get a half-decoded envelope.
+			if diff := cmp.Diff(assessmentrequest.Request{}, got, cmpopts.EquateEmpty()); diff != "" {
+				t.Errorf("Decode() returned a request beside an error (-want +got):\n%s", diff)
+			}
+		})
+	}
+}
+
+// TestDecodeRefusesAnEmptyRegion pins that a region is one character or more,
+// as the CLI's --region is: an empty one would silently mean "every region", so
+// a client that believed it had pinned a region would be assessed in all of them
+// and estimated in the target's default. The refusal wraps ErrDecode and names
+// the member by its index, never by the key the client sent, and repeats no value
+// from the body (PRD #190 milestone 8, security-audit follow-up L2).
+func TestDecodeRefusesAnEmptyRegion(t *testing.T) {
+	t.Parallel()
+
+	const marker = "MARKER-KEY-7"
+
+	tests := []struct {
+		name string
+		body string
+		// want is the member the error must name, by its index.
+		want string
+	}{
+		{
+			name: "the only region is empty",
+			body: `{"inventory":{},"targets":["scaleway"],"regions":{"scaleway":""}}`,
+			want: "regions[0]",
+		},
+		{
+			name: "the second region is empty",
+			body: `{"inventory":{},"targets":["scaleway","ovhcloud"],` +
+				`"regions":{"scaleway":"fr-par","ovhcloud":""}}`,
+			want: "regions[1]",
+		},
+		{
+			name: "an empty region under a hostile key",
+			body: `{"inventory":{},"targets":["scaleway"],"regions":{"` + marker + `":""}}`,
+			want: "regions[0]",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			got, err := assessmentrequest.Decode([]byte(tt.body))
+			if err == nil {
+				t.Fatalf("Decode() returned %+v, want an error wrapping %v for an empty region",
+					got, assessmentrequest.ErrDecode)
+			}
+
+			if !errors.Is(err, assessmentrequest.ErrDecode) {
+				t.Errorf("Decode() error = %v, want it to wrap %v", err, assessmentrequest.ErrDecode)
+			}
+
+			msg := err.Error()
+
+			if !strings.Contains(msg, tt.want) {
+				t.Errorf("Decode() error = %q, want it to name the member %s", msg, tt.want)
+			}
+
+			if strings.Contains(msg, marker) {
+				t.Errorf("Decode() error = %q, want it not to echo the body key %q", msg, marker)
+			}
+
+			if strings.ContainsAny(msg, "\r\n") {
 				t.Errorf("Decode() error = %q, want a single line", msg)
 			}
 

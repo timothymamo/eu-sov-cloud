@@ -1142,6 +1142,11 @@ func TestOpenAPIDocumentsTheEstimateOptions(t *testing.T) {
 	var body struct {
 		Properties map[string]struct {
 			Type string `json:"type"`
+			// Properties describes the properties of a nested object, such as the
+			// regions object's per-target region strings.
+			Properties map[string]struct {
+				MinLength *int `json:"minLength"`
+			} `json:"properties"`
 		} `json:"properties"`
 		Required []string `json:"required"`
 	}
@@ -1169,6 +1174,22 @@ func TestOpenAPIDocumentsTheEstimateOptions(t *testing.T) {
 		want := map[string]string{"regions": "object", "estimate": "boolean"}[name]
 		if property.Type != want {
 			t.Errorf("%q is declared as %q, want %q", name, property.Type, want)
+		}
+	}
+
+	// A region is at least one character, as assessmentrequest.Decode requires: an
+	// empty one would otherwise mean "every region", so a client that thought it
+	// had pinned a region would be assessed in all of them (PRD #190 milestone 8,
+	// security-audit follow-up L2). Every target's property says so.
+	regions := body.Properties["regions"].Properties
+	if len(regions) == 0 {
+		t.Error("the request body schema describes no property of the regions object")
+	}
+
+	for _, name := range slices.Sorted(maps.Keys(regions)) {
+		if property := regions[name]; property.MinLength == nil || *property.MinLength != 1 {
+			t.Errorf("regions.%s declares minLength %v, want 1: an empty region must not mean every region",
+				name, property.MinLength)
 		}
 	}
 
@@ -1209,6 +1230,20 @@ func TestOpenAPIDocumentsTheEstimateOptions(t *testing.T) {
 			name:           "a region that is not a string",
 			body:           `{"inventory":{"source":"aws","resources":[]},"targets":["scaleway"],"regions":{"scaleway":1}}`,
 			wantMismatches: true,
+		},
+		{
+			// The decoder refuses an empty region, so the document does too: a client
+			// that reads it never sends one.
+			name:           "an empty region",
+			body:           `{"inventory":{"source":"aws","resources":[]},"targets":["scaleway"],"regions":{"scaleway":""}}`,
+			wantMismatches: true,
+		},
+		{
+			// A region of one character is the shortest one any target could list,
+			// and the schema accepts it: the minimum is a length, not a shape.
+			name: "a one-character region",
+			body: `{"inventory":{"source":"aws","resources":[]},"targets":["scaleway"],` +
+				`"regions":{"scaleway":"r"}}`,
 		},
 	}
 
