@@ -2,13 +2,12 @@
 // internal/adapter/target/targettest, the snapshot header the catalog reports, the
 // plans, prices and fixed monthly fees the snapshot records and the default region
 // they estimate in, a golden change detector for the parsed catalog, the declared
-// EU regions, that a
-// cancelled run reads nothing, and the verdicts PRD 14 asks of the data: high
-// availability scoped to a node or a zone, one offering per tier, and a
-// capability claimed only when the documentation meets it in full. The snapshot
-// document format itself, its strictness and its errors are pinned once, in the
-// shared reader's own tests (internal/adapter/target/snapshot). It is black-box:
-// only the package's exported API is used.
+// EU regions, that a cancelled run reads nothing, and the verdicts PRD 14 asks of
+// the data: high availability scoped to a node or a zone, one offering per tier,
+// and a capability claimed only when the documentation meets it in full. The
+// snapshot document format itself, its strictness and its errors are pinned once,
+// in the shared reader's own tests (internal/adapter/target/snapshot). It is
+// black-box: only the package's exported API is used.
 package scaleway_test
 
 import (
