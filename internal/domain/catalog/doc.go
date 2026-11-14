@@ -37,6 +37,13 @@
 // zero Catalog has not been validated; later layers only receive catalogs built
 // by New.
 //
+// Estimates look regions and prices up on a catalog (ADR 0027):
+// Catalog.Regions lists the regions a target offers, sorted (every offering's
+// regions and the default region), Offering.AvailableIn says whether an
+// offering is in a region, and Offering.PlanPrice and Offering.StoragePrice
+// give a plan's and a GiB's price in a region. Regions are compared exactly,
+// byte for byte, never ignoring case or white space.
+//
 // The target is the display name reports show (for example Scaleway), not a CLI
 // key: choosing an adapter from a key is the composition root's job.
 //
