@@ -198,11 +198,31 @@ func sameWorkloads(first, t TargetAssessment) error {
 				t.Key, groupName(w), i, first.Key, groupName(f))
 		}
 
-		if !slices.Equal(w.ResourceIDs, f.ResourceIDs) {
-			return fmt.Errorf("target %q's workload group %s holds resources %q where target %q's holds %q: "+
-				"the targets must group the same resources in the same order",
-				t.Key, groupName(w), w.ResourceIDs, first.Key, f.ResourceIDs)
+		if err := sameResources(first.Key, t.Key, f, w); err != nil {
+			return err
 		}
+	}
+
+	return nil
+}
+
+// sameResources checks that t's group got lists first's group want's
+// resources in the same order, and returns an error naming t's key, the group
+// and the first position where they differ, or the differing lengths. It never
+// prints the groups' whole lists, which can be as long as the inventory.
+func sameResources(firstKey, tKey string, want, got WorkloadSummary) error {
+	for i := range min(len(got.ResourceIDs), len(want.ResourceIDs)) {
+		if got.ResourceIDs[i] != want.ResourceIDs[i] {
+			return fmt.Errorf("target %q's workload group %s holds resource %q at position %d where target %q's holds %q: "+
+				"the targets must group the same resources in the same order",
+				tKey, groupName(got), got.ResourceIDs[i], i, firstKey, want.ResourceIDs[i])
+		}
+	}
+
+	if len(got.ResourceIDs) != len(want.ResourceIDs) {
+		return fmt.Errorf("target %q's workload group %s holds %d resources where target %q's holds %d: "+
+			"the targets must group the same resources in the same order",
+			tKey, groupName(got), len(got.ResourceIDs), firstKey, len(want.ResourceIDs))
 	}
 
 	return nil

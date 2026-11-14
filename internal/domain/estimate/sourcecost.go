@@ -39,6 +39,10 @@ type SourceCost struct {
 func SumSourceCost(resources []inventory.Resource) SourceCost {
 	sc := SourceCost{Resources: len(resources)}
 
+	// at maps a currency to its entry in sc.Currencies, which is sorted by
+	// currency once, after summing.
+	at := make(map[string]int)
+
 	for _, r := range resources {
 		c := r.MonthlyCost
 		if c == nil || c.Currency == "" || c.Amount == nil {
@@ -50,17 +54,19 @@ func SumSourceCost(resources []inventory.Resource) SourceCost {
 			continue
 		}
 
-		i, found := slices.BinarySearchFunc(sc.Currencies, c.Currency, func(cc CurrencyCost, code string) int {
-			return strings.Compare(cc.Currency, code)
-		})
+		i, found := at[c.Currency]
 		if !found {
-			sc.Currencies = slices.Insert(sc.Currencies, i, CurrencyCost{Currency: c.Currency})
+			i = len(sc.Currencies)
+			at[c.Currency] = i
+			sc.Currencies = append(sc.Currencies, CurrencyCost{Currency: c.Currency})
 		}
 
 		sc.Currencies[i].Monthly = sc.Currencies[i].Monthly.Add(fromRat(amount))
 		sc.Currencies[i].Resources++
 		sc.Covered++
 	}
+
+	slices.SortFunc(sc.Currencies, func(a, b CurrencyCost) int { return strings.Compare(a.Currency, b.Currency) })
 
 	return sc
 }

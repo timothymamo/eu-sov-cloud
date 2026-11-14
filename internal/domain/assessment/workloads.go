@@ -54,10 +54,10 @@ func workloads(a Assessment, estimated bool) []WorkloadSummary {
 		return nil
 	}
 
-	// members holds, per group, the indices of its verdicts in verdict order.
+	// members holds, per workload name, the indices of its verdicts in verdict
+	// order. The names are sorted once, after grouping.
 	var (
-		names   []string
-		members [][]int
+		members = make(map[string][]int)
 		loose   []int
 	)
 
@@ -69,35 +69,64 @@ func workloads(a Assessment, estimated bool) []WorkloadSummary {
 			continue
 		}
 
-		at, found := slices.BinarySearch(names, name)
-		if !found {
-			names = slices.Insert(names, at, name)
-			members = slices.Insert(members, at, nil)
-		}
-
-		members[at] = append(members[at], i)
+		members[name] = append(members[name], i)
 	}
+
+	names := make([]string, 0, len(members))
+	for name := range members {
+		names = append(names, name)
+	}
+
+	slices.Sort(names)
 
 	groups := make([]WorkloadSummary, 0, len(names)+1)
 
-	for i, name := range names {
-		groups = append(groups, workload(a, WorkloadSummary{Name: name}, members[i], estimated))
+	for _, name := range names {
+		groups = append(groups, workload(a, WorkloadSummary{Name: name}, members[name], estimated))
 	}
 
 	if len(loose) > 0 {
 		groups = append(groups, workload(a, WorkloadSummary{NoWorkload: true}, loose, estimated))
 	}
 
+	groupBlockers(a, groups)
+
 	return groups
 }
 
-// workload fills group with the verdicts of a at the indices in members.
+// groupBlockers gives each group the entries of a.Blockers whose resource is
+// in it, in their order there, in one pass over a.Blockers.
+func groupBlockers(a Assessment, groups []WorkloadSummary) {
+	if len(a.Blockers) == 0 {
+		return
+	}
+
+	// in maps a resource ID to the groups that hold it, each once, in group
+	// order. A valid inventory holds an ID once, so it names one group.
+	in := make(map[string][]int, len(a.Verdicts))
+
+	for g := range groups {
+		for _, id := range groups[g].ResourceIDs {
+			if at := in[id]; len(at) == 0 || at[len(at)-1] != g {
+				in[id] = append(at, g)
+			}
+		}
+	}
+
+	for _, b := range a.Blockers {
+		for _, g := range in[b.ResourceID] {
+			groups[g].Blockers = append(groups[g].Blockers, b)
+		}
+	}
+}
+
+// workload fills group with the verdicts of a at the indices in members, all
+// but its blockers, which groupBlockers adds.
 func workload(a Assessment, group WorkloadSummary, members []int, estimated bool) WorkloadSummary {
 	group.ResourceIDs = make([]string, 0, len(members))
 	group.Summary.Total = len(members)
 
 	resources := make([]inventory.Resource, 0, len(members))
-	in := make(map[string]bool, len(members))
 
 	var estimates []estimate.Estimate
 
@@ -105,7 +134,6 @@ func workload(a Assessment, group WorkloadSummary, members []int, estimated bool
 		v := a.Verdicts[i]
 		group.ResourceIDs = append(group.ResourceIDs, v.Resource.ID)
 		resources = append(resources, v.Resource)
-		in[v.Resource.ID] = true
 
 		switch v.Fit {
 		case mapping.Direct:
@@ -118,12 +146,6 @@ func workload(a Assessment, group WorkloadSummary, members []int, estimated bool
 
 		if estimated && v.Estimate != nil {
 			estimates = append(estimates, *v.Estimate)
-		}
-	}
-
-	for _, b := range a.Blockers {
-		if in[b.ResourceID] {
-			group.Blockers = append(group.Blockers, b)
 		}
 	}
 
