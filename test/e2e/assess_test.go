@@ -81,8 +81,8 @@ func targets() []targetCase {
 		{
 			key:         upcloudKey,
 			name:        "UpCloud",
-			sourceURL:   "https://upcloud.com/docs/",
-			retrievedOn: "2026-11-11",
+			sourceURL:   "https://upcloud.com/pricing/",
+			retrievedOn: "2026-11-13",
 			golden:      "assess-upcloud.golden",
 		},
 	}

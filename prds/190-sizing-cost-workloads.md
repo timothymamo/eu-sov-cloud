@@ -193,7 +193,7 @@ Each milestone ships as one PR, in dependency order. Milestones 3, 4 and 5 can r
 4. [x] **Scaleway plans and prices** (monthly) and its default region, in its snapshot and
    `SOURCES.md`. Paid Kubernetes control-plane fees are recorded as the offering's `fixedFees`
    (ADR [0026](../docs/adr/0026-add-an-optional-fixed-monthly-fee-per-offering-to-snapshot-format-v2.md)), not left out. Depends on 2.
-5. [ ] **UpCloud plans and prices** (monthly) and its default region, in its snapshot and `SOURCES.md`.
+5. [x] **UpCloud plans and prices** (monthly) and its default region, in its snapshot and `SOURCES.md`.
    Paid Kubernetes control-plane fees are recorded as the offering's `fixedFees` (ADR 0026), not left
    out. Depends on 2.
 6. [x] **Plan matching, estimates and regions.** Domain: the plan per verdict, the monthly estimate, the
