@@ -208,7 +208,9 @@ Each milestone ships as one PR, in dependency order. Milestones 3, 4 and 5 can r
    [0027](../docs/adr/0027-match-plans-and-estimate-monthly-prices-in-a-domain-package.md). Depends on 1
    and 2.
 7. [ ] **Workloads and relations in the assessment.** Domain: per-workload summaries and estimates, and
-   the "affected by a blocker" notes. Depends on 6.
+   the "affected by a blocker" notes. Design and API: ADR
+   [0028](../docs/adr/0028-group-workloads-note-blocked-relations-and-sum-the-source-cost-in-the-assessment.md).
+   Depends on 6.
 8. [ ] **Markdown and JSON reports, CLI and API options.** Both renderers, the comparison, JSON report
    schema version 2 and its Schemas. The CLI's `--region` and `--no-estimate`, and the HTTP API's
    `regions` and `estimate` request fields, on `/v1`. Depends on 7 and on 3, 4 and 5 for the real-price

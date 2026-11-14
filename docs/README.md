@@ -68,6 +68,7 @@ supersedes it.
 - [0025. Add inventory file format version 2 for sizing, usage, workloads, relations and cost](adr/0025-json-inventory-file-format-v2.md)
 - [0026. Add an optional fixed monthly fee per offering to target snapshot format version 2](adr/0026-add-an-optional-fixed-monthly-fee-per-offering-to-snapshot-format-v2.md)
 - [0027. Match plans and estimate monthly prices in a domain package, with exact money](adr/0027-match-plans-and-estimate-monthly-prices-in-a-domain-package.md)
+- [0028. Group workloads, note blocked relations and sum the source's cost in the assessment](adr/0028-group-workloads-note-blocked-relations-and-sum-the-source-cost-in-the-assessment.md)
 
 ## Writing a page
 
