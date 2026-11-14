@@ -144,7 +144,8 @@
         { "name": "PREMIUM-64xCPU-384GB", "vcpus": 64, "memoryGiB": 384, "storageGiB": 500, "prices": [{ "amount": 1992, "currency": "EUR", "regions": [] }] },
         { "name": "PREMIUM-80xCPU-512GB", "vcpus": 80, "memoryGiB": 512, "storageGiB": 500, "prices": [{ "amount": 2552, "currency": "EUR", "regions": [] }] }
       ],
-      "storagePrices": []
+      "storagePrices": [],
+      "fixedFees": [{ "amount": 0, "currency": "EUR", "regions": [] }]
     },
     {
       "name": "Managed Kubernetes Production",
@@ -184,7 +185,8 @@
         { "name": "PREMIUM-64xCPU-384GB", "vcpus": 64, "memoryGiB": 384, "storageGiB": 500, "prices": [{ "amount": 1992, "currency": "EUR", "regions": [] }] },
         { "name": "PREMIUM-80xCPU-512GB", "vcpus": 80, "memoryGiB": 512, "storageGiB": 500, "prices": [{ "amount": 2552, "currency": "EUR", "regions": [] }] }
       ],
-      "storagePrices": []
+      "storagePrices": [],
+      "fixedFees": [{ "amount": 60.8333, "currency": "EUR", "regions": [] }]
     },
     {
       "name": "Managed MySQL",

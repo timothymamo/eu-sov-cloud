@@ -375,9 +375,12 @@ capability follows from that.
   these zones.
 - **Plans and prices** (pricing page, *Managed Kubernetes*, *Control plane* and *Data plane*, and
   *Cloud Servers*, read 2026-11-13; <https://upcloud.com/pricing/>; Managed Kubernetes billing page,
-  <https://upcloud.com/docs/products/managed-kubernetes/billing/>, read 2026-11-13): the Development
-  control plane costs "€0/mo" on the pricing page and is "Free of charge" on the billing page, so nothing
-  is added for it. Worker nodes are Cloud Servers: the billing page says the data plane "is billed by the
+  <https://upcloud.com/docs/products/managed-kubernetes/billing/>, read 2026-11-13). **Fixed fee per
+  cluster** (the control plane, ADR 0026): this offering stands for the Development control plane, which
+  costs "€0/mo" on the pricing page (saved copy of <https://upcloud.com/pricing/>, read 2026-11-13,
+  *Managed Kubernetes*, *Control plane*) and is "Free of charge" on the billing page (fetched 2026-11-14).
+  It is recorded as an explicit `0.00` in every zone of the offering, as the OVHcloud snapshot records its
+  free control plane, so an estimate reads it as known to be free rather than unknown. Worker nodes are Cloud Servers: the billing page says the data plane "is billed by the
   Worker node according to the selected configuration" and "Worker nodes can use Starter, Premium, Cloud
   Native and GPU plans with at least 2 GB of memory". So a plan is a **worker node plan at its *Cloud
   Servers* price**, and an estimate counts nodes. The plans are every *Cloud Servers* plan with at least
@@ -452,10 +455,16 @@ Category `kubernetes.managed`. A variant of *Managed Kubernetes* (tier-variant r
   <https://upcloud.com/docs/products/managed-kubernetes/billing/>, read 2026-11-13): the worker node plans
   and prices are those of *Managed Kubernetes*, for the same reasons: the data plane does not depend on the
   control plane plan. So they are the same 31 Starter and Premium plans, without the 42 Cloud Native
-  plans, which include no storage while this offering has no storage price either. The Production control plane costs "€60/mo" per cluster on the pricing page ("Billed
-  per hour" on the billing page), which ADR 0024's format cannot hold: a plan is multiplied by the node
-  count, and there is no per-cluster price. It is left out (*Left out on purpose*), so an estimate for a
-  cluster on this offering is low by that fee.
+  plans, which include no storage while this offering has no storage price either.
+- **Fixed fee per cluster** (the control plane, ADR 0026): the Production control plane costs "€60/mo"
+  per cluster (saved copy of <https://upcloud.com/pricing/>, read 2026-11-13, *Managed Kubernetes*,
+  *Control plane*). The page's footer under that table says "Resources are charged by the hour. Monthly
+  prices are estimates based on a 30-day month.", and the billing page
+  (<https://upcloud.com/docs/products/managed-kubernetes/billing/>, fetched 2026-11-14) says "Billed per
+  hour". So it is converted like every other hourly-billed UpCloud price (*Prices*): 60 × 730 / 720 =
+  60.833333… → `60.8333` (half up, 4 decimal places), recorded once in every zone of the offering. A
+  plan is multiplied by the node count; the fee is charged once per cluster, never per node. Milestone 6
+  of PRD #190 scales fixed fees by `hoursPerMonth` / 730 (ADR 0026).
 - **No storage price**, as for *Managed Kubernetes*: worker-node storage beyond a plan's included storage
   is not priced (*Left out on purpose*), and a sized node needing more disk than its plan includes is "not
   estimated" (PRD #190 milestone 6).
@@ -909,11 +918,6 @@ or three nodes, which the documentation calls a multi-node plan. Pages:
 
 Prices and plans left out (PRD #190 milestone 5, read 2026-11-13 from <https://upcloud.com/pricing/>):
 
-- **The Managed Kubernetes Production control plane, "€60/mo" per cluster** (pricing page, *Managed
-  Kubernetes*, *Control plane*; a 30-day estimate of an hourly price, *Prices*). ADR 0024's format has no
-  per-cluster price: a plan is a node size, multiplied by the node count, and adding the fee to every node
-  plan would charge it once per node. An estimate for a cluster on *Managed Kubernetes Production* is low
-  by €60 a month per cluster (issue #205 adds a fixed fee). The Development control plane is "€0/mo".
 - **Managed Kubernetes worker-node storage beyond a plan's included storage** (*Managed Kubernetes*,
   *Managed Kubernetes Production*). The Managed Kubernetes billing page
   (<https://upcloud.com/docs/products/managed-kubernetes/billing/>, read 2026-11-13) refers only to Cloud
