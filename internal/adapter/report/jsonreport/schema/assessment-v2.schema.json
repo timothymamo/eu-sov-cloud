@@ -25,6 +25,10 @@
     "target": {
       "$ref": "#/$defs/target"
     },
+    "region": {
+      "type": "string",
+      "description": "The region chosen for the target (--region or the API's regions), written only when one was chosen, with or without estimates. Absent when none was chosen."
+    },
     "summary": {
       "$ref": "#/$defs/summary"
     },

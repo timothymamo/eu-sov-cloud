@@ -23,8 +23,11 @@ type comparisonDocument struct {
 // resources, blockers, workloads, estimate basis and source cost of its
 // assessment, as a single-target document holds them.
 type targetEntry struct {
-	Key       string     `json:"key"`
-	Target    target     `json:"target"`
+	Key    string `json:"key"`
+	Target target `json:"target"`
+	// Region is the region chosen for the target, written only when one was
+	// chosen, with or without estimates.
+	Region    string     `json:"region,omitempty"`
 	Summary   summary    `json:"summary"`
 	Resources []resource `json:"resources"`
 	Blockers  []blocker  `json:"blockers"`
@@ -75,6 +78,7 @@ func (*Reporter) ReportComparison(ctx context.Context, w io.Writer, c assessment
 		targets = append(targets, targetEntry{
 			Key:        t.Key,
 			Target:     newTarget(t.Assessment),
+			Region:     t.Assessment.Region,
 			Summary:    newSummary(t.Assessment.Summary),
 			Resources:  newResources(t.Assessment.Verdicts),
 			Blockers:   newBlockers(t.Assessment.Blockers),

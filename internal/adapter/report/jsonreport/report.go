@@ -40,15 +40,18 @@ func New() *Reporter {
 
 // assessmentDocument is the single-target document, kind "assessment".
 type assessmentDocument struct {
-	SchemaVersion int        `json:"schemaVersion"`
-	Kind          string     `json:"kind"`
-	InventoryName string     `json:"inventoryName"`
-	Source        string     `json:"source"`
-	Target        target     `json:"target"`
-	Summary       summary    `json:"summary"`
-	Resources     []resource `json:"resources"`
-	Blockers      []blocker  `json:"blockers"`
-	Workloads     []workload `json:"workloads"`
+	SchemaVersion int    `json:"schemaVersion"`
+	Kind          string `json:"kind"`
+	InventoryName string `json:"inventoryName"`
+	Source        string `json:"source"`
+	Target        target `json:"target"`
+	// Region is the region chosen for the target, written only when one was
+	// chosen, with or without estimates.
+	Region    string     `json:"region,omitempty"`
+	Summary   summary    `json:"summary"`
+	Resources []resource `json:"resources"`
+	Blockers  []blocker  `json:"blockers"`
+	Workloads []workload `json:"workloads"`
 	// Estimate and SourceCost are written only when the assessment has
 	// estimates.
 	Estimate   *estimateBasis `json:"estimate,omitempty"`
@@ -128,6 +131,7 @@ func (*Reporter) Report(ctx context.Context, w io.Writer, a assessment.Assessmen
 		InventoryName: meta.InventoryName,
 		Source:        a.Source,
 		Target:        newTarget(a),
+		Region:        a.Region,
 		Summary:       newSummary(a.Summary),
 		Resources:     newResources(a.Verdicts),
 		Blockers:      newBlockers(a.Blockers),

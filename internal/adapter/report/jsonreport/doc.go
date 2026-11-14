@@ -42,6 +42,10 @@
 // fractional digits (estimate.Money.String), never a JSON number; the source
 // cost is per currency and never converted.
 //
+// A region chosen for the target (--region, the API's regions) is the
+// document's top-level "region", and each comparison target's, with or without
+// estimates; with no region chosen the key is absent.
+//
 // # Encoding
 //
 // Documents are built from private structs and encoded with encoding/json,

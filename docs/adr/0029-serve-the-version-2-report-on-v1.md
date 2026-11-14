@@ -1,6 +1,6 @@
 # 0029. Serve the version 2 report on /v1, with estimates, relations and workloads
 
-- Status: Accepted (amends [ADR 0019](0019-serve-assessments-over-a-versioned-http-api-from-a-separate-binary.md), Versioning; builds on [ADR 0018](0018-version-the-json-report-format-for-the-cli-and-the-api.md))
+- Status: Accepted (amends [ADR 0019](0019-serve-assessments-over-a-versioned-http-api-from-a-separate-binary.md), Versioning and the no-echo rule for a region; builds on [ADR 0018](0018-version-the-json-report-format-for-the-cli-and-the-api.md))
 - Date: 2026-11-14
 
 ## Context
@@ -49,6 +49,9 @@ The report itself:
   on exactly when `Assessment.Total` is set; the region the prices are for is `EstimateRegion`; it was
   chosen exactly when `Region` is set. The JSON basis writes them as `region` and `regionChosen`, the
   Markdown header as "(chosen with `--region`)" or "(the target's default for estimates)".
+  A chosen region is also a top-level `region` key of the document (and of each comparison target),
+  with or without estimates, so a report with estimates off still says which region availability was
+  scoped to; with no region chosen the key is absent.
 - **Money is an exact decimal string.** Every amount is `estimate.Money.String()`, two fractional
   digits, never a JSON number, so no consumer meets a binary float. Estimates are in EUR (ADR 0024); the
   source cost is summed per currency and never converted (ADR 0028). The Markdown report adds a
@@ -62,6 +65,27 @@ The report itself:
 - **The comparison ranks nothing.** It shows one estimate row per target in the summary, one monthly
   estimate column per target in the resources table and each target's own cost summary in its own
   section, with each target's own region and retrieval date.
+
+The request options and their errors:
+
+- **`regions` and `estimate` are decoded strictly and checked like the CLI's flags.** `regions` is an
+  object of strings (at most 64 members, no key twice) and `estimate` a boolean, true when absent; null
+  and any other JSON type are 400 `invalid_request`, named by JSON type only. `jsondoc` gains
+  `Walker.Bool` and `Walker.Members`, which reads an object whose keys are data: its errors name a member
+  by its index (`regions[0]`), never by its key, so the decoder still echoes nothing. In
+  `api/openapi.json`, `regions` is a closed object with one string property per target key (the
+  repository's schema validator takes only a boolean `additionalProperties`).
+- **A bad region is 400 `invalid_region`**, a new code beside `invalid_targets`, in the existing
+  envelope. A `regions` key the request does not select is refused before anything is built; a region
+  the target does not list is the use case's `*analysis.RegionError`, found once the catalog is loaded
+  and before the inventory is read, so nothing is assessed. The message names the target and the
+  target's regions, which are the API's own values.
+- **The one value echoed (amends ADR 0019's "no value from a request is ever echoed").** The PRD asks
+  for the bad element to be named, so the message names the region the client sent, but only when it is
+  region-shaped: 1 to 64 ASCII letters, digits, `-`, `_` or `.`. Anything else is "the region", unnamed.
+  Such a value can hold no markup, control character or long text, so the message stays safe to show
+  and to store. A `regions` key is named only when it is a supported target key; any other is "a target
+  that is not supported". The CLI names whatever was typed (through its `sanitise`), as it always has.
 
 ## Alternatives considered
 
@@ -80,9 +104,6 @@ The report itself:
 
 - A client of `/v1/assessments` gets a `schemaVersion` 2 document after this release and must read
   `schemaVersion`; the CLI's `--format json` writes the same document. The release notes say so.
-- A JSON report with estimates off and a region chosen does not say which region availability was
-  scoped to: the region lives in the `estimate` basis, which is absent then, and the schemas' closed
-  objects allow no optional key for it. The Markdown report does say it. A later version can add it.
 - The tests that pinned "a version 2 inventory changes no report" (PRD #190 milestone 1) no longer
   hold: a version 2 inventory's relations and workloads now reach the report.
 - The next change of the report's version is a new route, as ADR 0019 says.
