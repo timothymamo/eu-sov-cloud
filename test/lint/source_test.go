@@ -304,14 +304,39 @@ func TestScanSources(t *testing.T) {
 			files: map[string]string{"_x/a.go": "//go:build !e2e\n\npackage x\n", "a/testdata/a.go": "//go:build !e2e\n\npackage a\n"},
 		},
 		{
-			// Only a go.mod regular file is the root of another module, as the
-			// go command's own search reads it, so ./... stops there, and the
-			// walk leaves the subtree out with it.
+			// A go.mod that is no directory is the root of another module,
+			// as the go command's own search reads it, so ./... stops there,
+			// and the walk leaves the subtree out with it.
 			name: "the root of another module is skipped",
 			files: map[string]string{
 				"sub/go.mod": "module example.com/sub\n",
 				"sub/a.go":   "//go:build !e2e\n\npackage a\n",
 			},
+		},
+		{
+			// A symlink named go.mod counts by what it points to, as the go
+			// command's own search reads it: one that points at a file is a
+			// module root, so the subtree is skipped and the violation in it
+			// is left unread. The target is no .go file, so the walk reports
+			// nothing for it either.
+			name: "a go.mod symlink to a file is a module root",
+			files: map[string]string{
+				"real.mod": "module example.com/real\n",
+				"sub/a.go": "//go:build !e2e\n\npackage a\n",
+			},
+			symlinks: map[string]string{"sub/go.mod": "../real.mod"},
+		},
+		{
+			// A symlink named go.mod that points at a DIRECTORY is no module
+			// root either, so ./... still reaches the subtree: the walk goes
+			// into sub and reports the violation in it.
+			name: "a go.mod symlink to a directory is no module root",
+			files: map[string]string{
+				"dir/keep.txt": "\n",
+				"sub/a.go":     "//go:build !e2e\n\npackage a\n",
+			},
+			symlinks: map[string]string{"sub/go.mod": "../dir"},
+			want:     []string{"sub/a.go:1:1: //go:build !e2e " + constraintHides("//go:build !e2e")},
 		},
 		{
 			// A DIRECTORY named go.mod is no module root (issue #207), so the
