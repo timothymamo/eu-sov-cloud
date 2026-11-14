@@ -286,6 +286,43 @@ func TestFor(t *testing.T) {
 			wantExact:   "1017/10",
 		},
 		{
+			// Hours scale the rates of a monthly price list, the plan price and
+			// the fixed fee (ADR 0026); storage is a quantity, not a rate, so half
+			// the hours cost half the plan and half the fee but all the storage.
+			name: "kubernetes.managed: half the hours halve the plan and the fee, not the storage",
+			resource: inventory.Resource{
+				ID:       "cluster-example",
+				RawType:  "AWS::EKS::Cluster",
+				Category: taxonomy.KubernetesManaged,
+				Region:   "eu-west-1",
+				Size: &inventory.Size{
+					VCPUs:      f(4),
+					MemoryGiB:  f(8),
+					StorageGiB: f(80),
+					Count:      n(3),
+				},
+				Usage: &inventory.Usage{HoursPerMonth: f(365)},
+			},
+			offerings: []catalog.Offering{kubernetesOffering()},
+			region:    testutil.PricedDefaultRegion,
+			want: estimate.Estimate{
+				Region:    testutil.PricedDefaultRegion,
+				Estimated: true,
+				Offering:  "Example Kubernetes",
+				Plan:      pricedPlan("NK-1", 4, 8000, 50, 300000),
+				// 30 × 3 × 365/730 = 45; (80 − 50) × 0.03 × 3 = 2.7, unscaled;
+				// the fee 9 × 365/730 = 4.5, once and never × 3.
+				Monthly: estimate.Ratio(261, 5),
+				Breakdown: estimate.Breakdown{
+					Plan:     estimate.FromAmount(450000),
+					Storage:  estimate.Ratio(27, 10),
+					FixedFee: estimate.Ratio(9, 2),
+				},
+			},
+			wantMonthly: "52.20",
+			wantExact:   "261/5",
+		},
+		{
 			// Database storage is the service's data, not one volume per node
 			// (ADR 0027), so it is counted once even with a count of 3.
 			name: "database.postgresql: storage once, not per node",
@@ -646,6 +683,49 @@ func TestFor(t *testing.T) {
 			wantMonthly: "10.00",
 		},
 
+		// A size is read as the decimal it prints as, not as the nearest binary
+		// float: 0.1 GiB is exactly a tenth of a GiB, so a plan of exactly 100
+		// milli-GiB covers it. Read as a binary float it is a hair more, and no
+		// plan of this catalog would cover it.
+		{
+			name:     "reading a size: 0.1 GiB fits a plan of exactly 100 milli-GiB",
+			resource: computeResource(&inventory.Size{VCPUs: f(1), MemoryGiB: f(0.1)}, nil),
+			offerings: []catalog.Offering{namedComputeOffering("Example Virtual Machines",
+				plan("P-Tenth", 1, 100, 0, 100000),
+				plan("P-Big", 4, 8000, 0, 120000),
+			)},
+			region: testutil.PricedDefaultRegion,
+			want: estimate.Estimate{
+				Region:       testutil.PricedDefaultRegion,
+				Estimated:    true,
+				Offering:     "Example Virtual Machines",
+				Plan:         pricedPlan("P-Tenth", 1, 100, 0, 100000),
+				Monthly:      estimate.FromAmount(100000),
+				Breakdown:    estimate.Breakdown{Plan: estimate.FromAmount(100000)},
+				CountAssumed: true,
+				HoursAssumed: true,
+			},
+			wantMonthly: "10.00",
+			wantExact:   "10",
+		},
+		{
+			// The same reading for the stored GiB: a tenth of a GiB at 0.015 EUR
+			// per GiB is 0.0015 EUR exactly, a binary reading of 0.1 would not be.
+			name:      "reading a size: a tenth of a GiB costs a tenth of the per-GiB price",
+			resource:  objectResource(&inventory.Size{StorageGiB: f(0.1)}),
+			offerings: testutil.PricedOfferings(),
+			region:    testutil.PricedDefaultRegion,
+			want: estimate.Estimate{
+				Region:    testutil.PricedDefaultRegion,
+				Estimated: true,
+				Offering:  "Example Object Storage",
+				Monthly:   estimate.Ratio(3, 2000),
+				Breakdown: estimate.Breakdown{Storage: estimate.Ratio(3, 2000)},
+			},
+			wantMonthly: "0.00",
+			wantExact:   "3/2000",
+		},
+
 		// Every "not estimated" reason, and the order that decides between them.
 		{
 			// NoFit comes first: the catalog serves no messaging.queue at all.
@@ -769,6 +849,68 @@ func TestFor(t *testing.T) {
 				Reason:   estimate.NoPlanLargeEnough,
 				Offering: "Example Virtual Machines",
 				Largest:  unpricedPlan("EX-L", 4, 8000, 80),
+			},
+		},
+		{
+			// The vCPUs fit every plan and the memory fits none: too large is
+			// decided by either number, and Largest names the biggest plan.
+			name:      "no-plan-large-enough: the vCPUs fit but the memory does not",
+			resource:  computeResource(&inventory.Size{VCPUs: f(2), MemoryGiB: f(64)}, nil),
+			offerings: testutil.PricedOfferings(),
+			region:    testutil.PricedDefaultRegion,
+			want: estimate.Estimate{
+				Region:   testutil.PricedDefaultRegion,
+				Reason:   estimate.NoPlanLargeEnough,
+				Offering: "Example Virtual Machines",
+				Largest:  pricedPlan("EX-L", 4, 8000, 80, 540000),
+			},
+		},
+		{
+			// Largest takes the most vCPUs, then the most memory.
+			name:     "no-plan-large-enough: the largest plan has the most memory of the plans with the most vCPUs",
+			resource: computeResource(&inventory.Size{VCPUs: f(8), MemoryGiB: f(8)}, nil),
+			offerings: []catalog.Offering{namedComputeOffering("Example Virtual Machines",
+				plan("P-Small", 4, 4000, 0, 100000),
+				plan("P-Fat", 4, 8000, 0, 200000),
+			)},
+			region: testutil.PricedDefaultRegion,
+			want: estimate.Estimate{
+				Region:   testutil.PricedDefaultRegion,
+				Reason:   estimate.NoPlanLargeEnough,
+				Offering: "Example Virtual Machines",
+				Largest:  pricedPlan("P-Fat", 4, 8000, 0, 200000),
+			},
+		},
+		{
+			// Then the smaller plan name.
+			name:     "no-plan-large-enough: equally large plans take the smaller plan name",
+			resource: computeResource(&inventory.Size{VCPUs: f(8), MemoryGiB: f(8)}, nil),
+			offerings: []catalog.Offering{namedComputeOffering("Example Virtual Machines",
+				plan("P-Bravo", 4, 8000, 0, 100000),
+				plan("P-Alpha", 4, 8000, 0, 100000),
+			)},
+			region: testutil.PricedDefaultRegion,
+			want: estimate.Estimate{
+				Region:   testutil.PricedDefaultRegion,
+				Reason:   estimate.NoPlanLargeEnough,
+				Offering: "Example Virtual Machines",
+				Largest:  pricedPlan("P-Alpha", 4, 8000, 0, 100000),
+			},
+		},
+		{
+			// And then the smaller offering name.
+			name:     "no-plan-large-enough: equally large plans take the smaller offering name",
+			resource: computeResource(&inventory.Size{VCPUs: f(8), MemoryGiB: f(8)}, nil),
+			offerings: []catalog.Offering{
+				namedComputeOffering("Example Compute B", plan("P-One", 4, 8000, 0, 100000)),
+				namedComputeOffering("Example Compute A", plan("P-One", 4, 8000, 0, 100000)),
+			},
+			region: testutil.PricedDefaultRegion,
+			want: estimate.Estimate{
+				Region:   testutil.PricedDefaultRegion,
+				Reason:   estimate.NoPlanLargeEnough,
+				Offering: "Example Compute A",
+				Largest:  pricedPlan("P-One", 4, 8000, 0, 100000),
 			},
 		},
 		{
