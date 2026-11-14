@@ -1,7 +1,8 @@
 // Package scaleway_test pins the Scaleway catalog adapter: the target contract in
 // internal/adapter/target/targettest, the snapshot header the catalog reports, the
-// plans and prices the snapshot records and the default region they estimate in, a
-// golden change detector for the parsed catalog, the declared EU regions, that a
+// plans, prices and fixed monthly fees the snapshot records and the default region
+// they estimate in, a golden change detector for the parsed catalog, the declared
+// EU regions, that a
 // cancelled run reads nothing, and the verdicts PRD 14 asks of the data: high
 // availability scoped to a node or a zone, one offering per tier, and a
 // capability claimed only when the documentation meets it in full. The snapshot
@@ -200,6 +201,98 @@ func TestCatalogPlansAndPrices(t *testing.T) {
 		if slices.Contains(o.Regions, wantRegion) && len(o.StoragePrices) > 0 && !anyPriceAppliesIn(o.StoragePrices, wantRegion) {
 			t.Errorf("offering %s lists storage prices but none for the default region %s, want one applying there: they apply to %s",
 				text.Quote(o.Name), text.Quote(wantRegion), regionsListed(o.StoragePrices))
+		}
+	}
+}
+
+// TestCatalogFixedFees pins the fixed monthly fee per Kubernetes cluster the
+// snapshot records (ADR 0026). Scaleway's mutualized Kapsule control plane is free:
+// the offering stands for it and carries a fee of 0.00 in every region, which is a
+// fee and not "no fee". The dedicated control plane is billed by the node size it
+// runs on, 0.11 EUR an hour for Dedicated-4, which is 80.30 EUR a month at 730
+// hours; Dedicated-4 is the smallest paid size, so that is a lower bound and not
+// the only fee (Dedicated-8 costs 131.40 and Dedicated-16 255.50 a month). Every
+// other offering charges no fixed fee, so no estimate adds one where Scaleway
+// publishes none: the boolean of FixedFee tells a free region from no fee.
+func TestCatalogFixedFees(t *testing.T) {
+	t.Parallel()
+
+	cat := catalogOf(t)
+
+	// feePerRegion is the control-plane fee each offering charges in each of its
+	// regions: 0.00 where the offering stands for the free mutualized control
+	// plane, and the Dedicated-4 control plane's 0.11 EUR an hour where it stands
+	// for a dedicated one.
+	const (
+		mutualizedControlPlane = catalog.Amount(0)
+		dedicatedControlPlane  = catalog.Amount(803000)
+	)
+
+	feePerRegion := map[string]map[string]catalog.Amount{
+		// The mutualized control plane is included in the cluster's price.
+		"Kubernetes Kapsule": {
+			"fr-par": mutualizedControlPlane,
+			"it-mil": mutualizedControlPlane,
+			"nl-ams": mutualizedControlPlane,
+			"pl-waw": mutualizedControlPlane,
+		},
+		// The dedicated control plane is billed by the size of its node.
+		// Dedicated-4 is the smallest paid size, so its 80.30 EUR a month is a
+		// lower bound: Dedicated-8 charges 131.40 and Dedicated-16 255.50.
+		"Kubernetes Kapsule Dedicated": {
+			"fr-par": dedicatedControlPlane,
+			"nl-ams": dedicatedControlPlane,
+			"pl-waw": dedicatedControlPlane,
+		},
+	}
+
+	for _, o := range cat.Offerings() {
+		want, charges := feePerRegion[o.Name]
+
+		if !charges {
+			if o.FixedFees != nil {
+				t.Errorf("offering %s lists fixed fees %v, want none: Scaleway publishes a control-plane fee for its Kubernetes offerings only",
+					text.Quote(o.Name), o.FixedFees)
+			}
+
+			for _, region := range o.Regions {
+				if fee, ok := o.FixedFee(region); ok {
+					t.Errorf("offering %s reports a fixed fee %s in region %s, want none",
+						text.Quote(o.Name), fee, text.Quote(region))
+				}
+			}
+
+			continue
+		}
+
+		for _, region := range o.Regions {
+			wantFee, ok := want[region]
+			if !ok {
+				t.Errorf("offering %s: the expectation has no fee for its region %s",
+					text.Quote(o.Name), text.Quote(region))
+
+				continue
+			}
+
+			got, ok := o.FixedFee(region)
+			if !ok {
+				t.Errorf("offering %s reports no fixed fee in region %s, want %s",
+					text.Quote(o.Name), text.Quote(region), wantFee)
+
+				continue
+			}
+
+			if got != wantFee {
+				t.Errorf("offering %s: FixedFee(%s) = %s, want %s",
+					text.Quote(o.Name), text.Quote(region), got, wantFee)
+			}
+		}
+
+		for region := range want {
+			if !slices.Contains(o.Regions, region) {
+				t.Errorf("offering %s: the expectation has a fee for region %s, which is not one of its regions %v",
+					text.Quote(o.Name), text.Quote(region), o.Regions)
+			}
 		}
 	}
 }
