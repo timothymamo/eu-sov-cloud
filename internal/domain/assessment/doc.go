@@ -4,6 +4,12 @@
 // that stop resources with fit none from moving, and summary counts per fit.
 // Fits and reasons come from package mapping unchanged.
 //
+// AssessWith takes the choices of PRD #190 (ADR 0027): one target region that
+// scopes availability (mapping.MapIn) and is the estimate region, and whether to
+// estimate. With estimates on, each verdict carries its plan and monthly
+// estimate from package estimate, and the assessment their total. Sizes never
+// change a fit.
+//
 // Compare puts several targets' assessments of one inventory side by side, in
 // target key order, and finds the shared blockers: the resources with fit none
 // on every target. It ranks no target.

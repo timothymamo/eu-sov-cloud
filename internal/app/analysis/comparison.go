@@ -23,6 +23,10 @@ type Target struct {
 	Key string
 	// Catalog is the source of the target's catalog.
 	Catalog CatalogSource
+	// Region is the one region of this target to assess and estimate in, and ""
+	// for every region (PRD #190). Comparison.RunWith checks it against the
+	// target's catalog once loaded (*RegionError).
+	Region string
 }
 
 // Comparison is the use case that assesses one source inventory against several

@@ -40,7 +40,7 @@ Hexagonal (ports and adapters). Dependencies point inwards only. See `docs/archi
 
 | Layer | Path | May import |
 |---|---|---|
-| Domain | `internal/domain/{taxonomy,inventory,catalog,mapping,assessment,text}` | Other domain packages and an allow list of pure standard packages (no `os`, `net/http`, `unsafe`, ...) |
+| Domain | `internal/domain/{taxonomy,inventory,catalog,mapping,estimate,assessment,text}` | Other domain packages and an allow list of pure standard packages (no `os`, `net/http`, `unsafe`, ...) |
 | Application | `internal/app/analysis` | Domain. Declares the ports (interfaces) it consumes |
 | Adapters | `internal/adapter/source/{inventoryfile,aws,azure,gcp}`, `internal/adapter/target/{ovhcloud,scaleway,upcloud}`, `internal/adapter/report/{markdown,jsonreport}`, `internal/adapter/request/assessmentrequest` (the HTTP API's request decoder), and `internal/adapter/internal/jsondoc`, the JSON decoder they share | Domain, the ports they implement, SDKs. Never `internal/cli`, `internal/httpapi` or `cmd/` |
 | Driving adapters | `internal/cli` (the CLI) and `internal/httpapi` (the HTTP API, ADR 0019) | Application, domain, `internal/version`; never each other, an adapter or `cmd/` |

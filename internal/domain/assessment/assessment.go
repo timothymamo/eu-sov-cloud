@@ -4,6 +4,7 @@ import (
 	"slices"
 
 	"github.com/timothymamo/shift2eu/internal/domain/catalog"
+	"github.com/timothymamo/shift2eu/internal/domain/estimate"
 	"github.com/timothymamo/shift2eu/internal/domain/inventory"
 	"github.com/timothymamo/shift2eu/internal/domain/mapping"
 	"github.com/timothymamo/shift2eu/internal/domain/taxonomy"
@@ -35,6 +36,10 @@ type Verdict struct {
 	// offering lacks, sorted, and nil when there are none or there is no
 	// candidate.
 	RequiredChanges []taxonomy.Capability
+	// Estimate is the resource's plan and monthly estimate in the assessment's
+	// EstimateRegion (estimate.For), and nil when estimates are off. It is set
+	// for every verdict when they are on, estimated or not.
+	Estimate *estimate.Estimate
 }
 
 // Ties returns the names of the other candidates a reader could take for the
@@ -99,12 +104,57 @@ type Assessment struct {
 	Blockers []Blocker
 	// Summary counts Verdicts per fit.
 	Summary Summary
+	// Region is the one target region the assessment is scoped to
+	// (Options.Region), and "" when availability was judged across all of the
+	// target's regions.
+	Region string
+	// EstimateRegion is the region the estimates are for: Region when set, else
+	// the snapshot's default region. It is "" when estimates are off.
+	EstimateRegion string
+	// Total sums the verdicts' estimates (estimate.Sum, in verdict order), and is
+	// nil when estimates are off.
+	Total *estimate.Total
+}
+
+// Options are the choices an assessment takes besides its inventory and
+// catalog (PRD #190, ADR 0027). The zero Options is today's assessment: every
+// region, no estimates.
+type Options struct {
+	// Region scopes availability to one target region, compared exactly with the
+	// offerings' regions (mapping.MapIn), and is the estimate region. "" judges
+	// availability across all of the target's regions, as Assess does, and
+	// estimates in the snapshot's default region. AssessWith does not check that
+	// the target lists it: the application layer does.
+	Region string
+	// Estimate turns plan matching and estimates on. When it is false, no
+	// verdict has an Estimate, the assessment has no EstimateRegion and no
+	// Total, and every fit is what it would be for the same inventory with its
+	// sizes removed.
+	Estimate bool
+}
+
+// AssessWith assesses inv against cat as Assess does, with the region scope and
+// the estimates opts asks for. Each resource is mapped with
+// mapping.MapIn(r, cat, opts.Region); a resource left with fit mapping.None by
+// the region is a blocker, with the reason mapping.NotOfferedInRegion. When
+// opts.Estimate is true, each verdict gets estimate.For(result,
+// EstimateRegion) and the assessment the Total of them. Sizes never change a
+// fit, a blocker or the summary counts.
+//
+// AssessWith(inv, cat, Options{}) equals Assess(inv, cat).
+func AssessWith(inv inventory.Inventory, cat catalog.Catalog, opts Options) Assessment {
+	// TODO(PRD #190 M6): not implemented yet.
+	_, _, _ = inv, cat, opts
+
+	return Assessment{}
 }
 
 // Assess maps every resource of inv onto cat and gathers the verdicts, blockers
 // and summary counts. Fits and reasons come from mapping.Map unchanged. Resources
 // come from the inventory in ID order, so the same inventory and catalog always
-// give the same assessment.
+// give the same assessment. It judges availability across all of the target's
+// regions and estimates nothing: AssessWith takes a region and turns estimates
+// on.
 func Assess(inv inventory.Inventory, cat catalog.Catalog) Assessment {
 	resources := inv.Resources()
 
