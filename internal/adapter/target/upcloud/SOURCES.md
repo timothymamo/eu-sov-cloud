@@ -71,6 +71,9 @@ described above; each section names the part of the page (its tab or table) a pr
   Servers*) and the Object Storage price. One example of each:
   - database plan: €60/mo × 730 / 720 = 60.833333… → `60.8333`;
   - database storage: €0.10/GB/mo × 730 / 720 = 0.101388… → `0.1014`;
+  - multi-node database plan: the stored single-node amount × 0.95, rounded again, half up, to 4 decimal
+    places: 60.8333 × 0.95 = 57.791635 → `57.7916` (*Managed MySQL Multi-node*, *Managed PostgreSQL
+    Multi-node*);
   - Block Storage MaxIOPS (and the Cloud Servers extra disk): €0.220/GB/mo × 730 / 720 = 0.223055… →
     `0.2231`;
   - Object Storage: €5 / 250 GB = 0.02 per GiB, × 730 / 720 = 0.020277… → `0.0203`.
@@ -581,15 +584,66 @@ nodes, which the documentation calls a multi-node plan. Pages:
 - Regions `de-fra1`, `dk-cph1`, `es-mad1`, `fi-hel1`, `fi-hel2`, `nl-ams1`, `pl-waw1`, `se-sto1`
   (tier-variant zones): the availability page marks each of these zones, with no column per plan, and the
   configurations page states the 1-, 2- and 3-node forms with no location caveat.
-- **No plans and no storage price** (pricing page, *Managed Databases*, *Additional services*, *High
-  Availability*, read 2026-11-13; <https://upcloud.com/pricing/>): the page prices a second and third node
-  as a discount on the plan price, "Second Node -10%" and "Third Node -30%" for Standard and High Memory
-  plans, so the price of a node depends on how many nodes the service runs, which ADR 0024's format cannot
-  hold (a plan's price is multiplied by the node count). The page does not say whether the discount is on
-  each further node or on the whole service, nor whether it applies to storage, which the configurations
-  page says "applies to each node". Any per-node price recorded here would be a reading of the page, not
-  a price it shows, so none is (*Left out on purpose*), and an estimate for this offering is "not
-  estimated".
+- **Plans and prices** (pricing page, *Managed Databases*, *Additional services*, *High Availability*,
+  read 2026-11-13; <https://upcloud.com/pricing/>; maintainer decision of 2026-11-14). The page says
+  "Standard and High Memory plan Managed Databases for MySQL and PostgreSQL are available with 1 to 3
+  database nodes" and gives this table:
+
+  | Plan | Second Node | Third Node |
+  |---|---|---|
+  | Developer | – | – |
+  | Standard | -10% | -30% |
+  | High Memory | -10% | -30% |
+
+  The page does not say what the discount is taken off. The reading used here is that each further node
+  costs the plan's single-node price less its discount: the second node 90% of it, the third 70%. The
+  plans are the same 19 Standard and High Memory plans as *Managed MySQL*, each of which the
+  configurations page says "can run on 1, 2, or 3 nodes". Developer plans run on a single node and are
+  left out (*Left out on purpose*).
+
+  ADR 0024's format holds one price per plan, and ADR 0025 counts database nodes in `size.count`, so the
+  estimate multiplies the plan price by the node count. A plan's price here is therefore the **average
+  price of a node in a 2-node cluster**: (1 + 0.90) / 2 = 0.95 of the single-node price. The order of
+  operations is the same for every plan: start from the single-node amount already stored in *Managed
+  MySQL* (the page's 30-day figure × 730 / 720, rounded half up to 4 decimal places, *Prices*),
+  multiply it by 0.95, and round the product once more, half up, to 4 decimal places (ADR 0024).
+  Worked example, `rdb.standard.2CPU-8GB`: €60/mo × 730 / 720 = 60.833333… → `60.8333`;
+  60.8333 × 0.95 = 57.791635 → `57.7916`. A 2-node service is estimated at 2 × 57.7916 = 115.5832 EUR
+  a month, the single node plus a node at 90%.
+
+  "Multi-node" covers 2 and 3 nodes. A 3-node service really averages (1 + 0.90 + 0.70) / 3 ≈ 0.8667 of
+  the single-node price per node, so pricing it at 0.95 estimates it about 9.6% high (0.95 / 0.8667).
+  That is chosen on purpose: an overestimate is preferred to an underestimate.
+- **Storage price**: `0.1014` per GiB a month in every zone, the same price as *Managed MySQL* (the
+  page's "MaxIOPS – €0.10/GB/mo" × 730 / 720, *Prices*), per GiB of the service's data: not multiplied
+  by the node count and not discounted. The configurations page
+  (<https://upcloud.com/docs/products/managed-mysql/configurations/>, read 2026-11-14) says "The
+  storage size you select applies to each node. For example, a 2-node cluster with 100 GiB of storage has
+  100 GiB on each node." If UpCloud bills that storage on every node, this estimate is low: half the
+  storage cost of a 2-node service, a third of a 3-node one. The minimum storage size of each plan
+  applies as on one node (*Managed MySQL*).
+
+| Plan | Family | CPU cores | Memory | Page price, 1 node | Single node, stored | Per node at 2 nodes, stored |
+|---|---|---|---|---|---|---|
+| `rdb.standard.2CPU-8GB` | Standard | 2 | 8 GB | €60/mo | 60.8333 | `57.7916` |
+| `rdb.standard.4CPU-16GB` | Standard | 4 | 16 GB | €140/mo | 141.9444 | `134.8472` |
+| `rdb.standard.8CPU-32GB` | Standard | 8 | 32 GB | €317/mo | 321.4028 | `305.3327` |
+| `rdb.standard.12CPU-48GB` | Standard | 12 | 48 GB | €485/mo | 491.7361 | `467.1493` |
+| `rdb.standard.16CPU-64GB` | Standard | 16 | 64 GB | €665/mo | 674.2361 | `640.5243` |
+| `rdb.standard.24CPU-96GB` | Standard | 24 | 96 GB | €993/mo | 1006.7917 | `956.4521` |
+| `rdb.standard.32CPU-128GB` | Standard | 32 | 128 GB | €1317/mo | 1335.2917 | `1268.5271` |
+| `rdb.standard.48CPU-192GB` | Standard | 48 | 192 GB | €2017/mo | 2045.0139 | `1942.7632` |
+| `rdb.standard.64CPU-256GB` | Standard | 64 | 256 GB | €2669/mo | 2706.0694 | `2570.7659` |
+| `rdb.standard.80CPU-320GB` | Standard | 80 | 320 GB | €3429/mo | 3476.625 | `3302.7938` |
+| `rdb.memory.2CPU-16GB` | High Memory | 2 | 16 GB | €126/mo | 127.75 | `121.3625` |
+| `rdb.memory.4CPU-32GB` | High Memory | 4 | 32 GB | €283/mo | 286.9306 | `272.5841` |
+| `rdb.memory.8CPU-64GB` | High Memory | 8 | 64 GB | €593/mo | 601.2361 | `571.1743` |
+| `rdb.memory.12CPU-96GB` | High Memory | 12 | 96 GB | €883/mo | 895.2639 | `850.5007` |
+| `rdb.memory.16CPU-128GB` | High Memory | 16 | 128 GB | €1173/mo | 1189.2917 | `1129.8271` |
+| `rdb.memory.24CPU-192GB` | High Memory | 24 | 192 GB | €1800/mo | 1825.00 | `1733.75` |
+| `rdb.memory.32CPU-256GB` | High Memory | 32 | 256 GB | €2380/mo | 2413.0556 | `2292.4028` |
+| `rdb.memory.48CPU-384GB` | High Memory | 48 | 384 GB | €3655/mo | 3705.7639 | `3520.4757` |
+| `rdb.memory.64CPU-512GB` | High Memory | 64 | 512 GB | €4855/mo | 4922.4306 | `4676.3091` |
 
 ### Managed Object Storage
 
@@ -723,15 +777,66 @@ or three nodes, which the documentation calls a multi-node plan. Pages:
 - Regions `de-fra1`, `dk-cph1`, `es-mad1`, `fi-hel1`, `fi-hel2`, `nl-ams1`, `pl-waw1`, `se-sto1`
   (tier-variant zones): the availability page marks each of these zones, with no column per plan, and the
   configurations page states the 1-, 2- and 3-node forms with no location caveat.
-- **No plans and no storage price** (pricing page, *Managed Databases*, *Additional services*, *High
-  Availability*, read 2026-11-13; <https://upcloud.com/pricing/>): the page prices a second and third node
-  as a discount on the plan price, "Second Node -10%" and "Third Node -30%" for Standard and High Memory
-  plans, so the price of a node depends on how many nodes the service runs, which ADR 0024's format cannot
-  hold (a plan's price is multiplied by the node count). The page does not say whether the discount is on
-  each further node or on the whole service, nor whether it applies to storage, which the configurations
-  page says "applies to each node". Any per-node price recorded here would be a reading of the page, not
-  a price it shows, so none is (*Left out on purpose*), and an estimate for this offering is "not
-  estimated".
+- **Plans and prices** (pricing page, *Managed Databases*, *Additional services*, *High Availability*,
+  read 2026-11-13; <https://upcloud.com/pricing/>; maintainer decision of 2026-11-14). The page says
+  "Standard and High Memory plan Managed Databases for MySQL and PostgreSQL are available with 1 to 3
+  database nodes" and gives this table:
+
+  | Plan | Second Node | Third Node |
+  |---|---|---|
+  | Developer | – | – |
+  | Standard | -10% | -30% |
+  | High Memory | -10% | -30% |
+
+  The page does not say what the discount is taken off. The reading used here is that each further node
+  costs the plan's single-node price less its discount: the second node 90% of it, the third 70%. The
+  plans are the same 19 Standard and High Memory plans as *Managed PostgreSQL*, each of which the
+  configurations page says "can run on 1, 2, or 3 nodes". Developer plans run on a single node and are
+  left out (*Left out on purpose*).
+
+  ADR 0024's format holds one price per plan, and ADR 0025 counts database nodes in `size.count`, so the
+  estimate multiplies the plan price by the node count. A plan's price here is therefore the **average
+  price of a node in a 2-node cluster**: (1 + 0.90) / 2 = 0.95 of the single-node price. The order of
+  operations is the same for every plan: start from the single-node amount already stored in *Managed
+  PostgreSQL* (the page's 30-day figure × 730 / 720, rounded half up to 4 decimal places, *Prices*),
+  multiply it by 0.95, and round the product once more, half up, to 4 decimal places (ADR 0024).
+  Worked example, `rdb.standard.2CPU-8GB`: €60/mo × 730 / 720 = 60.833333… → `60.8333`;
+  60.8333 × 0.95 = 57.791635 → `57.7916`. A 2-node service is estimated at 2 × 57.7916 = 115.5832 EUR
+  a month, the single node plus a node at 90%.
+
+  "Multi-node" covers 2 and 3 nodes. A 3-node service really averages (1 + 0.90 + 0.70) / 3 ≈ 0.8667 of
+  the single-node price per node, so pricing it at 0.95 estimates it about 9.6% high (0.95 / 0.8667).
+  That is chosen on purpose: an overestimate is preferred to an underestimate.
+- **Storage price**: `0.1014` per GiB a month in every zone, the same price as *Managed PostgreSQL* (the
+  page's "MaxIOPS – €0.10/GB/mo" × 730 / 720, *Prices*), per GiB of the service's data: not multiplied
+  by the node count and not discounted. The configurations page
+  (<https://upcloud.com/docs/products/managed-postgresql/configurations/>, read 2026-11-14) says "The
+  storage size you select applies to each node. For example, a 2-node cluster with 100 GiB of storage has
+  100 GiB on each node." If UpCloud bills that storage on every node, this estimate is low: half the
+  storage cost of a 2-node service, a third of a 3-node one. The minimum storage size of each plan
+  applies as on one node (*Managed PostgreSQL*).
+
+| Plan | Family | CPU cores | Memory | Page price, 1 node | Single node, stored | Per node at 2 nodes, stored |
+|---|---|---|---|---|---|---|
+| `rdb.standard.2CPU-8GB` | Standard | 2 | 8 GB | €60/mo | 60.8333 | `57.7916` |
+| `rdb.standard.4CPU-16GB` | Standard | 4 | 16 GB | €140/mo | 141.9444 | `134.8472` |
+| `rdb.standard.8CPU-32GB` | Standard | 8 | 32 GB | €317/mo | 321.4028 | `305.3327` |
+| `rdb.standard.12CPU-48GB` | Standard | 12 | 48 GB | €485/mo | 491.7361 | `467.1493` |
+| `rdb.standard.16CPU-64GB` | Standard | 16 | 64 GB | €665/mo | 674.2361 | `640.5243` |
+| `rdb.standard.24CPU-96GB` | Standard | 24 | 96 GB | €993/mo | 1006.7917 | `956.4521` |
+| `rdb.standard.32CPU-128GB` | Standard | 32 | 128 GB | €1317/mo | 1335.2917 | `1268.5271` |
+| `rdb.standard.48CPU-192GB` | Standard | 48 | 192 GB | €2017/mo | 2045.0139 | `1942.7632` |
+| `rdb.standard.64CPU-256GB` | Standard | 64 | 256 GB | €2669/mo | 2706.0694 | `2570.7659` |
+| `rdb.standard.80CPU-320GB` | Standard | 80 | 320 GB | €3429/mo | 3476.625 | `3302.7938` |
+| `rdb.memory.2CPU-16GB` | High Memory | 2 | 16 GB | €126/mo | 127.75 | `121.3625` |
+| `rdb.memory.4CPU-32GB` | High Memory | 4 | 32 GB | €283/mo | 286.9306 | `272.5841` |
+| `rdb.memory.8CPU-64GB` | High Memory | 8 | 64 GB | €593/mo | 601.2361 | `571.1743` |
+| `rdb.memory.12CPU-96GB` | High Memory | 12 | 96 GB | €883/mo | 895.2639 | `850.5007` |
+| `rdb.memory.16CPU-128GB` | High Memory | 16 | 128 GB | €1173/mo | 1189.2917 | `1129.8271` |
+| `rdb.memory.24CPU-192GB` | High Memory | 24 | 192 GB | €1800/mo | 1825.00 | `1733.75` |
+| `rdb.memory.32CPU-256GB` | High Memory | 32 | 256 GB | €2380/mo | 2413.0556 | `2292.4028` |
+| `rdb.memory.48CPU-384GB` | High Memory | 48 | 384 GB | €3655/mo | 3705.7639 | `3520.4757` |
+| `rdb.memory.64CPU-512GB` | High Memory | 64 | 512 GB | €4855/mo | 4922.4306 | `4676.3091` |
 
 ## Left out on purpose
 
@@ -804,13 +909,6 @@ or three nodes, which the documentation calls a multi-node plan. Pages:
 
 Prices and plans left out (PRD #190 milestone 5, read 2026-11-13 from <https://upcloud.com/pricing/>):
 
-- **Managed MySQL Multi-node and Managed PostgreSQL Multi-node: no plans and no storage price.** The page
-  prices the second and third database node as a discount ("Second Node -10%", "Third Node -30%"), so a
-  node's price depends on the node count, which ADR 0024's format cannot hold, and the page leaves open
-  whether the discount is per further node or on the whole service and whether it applies to the storage,
-  which is selected per node. Recording the single-node price would overstate a two- or three-node service
-  by about 5% or 15% on the per-node reading; recording a discounted price would be a reading, not a price the page shows. So
-  neither is recorded, and an estimate for these offerings is "not estimated" (see each section).
 - **The Managed Kubernetes Production control plane, "€60/mo" per cluster** (pricing page, *Managed
   Kubernetes*, *Control plane*; a 30-day estimate of an hourly price, *Prices*). ADR 0024's format has no
   per-cluster price: a plan is a node size, multiplied by the node count, and adding the fee to every node

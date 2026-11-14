@@ -172,8 +172,26 @@ Managed MySQL | database.mysql | encryption-at-rest, point-in-time-restore | de-
   plan: rdb.standard.8CPU-32GB | 8 vcpu | 32 GiB | 0 GiB storage | 321.4028 EUR @ -
   storage price: 0.1014 EUR @ -
 Managed MySQL Multi-node | database.mysql | encryption-at-rest, node-high-availability, point-in-time-restore, read-replicas | de-fra1, dk-cph1, es-mad1, fi-hel1, fi-hel2, nl-ams1, pl-waw1, se-sto1
-  plans: -
-  storage prices: -
+  plan: rdb.memory.12CPU-96GB | 12 vcpu | 96 GiB | 0 GiB storage | 850.5007 EUR @ -
+  plan: rdb.memory.16CPU-128GB | 16 vcpu | 128 GiB | 0 GiB storage | 1129.8271 EUR @ -
+  plan: rdb.memory.24CPU-192GB | 24 vcpu | 192 GiB | 0 GiB storage | 1733.75 EUR @ -
+  plan: rdb.memory.2CPU-16GB | 2 vcpu | 16 GiB | 0 GiB storage | 121.3625 EUR @ -
+  plan: rdb.memory.32CPU-256GB | 32 vcpu | 256 GiB | 0 GiB storage | 2292.4028 EUR @ -
+  plan: rdb.memory.48CPU-384GB | 48 vcpu | 384 GiB | 0 GiB storage | 3520.4757 EUR @ -
+  plan: rdb.memory.4CPU-32GB | 4 vcpu | 32 GiB | 0 GiB storage | 272.5841 EUR @ -
+  plan: rdb.memory.64CPU-512GB | 64 vcpu | 512 GiB | 0 GiB storage | 4676.3091 EUR @ -
+  plan: rdb.memory.8CPU-64GB | 8 vcpu | 64 GiB | 0 GiB storage | 571.1743 EUR @ -
+  plan: rdb.standard.12CPU-48GB | 12 vcpu | 48 GiB | 0 GiB storage | 467.1493 EUR @ -
+  plan: rdb.standard.16CPU-64GB | 16 vcpu | 64 GiB | 0 GiB storage | 640.5243 EUR @ -
+  plan: rdb.standard.24CPU-96GB | 24 vcpu | 96 GiB | 0 GiB storage | 956.4521 EUR @ -
+  plan: rdb.standard.2CPU-8GB | 2 vcpu | 8 GiB | 0 GiB storage | 57.7916 EUR @ -
+  plan: rdb.standard.32CPU-128GB | 32 vcpu | 128 GiB | 0 GiB storage | 1268.5271 EUR @ -
+  plan: rdb.standard.48CPU-192GB | 48 vcpu | 192 GiB | 0 GiB storage | 1942.7632 EUR @ -
+  plan: rdb.standard.4CPU-16GB | 4 vcpu | 16 GiB | 0 GiB storage | 134.8472 EUR @ -
+  plan: rdb.standard.64CPU-256GB | 64 vcpu | 256 GiB | 0 GiB storage | 2570.7659 EUR @ -
+  plan: rdb.standard.80CPU-320GB | 80 vcpu | 320 GiB | 0 GiB storage | 3302.7938 EUR @ -
+  plan: rdb.standard.8CPU-32GB | 8 vcpu | 32 GiB | 0 GiB storage | 305.3327 EUR @ -
+  storage price: 0.1014 EUR @ -
 Managed Object Storage | storage.object | encryption-at-rest, object-versioning | de-fra1, dk-cph1, fi-hel2, se-sto1
   plans: -
   storage price: 0.0203 EUR @ -
@@ -199,5 +217,23 @@ Managed PostgreSQL | database.postgresql | encryption-at-rest, point-in-time-res
   plan: rdb.standard.8CPU-32GB | 8 vcpu | 32 GiB | 0 GiB storage | 321.4028 EUR @ -
   storage price: 0.1014 EUR @ -
 Managed PostgreSQL Multi-node | database.postgresql | encryption-at-rest, node-high-availability, point-in-time-restore, read-replicas | de-fra1, dk-cph1, es-mad1, fi-hel1, fi-hel2, nl-ams1, pl-waw1, se-sto1
-  plans: -
-  storage prices: -
+  plan: rdb.memory.12CPU-96GB | 12 vcpu | 96 GiB | 0 GiB storage | 850.5007 EUR @ -
+  plan: rdb.memory.16CPU-128GB | 16 vcpu | 128 GiB | 0 GiB storage | 1129.8271 EUR @ -
+  plan: rdb.memory.24CPU-192GB | 24 vcpu | 192 GiB | 0 GiB storage | 1733.75 EUR @ -
+  plan: rdb.memory.2CPU-16GB | 2 vcpu | 16 GiB | 0 GiB storage | 121.3625 EUR @ -
+  plan: rdb.memory.32CPU-256GB | 32 vcpu | 256 GiB | 0 GiB storage | 2292.4028 EUR @ -
+  plan: rdb.memory.48CPU-384GB | 48 vcpu | 384 GiB | 0 GiB storage | 3520.4757 EUR @ -
+  plan: rdb.memory.4CPU-32GB | 4 vcpu | 32 GiB | 0 GiB storage | 272.5841 EUR @ -
+  plan: rdb.memory.64CPU-512GB | 64 vcpu | 512 GiB | 0 GiB storage | 4676.3091 EUR @ -
+  plan: rdb.memory.8CPU-64GB | 8 vcpu | 64 GiB | 0 GiB storage | 571.1743 EUR @ -
+  plan: rdb.standard.12CPU-48GB | 12 vcpu | 48 GiB | 0 GiB storage | 467.1493 EUR @ -
+  plan: rdb.standard.16CPU-64GB | 16 vcpu | 64 GiB | 0 GiB storage | 640.5243 EUR @ -
+  plan: rdb.standard.24CPU-96GB | 24 vcpu | 96 GiB | 0 GiB storage | 956.4521 EUR @ -
+  plan: rdb.standard.2CPU-8GB | 2 vcpu | 8 GiB | 0 GiB storage | 57.7916 EUR @ -
+  plan: rdb.standard.32CPU-128GB | 32 vcpu | 128 GiB | 0 GiB storage | 1268.5271 EUR @ -
+  plan: rdb.standard.48CPU-192GB | 48 vcpu | 192 GiB | 0 GiB storage | 1942.7632 EUR @ -
+  plan: rdb.standard.4CPU-16GB | 4 vcpu | 16 GiB | 0 GiB storage | 134.8472 EUR @ -
+  plan: rdb.standard.64CPU-256GB | 64 vcpu | 256 GiB | 0 GiB storage | 2570.7659 EUR @ -
+  plan: rdb.standard.80CPU-320GB | 80 vcpu | 320 GiB | 0 GiB storage | 3302.7938 EUR @ -
+  plan: rdb.standard.8CPU-32GB | 8 vcpu | 32 GiB | 0 GiB storage | 305.3327 EUR @ -
+  storage price: 0.1014 EUR @ -
