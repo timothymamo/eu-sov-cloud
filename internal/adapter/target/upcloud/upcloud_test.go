@@ -1,7 +1,7 @@
 // Package upcloud_test pins the UpCloud catalog adapter: the target contract in
 // internal/adapter/target/targettest, the snapshot header the catalog reports, the
-// plans and prices the snapshot records and the default region they estimate in, a
-// golden change detector for the parsed catalog, the declared EU zones, that a
+// plans, prices and fixed monthly fees the snapshot records and the default region
+// they estimate in, a golden change detector for the parsed catalog, the declared EU zones, that a
 // cancelled run reads nothing, that no error of one target names another, and the
 // verdicts PRD 77 asks of the data: categories UpCloud does not serve are a
 // blocker, no offering claims zone-level high availability, and every capability
@@ -391,6 +391,117 @@ func regionsListed(prices []catalog.Price) string {
 	}
 
 	return strings.Join(listed, "; ")
+}
+
+// TestCatalogFixedFees pins the fixed monthly fee per Kubernetes cluster the
+// snapshot records (ADR 0026, PRD #190 milestone 5): UpCloud charges the
+// Production control plane 60 EUR a month per cluster in every zone, and includes
+// the Development control plane of the base offering, which its pricing page lists
+// as "€0/mo" and its billing page as "Free of charge". The free fee is recorded
+// as 0.00 and not left out: the boolean of FixedFee tells a free control plane
+// from one the snapshot has no fee for. Every other offering charges no fixed fee,
+// so no estimate adds one where UpCloud publishes none.
+func TestCatalogFixedFees(t *testing.T) {
+	t.Parallel()
+
+	cat := catalogOf(t)
+
+	// feePerOffering is the control-plane fee each offering charges per cluster in
+	// every one of its zones: the Production plan's 60.00 EUR, and 0.00 where the
+	// base offering stands for the Development plan, which UpCloud includes.
+	const (
+		productionControlPlane  = catalog.Amount(600_000)
+		developmentControlPlane = catalog.Amount(0)
+	)
+
+	feePerOffering := map[string]catalog.Amount{
+		"Managed Kubernetes Production": productionControlPlane,
+		"Managed Kubernetes":            developmentControlPlane,
+	}
+
+	for _, o := range cat.Offerings() {
+		want, charges := feePerOffering[o.Name]
+
+		if !charges {
+			if o.FixedFees != nil {
+				t.Errorf("offering %s lists fixed fees %v, want none: UpCloud publishes a control-plane fee for its Kubernetes offerings only",
+					text.Quote(o.Name), o.FixedFees)
+			}
+
+			for _, region := range o.Regions {
+				if fee, ok := o.FixedFee(region); ok {
+					t.Errorf("offering %s reports a fixed fee %s in region %s, want none",
+						text.Quote(o.Name), fee, text.Quote(region))
+				}
+			}
+
+			continue
+		}
+
+		// The fee is the same in every zone of the offering, so the regions come
+		// from the catalog: a zone added to the offering carries the fee too, and a
+		// snapshot that leaves the fee out there fails here instead of reading as a
+		// free control plane in that zone (ADR 0026).
+		for _, region := range o.Regions {
+			got, ok := o.FixedFee(region)
+			if !ok {
+				t.Errorf("offering %s reports no fixed fee in region %s, want %s",
+					text.Quote(o.Name), text.Quote(region), want)
+
+				continue
+			}
+
+			if got != want {
+				t.Errorf("offering %s: FixedFee(%s) = %s, want %s",
+					text.Quote(o.Name), text.Quote(region), got, want)
+			}
+		}
+
+		// And the fees name those regions and no others: an every-region fee names
+		// all of them, a per-zone list holds exactly these.
+		if diff := cmp.Diff(o.Regions, feeRegions(o)); diff != "" {
+			t.Errorf("offering %s: the regions its fixed fees name are not its regions (-want +got):\n%s",
+				text.Quote(o.Name), diff)
+		}
+	}
+
+	// The expectation names the two Kubernetes offerings alone, so an entry that
+	// outlived a rename is a finding rather than a silent pass. The names are
+	// iterated in sorted order, so a failure names the same offering on every run
+	// whatever the map order.
+	byName := make(map[string]catalog.Offering, len(cat.Offerings()))
+	for _, o := range cat.Offerings() {
+		byName[o.Name] = o
+	}
+
+	for _, name := range slices.Sorted(maps.Keys(feePerOffering)) {
+		if _, found := byName[name]; !found {
+			t.Errorf("feePerOffering names offering %s, want an offering of the catalog: the entry names no offering and should be removed",
+				text.Quote(name))
+		}
+	}
+}
+
+// feeRegions lists, sorted, the regions o's fixed fees name, with an every-region
+// fee expanded to every region of the offering (ADR 0026).
+func feeRegions(o catalog.Offering) []string {
+	regions := make(map[string]struct{}, len(o.Regions))
+
+	for _, fee := range o.FixedFees {
+		if fee.Regions == nil {
+			for _, region := range o.Regions {
+				regions[region] = struct{}{}
+			}
+
+			continue
+		}
+
+		for _, region := range fee.Regions {
+			regions[region] = struct{}{}
+		}
+	}
+
+	return slices.Sorted(maps.Keys(regions))
 }
 
 // TestCatalogGolden pins the whole parsed catalog against a golden file: every
