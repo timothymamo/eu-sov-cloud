@@ -1,6 +1,8 @@
 // Package upcloud_test pins the UpCloud catalog adapter: the target contract in
-// internal/adapter/target/targettest, the snapshot header the catalog reports, a
-// golden change detector for the parsed catalog, the declared EU zones, that a
+// internal/adapter/target/targettest, the snapshot header the catalog reports, the
+// plans, prices and fixed monthly fees the snapshot records and the default region
+// they estimate in, the rule the multi-node database prices follow from the
+// single-node ones, a golden change detector for the parsed catalog, the declared EU zones, that a
 // cancelled run reads nothing, that no error of one target names another, and the
 // verdicts PRD 77 asks of the data: categories UpCloud does not serve are a
 // blocker, no offering claims zone-level high availability, and every capability
@@ -15,6 +17,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"maps"
 	"os"
 	"slices"
 	"strings"
@@ -111,12 +114,19 @@ func TestCatalogSnapshotHeader(t *testing.T) {
 
 	snap := catalogOf(t).Snapshot()
 
-	const wantSourceURL = "https://upcloud.com/docs/"
+	// The prices were read from the maintainer's saved browser copy of the pricing
+	// page, because upcloud.com refuses automated clients outside /docs/ (403). So
+	// the snapshot cites that page exactly, not the documentation root it cited
+	// before prices, which no price comes from (ADR 0024).
+	const wantSourceURL = "https://upcloud.com/pricing/"
 	if snap.SourceURL != wantSourceURL {
-		t.Errorf("Snapshot().SourceURL = %s, want %s", text.Quote(snap.SourceURL), text.Quote(wantSourceURL))
+		t.Errorf("Snapshot().SourceURL = %s, want %s",
+			text.Quote(snap.SourceURL), text.Quote(wantSourceURL))
 	}
 
-	wantRetrievedOn := time.Date(2026, time.November, 11, 0, 0, 0, 0, time.UTC)
+	// The date the prices were taken, not the date the catalog capabilities were
+	// last refreshed (ADR 0024).
+	wantRetrievedOn := time.Date(2026, time.November, 13, 0, 0, 0, 0, time.UTC)
 	if !snap.RetrievedOn.Equal(wantRetrievedOn) {
 		t.Errorf("Snapshot().RetrievedOn = %s, want %s",
 			snap.RetrievedOn.Format(time.RFC3339), wantRetrievedOn.Format(time.RFC3339))
@@ -127,41 +137,559 @@ func TestCatalogSnapshotHeader(t *testing.T) {
 	}
 }
 
-// TestCatalogDefaultRegionAndNoPlansYet pins what milestone 2 gives the snapshot
-// before its pricing milestone (ADR 0024): the provisional default region
-// estimates use when the user names none, and no plan or price recorded yet. The
-// pricing milestone that adds either updates this test and the SOURCES.md section
-// beside the snapshot.
-func TestCatalogDefaultRegionAndNoPlansYet(t *testing.T) {
+// TestCatalogPlansAndPrices pins PRD #190 milestone 5: the snapshot records what an
+// estimate needs (ADR 0024). Every offering of a category priced by plan sells at
+// least one plan, every offering of a category priced per GiB of storage lists at
+// least one storage price, every price is a positive monthly amount in EUR, and
+// every offering available in the default region can be priced there, so an
+// estimate for that region never borrows another region's price and never reads a
+// missing price as zero. An offering that sells plans for servers or clusters
+// also lists a storage price, so the estimate can price the disk above what the
+// plan includes from the same offering. leftOut names the offerings those rules
+// are waived for, with the reason, because the snapshot cannot express their price
+// as a plan or a storage price; it is empty today and an entry is a finding to
+// explain in SOURCES.md. extraStorageLeftOut waives that storage-price rule
+// alone for an offering whose plans must still be pinned. A waiver only holds while
+// the rule it waives would still fail: an entry that names no offering of the
+// catalog, or that waives a rule the data now meets, fails the test, so a refresh
+// cannot leave a waiver silently in place.
+func TestCatalogPlansAndPrices(t *testing.T) {
 	t.Parallel()
 
 	cat := catalogOf(t)
 
+	// The zone estimates use when the user names none: de-fra1 hosts every
+	// offering in the snapshot, Managed Object Storage included (EUROPE-2 lives
+	// there), so no offering is unpriceable in the default region, and it is the
+	// existing default.
 	const wantRegion = "de-fra1"
 	if got := cat.Snapshot().DefaultRegion; got != wantRegion {
 		t.Errorf("Snapshot().DefaultRegion = %s, want %s", text.Quote(got), text.Quote(wantRegion))
 	}
 
+	// planCategories are the categories PRD #190 prices by plan: a server or a
+	// managed cluster runs on one, and so does a managed database node. UpCloud
+	// sells no bare metal, so compute.baremetal is absent (ADR 0023). A database
+	// plan's price is the price of one node, because ADR 0025 counts database
+	// nodes in size.count and the estimate multiplies the plan price by it.
+	planCategories := []taxonomy.Category{
+		taxonomy.ComputeVM,
+		taxonomy.KubernetesManaged,
+		taxonomy.DatabasePostgreSQL,
+		taxonomy.DatabaseMySQL,
+	}
+
+	// storageCategories are the categories PRD #190 prices per GiB of storage
+	// kept: block volumes, objects, and the storage a managed database uses.
+	storageCategories := []taxonomy.Category{
+		taxonomy.StorageBlock,
+		taxonomy.StorageObject,
+		taxonomy.DatabasePostgreSQL,
+		taxonomy.DatabaseMySQL,
+	}
+
+	// planStorageCategories are the categories whose plans come with disk that a
+	// resource may outgrow: a server and a managed cluster, but not a managed
+	// database, whose storage volume is priced on its own offerings already.
+	planStorageCategories := []taxonomy.Category{
+		taxonomy.ComputeVM,
+		taxonomy.KubernetesManaged,
+	}
+
+	// leftOut exempts an offering from the coverage and plan-storage rules, never
+	// from the price rules, and gives the reason. It is empty today: an entry is a
+	// finding to explain in this test and in SOURCES.md, not a way past a refresh.
+	leftOut := map[string]string{}
+
+	// kubernetesWorkerStorageLeftOut is why both managed Kubernetes offerings are
+	// waived from the extra-storage rule: the reason is the same for both.
+	const kubernetesWorkerStorageLeftOut = "UpCloud publishes no per-GiB price for worker-node storage, " +
+		"and its node-group example does not match a Cloud Server storage tier; see SOURCES.md"
+
+	// extraStorageLeftOut waives only the extra-storage rule, never the plan rule or
+	// the price rules, and gives the reason. The managed Kubernetes offerings keep
+	// the plans their nodes run on pinned, because the snapshot does price those;
+	// only the storage above what a plan includes has no price the snapshot can
+	// record. It is a finding to explain in this test and in SOURCES.md, not a way
+	// past a refresh.
+	extraStorageLeftOut := map[string]string{
+		"Managed Kubernetes":            kubernetesWorkerStorageLeftOut,
+		"Managed Kubernetes Production": kubernetesWorkerStorageLeftOut,
+	}
+
 	for _, o := range cat.Offerings() {
-		if len(o.Plans) != 0 {
-			t.Errorf("offering %s lists %d plans, want none until its pricing milestone",
-				text.Quote(o.Name), len(o.Plans))
+		reason, exempt := leftOut[o.Name]
+		if exempt {
+			t.Logf("offering %s is left out of the plan and storage-price rules: %s", text.Quote(o.Name), reason)
 		}
 
-		if len(o.StoragePrices) != 0 {
-			t.Errorf("offering %s lists %d storage prices, want none until its pricing milestone",
-				text.Quote(o.Name), len(o.StoragePrices))
+		if !exempt && servesAny(o, planCategories) && len(o.Plans) == 0 {
+			t.Errorf("offering %s serves a category priced by plan but lists no plan, want at least one",
+				text.Quote(o.Name))
+		}
+
+		if !exempt && servesAny(o, storageCategories) && len(o.StoragePrices) == 0 {
+			t.Errorf("offering %s serves a category priced per GiB of storage but lists no storage price, want at least one",
+				text.Quote(o.Name))
+		}
+
+		// PRD #190 estimates a resource as the plan price times its count and the
+		// hours it runs, plus the storage above what the plan includes, priced per
+		// GiB. That second summand can only come from a storage price of the same
+		// offering as the plan, so an offering that sells plans servers and
+		// clusters run on needs both, or every sized resource asking for more disk
+		// than the plan includes would be "not estimated".
+		extraStorageReason, extraStorageExempt := extraStorageLeftOut[o.Name]
+		if extraStorageExempt {
+			t.Logf("offering %s is left out of the extra-storage rule: %s", text.Quote(o.Name), extraStorageReason)
+		}
+
+		if !exempt && !extraStorageExempt && servesAny(o, planStorageCategories) && len(o.Plans) > 0 && len(o.StoragePrices) == 0 {
+			t.Errorf("offering %s lists plans but no storage price, want at least one: the monthly estimate prices the storage above a plan's included storage per GiB, from the same offering",
+				text.Quote(o.Name))
+		}
+
+		for _, p := range o.Plans {
+			for i, price := range p.Prices {
+				checkPrice(t, o, fmt.Sprintf("plan %s prices[%d]", text.Quote(p.Name), i), price)
+			}
+
+			if slices.Contains(o.Regions, wantRegion) && !anyPriceAppliesIn(p.Prices, wantRegion) {
+				t.Errorf("offering %s plan %s lists no price for the default region %s, want one applying there: its prices apply to %s",
+					text.Quote(o.Name), text.Quote(p.Name), text.Quote(wantRegion), regionsListed(p.Prices))
+			}
+		}
+
+		for i, price := range o.StoragePrices {
+			checkPrice(t, o, fmt.Sprintf("storagePrices[%d]", i), price)
+		}
+
+		if slices.Contains(o.Regions, wantRegion) && len(o.StoragePrices) > 0 && !anyPriceAppliesIn(o.StoragePrices, wantRegion) {
+			t.Errorf("offering %s lists storage prices but none for the default region %s, want one applying there: they apply to %s",
+				text.Quote(o.Name), text.Quote(wantRegion), regionsListed(o.StoragePrices))
+		}
+	}
+
+	// A waiver is a finding, not a way past a refresh: it is only valid while the
+	// rule it waives would still fail for that offering. A refresh renames or prices
+	// offerings, and a waiver that outlived its finding would silently skip a rule the
+	// data now meets, so each entry is checked against the catalog instead of trusted.
+	// The names are iterated in sorted order, so a failure names the same offering on
+	// every run whatever the map order.
+	byName := make(map[string]catalog.Offering, len(cat.Offerings()))
+	for _, o := range cat.Offerings() {
+		byName[o.Name] = o
+	}
+
+	for _, name := range slices.Sorted(maps.Keys(leftOut)) {
+		o, found := byName[name]
+		if !found {
+			t.Errorf("leftOut names offering %s, want an offering of the catalog: the waiver names no offering and should be removed",
+				text.Quote(name))
+
+			continue
+		}
+
+		// leftOut waives the plan rule and the storage-price rule, so it is still
+		// needed only while one of them would fail: the offering serves a category
+		// priced by plan or per GiB of storage and lists neither a plan nor a storage
+		// price. Once it lists either, remove the entry and its reason.
+		needsWaiver := (servesAny(o, planCategories) || servesAny(o, storageCategories)) &&
+			len(o.Plans) == 0 && len(o.StoragePrices) == 0
+		if !needsWaiver {
+			t.Errorf("offering %s is now priced; remove its waiver from leftOut: it serves %v and lists %d plans and %d storage prices",
+				text.Quote(name), o.Categories, len(o.Plans), len(o.StoragePrices))
+		}
+	}
+
+	for _, name := range slices.Sorted(maps.Keys(extraStorageLeftOut)) {
+		o, found := byName[name]
+		if !found {
+			t.Errorf("extraStorageLeftOut names offering %s, want an offering of the catalog: the waiver names no offering and should be removed",
+				text.Quote(name))
+
+			continue
+		}
+
+		// The extra-storage rule fails only for an offering that lists a plan and no
+		// storage price, so the waiver is still needed only while the offering lists
+		// plans and no storage price. Once it lists a storage price, remove the entry
+		// and its reason.
+		needsWaiver := len(o.Plans) > 0 && len(o.StoragePrices) == 0
+		if !needsWaiver {
+			t.Errorf("offering %s is now priced; remove its waiver from extraStorageLeftOut: it lists %d plans and %d storage prices",
+				text.Quote(name), len(o.Plans), len(o.StoragePrices))
 		}
 	}
 }
 
+// checkPrice pins what every price of the snapshot must be, wherever it appears: a
+// positive monthly amount in EUR, applying only to regions its offering is
+// available in (ADR 0024). where names the price inside its offering.
+func checkPrice(t *testing.T, o catalog.Offering, where string, price catalog.Price) {
+	t.Helper()
+
+	if price.Currency != catalog.EUR {
+		t.Errorf("offering %s %s: currency = %s, want %s",
+			text.Quote(o.Name), where, text.Quote(price.Currency), text.Quote(catalog.EUR))
+	}
+
+	if price.Amount <= 0 {
+		t.Errorf("offering %s %s: amount = %s, want more than 0: a price is never zero for unknown",
+			text.Quote(o.Name), where, price.Amount)
+	}
+
+	for _, region := range price.Regions {
+		if !slices.Contains(o.Regions, region) {
+			t.Errorf("offering %s %s: applies to region %s, want one of the offering's regions %v",
+				text.Quote(o.Name), where, text.Quote(region), o.Regions)
+		}
+	}
+}
+
+// servesAny reports whether o serves one of categories.
+func servesAny(o catalog.Offering, categories []taxonomy.Category) bool {
+	for _, c := range categories {
+		if slices.Contains(o.Categories, c) {
+			return true
+		}
+	}
+
+	return false
+}
+
+// anyPriceAppliesIn reports whether one of prices applies in region: a price that
+// lists no region applies to every region of its offering (ADR 0024).
+func anyPriceAppliesIn(prices []catalog.Price, region string) bool {
+	return slices.ContainsFunc(prices, func(p catalog.Price) bool {
+		return len(p.Regions) == 0 || slices.Contains(p.Regions, region)
+	})
+}
+
+// regionsListed formats the regions prices apply to, one entry per price, for an
+// error message.
+func regionsListed(prices []catalog.Price) string {
+	listed := make([]string, len(prices))
+	for i, p := range prices {
+		if len(p.Regions) == 0 {
+			listed[i] = "every region"
+
+			continue
+		}
+
+		listed[i] = strings.Join(p.Regions, ", ")
+	}
+
+	return strings.Join(listed, "; ")
+}
+
+// TestCatalogFixedFees pins the fixed monthly fee per Kubernetes cluster the
+// snapshot records (ADR 0026, PRD #190 milestone 5): UpCloud charges the
+// Production control plane per cluster in every zone, and includes the
+// Development control plane of the base offering, which its pricing page lists
+// as "€0/mo" and its billing page as "Free of charge". The Production plan is
+// billed by the hour, and its pricing page's "€60/mo" is a 30-day estimate
+// ("Monthly prices are estimates based on a 30-day month"), so the fee is
+// converted the way ADR 0024's prices are, at 730 hours: 60 × 730 / 720 = 60.8333.
+// The free fee is recorded as 0.00 and not left out: the boolean of FixedFee
+// tells a free control plane from one the snapshot has no fee for. Every other
+// offering charges no fixed fee, so no estimate adds one where UpCloud publishes
+// none.
+func TestCatalogFixedFees(t *testing.T) {
+	t.Parallel()
+
+	cat := catalogOf(t)
+
+	// feePerOffering is the control-plane fee each offering charges per cluster in
+	// every one of its zones: the Production plan's hourly fee converted to
+	// 60.8333 EUR, and 0.00 where the base offering stands for the Development
+	// plan, which UpCloud includes.
+	const (
+		productionControlPlane  = catalog.Amount(608_333)
+		developmentControlPlane = catalog.Amount(0)
+	)
+
+	feePerOffering := map[string]catalog.Amount{
+		"Managed Kubernetes Production": productionControlPlane,
+		"Managed Kubernetes":            developmentControlPlane,
+	}
+
+	for _, o := range cat.Offerings() {
+		want, charges := feePerOffering[o.Name]
+
+		if !charges {
+			if o.FixedFees != nil {
+				t.Errorf("offering %s lists fixed fees %v, want none: UpCloud publishes a control-plane fee for its Kubernetes offerings only",
+					text.Quote(o.Name), o.FixedFees)
+			}
+
+			for _, region := range o.Regions {
+				if fee, ok := o.FixedFee(region); ok {
+					t.Errorf("offering %s reports a fixed fee %s in region %s, want none",
+						text.Quote(o.Name), fee, text.Quote(region))
+				}
+			}
+
+			continue
+		}
+
+		// The fee is the same in every zone of the offering, so the regions come
+		// from the catalog: a zone added to the offering carries the fee too, and a
+		// snapshot that leaves the fee out there fails here instead of reading as a
+		// free control plane in that zone (ADR 0026).
+		for _, region := range o.Regions {
+			got, ok := o.FixedFee(region)
+			if !ok {
+				t.Errorf("offering %s reports no fixed fee in region %s, want %s",
+					text.Quote(o.Name), text.Quote(region), want)
+
+				continue
+			}
+
+			if got != want {
+				t.Errorf("offering %s: FixedFee(%s) = %s, want %s",
+					text.Quote(o.Name), text.Quote(region), got, want)
+			}
+		}
+
+		// And the fees name those regions and no others: an every-region fee names
+		// all of them, a per-zone list holds exactly these.
+		if diff := cmp.Diff(o.Regions, feeRegions(o)); diff != "" {
+			t.Errorf("offering %s: the regions its fixed fees name are not its regions (-want +got):\n%s",
+				text.Quote(o.Name), diff)
+		}
+	}
+
+	// The expectation names the two Kubernetes offerings alone, so an entry that
+	// outlived a rename is a finding rather than a silent pass. The names are
+	// iterated in sorted order, so a failure names the same offering on every run
+	// whatever the map order.
+	byName := make(map[string]catalog.Offering, len(cat.Offerings()))
+	for _, o := range cat.Offerings() {
+		byName[o.Name] = o
+	}
+
+	for _, name := range slices.Sorted(maps.Keys(feePerOffering)) {
+		if _, found := byName[name]; !found {
+			t.Errorf("feePerOffering names offering %s, want an offering of the catalog: the entry names no offering and should be removed",
+				text.Quote(name))
+		}
+	}
+}
+
+// feeRegions lists, sorted, the regions o's fixed fees name, with an every-region
+// fee expanded to every region of the offering (ADR 0026).
+func feeRegions(o catalog.Offering) []string {
+	regions := make(map[string]struct{}, len(o.Regions))
+
+	for _, fee := range o.FixedFees {
+		if fee.Regions == nil {
+			for _, region := range o.Regions {
+				regions[region] = struct{}{}
+			}
+
+			continue
+		}
+
+		for _, region := range fee.Regions {
+			regions[region] = struct{}{}
+		}
+	}
+
+	return slices.Sorted(maps.Keys(regions))
+}
+
+// TestMultiNodeDatabasePrices pins the rule the snapshot records for UpCloud's
+// multi-node database plans (maintainer decision 2026-11-14, in SOURCES.md): a
+// plan of *Managed MySQL Multi-node* or *Managed PostgreSQL Multi-node* is priced
+// per node at two nodes' list price with the documented 5% multi-node discount,
+// that is the stored amount of the same-named single-node plan times 95/100,
+// rounded half up to ADR 0024's four decimal places. The golden file pins those
+// amounts too, but it is regenerated with -update on every refresh, so a refresh
+// that changes a single-node price and forgets its multi-node counterpart passes
+// there; this test derives each multi-node amount from the single-node one the
+// snapshot stores and cannot. It pins what a multi-node plan is besides its
+// price: the same plan names, the same vCPUs, memory and included storage, and a
+// per-GiB storage price for two nodes, twice its single-node offering's.
+func TestMultiNodeDatabasePrices(t *testing.T) {
+	t.Parallel()
+
+	cat := catalogOf(t)
+
+	// The discount is 95 of 100, applied to catalog.Amount's integer
+	// ten-thousandths, so the arithmetic below never uses a float (ADR 0024).
+	const (
+		discountNumerator   = 95
+		discountDenominator = 100
+	)
+
+	// Each row pairs a multi-node database offering with the single-node offering
+	// it is priced from. The rows are in this order so a failure reads the same way
+	// on every run: UpCloud sells MySQL and PostgreSQL with the same plans.
+	tests := []struct {
+		multiNode  string
+		singleNode string
+	}{
+		{multiNode: "Managed MySQL Multi-node", singleNode: "Managed MySQL"},
+		{multiNode: "Managed PostgreSQL Multi-node", singleNode: "Managed PostgreSQL"},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.multiNode, func(t *testing.T) {
+			t.Parallel()
+
+			multi := offeringNamed(t, cat, tc.multiNode)
+			single := offeringNamed(t, cat, tc.singleNode)
+
+			multiPlans := plansByName(multi)
+			singlePlans := plansByName(single)
+
+			// The same set of plans, not just one plan: a multi-node offering that
+			// sells a size its single-node counterpart does not (or the other way
+			// round) has no price to check against, so it is a finding of its own.
+			wantNames := slices.Sorted(maps.Keys(singlePlans))
+			gotNames := slices.Sorted(maps.Keys(multiPlans))
+
+			if diff := cmp.Diff(wantNames, gotNames); diff != "" {
+				t.Errorf("offering %s: plan names differ from offering %s, want the same set (-single-node +multi-node):\n%s",
+					text.Quote(multi.Name), text.Quote(single.Name), diff)
+			}
+
+			// Sorted plan names, so the failures below name the plans in the same
+			// order on every run, whatever order the catalog holds them in.
+			for _, name := range gotNames {
+				multiPlan := multiPlans[name]
+
+				singlePlan, found := singlePlans[name]
+				if !found {
+					t.Errorf("offering %s plan %s: offering %s has no plan of that name, want the same plans in both offerings",
+						text.Quote(multi.Name), text.Quote(name), text.Quote(single.Name))
+
+					continue
+				}
+
+				// A multi-node plan is the same size as its single-node plan: only the
+				// price differs, so a refreshed size that reached one offering alone fails.
+				if multiPlan.VCPUs != singlePlan.VCPUs {
+					t.Errorf("offering %s plan %s: vCPUs = %d, want %d, the vCPUs of offering %s plan %s",
+						text.Quote(multi.Name), text.Quote(name), multiPlan.VCPUs, singlePlan.VCPUs,
+						text.Quote(single.Name), text.Quote(name))
+				}
+
+				if multiPlan.MemoryMilliGiB != singlePlan.MemoryMilliGiB {
+					t.Errorf("offering %s plan %s: memory = %d milliGiB, want %d, the memory of offering %s plan %s",
+						text.Quote(multi.Name), text.Quote(name), multiPlan.MemoryMilliGiB, singlePlan.MemoryMilliGiB,
+						text.Quote(single.Name), text.Quote(name))
+				}
+
+				if multiPlan.IncludedStorageGiB != singlePlan.IncludedStorageGiB {
+					t.Errorf("offering %s plan %s: included storage = %d GiB, want %d, the included storage of offering %s plan %s",
+						text.Quote(multi.Name), text.Quote(name), multiPlan.IncludedStorageGiB, singlePlan.IncludedStorageGiB,
+						text.Quote(single.Name), text.Quote(name))
+				}
+
+				if len(multiPlan.Prices) != len(singlePlan.Prices) {
+					t.Errorf("offering %s plan %s: %d prices, want %d, one per price of offering %s plan %s",
+						text.Quote(multi.Name), text.Quote(name), len(multiPlan.Prices), len(singlePlan.Prices),
+						text.Quote(single.Name), text.Quote(name))
+
+					continue
+				}
+
+				for i, singlePrice := range singlePlan.Prices {
+					multiPrice := multiPlan.Prices[i]
+
+					// Half up in integer units: the numerator is at most MaxAmount times
+					// 95, far inside int64, and adding half the denominator rounds a
+					// remainder of exactly one half away from zero, which is up here
+					// because every amount is positive.
+					wantAmount := catalog.Amount((int64(singlePrice.Amount)*discountNumerator + discountDenominator/2) / discountDenominator)
+
+					if multiPrice.Amount != wantAmount {
+						t.Errorf("offering %s plan %s: prices[%d].amount = %s, want %s: the amount %s of offering %s plan %s times %d/%d, rounded half up to 4 decimal places",
+							text.Quote(multi.Name), text.Quote(name), i, multiPrice.Amount, wantAmount, singlePrice.Amount,
+							text.Quote(single.Name), text.Quote(name), discountNumerator, discountDenominator)
+					}
+
+					if multiPrice.Currency != singlePrice.Currency {
+						t.Errorf("offering %s plan %s: prices[%d].currency = %s, want %s, the currency of offering %s plan %s",
+							text.Quote(multi.Name), text.Quote(name), i, text.Quote(multiPrice.Currency), text.Quote(singlePrice.Currency),
+							text.Quote(single.Name), text.Quote(name))
+					}
+
+					if diff := cmp.Diff(singlePrice.Regions, multiPrice.Regions); diff != "" {
+						t.Errorf("offering %s plan %s: prices[%d].regions differ from offering %s plan %s, want the same regions (-single-node +multi-node):\n%s",
+							text.Quote(multi.Name), text.Quote(name), i, text.Quote(single.Name), text.Quote(name), diff)
+					}
+				}
+			}
+
+			// UpCloud bills a cluster's storage per node: its configuration pages say
+			// the per-GiB storage price "applies to each node". They do not say how
+			// many nodes a multi-node plan runs, so the snapshot infers the two its
+			// plan prices are already quoted for and doubles the per-GiB amount, in
+			// catalog.Amount's integer units and without a float (ADR 0024). That
+			// overestimates a three-node cluster's storage, which is then estimated a
+			// third low, and the snapshot prefers a dearer target to a cheaper one.
+			const storageNodeCount = 2
+
+			if len(multi.StoragePrices) != len(single.StoragePrices) {
+				t.Errorf("offering %s: %d storage prices, want %d, one per storage price of offering %s",
+					text.Quote(multi.Name), len(multi.StoragePrices), len(single.StoragePrices), text.Quote(single.Name))
+			}
+
+			for i, singlePrice := range single.StoragePrices {
+				if i >= len(multi.StoragePrices) {
+					break
+				}
+
+				multiPrice := multi.StoragePrices[i]
+
+				// Twice the single-node amount, exactly: 2 x 1014 = 2028, that is
+				// 0.2028 EUR per GiB per month.
+				wantAmount := singlePrice.Amount * storageNodeCount
+
+				if multiPrice.Amount != wantAmount {
+					t.Errorf("offering %s: storagePrices[%d].amount = %s, want %s: the amount %s of offering %s times %d nodes",
+						text.Quote(multi.Name), i, multiPrice.Amount, wantAmount, singlePrice.Amount,
+						text.Quote(single.Name), storageNodeCount)
+				}
+
+				if multiPrice.Currency != singlePrice.Currency {
+					t.Errorf("offering %s: storagePrices[%d].currency = %s, want %s, the currency of offering %s",
+						text.Quote(multi.Name), i, text.Quote(multiPrice.Currency), text.Quote(singlePrice.Currency),
+						text.Quote(single.Name))
+				}
+
+				if diff := cmp.Diff(singlePrice.Regions, multiPrice.Regions); diff != "" {
+					t.Errorf("offering %s: storagePrices[%d].regions differ from offering %s, want the same regions (-single-node +multi-node):\n%s",
+						text.Quote(multi.Name), i, text.Quote(single.Name), diff)
+				}
+			}
+		})
+	}
+}
+
+// plansByName indexes an offering's plans by name, in one pass, so a plan of the
+// other offering is found without a scan per plan.
+func plansByName(o catalog.Offering) map[string]catalog.Plan {
+	plans := make(map[string]catalog.Plan, len(o.Plans))
+
+	for _, p := range o.Plans {
+		plans[p.Name] = p
+	}
+
+	return plans
+}
+
 // TestCatalogGolden pins the whole parsed catalog against a golden file: every
-// offering with its categories, capabilities and zones, in the order and canonical
-// form the domain gives them. It is a change detector for the snapshot data and
-// for the parsing, so a refresh of catalog.json has to update this file in the
-// same review. The golden file is generated with -update once catalog.json
-// exists; it is not hand-written, so a wrong snapshot cannot quietly become the
-// spec.
+// offering with its categories, capabilities and zones, and its plans and
+// storage prices with the monthly amount, currency and regions each applies to,
+// in the order and canonical form the domain gives them. It is a change detector
+// for the snapshot data and for the parsing, so a refresh of catalog.json has to
+// update this file in the same review. The golden file is generated with -update
+// once catalog.json exists; it is not hand-written, so a wrong snapshot cannot
+// quietly become the spec.
 func TestCatalogGolden(t *testing.T) {
 	t.Parallel()
 
@@ -188,7 +716,13 @@ func TestCatalogGolden(t *testing.T) {
 
 // dump renders cat as the golden file's lines: a header with where and when the
 // data was taken, then one line per offering, sorted by name, with every list
-// comma-separated and an empty list shown as "-".
+// comma-separated and an empty list shown as "-". Under each offering come its
+// plans, one line each with the plan's numbers and prices, then its fixed fees,
+// one line each per cluster with the fee and the regions it applies to, and then
+// its storage prices, so the golden file pins every price the snapshot holds and
+// the region it applies to, the fixed monthly fees included. Plans, fees and
+// prices are already in the domain's order, so the output never depends on map
+// iteration.
 func dump(cat catalog.Catalog) []byte {
 	var b strings.Builder
 
@@ -201,9 +735,73 @@ func dump(cat catalog.Catalog) []byte {
 	for _, o := range cat.Offerings() {
 		fmt.Fprintf(&b, "%s | %s | %s | %s\n",
 			o.Name, join(o.Categories), join(o.Capabilities), join(o.Regions))
+
+		if len(o.Plans) == 0 {
+			b.WriteString("  plans: -\n")
+		}
+
+		for _, p := range o.Plans {
+			fmt.Fprintf(&b, "  plan: %s | %d vcpu | %s GiB | %d GiB storage | %s\n",
+				p.Name, p.VCPUs, gib(p.MemoryMilliGiB), p.IncludedStorageGiB, joinPrices(p.Prices))
+		}
+
+		if len(o.FixedFees) == 0 {
+			b.WriteString("  fixed fees: -\n")
+		}
+
+		for _, fee := range o.FixedFees {
+			fmt.Fprintf(&b, "  fixed fee: %s\n", formatPrice(fee))
+		}
+
+		if len(o.StoragePrices) == 0 {
+			b.WriteString("  storage prices: -\n")
+		}
+
+		for _, p := range o.StoragePrices {
+			fmt.Fprintf(&b, "  storage price: %s\n", formatPrice(p))
+		}
 	}
 
 	return []byte(b.String())
+}
+
+// joinPrices formats prices as the golden file shows them on a plan's line: each
+// price as formatPrice renders it, in the domain's order, separated by "; ", or
+// "-" when there are none.
+func joinPrices(prices []catalog.Price) string {
+	if len(prices) == 0 {
+		return "-"
+	}
+
+	rendered := make([]string, len(prices))
+	for i, p := range prices {
+		rendered[i] = formatPrice(p)
+	}
+
+	return strings.Join(rendered, "; ")
+}
+
+// formatPrice renders a monthly list price as "<amount> <currency> @ <regions>",
+// with the amount as catalog.Amount.String formats it and the regions
+// comma-separated. A price that lists no region applies to every region of its
+// offering, and the "-" says so.
+func formatPrice(p catalog.Price) string {
+	return fmt.Sprintf("%s %s @ %s", p.Amount, p.Currency, join(p.Regions))
+}
+
+// gib formats milliGiB, a memory size in thousandths of a GiB as the domain holds
+// it, as a decimal number of GiB with trailing zeros dropped from the fraction:
+// 8000 is "8", 7500 is "7.5". A plan's memory is always positive: the domain
+// refuses anything below one thousandth of a GiB.
+func gib(milliGiB int64) string {
+	whole, frac := milliGiB/1_000, milliGiB%1_000
+
+	digits := strings.TrimRight(fmt.Sprintf("%03d", frac), "0")
+	if digits == "" {
+		return fmt.Sprint(whole)
+	}
+
+	return fmt.Sprintf("%d.%s", whole, digits)
 }
 
 // join formats values as a comma-separated list, or "-" when there are none.
@@ -657,7 +1255,7 @@ func offeringNamed(t *testing.T, cat catalog.Catalog, name string) catalog.Offer
 		}
 	}
 
-	t.Fatalf("the catalog has no offering called %s: the tier-variant rule above assumes it", text.Quote(name))
+	t.Fatalf("the catalog has no offering called %s, want one: a test names it", text.Quote(name))
 
 	return catalog.Offering{}
 }

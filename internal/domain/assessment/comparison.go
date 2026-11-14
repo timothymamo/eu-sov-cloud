@@ -126,10 +126,12 @@ func sharedBlocker(id string, targets []TargetAssessment, blocked []map[string][
 
 // Validate checks what every report of a comparison relies on: every target's
 // verdicts hold the first target's resource IDs in the same order (the one
-// inventory's order), and every shared blocker names only targets the
-// comparison holds. It returns an error naming the offending target key or
-// resource ID. A comparison of no target is valid here; a reporter decides
-// whether it has anything to lay out.
+// inventory's order), every target's Workloads hold the first target's groups
+// in the same order with the same Name, NoWorkload and ResourceIDs, and every
+// shared blocker names only targets the comparison holds. It returns an error
+// naming the offending target key and resource ID or workload group. A
+// comparison of no target is valid here; a reporter decides whether it has
+// anything to lay out.
 func (c Comparison) Validate() error {
 	if len(c.Targets) == 0 {
 		return nil
@@ -150,6 +152,10 @@ func (c Comparison) Validate() error {
 					t.Key, v.Resource.ID, i, first.Key, want)
 			}
 		}
+
+		if err := sameWorkloads(first, t); err != nil {
+			return err
+		}
 	}
 
 	// Target keys are unique by contract: analysis.NewComparison refuses a
@@ -169,4 +175,65 @@ func (c Comparison) Validate() error {
 	}
 
 	return nil
+}
+
+// sameWorkloads checks that t holds first's workload groups in the same order,
+// with the same Name, NoWorkload and ResourceIDs (ADR 0028), and returns an
+// error naming t's key and the group otherwise. It does not compare the groups'
+// counts, blockers, totals or source cost.
+func sameWorkloads(first, t TargetAssessment) error {
+	want, got := first.Assessment.Workloads, t.Assessment.Workloads
+
+	if len(got) != len(want) {
+		return fmt.Errorf("target %q has %d workload groups, target %q has %d: "+
+			"the targets must hold the same workloads", t.Key, len(got), first.Key, len(want))
+	}
+
+	for i, w := range got {
+		f := want[i]
+
+		if w.Name != f.Name || w.NoWorkload != f.NoWorkload {
+			return fmt.Errorf("target %q has workload group %s at position %d where target %q has %s: "+
+				"the targets must hold the same workloads in the same order",
+				t.Key, groupName(w), i, first.Key, groupName(f))
+		}
+
+		if err := sameResources(first.Key, t.Key, f, w); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+// sameResources checks that t's group got lists first's group want's
+// resources in the same order, and returns an error naming t's key, the group
+// and the first position where they differ, or the differing lengths. It never
+// prints the groups' whole lists, which can be as long as the inventory.
+func sameResources(firstKey, tKey string, want, got WorkloadSummary) error {
+	for i := range min(len(got.ResourceIDs), len(want.ResourceIDs)) {
+		if got.ResourceIDs[i] != want.ResourceIDs[i] {
+			return fmt.Errorf("target %q's workload group %s holds resource %q at position %d where target %q's holds %q: "+
+				"the targets must group the same resources in the same order",
+				tKey, groupName(got), got.ResourceIDs[i], i, firstKey, want.ResourceIDs[i])
+		}
+	}
+
+	if len(got.ResourceIDs) != len(want.ResourceIDs) {
+		return fmt.Errorf("target %q's workload group %s holds %d resources where target %q's holds %d: "+
+			"the targets must group the same resources in the same order",
+			tKey, groupName(got), len(got.ResourceIDs), firstKey, len(want.ResourceIDs))
+	}
+
+	return nil
+}
+
+// groupName names a workload group in an error: its quoted name, or the "No
+// workload" group.
+func groupName(w WorkloadSummary) string {
+	if w.NoWorkload {
+		return `"No workload"`
+	}
+
+	return fmt.Sprintf("%q", w.Name)
 }

@@ -15,6 +15,12 @@
 // and Reporter stay unchanged; docs/adr/0016 records why the comparison has its
 // own port.
 //
+// Both use cases take the choices of PRD #190 through RunWith: a region per
+// target (Options.Region, Target.Region), which scopes availability and is the
+// estimate region, and whether to estimate. A region the target's catalog does
+// not list is a *RegionError wrapping ErrUnknownRegion, returned before
+// anything is assessed (ADR 0027).
+//
 // The package depends only on internal/domain/... and the standard library.
 // Concrete adapters implement the ports and are wired in cmd/shift2eu, never
 // imported here. The port shapes are recorded in docs/adr/0005.

@@ -300,6 +300,21 @@ hand-written GCP package, add an entry for it, a probe line only it refuses and 
   cgo mode and tag set, apart from the shared layer listing, and whose listing must hold no package
   under the module path from a module other than the main one, since the rule's prefix entry would
   allow a nested module.
+  Nor may a composition root reach a package of the module whose path below the module path holds
+  `testdata` or an element starting with `_` or `.` (issue #206): `./...` never walks such a
+  directory, so neither depguard nor `test/lint` sees it, yet the go command builds it when a package
+  imports it by explicit path. `test/architecture`
+  (`TestCompositionRootRulesAreHeldToTheirRuleForEveryReleaseTarget`, on the same listing as its
+  main-module check) refuses one in `go list -deps` of `cmd/shift2eu` and `cmd/shift2eu-server`, imported
+  directly or transitively, on every release target, cgo mode and tag set, with the finding
+  `<root> reaches <pkg>, which ./... never walks but go builds when a package imports it by explicit
+  path: no lint or architecture rule sees it`. A probe module (`testdata/hiddenpathprobe`, whose
+  `cmd/shift2eu` imports `testdata/x`, `_x` and `.x`) proves it fires. A symlinked directory is another
+  spelling `./...` skips; this check does not close it, the existing ones do:
+  `TestRepositoryHasNoLineDirectives` refuses every symlink git tracks or would add, and
+  `TestReleaseTargetDependencies` (`check.Sources`) requires every module package a release binary is
+  built from to sit in the directory its import path names, symlinks resolved. A change to either
+  would reopen issue #206.
   `go list -deps` lists the imports of a held package's tests but not those imported packages
   themselves, so a package only a test imports is checked against the test's allow list, not for
   its own module, directory or non-Go sources.
@@ -581,8 +596,9 @@ target, with the `e2e` and `integration` tags (`strictcoverage_test.go`):
   every symlink in, or above, a held tree, whatever its name and wherever it sits, inside
   `testdata`, `_` and `.` directories included: the walk reads the link, not what it points at, yet
   an import of its path follows it and the toolchain builds the source it finds there. A package
-  under `testdata` or `_x` is still built when it is imported by path, which this check does not
-  cover (the follow-up to #194).
+  under `testdata`, `_x` or `.x` is still built when it is imported by path, which this check does
+  not cover: a composition root that reaches one is refused by `test/architecture` instead (issue
+  #206, the follow-up to #194).
 
 ### Tests change no process state
 

@@ -480,6 +480,18 @@ func TestReasonString(t *testing.T) {
 			},
 			want: "Elastic Metal does not offer point-in-time-restore",
 		},
+		{
+			// A region the assessment is scoped to that no offering serving the
+			// resource is available in (MapIn).
+			name: "not offered in region",
+			in: mapping.Reason{
+				Code:     mapping.NotOfferedInRegion,
+				Target:   "Scaleway",
+				Category: taxonomy.ComputeVM,
+				Region:   "fr-par",
+			},
+			want: "not offered in fr-par",
+		},
 	}
 
 	for _, tc := range tests {
@@ -542,6 +554,21 @@ func TestReasonParts(t *testing.T) {
 				{Kind: mapping.PartOffering, Text: "Elastic Metal"},
 				{Kind: mapping.PartLiteral, Text: " does not offer "},
 				{Kind: mapping.PartCapability, Text: "point-in-time-restore"},
+			},
+		},
+		{
+			// The region is a name a reporter may style or escape, so it is its
+			// own part, of a kind of its own.
+			name: "not offered in region",
+			in: mapping.Reason{
+				Code:     mapping.NotOfferedInRegion,
+				Target:   "Scaleway",
+				Category: taxonomy.ComputeVM,
+				Region:   "xx-ams",
+			},
+			want: []mapping.Part{
+				{Kind: mapping.PartLiteral, Text: "not offered in "},
+				{Kind: mapping.PartRegion, Text: "xx-ams"},
 			},
 		},
 		{

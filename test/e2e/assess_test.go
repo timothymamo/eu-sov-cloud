@@ -74,15 +74,15 @@ func targets() []targetCase {
 		{
 			key:         scalewayKey,
 			name:        "Scaleway",
-			sourceURL:   "https://www.scaleway.com/en/docs/",
-			retrievedOn: "2026-11-11",
+			sourceURL:   "https://www.scaleway.com/en/pricing/",
+			retrievedOn: "2026-11-13",
 			golden:      "assess-scaleway.golden",
 		},
 		{
 			key:         upcloudKey,
 			name:        "UpCloud",
-			sourceURL:   "https://upcloud.com/docs/",
-			retrievedOn: "2026-11-11",
+			sourceURL:   "https://upcloud.com/pricing/",
+			retrievedOn: "2026-11-13",
 			golden:      "assess-upcloud.golden",
 		},
 	}

@@ -7,7 +7,6 @@ import (
 	"io"
 	"strings"
 
-	"github.com/timothymamo/shift2eu/internal/domain/assessment"
 	"github.com/timothymamo/shift2eu/internal/domain/text"
 )
 
@@ -59,36 +58,10 @@ func New(inv InventorySource, cat CatalogSource, rep Reporter) (*Analysis, error
 //
 // Blockers are a result, not an error: an assessment in which nothing can move
 // is rendered like any other.
+//
+// Run is RunWith with the zero Options: every region, no estimates.
 func (a *Analysis) Run(ctx context.Context, w io.Writer, meta ReportMeta) error {
-	if err := meta.validate(); err != nil {
-		return err
-	}
-
-	if err := ctx.Err(); err != nil {
-		return fmt.Errorf("cancelled before loading the inventory: %w", err)
-	}
-
-	inv, err := a.inventory.Inventory(ctx)
-	if err != nil {
-		return fmt.Errorf("load inventory: %w", err)
-	}
-
-	cat, err := a.catalog.Catalog(ctx)
-	if err != nil {
-		return fmt.Errorf("load catalog: %w", err)
-	}
-
-	result := assessment.Assess(inv, cat)
-
-	if err := ctx.Err(); err != nil {
-		return fmt.Errorf("cancelled before rendering the report: %w", err)
-	}
-
-	if err := a.reporter.Report(ctx, w, result, meta); err != nil {
-		return fmt.Errorf("render report: %w", err)
-	}
-
-	return nil
+	return a.RunWith(ctx, w, meta, Options{})
 }
 
 // validate checks that every field of meta is valid free text and that

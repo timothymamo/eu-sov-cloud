@@ -44,7 +44,7 @@ inputs and the fits counted:
 
 - Inventory file: `inventory.json`
 - Source: `aws`
-- Catalog: `Scaleway` snapshot from `https://www.scaleway.com/en/docs/`, retrieved 2026-11-11
+- Catalog: `Scaleway` snapshot from `https://www.scaleway.com/en/pricing/`, retrieved 2026-11-13
 
 ## Summary
 
@@ -107,8 +107,8 @@ carries its fit, best offering, reasons with a stable `code`, and required chang
   "target": {
     "name": "Scaleway",
     "snapshot": {
-      "source": "https://www.scaleway.com/en/docs/",
-      "retrieved": "2026-11-11"
+      "source": "https://www.scaleway.com/en/pricing/",
+      "retrieved": "2026-11-13"
     }
   },
   "summary": {

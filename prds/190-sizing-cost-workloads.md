@@ -190,13 +190,13 @@ Each milestone ships as one PR, in dependency order. Milestones 3, 4 and 5 can r
    to the new version with no plans yet.
 3. [x] **OVHcloud plans and prices** (monthly) and its default region, in its snapshot and
    `SOURCES.md`. Depends on 2.
-4. [ ] **Scaleway plans and prices** (monthly) and its default region, in its snapshot and
+4. [x] **Scaleway plans and prices** (monthly) and its default region, in its snapshot and
    `SOURCES.md`. Paid Kubernetes control-plane fees are recorded as the offering's `fixedFees`
    (ADR [0026](../docs/adr/0026-add-an-optional-fixed-monthly-fee-per-offering-to-snapshot-format-v2.md)), not left out. Depends on 2.
-5. [ ] **UpCloud plans and prices** (monthly) and its default region, in its snapshot and `SOURCES.md`.
+5. [x] **UpCloud plans and prices** (monthly) and its default region, in its snapshot and `SOURCES.md`.
    Paid Kubernetes control-plane fees are recorded as the offering's `fixedFees` (ADR 0026), not left
    out. Depends on 2.
-6. [ ] **Plan matching, estimates and regions.** Domain: the plan per verdict, the monthly estimate, the
+6. [x] **Plan matching, estimates and regions.** Domain: the plan per verdict, the monthly estimate, the
    "not estimated" reasons and the totals, per assessment and in the comparison. Availability in a
    chosen region, with the "not offered in `<region>`" reason, and the estimate's region (the chosen one
    or the default). Estimates can be switched off. The application layer passes both choices through;
@@ -204,9 +204,17 @@ Each milestone ships as one PR, in dependency order. Milestones 3, 4 and 5 can r
    `Offering.FixedFee(region)` in the estimate region, once per resource (one cluster), never multiplied
    by its `count` (its nodes), and scaled by hours / 730 as plan prices are; a fee alone never makes an
    estimate: a resource with no plan price for the region stays "not estimated" (ADR 0026,
-   *Estimates*). Depends on 1 and 2.
-7. [ ] **Workloads and relations in the assessment.** Domain: per-workload summaries and estimates, and
-   the "affected by a blocker" notes. Depends on 6.
+   *Estimates*). Design and API: ADR
+   [0027](../docs/adr/0027-match-plans-and-estimate-monthly-prices-in-a-domain-package.md). Depends on 1
+   and 2.
+7. [x] **Workloads and relations in the assessment.** Domain: per-workload summaries and estimates, and
+   the "affected by a blocker" notes. `Assessment.Workloads` groups resources by workload, and
+   `ShowWorkloads()` is false when no resource names one; a blocker is noted on the resources with a direct
+   `depends-on` or `replica-of` relation to the blocked one, never transitively; and
+   `estimate.SumSourceCost` sums the source's `monthlyCost` per currency, which milestone 8 shows only
+   when estimates are on. Design and API: ADR
+   [0028](../docs/adr/0028-group-workloads-note-blocked-relations-and-sum-the-source-cost-in-the-assessment.md).
+   Depends on 6.
 8. [ ] **Markdown and JSON reports, CLI and API options.** Both renderers, the comparison, JSON report
    schema version 2 and its Schemas. The CLI's `--region` and `--no-estimate`, and the HTTP API's
    `regions` and `estimate` request fields, on `/v1`. Depends on 7 and on 3, 4 and 5 for the real-price

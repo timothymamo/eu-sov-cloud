@@ -1,8 +1,8 @@
 {
   "schemaVersion": 2,
   "target": "Scaleway",
-  "sourceURL": "https://www.scaleway.com/en/docs/",
-  "retrievedOn": "2026-11-11",
+  "sourceURL": "https://www.scaleway.com/en/pricing/",
+  "retrievedOn": "2026-11-13",
   "regions": ["fr-par", "it-mil", "nl-ams", "pl-waw"],
   "defaultRegion": "fr-par",
   "offerings": [
@@ -12,14 +12,23 @@
       "capabilities": ["snapshots"],
       "regions": ["fr-par", "it-mil", "nl-ams", "pl-waw"],
       "plans": [],
-      "storagePrices": []
+      "storagePrices": [{ "amount": 0.0949, "currency": "EUR", "regions": [] }]
     },
     {
       "name": "Elastic Metal",
       "categories": ["compute.baremetal"],
       "capabilities": ["ipv6"],
       "regions": ["fr-par", "nl-ams", "pl-waw"],
-      "plans": [],
+      "plans": [
+        { "name": "EM-A116X-SSD", "vcpus": 4, "memoryGiB": 32, "storageGiB": 2040, "prices": [{ "amount": 56.21, "currency": "EUR", "regions": [] }] },
+        { "name": "EM-A410X-SSD", "vcpus": 12, "memoryGiB": 64, "storageGiB": 2040, "prices": [{ "amount": 111.69, "currency": "EUR", "regions": [] }] },
+        { "name": "EM-A610R-NVMe", "vcpus": 12, "memoryGiB": 32, "storageGiB": 2040, "prices": [{ "amount": 80.30, "currency": "EUR", "regions": [] }] },
+        { "name": "EM-B220E-NVMe", "vcpus": 16, "memoryGiB": 64, "storageGiB": 2040, "prices": [{ "amount": 243.09, "currency": "EUR", "regions": [] }] },
+        { "name": "EM-I120E-NVMe", "vcpus": 16, "memoryGiB": 64, "storageGiB": 1920, "prices": [{ "amount": 270.10, "currency": "EUR", "regions": [] }] },
+        { "name": "EM-I220E-NVMe", "vcpus": 32, "memoryGiB": 128, "storageGiB": 1920, "prices": [{ "amount": 459.90, "currency": "EUR", "regions": [] }] },
+        { "name": "EM-I320E-NVMe", "vcpus": 48, "memoryGiB": 192, "storageGiB": 3840, "prices": [{ "amount": 700.07, "currency": "EUR", "regions": [] }] },
+        { "name": "EM-I420E-NVMe", "vcpus": 64, "memoryGiB": 256, "storageGiB": 3840, "prices": [{ "amount": 900.09, "currency": "EUR", "regions": [] }] }
+      ],
       "storagePrices": []
     },
     {
@@ -27,40 +36,125 @@
       "categories": ["compute.vm"],
       "capabilities": ["ipv6", "snapshots"],
       "regions": ["fr-par", "it-mil", "nl-ams", "pl-waw"],
-      "plans": [],
-      "storagePrices": []
+      "plans": [
+        { "name": "PLAY2-PICO", "vcpus": 1, "memoryGiB": 2, "storageGiB": 0, "prices": [{ "amount": 10.4244, "currency": "EUR", "regions": ["fr-par", "nl-ams", "pl-waw"] }] },
+        { "name": "PLAY2-NANO", "vcpus": 2, "memoryGiB": 4, "storageGiB": 0, "prices": [{ "amount": 20.1042, "currency": "EUR", "regions": ["fr-par", "nl-ams", "pl-waw"] }] },
+        { "name": "PLAY2-MICRO", "vcpus": 4, "memoryGiB": 8, "storageGiB": 0, "prices": [{ "amount": 40.2084, "currency": "EUR", "regions": ["fr-par", "nl-ams", "pl-waw"] }] },
+        { "name": "PRO2-XXS", "vcpus": 2, "memoryGiB": 8, "storageGiB": 0, "prices": [{ "amount": 40.953, "currency": "EUR", "regions": ["fr-par", "nl-ams", "pl-waw"] }] },
+        { "name": "PRO2-XS", "vcpus": 4, "memoryGiB": 16, "storageGiB": 0, "prices": [{ "amount": 81.906, "currency": "EUR", "regions": ["fr-par", "nl-ams", "pl-waw"] }] },
+        { "name": "PRO2-S", "vcpus": 8, "memoryGiB": 32, "storageGiB": 0, "prices": [{ "amount": 163.0674, "currency": "EUR", "regions": ["fr-par", "nl-ams", "pl-waw"] }] },
+        { "name": "PRO2-M", "vcpus": 16, "memoryGiB": 64, "storageGiB": 0, "prices": [{ "amount": 326.1348, "currency": "EUR", "regions": ["fr-par", "nl-ams", "pl-waw"] }] },
+        { "name": "PRO2-L", "vcpus": 32, "memoryGiB": 128, "storageGiB": 0, "prices": [{ "amount": 653.0142, "currency": "EUR", "regions": ["fr-par", "nl-ams", "pl-waw"] }] },
+        { "name": "POP2-2C-8G", "vcpus": 2, "memoryGiB": 8, "storageGiB": 0, "prices": [{ "amount": 53.655, "currency": "EUR", "regions": [] }] },
+        { "name": "POP2-4C-16G", "vcpus": 4, "memoryGiB": 16, "storageGiB": 0, "prices": [{ "amount": 107.31, "currency": "EUR", "regions": [] }] },
+        { "name": "POP2-6C-24G", "vcpus": 6, "memoryGiB": 24, "storageGiB": 0, "prices": [{ "amount": 160.965, "currency": "EUR", "regions": [] }] },
+        { "name": "POP2-8C-32G", "vcpus": 8, "memoryGiB": 32, "storageGiB": 0, "prices": [{ "amount": 211.70, "currency": "EUR", "regions": [] }] },
+        { "name": "POP2-12C-48G", "vcpus": 12, "memoryGiB": 48, "storageGiB": 0, "prices": [{ "amount": 317.55, "currency": "EUR", "regions": [] }] },
+        { "name": "POP2-16C-64G", "vcpus": 16, "memoryGiB": 64, "storageGiB": 0, "prices": [{ "amount": 430.70, "currency": "EUR", "regions": [] }] },
+        { "name": "POP2-24C-96G", "vcpus": 24, "memoryGiB": 96, "storageGiB": 0, "prices": [{ "amount": 646.05, "currency": "EUR", "regions": [] }] },
+        { "name": "POP2-32C-128G", "vcpus": 32, "memoryGiB": 128, "storageGiB": 0, "prices": [{ "amount": 861.40, "currency": "EUR", "regions": [] }] },
+        { "name": "POP2-48C-192G", "vcpus": 48, "memoryGiB": 192, "storageGiB": 0, "prices": [{ "amount": 1292.10, "currency": "EUR", "regions": [] }] },
+        { "name": "POP2-64C-256G", "vcpus": 64, "memoryGiB": 256, "storageGiB": 0, "prices": [{ "amount": 1715.50, "currency": "EUR", "regions": [] }] }
+      ],
+      "storagePrices": [{ "amount": 0.0949, "currency": "EUR", "regions": [] }]
     },
     {
       "name": "Kubernetes Kapsule",
       "categories": ["kubernetes.managed"],
       "capabilities": ["autoscaling"],
       "regions": ["fr-par", "it-mil", "nl-ams", "pl-waw"],
-      "plans": [],
-      "storagePrices": []
+      "plans": [
+        { "name": "PLAY2-PICO", "vcpus": 1, "memoryGiB": 2, "storageGiB": 0, "prices": [{ "amount": 10.4244, "currency": "EUR", "regions": ["fr-par", "nl-ams", "pl-waw"] }] },
+        { "name": "PLAY2-NANO", "vcpus": 2, "memoryGiB": 4, "storageGiB": 0, "prices": [{ "amount": 20.1042, "currency": "EUR", "regions": ["fr-par", "nl-ams", "pl-waw"] }] },
+        { "name": "PLAY2-MICRO", "vcpus": 4, "memoryGiB": 8, "storageGiB": 0, "prices": [{ "amount": 40.2084, "currency": "EUR", "regions": ["fr-par", "nl-ams", "pl-waw"] }] },
+        { "name": "PRO2-XXS", "vcpus": 2, "memoryGiB": 8, "storageGiB": 0, "prices": [{ "amount": 40.953, "currency": "EUR", "regions": ["fr-par", "nl-ams", "pl-waw"] }] },
+        { "name": "PRO2-XS", "vcpus": 4, "memoryGiB": 16, "storageGiB": 0, "prices": [{ "amount": 81.906, "currency": "EUR", "regions": ["fr-par", "nl-ams", "pl-waw"] }] },
+        { "name": "PRO2-S", "vcpus": 8, "memoryGiB": 32, "storageGiB": 0, "prices": [{ "amount": 163.0674, "currency": "EUR", "regions": ["fr-par", "nl-ams", "pl-waw"] }] },
+        { "name": "PRO2-M", "vcpus": 16, "memoryGiB": 64, "storageGiB": 0, "prices": [{ "amount": 326.1348, "currency": "EUR", "regions": ["fr-par", "nl-ams", "pl-waw"] }] },
+        { "name": "PRO2-L", "vcpus": 32, "memoryGiB": 128, "storageGiB": 0, "prices": [{ "amount": 653.0142, "currency": "EUR", "regions": ["fr-par", "nl-ams", "pl-waw"] }] },
+        { "name": "POP2-2C-8G", "vcpus": 2, "memoryGiB": 8, "storageGiB": 0, "prices": [{ "amount": 53.655, "currency": "EUR", "regions": [] }] },
+        { "name": "POP2-4C-16G", "vcpus": 4, "memoryGiB": 16, "storageGiB": 0, "prices": [{ "amount": 107.31, "currency": "EUR", "regions": [] }] },
+        { "name": "POP2-6C-24G", "vcpus": 6, "memoryGiB": 24, "storageGiB": 0, "prices": [{ "amount": 160.965, "currency": "EUR", "regions": [] }] },
+        { "name": "POP2-8C-32G", "vcpus": 8, "memoryGiB": 32, "storageGiB": 0, "prices": [{ "amount": 211.70, "currency": "EUR", "regions": [] }] },
+        { "name": "POP2-12C-48G", "vcpus": 12, "memoryGiB": 48, "storageGiB": 0, "prices": [{ "amount": 317.55, "currency": "EUR", "regions": [] }] },
+        { "name": "POP2-16C-64G", "vcpus": 16, "memoryGiB": 64, "storageGiB": 0, "prices": [{ "amount": 430.70, "currency": "EUR", "regions": [] }] },
+        { "name": "POP2-24C-96G", "vcpus": 24, "memoryGiB": 96, "storageGiB": 0, "prices": [{ "amount": 646.05, "currency": "EUR", "regions": [] }] },
+        { "name": "POP2-32C-128G", "vcpus": 32, "memoryGiB": 128, "storageGiB": 0, "prices": [{ "amount": 861.40, "currency": "EUR", "regions": [] }] },
+        { "name": "POP2-48C-192G", "vcpus": 48, "memoryGiB": 192, "storageGiB": 0, "prices": [{ "amount": 1292.10, "currency": "EUR", "regions": [] }] },
+        { "name": "POP2-64C-256G", "vcpus": 64, "memoryGiB": 256, "storageGiB": 0, "prices": [{ "amount": 1715.50, "currency": "EUR", "regions": [] }] }
+      ],
+      "storagePrices": [{ "amount": 0.0949, "currency": "EUR", "regions": [] }],
+      "fixedFees": [{ "amount": 0, "currency": "EUR", "regions": [] }]
     },
     {
       "name": "Kubernetes Kapsule Dedicated",
       "categories": ["kubernetes.managed"],
       "capabilities": ["autoscaling", "node-high-availability"],
       "regions": ["fr-par", "nl-ams", "pl-waw"],
-      "plans": [],
-      "storagePrices": []
+      "plans": [
+        { "name": "PLAY2-PICO", "vcpus": 1, "memoryGiB": 2, "storageGiB": 0, "prices": [{ "amount": 10.4244, "currency": "EUR", "regions": [] }] },
+        { "name": "PLAY2-NANO", "vcpus": 2, "memoryGiB": 4, "storageGiB": 0, "prices": [{ "amount": 20.1042, "currency": "EUR", "regions": [] }] },
+        { "name": "PLAY2-MICRO", "vcpus": 4, "memoryGiB": 8, "storageGiB": 0, "prices": [{ "amount": 40.2084, "currency": "EUR", "regions": [] }] },
+        { "name": "PRO2-XXS", "vcpus": 2, "memoryGiB": 8, "storageGiB": 0, "prices": [{ "amount": 40.953, "currency": "EUR", "regions": [] }] },
+        { "name": "PRO2-XS", "vcpus": 4, "memoryGiB": 16, "storageGiB": 0, "prices": [{ "amount": 81.906, "currency": "EUR", "regions": [] }] },
+        { "name": "PRO2-S", "vcpus": 8, "memoryGiB": 32, "storageGiB": 0, "prices": [{ "amount": 163.0674, "currency": "EUR", "regions": [] }] },
+        { "name": "PRO2-M", "vcpus": 16, "memoryGiB": 64, "storageGiB": 0, "prices": [{ "amount": 326.1348, "currency": "EUR", "regions": [] }] },
+        { "name": "PRO2-L", "vcpus": 32, "memoryGiB": 128, "storageGiB": 0, "prices": [{ "amount": 653.0142, "currency": "EUR", "regions": [] }] },
+        { "name": "POP2-2C-8G", "vcpus": 2, "memoryGiB": 8, "storageGiB": 0, "prices": [{ "amount": 53.655, "currency": "EUR", "regions": [] }] },
+        { "name": "POP2-4C-16G", "vcpus": 4, "memoryGiB": 16, "storageGiB": 0, "prices": [{ "amount": 107.31, "currency": "EUR", "regions": [] }] },
+        { "name": "POP2-6C-24G", "vcpus": 6, "memoryGiB": 24, "storageGiB": 0, "prices": [{ "amount": 160.965, "currency": "EUR", "regions": [] }] },
+        { "name": "POP2-8C-32G", "vcpus": 8, "memoryGiB": 32, "storageGiB": 0, "prices": [{ "amount": 211.70, "currency": "EUR", "regions": [] }] },
+        { "name": "POP2-12C-48G", "vcpus": 12, "memoryGiB": 48, "storageGiB": 0, "prices": [{ "amount": 317.55, "currency": "EUR", "regions": [] }] },
+        { "name": "POP2-16C-64G", "vcpus": 16, "memoryGiB": 64, "storageGiB": 0, "prices": [{ "amount": 430.70, "currency": "EUR", "regions": [] }] },
+        { "name": "POP2-24C-96G", "vcpus": 24, "memoryGiB": 96, "storageGiB": 0, "prices": [{ "amount": 646.05, "currency": "EUR", "regions": [] }] },
+        { "name": "POP2-32C-128G", "vcpus": 32, "memoryGiB": 128, "storageGiB": 0, "prices": [{ "amount": 861.40, "currency": "EUR", "regions": [] }] },
+        { "name": "POP2-48C-192G", "vcpus": 48, "memoryGiB": 192, "storageGiB": 0, "prices": [{ "amount": 1292.10, "currency": "EUR", "regions": [] }] },
+        { "name": "POP2-64C-256G", "vcpus": 64, "memoryGiB": 256, "storageGiB": 0, "prices": [{ "amount": 1715.50, "currency": "EUR", "regions": [] }] }
+      ],
+      "storagePrices": [{ "amount": 0.0949, "currency": "EUR", "regions": [] }],
+      "fixedFees": [{ "amount": 80.3, "currency": "EUR", "regions": [] }]
     },
     {
       "name": "Managed Database for PostgreSQL and MySQL",
       "categories": ["database.mysql", "database.postgresql"],
       "capabilities": ["encryption-at-rest", "read-replicas", "snapshots"],
       "regions": ["fr-par", "nl-ams", "pl-waw"],
-      "plans": [],
-      "storagePrices": []
+      "plans": [
+        { "name": "DB-PLAY2-PICO", "vcpus": 1, "memoryGiB": 2, "storageGiB": 0, "prices": [{ "amount": 17.009, "currency": "EUR", "regions": [] }] },
+        { "name": "DB-PLAY2-NANO", "vcpus": 2, "memoryGiB": 4, "storageGiB": 0, "prices": [{ "amount": 31.536, "currency": "EUR", "regions": [] }] },
+        { "name": "DB-PRO2-XXS", "vcpus": 2, "memoryGiB": 8, "storageGiB": 0, "prices": [{ "amount": 80.30, "currency": "EUR", "regions": [] }] },
+        { "name": "DB-PRO2-XS", "vcpus": 4, "memoryGiB": 16, "storageGiB": 0, "prices": [{ "amount": 160.60, "currency": "EUR", "regions": [] }] },
+        { "name": "DB-PRO2-S", "vcpus": 8, "memoryGiB": 32, "storageGiB": 0, "prices": [{ "amount": 319.74, "currency": "EUR", "regions": [] }] },
+        { "name": "DB-PRO2-M", "vcpus": 16, "memoryGiB": 64, "storageGiB": 0, "prices": [{ "amount": 639.48, "currency": "EUR", "regions": [] }] },
+        { "name": "DB-PRO2-L", "vcpus": 32, "memoryGiB": 128, "storageGiB": 0, "prices": [{ "amount": 1197.20, "currency": "EUR", "regions": [] }] },
+        { "name": "DB-POP2-2C-8G", "vcpus": 2, "memoryGiB": 8, "storageGiB": 0, "prices": [{ "amount": 104.682, "currency": "EUR", "regions": [] }] },
+        { "name": "DB-POP2-4C-16G", "vcpus": 4, "memoryGiB": 16, "storageGiB": 0, "prices": [{ "amount": 209.218, "currency": "EUR", "regions": [] }] },
+        { "name": "DB-POP2-8C-32G", "vcpus": 8, "memoryGiB": 32, "storageGiB": 0, "prices": [{ "amount": 414.932, "currency": "EUR", "regions": [] }] },
+        { "name": "DB-POP2-16C-64G", "vcpus": 16, "memoryGiB": 64, "storageGiB": 0, "prices": [{ "amount": 822.637, "currency": "EUR", "regions": [] }] },
+        { "name": "DB-POP2-32C-128G", "vcpus": 32, "memoryGiB": 128, "storageGiB": 0, "prices": [{ "amount": 1584.976, "currency": "EUR", "regions": [] }] }
+      ],
+      "storagePrices": [{ "amount": 0.0993, "currency": "EUR", "regions": [] }]
     },
     {
       "name": "Managed Database for PostgreSQL and MySQL High Availability",
       "categories": ["database.mysql", "database.postgresql"],
       "capabilities": ["encryption-at-rest", "node-high-availability", "read-replicas", "snapshots"],
       "regions": ["fr-par", "nl-ams", "pl-waw"],
-      "plans": [],
-      "storagePrices": []
+      "plans": [
+        { "name": "DB-PLAY2-PICO", "vcpus": 1, "memoryGiB": 2, "storageGiB": 0, "prices": [{ "amount": 15.914, "currency": "EUR", "regions": [] }] },
+        { "name": "DB-PLAY2-NANO", "vcpus": 2, "memoryGiB": 4, "storageGiB": 0, "prices": [{ "amount": 29.492, "currency": "EUR", "regions": [] }] },
+        { "name": "DB-PRO2-XXS", "vcpus": 2, "memoryGiB": 8, "storageGiB": 0, "prices": [{ "amount": 61.4295, "currency": "EUR", "regions": [] }] },
+        { "name": "DB-PRO2-XS", "vcpus": 4, "memoryGiB": 16, "storageGiB": 0, "prices": [{ "amount": 122.859, "currency": "EUR", "regions": [] }] },
+        { "name": "DB-PRO2-S", "vcpus": 8, "memoryGiB": 32, "storageGiB": 0, "prices": [{ "amount": 244.5865, "currency": "EUR", "regions": [] }] },
+        { "name": "DB-PRO2-M", "vcpus": 16, "memoryGiB": 64, "storageGiB": 0, "prices": [{ "amount": 489.2095, "currency": "EUR", "regions": [] }] },
+        { "name": "DB-PRO2-L", "vcpus": 32, "memoryGiB": 128, "storageGiB": 0, "prices": [{ "amount": 915.858, "currency": "EUR", "regions": [] }] },
+        { "name": "DB-POP2-2C-8G", "vcpus": 2, "memoryGiB": 8, "storageGiB": 0, "prices": [{ "amount": 80.081, "currency": "EUR", "regions": [] }] },
+        { "name": "DB-POP2-4C-16G", "vcpus": 4, "memoryGiB": 16, "storageGiB": 0, "prices": [{ "amount": 160.0525, "currency": "EUR", "regions": [] }] },
+        { "name": "DB-POP2-8C-32G", "vcpus": 8, "memoryGiB": 32, "storageGiB": 0, "prices": [{ "amount": 319.4845, "currency": "EUR", "regions": [] }] },
+        { "name": "DB-POP2-16C-64G", "vcpus": 16, "memoryGiB": 64, "storageGiB": 0, "prices": [{ "amount": 637.5455, "currency": "EUR", "regions": [] }] },
+        { "name": "DB-POP2-32C-128G", "vcpus": 32, "memoryGiB": 128, "storageGiB": 0, "prices": [{ "amount": 1196.6525, "currency": "EUR", "regions": [] }] }
+      ],
+      "storagePrices": [{ "amount": 0.0993, "currency": "EUR", "regions": [] }]
     },
     {
       "name": "Object Storage",
@@ -68,7 +162,7 @@
       "capabilities": ["encryption-at-rest", "object-versioning"],
       "regions": ["fr-par", "it-mil", "nl-ams", "pl-waw"],
       "plans": [],
-      "storagePrices": []
+      "storagePrices": [{ "amount": 0.0161, "currency": "EUR", "regions": [] }]
     },
     {
       "name": "Queues",
