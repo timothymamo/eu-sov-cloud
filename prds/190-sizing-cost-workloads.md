@@ -207,8 +207,12 @@ Each milestone ships as one PR, in dependency order. Milestones 3, 4 and 5 can r
    *Estimates*). Design and API: ADR
    [0027](../docs/adr/0027-match-plans-and-estimate-monthly-prices-in-a-domain-package.md). Depends on 1
    and 2.
-7. [ ] **Workloads and relations in the assessment.** Domain: per-workload summaries and estimates, and
-   the "affected by a blocker" notes. Design and API: ADR
+7. [x] **Workloads and relations in the assessment.** Domain: per-workload summaries and estimates, and
+   the "affected by a blocker" notes. `Assessment.Workloads` groups resources by workload, and
+   `ShowWorkloads()` is false when no resource names one; a blocker is noted on the resources with a direct
+   `depends-on` or `replica-of` relation to the blocked one, never transitively; and
+   `estimate.SumSourceCost` sums the source's `monthlyCost` per currency, which milestone 8 shows only
+   when estimates are on. Design and API: ADR
    [0028](../docs/adr/0028-group-workloads-note-blocked-relations-and-sum-the-source-cost-in-the-assessment.md).
    Depends on 6.
 8. [ ] **Markdown and JSON reports, CLI and API options.** Both renderers, the comparison, JSON report
