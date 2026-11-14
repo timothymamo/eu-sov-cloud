@@ -165,8 +165,8 @@ The relations themselves need no new field: each verdict already carries them as
 - **Order.** Groups by `Name` in byte order (`strings.Compare`), then the "No workload" group last.
   Resource IDs inside a group are in verdict order, which is ID order.
 - **"No workload".** The group of the resources whose `Workload` is `""`: `Name` `""` and `NoWorkload`
-  true. The label "No workload" is the renderer's (milestone 8). It is absent when every resource names a
-  workload.
+  true; a workload of only white space counts as none (`inventory.New` refuses one). The label
+  "No workload" is the renderer's (milestone 8). It is absent when every resource names a workload.
 - **No empty group.** A group exists only for a name some resource carries, so every group has at least
   one resource. An inventory with no resources has `Workloads` nil.
 - **Left out.** The domain inventory does not know its schema version, so the rule is about content:

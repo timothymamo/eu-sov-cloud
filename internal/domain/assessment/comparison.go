@@ -129,8 +129,9 @@ func sharedBlocker(id string, targets []TargetAssessment, blocked []map[string][
 // inventory's order), every target's Workloads hold the first target's groups
 // in the same order with the same Name, NoWorkload and ResourceIDs, and every
 // shared blocker names only targets the comparison holds. It returns an error
-// naming the offending target key and resource ID or workload group. A comparison of no target is valid here; a reporter decides
-// whether it has anything to lay out.
+// naming the offending target key and resource ID or workload group. A
+// comparison of no target is valid here; a reporter decides whether it has
+// anything to lay out.
 func (c Comparison) Validate() error {
 	if len(c.Targets) == 0 {
 		return nil

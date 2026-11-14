@@ -68,7 +68,7 @@ func (m Money) Equal(n Money) bool {
 	return m.Cmp(n) == 0
 }
 
-// IsZero reports whether m is 0 EUR.
+// IsZero reports whether m is 0.
 func (m Money) IsZero() bool {
 	return m.r == nil || m.r.Sign() == 0
 }

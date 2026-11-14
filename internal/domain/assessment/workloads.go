@@ -15,7 +15,9 @@ type WorkloadSummary struct {
 	// Name is the workload's name, its runs of white space collapsed to one
 	// ASCII space, and "" for the "No workload" group.
 	Name string
-	// NoWorkload is true for the group of resources that name no workload.
+	// NoWorkload is true for the group of resources that name no workload. A
+	// workload of only white space counts as none: inventory.New refuses one,
+	// but a resource built without it lands here.
 	NoWorkload bool
 	// ResourceIDs are the group's resources, in verdict order (ID order).
 	ResourceIDs []string
