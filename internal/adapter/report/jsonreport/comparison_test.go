@@ -185,7 +185,7 @@ func TestReportComparison(t *testing.T) {
 
 	document := decodeJSON(t, got)
 
-	if diff := cmp.Diff(float64(1), valueAt(t, document, "schemaVersion")); diff != "" {
+	if diff := cmp.Diff(float64(currentSchemaVersion), valueAt(t, document, "schemaVersion")); diff != "" {
 		t.Errorf("schemaVersion mismatch (-want +got):\n%s", diff)
 	}
 
@@ -856,3 +856,188 @@ func documentTargetKeys(t *testing.T, document any) []string {
 
 // snapshotDate is the date the document writes for a snapshot, as the Markdown
 // report prints it: the retrieval date in UTC, YYYY-MM-DD.
+
+// The two targets the estimate comparison compares: the report fixture's
+// invented prices, with display names, snapshots and default regions that
+// differ, so the document has to keep two regions and two estimates apart.
+const (
+	reportTwoTarget      = "Example Cloud North"
+	reportTwoSourceURL   = "https://www.example.com/pricing/north/"
+	reportTwoRetrievedOn = "2026-11-14"
+	reportKey            = "example"
+	reportNorthKey       = "example-north"
+)
+
+// reportTwoSnapshot is the north target's snapshot: the same invented catalog
+// taken a day later, whose estimates are for the report fixture's second region,
+// where its compute plans cost a fifth more.
+func reportTwoSnapshot() catalog.Snapshot {
+	return catalog.Snapshot{
+		SourceURL:     reportTwoSourceURL,
+		RetrievedOn:   time.Date(2026, 11, 14, 0, 0, 0, 0, time.UTC),
+		DefaultRegion: testutil.ReportSecondRegion,
+	}
+}
+
+// reportComparisonCatalog returns the priced fixture catalog of one target key.
+func reportComparisonCatalog(t *testing.T, key string) catalog.Catalog {
+	t.Helper()
+
+	switch key {
+	case reportKey:
+		return testutil.ReportCatalog(t)
+	case reportNorthKey:
+		return testutil.ReportCatalogIn(t, reportTwoTarget, reportTwoSnapshot())
+	default:
+		t.Fatalf("no priced fixture catalog for target key %q", key)
+
+		return catalog.Catalog{}
+	}
+}
+
+// assessReportTargets assesses the estimate fixture with estimates on against
+// each priced fixture catalog, in the order given.
+func assessReportTargets(t *testing.T, keys []string) []assessment.TargetAssessment {
+	t.Helper()
+
+	inv := newInventory(t, sourceName, estimateResources())
+
+	targets := make([]assessment.TargetAssessment, 0, len(keys))
+	for _, key := range keys {
+		targets = append(targets, assessment.TargetAssessment{
+			Key: key,
+			Assessment: assessment.AssessWith(inv, reportComparisonCatalog(t, key),
+				assessment.Options{Estimate: true}),
+		})
+	}
+
+	return targets
+}
+
+// TestReportComparisonWithEstimates pins the schema version 2 comparison of two
+// priced targets: every target entry carries its own estimate basis and total,
+// its resources with their plans and estimates, its workloads and its source
+// cost, and the two regions the estimates are for are kept apart.
+func TestReportComparisonWithEstimates(t *testing.T) {
+	t.Parallel()
+
+	c := assessment.Compare(assessReportTargets(t, []string{reportKey, reportNorthKey}))
+	got := renderComparison(t, c, analysis.ReportMeta{InventoryName: inventoryFileName})
+	checkDocument(t, got)
+
+	document := decodeJSON(t, got)
+
+	if diff := cmp.Diff(float64(2), valueAt(t, document, "schemaVersion")); diff != "" {
+		t.Errorf("schemaVersion mismatch (-want +got):\n%s", diff)
+	}
+
+	if diff := cmp.Diff("comparison", valueAt(t, document, "kind")); diff != "" {
+		t.Errorf("kind mismatch (-want +got):\n%s", diff)
+	}
+
+	wantDocumentKeys := []string{"inventoryName", "kind", "schemaVersion", "sharedBlockers", "source", "targets"}
+	if diff := cmp.Diff(wantDocumentKeys, objectKeysAt(t, document)); diff != "" {
+		t.Errorf("document keys mismatch (-want +got):\n%s", diff)
+	}
+
+	if diff := cmp.Diff([]string{"blockers", "estimate", "key", "resources", "sourceCost", "summary", "target", "workloads"},
+		objectKeysAt(t, document, "targets", 0)); diff != "" {
+		t.Errorf("target entry keys mismatch (-want +got):\n%s", diff)
+	}
+
+	// The one resource blocked on both targets is still a shared blocker.
+	shared := arrayAt(t, document, "sharedBlockers")
+	if len(shared) != 1 || valueAt(t, document, "sharedBlockers", 0, "resourceId") != "queue-jobs" {
+		t.Errorf("sharedBlockers = %v, want the one blocker on queue-jobs", shared)
+	}
+
+	tests := []struct {
+		key        string
+		region     string
+		priceDate  string
+		total      string
+		workerCost string
+		workload   string
+	}{
+		{
+			key:        "example",
+			region:     "xx-par",
+			priceDate:  reportRetrievedOn,
+			total:      "2535.00",
+			workerCost: "10.00",
+			workload:   "10.00",
+		},
+		{
+			key:        "example-north",
+			region:     testutil.ReportSecondRegion,
+			priceDate:  reportTwoRetrievedOn,
+			total:      "2539.00",
+			workerCost: "12.00",
+			workload:   "12.00",
+		},
+	}
+
+	for i, test := range tests {
+		t.Run(test.key, func(t *testing.T) {
+			t.Parallel()
+
+			at := []any{"targets", i}
+
+			if diff := cmp.Diff(test.key, valueAt(t, document, extend(at, "key")...)); diff != "" {
+				t.Errorf("targets[%d].key mismatch (-want +got):\n%s", i, diff)
+			}
+
+			tests := []struct {
+				path []any
+				want any
+			}{
+				{path: extend(at, "estimate", "region"), want: test.region},
+				{path: extend(at, "estimate", "regionChosen"), want: false},
+				{path: extend(at, "estimate", "priceDate"), want: test.priceDate},
+				{path: extend(at, "estimate", "currency"), want: "EUR"},
+				{path: extend(at, "estimate", "hoursBasis"), want: float64(730)},
+				{path: extend(at, "estimate", "total", "amount"), want: test.total},
+				{path: extend(at, "estimate", "total", "estimated"), want: float64(4)},
+				{path: extend(at, "estimate", "total", "resources"), want: float64(8)},
+				{path: extend(at, "sourceCost", "covered"), want: float64(5)},
+			}
+
+			for _, check := range tests {
+				if diff := cmp.Diff(check.want, valueAt(t, document, check.path...)); diff != "" {
+					t.Errorf("%v mismatch (-want +got):\n%s", check.path, diff)
+				}
+			}
+
+			// Every target carries its own estimates: the same resource costs the
+			// target's own price, and the first workload's total is that target's.
+			resource := resourceIndexAt(t, document, at, "worker-jobs")
+			if diff := cmp.Diff(test.workerCost, valueAt(t, document, extend(resource, "estimate", "amount")...)); diff != "" {
+				t.Errorf("%q worker-jobs estimate mismatch (-want +got):\n%s", test.key, diff)
+			}
+
+			if diff := cmp.Diff(test.workload, valueAt(t, document, extend(at, "workloads", 0, "estimate", "amount")...)); diff != "" {
+				t.Errorf("%q first workload estimate mismatch (-want +got):\n%s", test.key, diff)
+			}
+		})
+	}
+
+	testutil.Golden(t, "testdata/comparison-estimates.golden", got)
+}
+
+// resourceIndexAt returns the path of the resource with ID id inside the target
+// at path, failing the test when that target holds no such resource.
+func resourceIndexAt(tb testing.TB, document any, path []any, id string) []any {
+	tb.Helper()
+
+	resources := arrayAt(tb, document, extend(path, "resources")...)
+
+	for i := range resources {
+		if got := valueAt(tb, document, extend(path, "resources", i, "id")...); got == id {
+			return extend(path, "resources", i)
+		}
+	}
+
+	tb.Fatalf("%v holds no resource %q", path, id)
+
+	return nil
+}

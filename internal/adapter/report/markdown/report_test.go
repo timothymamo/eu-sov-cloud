@@ -9,6 +9,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/google/go-cmp/cmp"
+
 	"github.com/timothymamo/shift2eu/internal/adapter/report/markdown"
 	"github.com/timothymamo/shift2eu/internal/app/analysis"
 	"github.com/timothymamo/shift2eu/internal/domain/assessment"
@@ -345,7 +347,7 @@ func TestReport(t *testing.T) {
 			testutil.Golden(t, test.goldenFile, got)
 
 			checkTableShape(t, got)
-			checkHeadings(t, got, "# Migration assessment: `Scaleway`")
+			checkHeadings(t, got, "# Migration assessment: `Scaleway`", analysisSections()...)
 		})
 	}
 }
@@ -364,7 +366,7 @@ func TestReportHostileValues(t *testing.T) {
 	testutil.Golden(t, "testdata/report-hostile.golden", got)
 
 	checkTableShape(t, got)
-	checkHeadings(t, got, "# Migration assessment: ``Evil | `x` <b> [a](b) *s*``")
+	checkHeadings(t, got, "# Migration assessment: ``Evil | `x` <b> [a](b) *s*``", analysisSections()...)
 
 	spans := codeSpans(string(got))
 	for _, value := range hostileValues() {
@@ -870,10 +872,23 @@ func checkTableShape(t *testing.T, out []byte) {
 	}
 }
 
+// analysisSections is the headings of a report without estimates, in layout
+// order: the sections every report has.
+func analysisSections() []string {
+	return []string{"## Summary", "## Resources", "## Required changes", "## Blockers"}
+}
+
+// estimateSections is the headings of a report with estimates, in layout order:
+// the sections every report has, then the per-workload section and the cost
+// summary (PRD #190 milestone 8).
+func estimateSections() []string {
+	return append(analysisSections(), "## Workloads", "## Cost estimate")
+}
+
 // checkHeadings asserts that the only lines that start a Markdown heading are the
-// title it is given and the four section headings, in layout order, so no value
-// can forge one or move a section.
-func checkHeadings(t *testing.T, out []byte, title string) {
+// title it is given and the sections in layout order, so no value can forge one
+// or move a section.
+func checkHeadings(t *testing.T, out []byte, title string, sections ...string) {
 	t.Helper()
 
 	var headings []string
@@ -884,16 +899,10 @@ func checkHeadings(t *testing.T, out []byte, title string) {
 		}
 	}
 
-	want := []string{
-		title,
-		"## Summary",
-		"## Resources",
-		"## Required changes",
-		"## Blockers",
-	}
+	want := append([]string{title}, sections...)
 
 	if !slices.Equal(headings, want) {
-		t.Errorf("headings = %q, want the title and the four sections %q", headings, want)
+		t.Errorf("headings = %q, want the title and the sections %q", headings, want)
 	}
 }
 
@@ -1202,4 +1211,505 @@ func TestReportCancelledContext(t *testing.T) {
 	if out.Len() != 0 {
 		t.Errorf("Report() wrote %d bytes to the writer, want none:\n%s", out.Len(), out.String())
 	}
+}
+
+// The report fixture's target, and the snapshot its catalog says the prices were
+// taken from: invented values, so a test can state each estimate exactly.
+const (
+	reportTarget      = "Example Cloud"
+	reportSourceURL   = "https://www.example.com/pricing/"
+	reportRetrievedOn = "2026-11-13"
+)
+
+// reportEstimateCell is the estimate cell of a resource that was not estimated,
+// which names the reason in plain words.
+func reportEstimateCell(reason string) string {
+	return "not estimated: " + reason
+}
+
+// sized is a given float64, as an inventory size and a monthly cost carry it.
+func sized(v float64) *float64 { return &v }
+
+// estimateResources is the inventory the estimate tests assess. It is the one
+// inventory a report has to tell every estimate state apart in:
+//
+//   - bucket-storage is storage.object, priced by the stored GiB (50000 GiB at
+//     0.05 EUR a GiB, so 2500.00);
+//   - cluster-small is kubernetes.managed with a fixed fee (a 10.00 plan plus a
+//     5.00 fee, so 15.00);
+//   - server-small and worker-jobs are compute.vm on the smallest plan (10.00);
+//   - server-huge is compute.vm larger than the largest plan, so it has no plan
+//     large enough and no estimate;
+//   - legacy-nosize is compute.vm without a size, so it is "size unknown";
+//   - function-orders is serverless.function, which is priced by usage;
+//   - queue-jobs is messaging.queue, which no offering serves, so it is blocked
+//     and has no estimate, and worker-jobs depends on it and is a replica of
+//     server-small, so it carries a relation and an "affected by" note.
+//
+// Three workloads are named, one of them without a source cost for all of its
+// resources, and the resources without a workload are the "No workload" group.
+// The monthly costs are in two currencies, so the source cost is never
+// converted.
+func estimateResources() []inventory.Resource {
+	return []inventory.Resource{
+		{
+			ID:           "bucket-storage",
+			RawType:      "AWS::S3::Bucket",
+			Category:     taxonomy.StorageObject,
+			Region:       "eu-west-1",
+			Capabilities: []taxonomy.Capability{taxonomy.IPv6},
+			Size:         &inventory.Size{StorageGiB: sized(50000)},
+			Workload:     "shop",
+			MonthlyCost:  &inventory.Cost{Amount: sized(2400), Currency: "EUR"},
+		},
+		{
+			ID:           "cluster-small",
+			RawType:      "Scaleway::Kubernetes::Cluster",
+			Category:     taxonomy.KubernetesManaged,
+			Region:       "eu-west-1",
+			Capabilities: []taxonomy.Capability{taxonomy.Autoscaling},
+			Size:         &inventory.Size{VCPUs: sized(1), MemoryGiB: sized(2)},
+			Workload:     "shop",
+			MonthlyCost:  &inventory.Cost{Amount: sized(40), Currency: "USD"},
+		},
+		{
+			ID:       "function-orders",
+			RawType:  "AWS::Lambda::Function",
+			Category: taxonomy.ServerlessFunction,
+			Region:   "eu-west-1",
+			Workload: "orders",
+		},
+		{
+			ID:           "legacy-nosize",
+			RawType:      "AWS::EC2::Instance",
+			Category:     taxonomy.ComputeVM,
+			Region:       "eu-west-1",
+			Capabilities: []taxonomy.Capability{taxonomy.IPv6},
+			Workload:     "orders",
+			MonthlyCost:  &inventory.Cost{Amount: sized(1200), Currency: "USD"},
+		},
+		{
+			ID:       "queue-jobs",
+			RawType:  "AWS::SQS::Queue",
+			Category: taxonomy.MessagingQueue,
+			Region:   "eu-west-1",
+			Workload: "orders",
+		},
+		{
+			ID:           "server-huge",
+			RawType:      "AWS::EC2::Instance",
+			Category:     taxonomy.ComputeVM,
+			Region:       "eu-west-1",
+			Capabilities: []taxonomy.Capability{taxonomy.IPv6},
+			Size:         &inventory.Size{VCPUs: sized(16), MemoryGiB: sized(64)},
+			MonthlyCost:  &inventory.Cost{Amount: sized(200), Currency: "USD"},
+		},
+		{
+			ID:           "server-small",
+			RawType:      "AWS::EC2::Instance",
+			Category:     taxonomy.ComputeVM,
+			Region:       "eu-west-1",
+			Capabilities: []taxonomy.Capability{taxonomy.IPv6},
+			Size:         &inventory.Size{VCPUs: sized(1), MemoryGiB: sized(2)},
+			Workload:     "shop",
+			MonthlyCost:  &inventory.Cost{Amount: sized(15), Currency: "EUR"},
+		},
+		{
+			ID:           "worker-jobs",
+			RawType:      "AWS::EC2::Instance",
+			Category:     taxonomy.ComputeVM,
+			Region:       "eu-west-1",
+			Capabilities: []taxonomy.Capability{taxonomy.IPv6},
+			Size:         &inventory.Size{VCPUs: sized(1), MemoryGiB: sized(2)},
+			Workload:     "orders",
+			Relations: []inventory.Relation{
+				{Type: inventory.DependsOn, Target: "queue-jobs"},
+				{Type: inventory.ReplicaOf, Target: "server-small"},
+			},
+		},
+	}
+}
+
+// assessEstimates assesses the estimate fixture with estimates on, in the
+// fixture's default region unless region is given.
+func assessEstimates(t *testing.T, region string) assessment.Assessment {
+	t.Helper()
+
+	return assessment.AssessWith(newInventory(t, sourceName, estimateResources()), testutil.ReportCatalog(t),
+		assessment.Options{Region: region, Estimate: true})
+}
+
+// TestReportWithEstimates pins the report of a sized inventory with estimates on:
+// the region line in the header, the Plan, Monthly estimate and Relations columns
+// of the resources table, the "affected by a blocker" note, the per-workload
+// section and the cost summary with its total, its basis, its region, its hours
+// basis and the source cost per currency.
+func TestReportWithEstimates(t *testing.T) {
+	t.Parallel()
+
+	out := render(t, assessEstimates(t, ""), analysis.ReportMeta{InventoryName: inventoryFileName})
+
+	checkTableShape(t, out)
+	checkHeadings(t, out, "# Migration assessment: `Example Cloud`", estimateSections()...)
+
+	t.Run("header names the region the prices are for, and the date they were retrieved", func(t *testing.T) {
+		t.Parallel()
+
+		want := "- Region: `xx-par` (the target's default for estimates)"
+		if got := lineWithPrefix(t, out, "- Region: "); got != want {
+			t.Errorf("region line = %q, want %q", got, want)
+		}
+
+		wantCatalog := "- Catalog: `Example Cloud` snapshot from `" + reportSourceURL + "`, retrieved " + reportRetrievedOn
+		if got := lineWithPrefix(t, out, "- Catalog: "); got != wantCatalog {
+			t.Errorf("catalog line = %q, want %q", got, wantCatalog)
+		}
+	})
+
+	t.Run("resources table", func(t *testing.T) {
+		t.Parallel()
+
+		wantHeader := []string{
+			"ID", "Raw type", "Category", "Fit", "Best offering", "Plan", "Monthly estimate", "Relations", "Reasons",
+		}
+
+		if diff := cmp.Diff(wantHeader, tableRow(t, out, "ID")); diff != "" {
+			t.Errorf("resources table header mismatch (-want +got):\n%s", diff)
+		}
+
+		tests := []struct {
+			id        string
+			fit       string
+			plan      string
+			estimate  string
+			relations string
+		}{
+			{
+				id:       "bucket-storage",
+				fit:      string(mapping.Direct),
+				plan:     "",
+				estimate: "€2,500.00",
+			},
+			{
+				id:       "cluster-small",
+				fit:      string(mapping.Direct),
+				plan:     "`KN-S` (1 vCPU, 2 GiB)",
+				estimate: "€15.00 (includes a fixed fee of €5.00)",
+			},
+			{
+				id:       "function-orders",
+				fit:      string(mapping.Direct),
+				plan:     "",
+				estimate: reportEstimateCell("usage-priced"),
+			},
+			{
+				id:       "legacy-nosize",
+				fit:      string(mapping.Direct),
+				plan:     "",
+				estimate: reportEstimateCell("size unknown"),
+			},
+			{
+				id:       "queue-jobs",
+				fit:      string(mapping.None),
+				plan:     "",
+				estimate: reportEstimateCell("no fit"),
+			},
+			{
+				id:       "server-huge",
+				fit:      string(mapping.Direct),
+				plan:     "no plan large enough (largest: `EX-L`, 4 vCPU, 8 GiB)",
+				estimate: reportEstimateCell("no plan large enough"),
+			},
+			{
+				id:       "server-small",
+				fit:      string(mapping.Direct),
+				plan:     "`EX-S` (1 vCPU, 2 GiB)",
+				estimate: "€10.00",
+			},
+			{
+				id:        "worker-jobs",
+				fit:       string(mapping.Direct),
+				plan:      "`EX-S` (1 vCPU, 2 GiB)",
+				estimate:  "€10.00",
+				relations: "depends-on `queue-jobs`, replica-of `server-small`",
+			},
+		}
+
+		for _, test := range tests {
+			t.Run(test.id, func(t *testing.T) {
+				t.Parallel()
+
+				cells := tableRow(t, out, "`"+test.id+"`")
+				if len(cells) != len(wantHeader) {
+					t.Fatalf("the row has %d cells, the header has %d: %q", len(cells), len(wantHeader), cells)
+				}
+
+				got := []string{cells[3], cells[5], cells[6], cells[7]}
+				want := []string{test.fit, test.plan, test.estimate, test.relations}
+
+				if diff := cmp.Diff(want, got); diff != "" {
+					t.Errorf("%q Fit, Plan, Monthly estimate and Relations mismatch (-want +got):\n%s",
+						test.id, diff)
+				}
+			})
+		}
+	})
+
+	t.Run("blockers and affected notes", func(t *testing.T) {
+		t.Parallel()
+
+		want := []string{
+			"- `queue-jobs`: no offering in the `Example Cloud` catalog for `messaging.queue`",
+			"- `worker-jobs`: affected by a blocker on `queue-jobs`",
+		}
+
+		if got := blockerLines(t, out); !slices.Equal(got, want) {
+			t.Errorf("blockers = %q, want %q", got, want)
+		}
+	})
+
+	t.Run("workloads", func(t *testing.T) {
+		t.Parallel()
+
+		want := []string{
+			"### `orders`",
+			"- Fit: 3 direct, 0 partial, 1 none",
+			"- Monthly estimate: €10.00 per month for 1 of 4 resources, list prices on " + reportRetrievedOn +
+				", excluding VAT and discounts",
+			"- Source cost: `USD` $1,200.00 for 1 of 4 resources",
+			"- Blockers:",
+			"  - `queue-jobs`: no offering in the `Example Cloud` catalog for `messaging.queue`",
+			"### `shop`",
+			"- Fit: 3 direct, 0 partial, 0 none",
+			"- Monthly estimate: €2,525.00 per month for 3 of 3 resources, list prices on " + reportRetrievedOn +
+				", excluding VAT and discounts",
+			"- Source cost: `EUR` €2,415.00 for 2 of 3 resources",
+			"- Source cost: `USD` $40.00 for 1 of 3 resources",
+			"- Blockers: none",
+			"### No workload",
+			"- Fit: 1 direct, 0 partial, 0 none",
+			"- Monthly estimate: €0.00 per month for 0 of 1 resources, list prices on " + reportRetrievedOn +
+				", excluding VAT and discounts",
+			"- Source cost: `USD` $200.00",
+			"- Blockers: none",
+		}
+
+		if got := sectionLines(t, out, "## Workloads"); !slices.Equal(got, want) {
+			t.Errorf("workloads = %q, want %q", got, want)
+		}
+	})
+
+	t.Run("cost estimate", func(t *testing.T) {
+		t.Parallel()
+
+		want := []string{
+			"- Total: €2,535.00 per month for 4 of 8 resources",
+			"- Estimate: list prices on " + reportRetrievedOn +
+				", excluding VAT and discounts; a fixed fee is the offering's listed fee",
+			"- Prices in `xx-par`",
+			"- Hours: plan price × count × hours / 730, 730 hours for a resource that gives none",
+			"- Source cost: `EUR` €2,415.00 for 2 of 8 resources",
+			"- Source cost: `USD` $1,440.00 for 3 of 8 resources",
+		}
+
+		if got := sectionLines(t, out, "## Cost estimate"); !slices.Equal(got, want) {
+			t.Errorf("cost estimate = %q, want %q", got, want)
+		}
+	})
+
+	if got := requiredChangeLines(t, out); !slices.Equal(got, []string{"None."}) {
+		t.Errorf("required changes = %q, want the one line %q", got, "None.")
+	}
+
+	testutil.Golden(t, "testdata/report-estimates.golden", out)
+}
+
+// TestReportWithChosenRegion pins that a region chosen with --region is the one
+// line that says so, and is the region the prices are for: the same inventory
+// costs more in the report fixture's second region, and only the region line and
+// the estimates change.
+func TestReportWithChosenRegion(t *testing.T) {
+	t.Parallel()
+
+	out := render(t, assessEstimates(t, testutil.ReportSecondRegion),
+		analysis.ReportMeta{InventoryName: inventoryFileName})
+
+	want := "- Region: `" + testutil.ReportSecondRegion + "` (chosen with `--region`)"
+	if got := lineWithPrefix(t, out, "- Region: "); got != want {
+		t.Errorf("region line = %q, want %q", got, want)
+	}
+
+	// The smallest compute plan costs 12.00 in the second region, so the
+	// resources on it, and the total, are dearer than in the default region.
+	cells := tableRow(t, out, "`server-small`")
+	if got, want := cells[6], "€12.00"; got != want {
+		t.Errorf("server-small Monthly estimate = %q, want %q", got, want)
+	}
+
+	if got, want := sectionLines(t, out, "## Cost estimate")[0],
+		"- Total: €2,539.00 per month for 4 of 8 resources"; got != want {
+		t.Errorf("total = %q, want %q", got, want)
+	}
+}
+
+// TestReportWithoutEstimates pins that estimates off is today's report: the same
+// bytes as the golden files the repository already had, no Plan or Monthly
+// estimate column, no cost summary, no euro amount and, with no region chosen, no
+// region line.
+func TestReportWithoutEstimates(t *testing.T) {
+	t.Parallel()
+
+	scaleway := testutil.ScalewayCatalog(t)
+
+	tests := []struct {
+		name       string
+		inventory  inventory.Inventory
+		meta       analysis.ReportMeta
+		goldenFile string
+	}{
+		{
+			name:       "every fit with the inventory file name",
+			inventory:  newInventory(t, sourceName, awsResources()),
+			meta:       analysis.ReportMeta{InventoryName: inventoryFileName},
+			goldenFile: "testdata/report.golden",
+		},
+		{
+			name:       "no inventory file name omits the line",
+			inventory:  newInventory(t, sourceName, awsResources()),
+			meta:       analysis.ReportMeta{},
+			goldenFile: "testdata/report-no-inventory-name.golden",
+		},
+		{
+			name:       "empty inventory keeps the header rows and no blockers",
+			inventory:  newInventory(t, sourceName, nil),
+			meta:       analysis.ReportMeta{InventoryName: inventoryFileName},
+			goldenFile: "testdata/report-empty.golden",
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+
+			got := render(t, assessment.AssessWith(test.inventory, scaleway, assessment.Options{}), test.meta)
+
+			// The golden files of the repository were written before estimates
+			// existed, and estimates off must not change a byte of them.
+			testutil.Golden(t, test.goldenFile, got)
+
+			checkTableShape(t, got)
+			checkHeadings(t, got, "# Migration assessment: `Scaleway`", analysisSections()...)
+
+			wantHeader := []string{"ID", "Raw type", "Category", "Fit", "Best offering", "Reasons"}
+			if diff := cmp.Diff(wantHeader, tableRow(t, got, "ID")); diff != "" {
+				t.Errorf("resources table header mismatch (-want +got):\n%s", diff)
+			}
+
+			for _, unwanted := range []string{"€", "## Cost estimate", "## Workloads", "- Region: "} {
+				if strings.Contains(string(got), unwanted) {
+					t.Errorf("a report without estimates holds %q:\n%s", unwanted, got)
+				}
+			}
+		})
+	}
+}
+
+// TestReportChosenRegionWithoutEstimates pins that a region chosen with --region
+// is shown even when estimates are off: the region scopes availability, which the
+// report still has to say, while no price is mentioned.
+func TestReportChosenRegionWithoutEstimates(t *testing.T) {
+	t.Parallel()
+
+	inv := newInventory(t, sourceName, awsResources())
+	a := assessment.AssessWith(inv, testutil.ScalewayCatalog(t),
+		assessment.Options{Region: "fr-par", Estimate: false})
+
+	out := render(t, a, analysis.ReportMeta{InventoryName: inventoryFileName})
+
+	want := "- Region: `fr-par` (chosen with `--region`)"
+	if got := lineWithPrefix(t, out, "- Region: "); got != want {
+		t.Errorf("region line = %q, want %q", got, want)
+	}
+
+	for _, unwanted := range []string{"€", "## Cost estimate", "Plan", "Monthly estimate"} {
+		if strings.Contains(string(out), unwanted) {
+			t.Errorf("a report without estimates holds %q:\n%s", unwanted, out)
+		}
+	}
+}
+
+// TestReportWithoutWorkloads pins that a version 1 inventory, whose resources
+// name no workload, has no per-workload section at all: its resources are not
+// reported as a "No workload" group in a section of their own.
+func TestReportWithoutWorkloads(t *testing.T) {
+	t.Parallel()
+
+	resources := estimateResources()
+	for i := range resources {
+		resources[i].Workload = ""
+		resources[i].Size = nil
+		resources[i].Usage = nil
+		resources[i].Relations = nil
+		resources[i].MonthlyCost = nil
+	}
+
+	a := assessment.AssessWith(newInventory(t, sourceName, resources), testutil.ReportCatalog(t),
+		assessment.Options{Estimate: true})
+
+	out := render(t, a, analysis.ReportMeta{InventoryName: inventoryFileName})
+
+	if strings.Contains(string(out), "## Workloads") {
+		t.Errorf("a report of an inventory without workloads has a per-workload section:\n%s", out)
+	}
+
+	if strings.Contains(string(out), "No workload") {
+		t.Errorf("a report of an inventory without workloads names the \"No workload\" group:\n%s", out)
+	}
+
+	// The estimates are still reported: the section that is left out is the
+	// per-workload one, not the cost summary.
+	if !strings.Contains(string(out), "## Cost estimate") {
+		t.Errorf("a report with estimates has no cost summary:\n%s", out)
+	}
+}
+
+// TestReportIsDeterministicWithEstimates pins that a report with estimates is
+// byte-identical however often it is rendered, and whatever order the inventory
+// was given in: nothing depends on the clock, the environment or map iteration.
+func TestReportIsDeterministicWithEstimates(t *testing.T) {
+	t.Parallel()
+
+	meta := analysis.ReportMeta{InventoryName: inventoryFileName}
+
+	first := render(t, assessEstimates(t, ""), meta)
+	second := render(t, assessEstimates(t, ""), meta)
+	if !bytes.Equal(first, second) {
+		t.Errorf("two reports of the same assessment differ:\nfirst:\n%s\nsecond:\n%s", first, second)
+	}
+
+	shuffled := estimateResources()
+	slices.Reverse(shuffled)
+
+	reordered := render(t, assessment.AssessWith(newInventory(t, sourceName, shuffled), testutil.ReportCatalog(t),
+		assessment.Options{Estimate: true}), meta)
+	if !bytes.Equal(first, reordered) {
+		t.Errorf("the report depends on the order resources were given in:\nfirst:\n%s\nreordered:\n%s",
+			first, reordered)
+	}
+}
+
+// linesWithPrefix returns every line of the report that starts with prefix, in
+// the order they appear.
+func linesWithPrefix(tb testing.TB, out []byte, prefix string) []string {
+	tb.Helper()
+
+	var found []string
+
+	for _, line := range strings.Split(string(out), "\n") {
+		if strings.HasPrefix(line, prefix) {
+			found = append(found, line)
+		}
+	}
+
+	return found
 }

@@ -245,7 +245,7 @@ func TestReportDocumentShape(t *testing.T) {
 			want any
 		}{
 			// encoding/json decodes every JSON number into a float64.
-			{name: "schema version", path: []any{"schemaVersion"}, want: float64(1)},
+			{name: "schema version", path: []any{"schemaVersion"}, want: float64(currentSchemaVersion)},
 			{name: "kind", path: []any{"kind"}, want: "assessment"},
 			{name: "inventory name", path: []any{"inventoryName"}, want: inventoryFileName},
 			{name: "source", path: []any{"source"}, want: sourceName},
@@ -1067,4 +1067,666 @@ func objectKeysAt(tb testing.TB, document any, path ...any) []string {
 // it shares without changing that one.
 func extend(base []any, steps ...any) []any {
 	return append(slices.Clone(base), steps...)
+}
+
+// The report fixture's target, and the snapshot its catalog says the prices were
+// taken from: invented values, so a test can state each estimate exactly.
+const (
+	reportTarget      = "Example Cloud"
+	reportSourceURL   = "https://www.example.com/pricing/"
+	reportRetrievedOn = "2026-11-13"
+)
+
+// sized is a given float64, as an inventory size and a monthly cost carry it.
+func sized(v float64) *float64 { return &v }
+
+// estimateResources is the inventory the estimate tests write. It is the one
+// inventory a document has to tell every estimate state apart in:
+//
+//   - bucket-storage is storage.object, priced by the stored GiB;
+//   - cluster-small is kubernetes.managed with a fixed fee;
+//   - server-small and worker-jobs are compute.vm on the smallest plan;
+//   - server-huge is compute.vm larger than the largest plan;
+//   - legacy-nosize is compute.vm without a size;
+//   - function-orders is serverless.function, which is priced by usage;
+//   - queue-jobs is messaging.queue, which no offering serves, so it is blocked,
+//     and worker-jobs depends on it and is a replica of server-small, so it
+//     carries relations and an "affected by" note.
+//
+// Three workloads are named, one of them without a source cost for all of its
+// resources, and the resources without a workload are the "No workload" group.
+// The monthly costs are in two currencies, so the source cost is never
+// converted.
+func estimateResources() []inventory.Resource {
+	return []inventory.Resource{
+		{
+			ID:           "bucket-storage",
+			RawType:      "AWS::S3::Bucket",
+			Category:     taxonomy.StorageObject,
+			Region:       "eu-west-1",
+			Capabilities: []taxonomy.Capability{taxonomy.IPv6},
+			Size:         &inventory.Size{StorageGiB: sized(50000)},
+			Workload:     "shop",
+			MonthlyCost:  &inventory.Cost{Amount: sized(2400), Currency: "EUR"},
+		},
+		{
+			ID:           "cluster-small",
+			RawType:      "Scaleway::Kubernetes::Cluster",
+			Category:     taxonomy.KubernetesManaged,
+			Region:       "eu-west-1",
+			Capabilities: []taxonomy.Capability{taxonomy.Autoscaling},
+			Size:         &inventory.Size{VCPUs: sized(1), MemoryGiB: sized(2)},
+			Workload:     "shop",
+			MonthlyCost:  &inventory.Cost{Amount: sized(40), Currency: "USD"},
+		},
+		{
+			ID:       "function-orders",
+			RawType:  "AWS::Lambda::Function",
+			Category: taxonomy.ServerlessFunction,
+			Region:   "eu-west-1",
+			Workload: "orders",
+		},
+		{
+			ID:           "legacy-nosize",
+			RawType:      "AWS::EC2::Instance",
+			Category:     taxonomy.ComputeVM,
+			Region:       "eu-west-1",
+			Capabilities: []taxonomy.Capability{taxonomy.IPv6},
+			Workload:     "orders",
+			MonthlyCost:  &inventory.Cost{Amount: sized(1200), Currency: "USD"},
+		},
+		{
+			ID:       "queue-jobs",
+			RawType:  "AWS::SQS::Queue",
+			Category: taxonomy.MessagingQueue,
+			Region:   "eu-west-1",
+			Workload: "orders",
+		},
+		{
+			ID:           "server-huge",
+			RawType:      "AWS::EC2::Instance",
+			Category:     taxonomy.ComputeVM,
+			Region:       "eu-west-1",
+			Capabilities: []taxonomy.Capability{taxonomy.IPv6},
+			Size:         &inventory.Size{VCPUs: sized(16), MemoryGiB: sized(64)},
+			MonthlyCost:  &inventory.Cost{Amount: sized(200), Currency: "USD"},
+		},
+		{
+			ID:           "server-small",
+			RawType:      "AWS::EC2::Instance",
+			Category:     taxonomy.ComputeVM,
+			Region:       "eu-west-1",
+			Capabilities: []taxonomy.Capability{taxonomy.IPv6},
+			Size:         &inventory.Size{VCPUs: sized(1), MemoryGiB: sized(2)},
+			Workload:     "shop",
+			MonthlyCost:  &inventory.Cost{Amount: sized(15), Currency: "EUR"},
+		},
+		{
+			ID:           "worker-jobs",
+			RawType:      "AWS::EC2::Instance",
+			Category:     taxonomy.ComputeVM,
+			Region:       "eu-west-1",
+			Capabilities: []taxonomy.Capability{taxonomy.IPv6},
+			Size:         &inventory.Size{VCPUs: sized(1), MemoryGiB: sized(2)},
+			Workload:     "orders",
+			Relations: []inventory.Relation{
+				{Type: inventory.DependsOn, Target: "queue-jobs"},
+				{Type: inventory.ReplicaOf, Target: "server-small"},
+			},
+		},
+	}
+}
+
+// assessEstimates assesses the estimate fixture with estimates on, in the
+// fixture's default region unless region is given.
+func assessEstimates(t *testing.T, region string) assessment.Assessment {
+	t.Helper()
+
+	return assessment.AssessWith(newInventory(t, sourceName, estimateResources()), testutil.ReportCatalog(t),
+		assessment.Options{Region: region, Estimate: true})
+}
+
+// TestReportWithEstimates pins the schema version 2 document of a sized
+// inventory with estimates on: the estimate basis and its total, the plan, the
+// estimate and its breakdown, the relations and the "affected by" notes per
+// resource, the source cost per currency and the workloads.
+func TestReportWithEstimates(t *testing.T) {
+	t.Parallel()
+
+	got := render(t, assessEstimates(t, ""), analysis.ReportMeta{InventoryName: inventoryFileName})
+	checkDocument(t, got)
+
+	document := decodeJSON(t, got)
+
+	t.Run("the document", func(t *testing.T) {
+		t.Parallel()
+
+		if diff := cmp.Diff(float64(2), valueAt(t, document, "schemaVersion")); diff != "" {
+			t.Errorf("schemaVersion mismatch (-want +got):\n%s", diff)
+		}
+
+		if diff := cmp.Diff("assessment", valueAt(t, document, "kind")); diff != "" {
+			t.Errorf("kind mismatch (-want +got):\n%s", diff)
+		}
+
+		wantKeys := []string{
+			"blockers", "estimate", "inventoryName", "kind", "resources", "schemaVersion", "source",
+			"sourceCost", "summary", "target", "workloads",
+		}
+		if diff := cmp.Diff(wantKeys, objectKeysAt(t, document)); diff != "" {
+			t.Errorf("document keys mismatch (-want +got):\n%s", diff)
+		}
+	})
+
+	t.Run("the estimate basis and its total", func(t *testing.T) {
+		t.Parallel()
+
+		wantKeys := []string{
+			"currency", "excluded", "hoursBasis", "priceDate", "region", "regionChosen", "total",
+		}
+		if diff := cmp.Diff(wantKeys, objectKeysAt(t, document, "estimate")); diff != "" {
+			t.Errorf("estimate keys mismatch (-want +got):\n%s", diff)
+		}
+
+		tests := []struct {
+			name string
+			path []any
+			want any
+		}{
+			{name: "the region the prices are for", path: []any{"estimate", "region"}, want: "xx-par"},
+			{name: "no region was chosen", path: []any{"estimate", "regionChosen"}, want: false},
+			{name: "the price date", path: []any{"estimate", "priceDate"}, want: reportRetrievedOn},
+			{name: "the currency", path: []any{"estimate", "currency"}, want: "EUR"},
+			{name: "the hours basis", path: []any{"estimate", "hoursBasis"}, want: float64(730)},
+			{name: "the total", path: []any{"estimate", "total", "amount"}, want: "2535.00"},
+			{name: "how many resources were estimated", path: []any{"estimate", "total", "estimated"}, want: float64(4)},
+			{name: "how many resources there are", path: []any{"estimate", "total", "resources"}, want: float64(8)},
+		}
+
+		for _, test := range tests {
+			t.Run(test.name, func(t *testing.T) {
+				t.Parallel()
+
+				if diff := cmp.Diff(test.want, valueAt(t, document, test.path...)); diff != "" {
+					t.Errorf("%v mismatch (-want +got):\n%s", test.path, diff)
+				}
+			})
+		}
+
+		if diff := cmp.Diff([]string{"VAT", "discounts"}, stringsAt(t, document, "estimate", "excluded")); diff != "" {
+			t.Errorf("estimate.excluded mismatch (-want +got):\n%s", diff)
+		}
+
+		if diff := cmp.Diff([]string{"amount", "estimated", "resources"},
+			objectKeysAt(t, document, "estimate", "total")); diff != "" {
+			t.Errorf("estimate.total keys mismatch (-want +got):\n%s", diff)
+		}
+	})
+
+	t.Run("a resource with a plan", func(t *testing.T) {
+		t.Parallel()
+
+		at := resourceIndex(t, document, "worker-jobs")
+
+		wantKeys := []string{
+			"affectedBy", "bestOffering", "category", "estimate", "fit", "id", "plan", "rawType", "reasons",
+			"region", "relations", "requiredChanges", "ties",
+		}
+		if diff := cmp.Diff(wantKeys, objectKeysAt(t, document, extend(at)...)); diff != "" {
+			t.Errorf("resource keys mismatch (-want +got):\n%s", diff)
+		}
+
+		plan := extend(at, "plan")
+		if diff := cmp.Diff([]string{"includedStorageGiB", "memoryGiB", "name", "price", "vcpus"},
+			objectKeysAt(t, document, plan...)); diff != "" {
+			t.Errorf("plan keys mismatch (-want +got):\n%s", diff)
+		}
+
+		tests := []struct {
+			path []any
+			want any
+		}{
+			{path: extend(plan, "name"), want: "EX-S"},
+			{path: extend(plan, "vcpus"), want: float64(1)},
+			{path: extend(plan, "memoryGiB"), want: "2"},
+			{path: extend(plan, "includedStorageGiB"), want: float64(20)},
+			{path: extend(plan, "price"), want: "10.00"},
+			{path: extend(at, "estimate", "estimated"), want: true},
+			{path: extend(at, "estimate", "amount"), want: "10.00"},
+			{path: extend(at, "estimate", "breakdown", "plan"), want: "10.00"},
+			{path: extend(at, "estimate", "breakdown", "storage"), want: "0.00"},
+			{path: extend(at, "estimate", "breakdown", "fixedFee"), want: "0.00"},
+		}
+
+		for _, test := range tests {
+			if diff := cmp.Diff(test.want, valueAt(t, document, test.path...)); diff != "" {
+				t.Errorf("%v mismatch (-want +got):\n%s", test.path, diff)
+			}
+		}
+
+		// The relations are the inventory's, in its order, and the one blocked
+		// target is the one affected note.
+		wantRelations := []map[string]any{
+			{"type": "depends-on", "target": "queue-jobs"},
+			{"type": "replica-of", "target": "server-small"},
+		}
+
+		var relations []map[string]any
+
+		for i := range arrayAt(t, document, extend(at, "relations")...) {
+			relations = append(relations, map[string]any{
+				"type":   valueAt(t, document, extend(at, "relations", i, "type")...),
+				"target": valueAt(t, document, extend(at, "relations", i, "target")...),
+			})
+		}
+
+		if diff := cmp.Diff(wantRelations, relations); diff != "" {
+			t.Errorf("relations mismatch (-want +got):\n%s", diff)
+		}
+
+		if diff := cmp.Diff([]string{"queue-jobs"}, stringsAt(t, document, extend(at, "affectedBy")...)); diff != "" {
+			t.Errorf("affectedBy mismatch (-want +got):\n%s", diff)
+		}
+	})
+
+	t.Run("a fixed fee is part of the estimate", func(t *testing.T) {
+		t.Parallel()
+
+		at := resourceIndex(t, document, "cluster-small")
+
+		tests := []struct {
+			path []any
+			want any
+		}{
+			{path: extend(at, "estimate", "amount"), want: "15.00"},
+			{path: extend(at, "estimate", "breakdown", "plan"), want: "10.00"},
+			{path: extend(at, "estimate", "breakdown", "fixedFee"), want: "5.00"},
+			{path: extend(at, "plan", "name"), want: "KN-S"},
+		}
+
+		for _, test := range tests {
+			if diff := cmp.Diff(test.want, valueAt(t, document, test.path...)); diff != "" {
+				t.Errorf("%v mismatch (-want +got):\n%s", test.path, diff)
+			}
+		}
+	})
+
+	t.Run("a resource priced by storage has no plan", func(t *testing.T) {
+		t.Parallel()
+
+		at := resourceIndex(t, document, "bucket-storage")
+
+		if diff := cmp.Diff([]string{"amount", "breakdown", "estimated"},
+			objectKeysAt(t, document, extend(at, "estimate")...)); diff != "" {
+			t.Errorf("estimate keys mismatch (-want +got):\n%s", diff)
+		}
+
+		tests := []struct {
+			path []any
+			want any
+		}{
+			{path: extend(at, "estimate", "amount"), want: "2500.00"},
+			{path: extend(at, "estimate", "breakdown", "plan"), want: "0.00"},
+			{path: extend(at, "estimate", "breakdown", "storage"), want: "2500.00"},
+			{path: extend(at, "estimate", "breakdown", "fixedFee"), want: "0.00"},
+		}
+
+		for _, test := range tests {
+			if diff := cmp.Diff(test.want, valueAt(t, document, test.path...)); diff != "" {
+				t.Errorf("%v mismatch (-want +got):\n%s", test.path, diff)
+			}
+		}
+	})
+
+	t.Run("a resource that is not estimated says why and has no amount", func(t *testing.T) {
+		t.Parallel()
+
+		tests := []struct {
+			id     string
+			reason string
+		}{
+			{id: "function-orders", reason: "usage-priced"},
+			{id: "legacy-nosize", reason: "no-size"},
+			{id: "queue-jobs", reason: "no-fit"},
+			{id: "server-huge", reason: "no-plan-large-enough"},
+		}
+
+		for _, test := range tests {
+			t.Run(test.id, func(t *testing.T) {
+				t.Parallel()
+
+				at := resourceIndex(t, document, test.id)
+
+				if diff := cmp.Diff([]string{"estimated", "reason"},
+					objectKeysAt(t, document, extend(at, "estimate")...)); diff != "" {
+					t.Errorf("%q estimate keys mismatch (-want +got), a resource that is not estimated "+
+						"has no amount and no breakdown:\n%s", test.id, diff)
+				}
+
+				if diff := cmp.Diff(false, valueAt(t, document, extend(at, "estimate", "estimated")...)); diff != "" {
+					t.Errorf("%q estimate.estimated mismatch (-want +got):\n%s", test.id, diff)
+				}
+
+				if diff := cmp.Diff(test.reason, valueAt(t, document, extend(at, "estimate", "reason")...)); diff != "" {
+					t.Errorf("%q estimate.reason mismatch (-want +got):\n%s", test.id, diff)
+				}
+			})
+		}
+	})
+
+	t.Run("the plan a resource has no plan large enough for", func(t *testing.T) {
+		t.Parallel()
+
+		at := resourceIndex(t, document, "server-huge")
+
+		tests := []struct {
+			path []any
+			want any
+		}{
+			{path: extend(at, "plan", "name"), want: "EX-L"},
+			{path: extend(at, "plan", "vcpus"), want: float64(4)},
+			{path: extend(at, "plan", "memoryGiB"), want: "8"},
+			{path: extend(at, "plan", "price"), want: "40.00"},
+		}
+
+		for _, test := range tests {
+			if diff := cmp.Diff(test.want, valueAt(t, document, test.path...)); diff != "" {
+				t.Errorf("%v mismatch (-want +got):\n%s", test.path, diff)
+			}
+		}
+	})
+
+	t.Run("a resource without a plan keeps no plan key", func(t *testing.T) {
+		t.Parallel()
+
+		for _, id := range []string{"function-orders", "legacy-nosize", "queue-jobs"} {
+			at := resourceIndex(t, document, id)
+
+			if keys := objectKeysAt(t, document, extend(at)...); slices.Contains(keys, "plan") {
+				t.Errorf("%q holds a plan key, want none: %q", id, keys)
+			}
+		}
+	})
+
+	t.Run("the source cost per currency", func(t *testing.T) {
+		t.Parallel()
+
+		if diff := cmp.Diff([]string{"covered", "currencies", "resources"},
+			objectKeysAt(t, document, "sourceCost")); diff != "" {
+			t.Errorf("sourceCost keys mismatch (-want +got):\n%s", diff)
+		}
+
+		tests := []struct {
+			path []any
+			want any
+		}{
+			{path: []any{"sourceCost", "covered"}, want: float64(5)},
+			{path: []any{"sourceCost", "resources"}, want: float64(8)},
+			{path: []any{"sourceCost", "currencies", 0, "currency"}, want: "EUR"},
+			{path: []any{"sourceCost", "currencies", 0, "amount"}, want: "2415.00"},
+			{path: []any{"sourceCost", "currencies", 0, "resources"}, want: float64(2)},
+			{path: []any{"sourceCost", "currencies", 1, "currency"}, want: "USD"},
+			{path: []any{"sourceCost", "currencies", 1, "amount"}, want: "1440.00"},
+			{path: []any{"sourceCost", "currencies", 1, "resources"}, want: float64(3)},
+		}
+
+		for _, test := range tests {
+			if diff := cmp.Diff(test.want, valueAt(t, document, test.path...)); diff != "" {
+				t.Errorf("%v mismatch (-want +got):\n%s", test.path, diff)
+			}
+		}
+
+		if diff := cmp.Diff([]string{"amount", "currency", "resources"},
+			objectKeysAt(t, document, "sourceCost", "currencies", 0)); diff != "" {
+			t.Errorf("currency cost keys mismatch (-want +got):\n%s", diff)
+		}
+	})
+
+	t.Run("the workloads", func(t *testing.T) {
+		t.Parallel()
+
+		workloads := arrayAt(t, document, "workloads")
+		if len(workloads) != 3 {
+			t.Fatalf("the document has %d workloads, want 3", len(workloads))
+		}
+
+		wantKeys := []string{"blockers", "estimate", "name", "noWorkload", "resources", "sourceCost", "summary"}
+		if diff := cmp.Diff(wantKeys, objectKeysAt(t, document, "workloads", 0)); diff != "" {
+			t.Errorf("workload keys mismatch (-want +got):\n%s", diff)
+		}
+
+		tests := []struct {
+			name        string
+			noWorkload  bool
+			resources   float64
+			direct      float64
+			none        float64
+			amount      string
+			estimated   float64
+			sourceCosts []map[string]any
+			blockers    []string
+		}{
+			{
+				name:      "orders",
+				direct:    3,
+				none:      1,
+				amount:    "10.00",
+				resources: 4, estimated: 1,
+				sourceCosts: []map[string]any{{"currency": "USD", "amount": "1200.00", "resources": float64(1)}},
+				blockers:    []string{"queue-jobs"},
+			},
+			{
+				name:      "shop",
+				direct:    3,
+				amount:    "2525.00",
+				resources: 3, estimated: 3,
+				sourceCosts: []map[string]any{
+					{"currency": "EUR", "amount": "2415.00", "resources": float64(2)},
+					{"currency": "USD", "amount": "40.00", "resources": float64(1)},
+				},
+				blockers: []string{},
+			},
+			{
+				name:       "No workload",
+				noWorkload: true,
+				direct:     1,
+				amount:     "0.00",
+				resources:  1, estimated: 0,
+				sourceCosts: []map[string]any{{"currency": "USD", "amount": "200.00", "resources": float64(1)}},
+				blockers:    []string{},
+			},
+		}
+
+		for i, test := range tests {
+			t.Run(test.name, func(t *testing.T) {
+				t.Parallel()
+
+				at := []any{"workloads", i}
+
+				if test.noWorkload {
+					if diff := cmp.Diff("", valueAt(t, document, extend(at, "name")...)); diff != "" {
+						t.Errorf("name mismatch (-want +got):\n%s", diff)
+					}
+
+					if diff := cmp.Diff(true, valueAt(t, document, extend(at, "noWorkload")...)); diff != "" {
+						t.Errorf("noWorkload mismatch (-want +got):\n%s", diff)
+					}
+				} else if diff := cmp.Diff(test.name, valueAt(t, document, extend(at, "name")...)); diff != "" {
+					t.Errorf("name mismatch (-want +got):\n%s", diff)
+				}
+
+				tests := []struct {
+					path []any
+					want any
+				}{
+					{path: extend(at, "resources"), want: test.resources},
+					{path: extend(at, "summary", "direct"), want: test.direct},
+					{path: extend(at, "summary", "none"), want: test.none},
+					{path: extend(at, "estimate", "amount"), want: test.amount},
+					{path: extend(at, "estimate", "estimated"), want: test.estimated},
+					{path: extend(at, "estimate", "resources"), want: test.resources},
+					{path: extend(at, "sourceCost", "resources"), want: test.resources},
+				}
+
+				for _, check := range tests {
+					if diff := cmp.Diff(check.want, valueAt(t, document, check.path...)); diff != "" {
+						t.Errorf("%v mismatch (-want +got):\n%s", check.path, diff)
+					}
+				}
+
+				var blocked []string
+
+				for j := range arrayAt(t, document, extend(at, "blockers")...) {
+					id, ok := valueAt(t, document, extend(at, "blockers", j, "resourceId")...).(string)
+					if !ok {
+						t.Fatalf("%q blockers[%d].resourceId is not a string", test.name, j)
+					}
+
+					blocked = append(blocked, id)
+				}
+
+				if diff := cmp.Diff(test.blockers, blocked); diff != "" {
+					t.Errorf("%q blockers mismatch (-want +got):\n%s", test.name, diff)
+				}
+
+				var costs []map[string]any
+
+				for j := range arrayAt(t, document, extend(at, "sourceCost", "currencies")...) {
+					cost := extend(at, "sourceCost", "currencies", j)
+					costs = append(costs, map[string]any{
+						"currency":  valueAt(t, document, extend(cost, "currency")...),
+						"amount":    valueAt(t, document, extend(cost, "amount")...),
+						"resources": valueAt(t, document, extend(cost, "resources")...),
+					})
+				}
+
+				if diff := cmp.Diff(test.sourceCosts, costs); diff != "" {
+					t.Errorf("%q source costs mismatch (-want +got):\n%s", test.name, diff)
+				}
+			})
+		}
+	})
+
+	testutil.Golden(t, "testdata/report-estimates.golden", got)
+}
+
+// TestReportWithoutEstimateKeys pins that a document without estimates holds no
+// estimate key at all: no basis, no total, no plan, no amount and no source cost,
+// while the relations and the workloads, which are not prices, stay.
+func TestReportWithoutEstimateKeys(t *testing.T) {
+	t.Parallel()
+
+	scaleway := testutil.ScalewayCatalog(t)
+	got := render(t, assessment.AssessWith(newInventory(t, sourceName, awsResources()), scaleway,
+		assessment.Options{}), analysis.ReportMeta{InventoryName: inventoryFileName})
+	checkDocument(t, got)
+
+	document := decodeJSON(t, got)
+
+	if diff := cmp.Diff(float64(2), valueAt(t, document, "schemaVersion")); diff != "" {
+		t.Errorf("schemaVersion mismatch (-want +got):\n%s", diff)
+	}
+
+	wantKeys := []string{
+		"blockers", "inventoryName", "kind", "resources", "schemaVersion", "source", "summary", "target",
+		"workloads",
+	}
+	if diff := cmp.Diff(wantKeys, objectKeysAt(t, document)); diff != "" {
+		t.Errorf("document keys mismatch (-want +got), a document without estimates holds no estimate "+
+			"and no source cost:\n%s", diff)
+	}
+
+	wantResourceKeys := []string{
+		"affectedBy", "bestOffering", "category", "fit", "id", "rawType", "reasons", "region", "relations",
+		"requiredChanges", "ties",
+	}
+	if diff := cmp.Diff(wantResourceKeys, objectKeysAt(t, document, "resources", 0)); diff != "" {
+		t.Errorf("resource keys mismatch (-want +got), a resource without estimates holds no plan and "+
+			"no estimate:\n%s", diff)
+	}
+
+	// Nothing anywhere in the document is a price.
+	for _, name := range []string{"estimate", "plan", "amount", "breakdown", "price", "sourceCost", "currency"} {
+		if keys := allKeys(t, document); slices.Contains(keys, name) {
+			t.Errorf("a document without estimates holds a %q key: %q", name, keys)
+		}
+	}
+
+	// The workloads still report their fits and blockers.
+	workload := objectKeysAt(t, document, "workloads", 0)
+	if !slices.Contains(workload, "summary") || !slices.Contains(workload, "blockers") {
+		t.Errorf("a workload holds no summary or no blockers: %q", workload)
+	}
+}
+
+// resourceIndex returns the path of the resource with ID id, failing the test
+// when the document holds no such resource.
+func resourceIndex(tb testing.TB, document any, id string) []any {
+	tb.Helper()
+
+	resources := arrayAt(tb, document, "resources")
+
+	for i := range resources {
+		if got := valueAt(tb, document, "resources", i, "id"); got == id {
+			return []any{"resources", i}
+		}
+	}
+
+	tb.Fatalf("the document holds no resource %q", id)
+
+	return nil
+}
+
+// allKeys returns every object key of document, once each, sorted: a test can
+// assert that a key a document without estimates must not write appears nowhere.
+func allKeys(tb testing.TB, document any) []string {
+	tb.Helper()
+
+	seen := make(map[string]struct{})
+
+	var walk func(value any)
+
+	walk = func(value any) {
+		switch v := value.(type) {
+		case map[string]any:
+			for key, member := range v {
+				seen[key] = struct{}{}
+
+				walk(member)
+			}
+		case []any:
+			for _, member := range v {
+				walk(member)
+			}
+		}
+	}
+
+	walk(document)
+
+	return slices.Sorted(maps.Keys(seen))
+}
+
+// TestReportIsDeterministicWithEstimates pins that a document with estimates is
+// byte-identical however often it is rendered, whatever order the inventory was
+// given in.
+func TestReportIsDeterministicWithEstimates(t *testing.T) {
+	t.Parallel()
+
+	meta := analysis.ReportMeta{InventoryName: inventoryFileName}
+
+	first := render(t, assessEstimates(t, ""), meta)
+	second := render(t, assessEstimates(t, ""), meta)
+	if !bytes.Equal(first, second) {
+		t.Errorf("two documents of the same assessment differ:\nfirst:\n%s\nsecond:\n%s", first, second)
+	}
+
+	shuffled := estimateResources()
+	slices.Reverse(shuffled)
+
+	reordered := render(t, assessment.AssessWith(newInventory(t, sourceName, shuffled), testutil.ReportCatalog(t),
+		assessment.Options{Estimate: true}), meta)
+	if !bytes.Equal(first, reordered) {
+		t.Errorf("the document depends on the order resources were given in:\nfirst:\n%s\nreordered:\n%s",
+			first, reordered)
+	}
 }
