@@ -9,7 +9,9 @@
   embedded and rewritten in the same change as the vocabulary, so retiring a vocabulary value is not
   a version change; the format moves to schema version 2, with plans, monthly EUR prices and a default
   region, by [0024](0024-add-plans-prices-and-a-default-region-in-target-snapshot-format-v2.md), and
-  the reader no longer reads version 1
+  the reader no longer reads version 1; one optional offering key, `fixedFees`, is added within
+  version 2 by [0026](0026-add-an-optional-fixed-monthly-fee-per-offering-to-snapshot-format-v2.md), a
+  recorded exception to the schema version policy and to "every key required"
 - Date: 2026-11-10
 
 ## Context

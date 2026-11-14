@@ -1316,12 +1316,13 @@ func TestAmountString(t *testing.T) {
 	}
 }
 
-// pricedOffering is an offering with plans and storage prices whose input is
-// deliberately unsorted and repeated: New must return the plans sorted by name,
-// each price's regions sorted and de-duplicated, and the prices sorted by their
-// first region with the every-region price first. Its storage prices are
-// region-scoped, one of them repeated, so a test can change a storage region in
-// place as well as a plan price's (ADR 0024).
+// pricedOffering is an offering with plans, storage prices and fixed fees whose
+// input is deliberately unsorted and repeated: New must return the plans sorted
+// by name, each price's regions sorted and de-duplicated, and the prices sorted
+// by their first region with the every-region price first. Its storage prices
+// and its fixed fees are region-scoped, one of them repeated, so a test can
+// change a storage or a fee region in place as well as a plan price's (ADR 0024,
+// ADR 0026).
 func pricedOffering() catalog.Offering {
 	return catalog.Offering{
 		Name:         "Example Compute",
@@ -1349,6 +1350,13 @@ func pricedOffering() catalog.Offering {
 		StoragePrices: []catalog.Price{
 			{Amount: 400, Currency: catalog.EUR, Regions: []string{"nl-ams", "nl-ams"}},
 			{Amount: 450, Currency: catalog.EUR, Regions: []string{"fr-par"}},
+		},
+		// The fixed monthly fee per instance (one cluster), on top of the plans
+		// and the storage: a free control plane in fr-par, a paid one in nl-ams,
+		// out of order and with a region repeated (ADR 0026).
+		FixedFees: []catalog.Price{
+			{Amount: 657000, Currency: catalog.EUR, Regions: []string{"nl-ams", "nl-ams"}},
+			{Amount: 0, Currency: catalog.EUR, Regions: []string{"fr-par"}},
 		},
 	}
 }
@@ -1384,6 +1392,10 @@ func pricedOfferingNormalised() catalog.Offering {
 			{Amount: 450, Currency: catalog.EUR, Regions: []string{"fr-par"}},
 			{Amount: 400, Currency: catalog.EUR, Regions: []string{"nl-ams"}},
 		},
+		FixedFees: []catalog.Price{
+			{Amount: 0, Currency: catalog.EUR, Regions: []string{"fr-par"}},
+			{Amount: 657000, Currency: catalog.EUR, Regions: []string{"nl-ams"}},
+		},
 	}
 }
 
@@ -1396,10 +1408,11 @@ func offeringChanged(mutate func(*catalog.Offering)) catalog.Offering {
 	return o
 }
 
-// TestNewAcceptsPlansAndPrices pins the canonical form New gives plans and
-// prices: plans sorted by name, each price's regions sorted and de-duplicated
-// with every-region prices keeping no regions at all, and the prices sorted by
-// first region with the every-region price first.
+// TestNewAcceptsPlansAndPrices pins the canonical form New gives plans, prices
+// and fixed fees: plans sorted by name, each price's regions sorted and
+// de-duplicated with every-region prices keeping no regions at all, and the
+// prices of each list sorted by first region with the every-region price first
+// (ADR 0024, ADR 0026).
 func TestNewAcceptsPlansAndPrices(t *testing.T) {
 	t.Parallel()
 
@@ -1419,10 +1432,163 @@ func TestNewAcceptsPlansAndPrices(t *testing.T) {
 	if diff := cmp.Diff(want.StoragePrices, got[0].StoragePrices); diff != "" {
 		t.Errorf("StoragePrices are not sorted and normalised (-want +got):\n%s", diff)
 	}
+
+	if diff := cmp.Diff(want.FixedFees, got[0].FixedFees); diff != "" {
+		t.Errorf("FixedFees are not sorted and normalised (-want +got):\n%s", diff)
+	}
+}
+
+// TestNewFixedFees pins the canonical form New gives an offering's fixed fees:
+// each fee's regions sorted and de-duplicated, a fee with no regions kept as no
+// regions at all (it applies to every region of the offering), and the fees
+// sorted by their first region with the every-region fee first (ADR 0026).
+func TestNewFixedFees(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name     string
+		offering catalog.Offering
+		want     []catalog.Price
+	}{
+		{
+			// A fee with no regions is how a target says it charges the same fee
+			// everywhere: one fee, covering the offering's fr-par and nl-ams.
+			name: "a fee that applies to every region",
+			offering: catalog.Offering{
+				Name:       "Example Kubernetes",
+				Categories: []taxonomy.Category{taxonomy.KubernetesManaged},
+				Regions:    []string{"fr-par", "nl-ams"},
+				FixedFees: []catalog.Price{
+					{Amount: 657000, Currency: catalog.EUR},
+				},
+			},
+			want: []catalog.Price{
+				{Amount: 657000, Currency: catalog.EUR},
+			},
+		},
+		{
+			// The fees are sorted by their first region, and a region listed
+			// twice in one fee is one region, not an overlap.
+			name: "fees over several regions, out of order and repeated",
+			offering: catalog.Offering{
+				Name:       "Example Kubernetes",
+				Categories: []taxonomy.Category{taxonomy.KubernetesManaged},
+				Regions:    []string{"fr-par", "nl-ams", "pl-waw"},
+				FixedFees: []catalog.Price{
+					{Amount: 100, Currency: catalog.EUR, Regions: []string{"nl-ams"}},
+					{Amount: 200, Currency: catalog.EUR, Regions: []string{"pl-waw", "fr-par", "fr-par"}},
+				},
+			},
+			want: []catalog.Price{
+				{Amount: 200, Currency: catalog.EUR, Regions: []string{"fr-par", "pl-waw"}},
+				{Amount: 100, Currency: catalog.EUR, Regions: []string{"nl-ams"}},
+			},
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			cat := newCatalog(t, targetName, validSnapshot(), []catalog.Offering{tc.offering})
+
+			got := cat.Offerings()
+			if len(got) != 1 {
+				t.Fatalf("Offerings() returned %d offerings, want 1", len(got))
+			}
+
+			if diff := cmp.Diff(tc.want, got[0].FixedFees); diff != "" {
+				t.Errorf("FixedFees are not sorted and normalised (-want +got):\n%s", diff)
+			}
+		})
+	}
+}
+
+// TestOfferingFixedFee pins the method an estimate asks for the fixed monthly
+// fee of one instance in one region (ADR 0026): the fee of that region and
+// true, a fee of 0 with true when the region's control plane is included, and 0
+// with false when the offering charges no fixed fee at all or is not available
+// in the region. The boolean is what tells "free" from "no fee".
+func TestOfferingFixedFee(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name     string
+		offering catalog.Offering
+		want     map[string]catalog.Amount
+	}{
+		{
+			name: "a fee for each region, one of them free",
+			offering: catalog.Offering{
+				Name:       "Example Kubernetes",
+				Categories: []taxonomy.Category{taxonomy.KubernetesManaged},
+				Regions:    []string{"fr-par", "nl-ams"},
+				FixedFees: []catalog.Price{
+					{Amount: 657000, Currency: catalog.EUR, Regions: []string{"fr-par"}},
+					{Amount: 0, Currency: catalog.EUR, Regions: []string{"nl-ams"}},
+				},
+			},
+			want: map[string]catalog.Amount{"fr-par": 657000, "nl-ams": 0},
+		},
+		{
+			name: "a fee that applies to every region",
+			offering: catalog.Offering{
+				Name:       "Example Kubernetes",
+				Categories: []taxonomy.Category{taxonomy.KubernetesManaged},
+				Regions:    []string{"fr-par", "nl-ams"},
+				FixedFees: []catalog.Price{
+					{Amount: 657000, Currency: catalog.EUR},
+				},
+			},
+			want: map[string]catalog.Amount{"fr-par": 657000, "nl-ams": 657000},
+		},
+		{
+			name: "no fixed fee",
+			offering: catalog.Offering{
+				Name:       "Example Kubernetes",
+				Categories: []taxonomy.Category{taxonomy.KubernetesManaged},
+				Regions:    []string{"fr-par", "nl-ams"},
+			},
+			want: map[string]catalog.Amount{},
+		},
+	}
+
+	// A region no case may charge a fee in: it is not a region of any offering
+	// above, and a fee is never borrowed from another region.
+	const elsewhere = "de-fra"
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			cat := newCatalog(t, targetName, validSnapshot(), []catalog.Offering{tc.offering})
+
+			offering := cat.Offerings()[0]
+
+			for _, region := range append(offering.Regions, elsewhere, "") {
+				want, wantOK := tc.want[region]
+
+				got, ok := offering.FixedFee(region)
+				if ok != wantOK {
+					t.Errorf("FixedFee(%s) reports a fee: %t, want %t",
+						text.Quote(region), ok, wantOK)
+
+					continue
+				}
+
+				if got != want {
+					t.Errorf("FixedFee(%s) = %s, want %s",
+						text.Quote(region), got, want)
+				}
+			}
+		})
+	}
 }
 
 // An offering that sells no plan and publishes no storage price is a valid
-// offering: an empty list is a value, not an absence (ADR 0024).
+// offering: an empty list is a value, not an absence (ADR 0024). The same holds
+// for its fixed fees, which are left out of a document to say there are none
+// (ADR 0026).
 func TestNewOfferingWithoutPlansOrStoragePrices(t *testing.T) {
 	t.Parallel()
 
@@ -1435,6 +1601,7 @@ func TestNewOfferingWithoutPlansOrStoragePrices(t *testing.T) {
 	withEmptyLists := withoutLists
 	withEmptyLists.Plans = []catalog.Plan{}
 	withEmptyLists.StoragePrices = []catalog.Price{}
+	withEmptyLists.FixedFees = []catalog.Price{}
 
 	for _, offering := range []catalog.Offering{withoutLists, withEmptyLists} {
 		cat := newCatalog(t, targetName, validSnapshot(), []catalog.Offering{offering})
@@ -1446,6 +1613,16 @@ func TestNewOfferingWithoutPlansOrStoragePrices(t *testing.T) {
 
 		if got.StoragePrices != nil {
 			t.Errorf("StoragePrices = %v for offering %q, want nil", got.StoragePrices, got.Name)
+		}
+
+		if got.FixedFees != nil {
+			t.Errorf("FixedFees = %v for offering %q, want nil", got.FixedFees, got.Name)
+		}
+
+		// No fixed fee is not a fee of zero: the boolean says which it is.
+		if fee, ok := got.FixedFee("fr-par"); ok || fee != 0 {
+			t.Errorf("FixedFee(%q) = (%s, %t) for offering %q, want (0.00, false)",
+				"fr-par", fee, ok, got.Name)
 		}
 	}
 }
@@ -1735,6 +1912,162 @@ func TestNewPlanAndPriceErrors(t *testing.T) {
 	}
 }
 
+// fixedFeeOffering is a Kubernetes offering whose fixed fees cover both its
+// regions: the control plane is charged in fr-par and included in nl-ams, so a
+// case can break one fee and leave the coverage valid (ADR 0026).
+func fixedFeeOffering() catalog.Offering {
+	return catalog.Offering{
+		Name:       "Example Kubernetes",
+		Categories: []taxonomy.Category{taxonomy.KubernetesManaged},
+		Regions:    []string{"fr-par", "nl-ams"},
+		FixedFees: []catalog.Price{
+			{Amount: 657000, Currency: catalog.EUR, Regions: []string{"fr-par"}},
+			{Amount: 0, Currency: catalog.EUR, Regions: []string{"nl-ams"}},
+		},
+	}
+}
+
+// fixedFeeOfferingChanged returns fixedFeeOffering with mutate applied, so a
+// case breaks exactly one fee or the coverage and leaves the rest valid.
+func fixedFeeOfferingChanged(mutate func(*catalog.Offering)) catalog.Offering {
+	o := fixedFeeOffering()
+	mutate(&o)
+
+	return o
+}
+
+// TestNewFixedFeeErrors pins every rule New holds for an offering's fixed fees:
+// the sentinel the error wraps, and that the message names the offering, the
+// fee list and the region at fault. A fee list is a price list with one rule of
+// its own: it must cover every region of the offering exactly once, because a
+// region left without a fee would read as a free control plane (ADR 0026, PRD
+// #190).
+func TestNewFixedFeeErrors(t *testing.T) {
+	t.Parallel()
+
+	const offeringName = "Example Kubernetes"
+
+	tests := []struct {
+		name     string
+		offering catalog.Offering
+		wantErr  error
+		// wantMsg lists the substrings the message must hold besides the offering
+		// name: the fee list index, the field, or the region left without a fee.
+		wantMsg []string
+	}{
+		{
+			name: "negative fee amount",
+			offering: fixedFeeOfferingChanged(func(o *catalog.Offering) {
+				o.FixedFees[0].Amount = -1
+			}),
+			wantErr: catalog.ErrInvalidPrice,
+			wantMsg: []string{"fixedFees[0]", "amount"},
+		},
+		{
+			name: "fee amount above the maximum",
+			offering: fixedFeeOfferingChanged(func(o *catalog.Offering) {
+				o.FixedFees[0].Amount = catalog.MaxAmount + 1
+			}),
+			wantErr: catalog.ErrInvalidPrice,
+			wantMsg: []string{"fixedFees[0]", "amount"},
+		},
+		{
+			// The currency is compared exactly: no case folding and no trimming.
+			name: "fee in a currency that is not EUR",
+			offering: fixedFeeOfferingChanged(func(o *catalog.Offering) {
+				o.FixedFees[1].Currency = "eur"
+			}),
+			wantErr: catalog.ErrInvalidPrice,
+			wantMsg: []string{"fixedFees[1]", "currency", "eur"},
+		},
+		{
+			name: "fee with a blank region",
+			offering: fixedFeeOfferingChanged(func(o *catalog.Offering) {
+				o.FixedFees[0].Regions = []string{" "}
+			}),
+			wantErr: catalog.ErrInvalidPrice,
+			wantMsg: []string{"fixedFees[0]", "regions"},
+		},
+		{
+			name: "fee region the offering is not in",
+			offering: fixedFeeOfferingChanged(func(o *catalog.Offering) {
+				o.FixedFees[0].Regions = []string{"de-fra"}
+			}),
+			wantErr: catalog.ErrPriceRegion,
+			wantMsg: []string{"fixedFees[0]", "de-fra"},
+		},
+		{
+			name: "two fees for the same region",
+			offering: fixedFeeOfferingChanged(func(o *catalog.Offering) {
+				o.FixedFees[1].Regions = []string{"fr-par"}
+			}),
+			wantErr: catalog.ErrOverlappingPrices,
+			wantMsg: []string{"fixedFees[1]", "fr-par"},
+		},
+		{
+			// A fee with no region applies to every region of the offering, so it
+			// overlaps any other fee of the same list.
+			name: "every-region fee beside a fee for one region",
+			offering: fixedFeeOfferingChanged(func(o *catalog.Offering) {
+				o.FixedFees = []catalog.Price{
+					{Amount: 657000, Currency: catalog.EUR},
+					{Amount: 0, Currency: catalog.EUR, Regions: []string{"nl-ams"}},
+				}
+			}),
+			wantErr: catalog.ErrOverlappingPrices,
+			wantMsg: []string{"fixedFees[1]"},
+		},
+		{
+			// Every region of the offering needs a fee: the region left out here
+			// would estimate as a free control plane (ADR 0026).
+			name: "offering region with no fee",
+			offering: fixedFeeOfferingChanged(func(o *catalog.Offering) {
+				o.FixedFees = []catalog.Price{
+					{Amount: 657000, Currency: catalog.EUR, Regions: []string{"fr-par"}},
+				}
+			}),
+			wantErr: catalog.ErrMissingFee,
+			wantMsg: []string{"fixedFees", "nl-ams"},
+		},
+		{
+			// When several regions lack a fee, the error names the first in sorted
+			// order, so it is the same on every run.
+			name: "several regions with no fee",
+			offering: fixedFeeOfferingChanged(func(o *catalog.Offering) {
+				o.Regions = []string{"fr-par", "nl-ams", "pl-waw"}
+				o.FixedFees = []catalog.Price{
+					{Amount: 657000, Currency: catalog.EUR, Regions: []string{"pl-waw"}},
+				}
+			}),
+			wantErr: catalog.ErrMissingFee,
+			wantMsg: []string{"fixedFees", "fr-par"},
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			_, err := catalog.New(targetName, validSnapshot(), []catalog.Offering{tc.offering})
+			if !errors.Is(err, tc.wantErr) {
+				t.Fatalf("New() error = %v, want one wrapping %v", err, tc.wantErr)
+			}
+
+			msg := err.Error()
+
+			if strings.ContainsAny(msg, "\r\n") {
+				t.Errorf("New() error = %q, want a single line", msg)
+			}
+
+			for _, want := range append([]string{offeringName}, tc.wantMsg...) {
+				if !strings.Contains(msg, want) {
+					t.Errorf("New() error = %q, want it to name %s", msg, text.Quote(want))
+				}
+			}
+		})
+	}
+}
+
 // New refuses a snapshot without a usable default region: every estimate falls
 // back to it when the user names no region, so a blank one would estimate in no
 // region at all. New does not check that it is a region of any offering: the
@@ -1789,13 +2122,14 @@ func TestNewDefaultRegion(t *testing.T) {
 	}
 }
 
-// tamperPricedOffering breaks every plan, price and storage price reachable
-// through off, so a catalog that hands out a list it shares with its input or
-// its result shows the change. It changes each region in place and never
-// replaces a region slice: a slice the catalog shares but a test replaces is
-// never written to, so a shallow copy would go unnoticed, and a storage price's
-// regions deserve the same proof as a plan price's (ADR 0024). It walks the
-// lists instead of indexing a plan: the plans come back sorted by name.
+// tamperPricedOffering breaks every plan, price, storage price and fixed fee
+// reachable through off, so a catalog that hands out a list it shares with its
+// input or its result shows the change. It changes each region in place and
+// never replaces a region slice: a slice the catalog shares but a test replaces
+// is never written to, so a shallow copy would go unnoticed, and a storage
+// price's or a fixed fee's regions deserve the same proof as a plan price's
+// (ADR 0024, ADR 0026). It walks the lists instead of indexing a plan: the plans
+// come back sorted by name.
 func tamperPricedOffering(t *testing.T, off *catalog.Offering) {
 	t.Helper()
 
@@ -1836,11 +2170,32 @@ func tamperPricedOffering(t *testing.T, off *catalog.Offering) {
 	if regions == 0 {
 		t.Fatal("the offering's storage prices hold no region to tamper with")
 	}
+
+	if len(off.FixedFees) == 0 {
+		t.Fatal("the offering charges no fixed fee to tamper with")
+	}
+
+	feeRegions := 0
+
+	for i := range off.FixedFees {
+		off.FixedFees[i].Amount = 1
+
+		for k := range off.FixedFees[i].Regions {
+			off.FixedFees[i].Regions[k] = "tampered"
+
+			feeRegions++
+		}
+	}
+
+	if feeRegions == 0 {
+		t.Fatal("the offering's fixed fees hold no region to tamper with")
+	}
 }
 
 // The catalog is immutable: mutating the slices handed to New, or what Offerings
-// and OfferingsFor return, must not reach the catalog. Plans, their prices and a
-// price's regions are part of that copy (ADR 0024).
+// and OfferingsFor return, must not reach the catalog. Plans, their prices, a
+// price's regions and an offering's fixed fees are part of that copy (ADR 0024,
+// ADR 0026).
 func TestPlansAndPricesAreCopied(t *testing.T) {
 	t.Parallel()
 
@@ -1860,6 +2215,10 @@ func TestPlansAndPricesAreCopied(t *testing.T) {
 
 		if diff := cmp.Diff(want.StoragePrices, got[0].StoragePrices); diff != "" {
 			t.Errorf("StoragePrices changed (-want +got):\n%s", diff)
+		}
+
+		if diff := cmp.Diff(want.FixedFees, got[0].FixedFees); diff != "" {
+			t.Errorf("FixedFees changed (-want +got):\n%s", diff)
 		}
 	}
 
