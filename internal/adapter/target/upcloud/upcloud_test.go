@@ -510,7 +510,7 @@ func feeRegions(o catalog.Offering) []string {
 // there; this test derives each multi-node amount from the single-node one the
 // snapshot stores and cannot. It pins what a multi-node plan is besides its
 // price: the same plan names, the same vCPUs, memory and included storage, and a
-// storage price the same as its single-node offering's.
+// per-GiB storage price for two nodes, twice its single-node offering's.
 func TestMultiNodeDatabasePrices(t *testing.T) {
 	t.Parallel()
 
@@ -624,12 +624,47 @@ func TestMultiNodeDatabasePrices(t *testing.T) {
 				}
 			}
 
-			// Stored data costs the same however many database nodes run, so the
-			// multi-node offering repeats its single-node counterpart's storage price
-			// exactly: amount, currency and regions.
-			if diff := cmp.Diff(single.StoragePrices, multi.StoragePrices); diff != "" {
-				t.Errorf("offering %s: storage prices differ from offering %s, want the same ones (-single-node +multi-node):\n%s",
-					text.Quote(multi.Name), text.Quote(single.Name), diff)
+			// UpCloud bills a cluster's storage per node: its configuration pages say
+			// the per-GiB storage price "applies to each node". They do not say how
+			// many nodes a multi-node plan runs, so the snapshot infers the two its
+			// plan prices are already quoted for and doubles the per-GiB amount, in
+			// catalog.Amount's integer units and without a float (ADR 0024). That
+			// overestimates a three-node cluster's storage, which is then estimated a
+			// third low, and the snapshot prefers a dearer target to a cheaper one.
+			const storageNodeCount = 2
+
+			if len(multi.StoragePrices) != len(single.StoragePrices) {
+				t.Errorf("offering %s: %d storage prices, want %d, one per storage price of offering %s",
+					text.Quote(multi.Name), len(multi.StoragePrices), len(single.StoragePrices), text.Quote(single.Name))
+			}
+
+			for i, singlePrice := range single.StoragePrices {
+				if i >= len(multi.StoragePrices) {
+					break
+				}
+
+				multiPrice := multi.StoragePrices[i]
+
+				// Twice the single-node amount, exactly: 2 x 1014 = 2028, that is
+				// 0.2028 EUR per GiB per month.
+				wantAmount := singlePrice.Amount * storageNodeCount
+
+				if multiPrice.Amount != wantAmount {
+					t.Errorf("offering %s: storagePrices[%d].amount = %s, want %s: the amount %s of offering %s times %d nodes",
+						text.Quote(multi.Name), i, multiPrice.Amount, wantAmount, singlePrice.Amount,
+						text.Quote(single.Name), storageNodeCount)
+				}
+
+				if multiPrice.Currency != singlePrice.Currency {
+					t.Errorf("offering %s: storagePrices[%d].currency = %s, want %s, the currency of offering %s",
+						text.Quote(multi.Name), i, text.Quote(multiPrice.Currency), text.Quote(singlePrice.Currency),
+						text.Quote(single.Name))
+				}
+
+				if diff := cmp.Diff(singlePrice.Regions, multiPrice.Regions); diff != "" {
+					t.Errorf("offering %s: storagePrices[%d].regions differ from offering %s, want the same regions (-single-node +multi-node):\n%s",
+						text.Quote(multi.Name), i, text.Quote(single.Name), diff)
+				}
 			}
 		})
 	}
