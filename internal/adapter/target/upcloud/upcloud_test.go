@@ -533,10 +533,12 @@ func TestCatalogGolden(t *testing.T) {
 // dump renders cat as the golden file's lines: a header with where and when the
 // data was taken, then one line per offering, sorted by name, with every list
 // comma-separated and an empty list shown as "-". Under each offering come its
-// plans, one line each with the plan's numbers and prices, and then its storage
-// prices, so the golden file pins every price the snapshot holds and the region
-// it applies to. Plans and prices are already in the domain's order, so the
-// output never depends on map iteration.
+// plans, one line each with the plan's numbers and prices, then its fixed fees,
+// one line each per cluster with the fee and the regions it applies to, and then
+// its storage prices, so the golden file pins every price the snapshot holds and
+// the region it applies to, the fixed monthly fees included. Plans, fees and
+// prices are already in the domain's order, so the output never depends on map
+// iteration.
 func dump(cat catalog.Catalog) []byte {
 	var b strings.Builder
 
@@ -557,6 +559,14 @@ func dump(cat catalog.Catalog) []byte {
 		for _, p := range o.Plans {
 			fmt.Fprintf(&b, "  plan: %s | %d vcpu | %s GiB | %d GiB storage | %s\n",
 				p.Name, p.VCPUs, gib(p.MemoryMilliGiB), p.IncludedStorageGiB, joinPrices(p.Prices))
+		}
+
+		if len(o.FixedFees) == 0 {
+			b.WriteString("  fixed fees: -\n")
+		}
+
+		for _, fee := range o.FixedFees {
+			fmt.Fprintf(&b, "  fixed fee: %s\n", formatPrice(fee))
 		}
 
 		if len(o.StoragePrices) == 0 {
