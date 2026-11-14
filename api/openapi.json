@@ -58,7 +58,7 @@
         },
         "responses": {
           "200": {
-            "description": "The report.",
+            "description": "The report. The JSON report is schemaVersion 2 (docs/adr/0018, docs/adr/0029); a client reads schemaVersion to know which version it holds.",
             "headers": {
               "Cache-Control": {
                 "$ref": "#/components/headers/Cache-Control"
@@ -72,10 +72,10 @@
                 "schema": {
                   "oneOf": [
                     {
-                      "$ref": "../internal/adapter/report/jsonreport/schema/assessment-v1.schema.json"
+                      "$ref": "../internal/adapter/report/jsonreport/schema/assessment-v2.schema.json"
                     },
                     {
-                      "$ref": "../internal/adapter/report/jsonreport/schema/comparison-v1.schema.json"
+                      "$ref": "../internal/adapter/report/jsonreport/schema/comparison-v2.schema.json"
                     }
                   ]
                 }

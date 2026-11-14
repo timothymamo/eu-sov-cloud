@@ -12,8 +12,8 @@ import (
 )
 
 // schemaVersion is the version of the JSON report format this package writes,
-// the schemaVersion of every document (docs/adr/0018).
-const schemaVersion = 1
+// the schemaVersion of every document (docs/adr/0018, docs/adr/0029).
+const schemaVersion = 2
 
 // The kinds of document the format defines.
 const (
@@ -48,6 +48,11 @@ type assessmentDocument struct {
 	Summary       summary    `json:"summary"`
 	Resources     []resource `json:"resources"`
 	Blockers      []blocker  `json:"blockers"`
+	Workloads     []workload `json:"workloads"`
+	// Estimate and SourceCost are written only when the assessment has
+	// estimates.
+	Estimate   *estimateBasis `json:"estimate,omitempty"`
+	SourceCost *sourceCost    `json:"sourceCost,omitempty"`
 }
 
 // target is the target a document assesses against and its catalog snapshot.
@@ -72,15 +77,21 @@ type summary struct {
 
 // resource is the verdict on one resource.
 type resource struct {
-	ID              string   `json:"id"`
-	RawType         string   `json:"rawType"`
-	Category        string   `json:"category"`
-	Region          string   `json:"region"`
-	Fit             string   `json:"fit"`
-	BestOffering    string   `json:"bestOffering"`
-	Ties            []string `json:"ties"`
-	Reasons         []reason `json:"reasons"`
-	RequiredChanges []string `json:"requiredChanges"`
+	ID              string     `json:"id"`
+	RawType         string     `json:"rawType"`
+	Category        string     `json:"category"`
+	Region          string     `json:"region"`
+	Fit             string     `json:"fit"`
+	BestOffering    string     `json:"bestOffering"`
+	Ties            []string   `json:"ties"`
+	Reasons         []reason   `json:"reasons"`
+	RequiredChanges []string   `json:"requiredChanges"`
+	Relations       []relation `json:"relations"`
+	AffectedBy      []string   `json:"affectedBy"`
+	// Plan is written when the estimate names a plan, and Estimate whenever
+	// the assessment has estimates.
+	Plan     *plan             `json:"plan,omitempty"`
+	Estimate *resourceEstimate `json:"estimate,omitempty"`
 }
 
 // reason is one mapping.Reason: its code, its plain sentence, and the names it
@@ -120,6 +131,9 @@ func (*Reporter) Report(ctx context.Context, w io.Writer, a assessment.Assessmen
 		Summary:       newSummary(a.Summary),
 		Resources:     newResources(a.Verdicts),
 		Blockers:      newBlockers(a.Blockers),
+		Workloads:     newWorkloads(a.Workloads),
+		Estimate:      newEstimateBasis(a),
+		SourceCost:    newAssessmentSourceCost(a),
 	}
 
 	return write(w, doc, "json report")
@@ -185,6 +199,10 @@ func newResources(verdicts []assessment.Verdict) []resource {
 			Ties:            ties,
 			Reasons:         newReasons(v.Reasons),
 			RequiredChanges: changes,
+			Relations:       newRelations(v),
+			AffectedBy:      orEmpty(v.AffectedBy),
+			Plan:            newPlan(v.Estimate),
+			Estimate:        newResourceEstimate(v.Estimate),
 		})
 	}
 

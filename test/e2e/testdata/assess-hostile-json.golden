@@ -1,5 +1,5 @@
 {
-  "schemaVersion": 1,
+  "schemaVersion": 2,
   "kind": "assessment",
   "inventoryName": "inventory-hostile.json",
   "source": "aws",
@@ -32,7 +32,9 @@
           "offering": "Object Storage"
         }
       ],
-      "requiredChanges": []
+      "requiredChanges": [],
+      "relations": [],
+      "affectedBy": []
     },
     {
       "id": "[ ] x",
@@ -49,7 +51,9 @@
           "offering": "Instances"
         }
       ],
-      "requiredChanges": []
+      "requiredChanges": [],
+      "relations": [],
+      "affectedBy": []
     },
     {
       "id": "a|b",
@@ -69,7 +73,9 @@
       ],
       "requiredChanges": [
         "node-high-availability"
-      ]
+      ],
+      "relations": [],
+      "affectedBy": []
     },
     {
       "id": "tick`x",
@@ -86,8 +92,24 @@
           "offering": "Object Storage"
         }
       ],
-      "requiredChanges": []
+      "requiredChanges": [],
+      "relations": [],
+      "affectedBy": []
     }
   ],
-  "blockers": []
+  "blockers": [],
+  "workloads": [
+    {
+      "name": "",
+      "noWorkload": true,
+      "resources": 4,
+      "summary": {
+        "direct": 3,
+        "partial": 1,
+        "none": 0,
+        "total": 4
+      },
+      "blockers": []
+    }
+  ]
 }

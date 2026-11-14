@@ -1,5 +1,5 @@
 {
-  "schemaVersion": 1,
+  "schemaVersion": 2,
   "kind": "assessment",
   "inventoryName": "inv\"\\\n\t\u0000\u001b\u2028\u003c/script\u003e�.json",
   "source": "aws\"\\\n\t\u0000\u001b\u2028\u003c/script\u003e�",
@@ -34,7 +34,9 @@
           "offering": "Off\"er\\ing\u0000\u001b\u2028\u003c/script\u003e�"
         }
       ],
-      "requiredChanges": []
+      "requiredChanges": [],
+      "relations": [],
+      "affectedBy": []
     },
     {
       "id": "partial-example",
@@ -54,7 +56,9 @@
       ],
       "requiredChanges": [
         "cap\"a\\b\n\t\u0000\u001b\u2028\u003c/script\u003e�"
-      ]
+      ],
+      "relations": [],
+      "affectedBy": []
     },
     {
       "id": "fn\"\\\n\t\u0000\u001b\u2028\u003c/script\u003e�",
@@ -76,7 +80,9 @@
           "category": "cat\"\\\n\t\u0000\u001b\u2028\u003c/script\u003e�"
         }
       ],
-      "requiredChanges": []
+      "requiredChanges": [],
+      "relations": [],
+      "affectedBy": []
     }
   ],
   "blockers": [
@@ -96,5 +102,6 @@
         "category": "cat\"\\\n\t\u0000\u001b\u2028\u003c/script\u003e�"
       }
     }
-  ]
+  ],
+  "workloads": []
 }

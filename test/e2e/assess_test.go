@@ -392,8 +392,8 @@ func TestAssessJSONFormat(t *testing.T) {
 				t.Fatalf("decoding the document: %v", err)
 			}
 
-			if header.SchemaVersion != 1 {
-				t.Errorf("schemaVersion = %d, want 1", header.SchemaVersion)
+			if header.SchemaVersion != 2 {
+				t.Errorf("schemaVersion = %d, want 2 (docs/adr/0029)", header.SchemaVersion)
 			}
 
 			if header.Kind != tc.kind {
