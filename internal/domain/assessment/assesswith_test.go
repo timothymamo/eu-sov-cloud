@@ -226,6 +226,11 @@ func TestAssessWithRegion(t *testing.T) {
 					"bucket-example":      mapping.Direct,
 					"i-0123456789abcdef0": mapping.Direct,
 				},
+				// A direct fit carries the AllCapabilities reason, as Map gives it.
+				reasons: map[string][]mapping.Reason{
+					"bucket-example":      {{Code: mapping.AllCapabilities, Offering: "Example Object Storage"}},
+					"i-0123456789abcdef0": {{Code: mapping.AllCapabilities, Offering: "Example Virtual Machines"}},
+				},
 				monthly: map[string]string{
 					"bucket-example":      "15.00",
 					"i-0123456789abcdef0": "25.00",
@@ -250,6 +255,7 @@ func TestAssessWithRegion(t *testing.T) {
 						Category: taxonomy.StorageObject,
 						Region:   "xx-ams",
 					}},
+					"i-0123456789abcdef0": {{Code: mapping.AllCapabilities, Offering: "Example Virtual Machines"}},
 				},
 				monthly: map[string]string{
 					"i-0123456789abcdef0": "26.00",
