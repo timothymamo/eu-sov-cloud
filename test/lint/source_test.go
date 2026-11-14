@@ -291,6 +291,26 @@ func TestScanSources(t *testing.T) {
 			files: map[string]string{"_x/a.go": "//go:build !e2e\n\npackage x\n", "a/testdata/a.go": "//go:build !e2e\n\npackage a\n"},
 		},
 		{
+			// Only a go.mod regular file is the root of another module, as the
+			// go command's own search reads it, so ./... stops there, and the
+			// walk leaves the subtree out with it.
+			name: "the root of another module is skipped",
+			files: map[string]string{
+				"sub/go.mod": "module example.com/sub\n",
+				"sub/a.go":   "//go:build !e2e\n\npackage a\n",
+			},
+		},
+		{
+			// A DIRECTORY named go.mod is no module root (issue #207), so the
+			// subtree of the directory holding it is no root's subtree: ./...
+			// still reaches it, and the walk must read the violation in it.
+			name: "a directory named go.mod is no module root",
+			files: map[string]string{
+				"sub/go.mod/keep.go": "//go:build !e2e\n\npackage keep\n",
+			},
+			want: []string{"sub/go.mod/keep.go:1:1: //go:build !e2e " + constraintHides("//go:build !e2e")},
+		},
+		{
 			// golangci-lint lints the link with the directive of its target,
 			// which the walk does not read.
 			name:     "symbolic link to a Go file",
