@@ -384,6 +384,23 @@ func cliDeps() cli.Deps {
 	}
 }
 
+// decodeRequest is what the server's composition root passes as
+// httpapi.Deps.DecodeRequest: the strict request decoder, whose Request is the
+// adapter's own type, carried over to the port's.
+func decodeRequest(body []byte) (httpapi.Request, error) {
+	req, err := assessmentrequest.Decode(body)
+	if err != nil {
+		return httpapi.Request{}, err
+	}
+
+	return httpapi.Request{
+		Inventory: req.Inventory,
+		Targets:   req.Targets,
+		Regions:   req.Regions,
+		Estimate:  req.Estimate,
+	}, nil
+}
+
 // apiHandler wires the HTTP API as its composition root does: the strict request
 // decoder, the in-memory inventory source, the same targets and reporters as the
 // CLI, and the body cap assessmentrequest declares.
@@ -391,7 +408,7 @@ func apiHandler(tb testing.TB) http.Handler {
 	tb.Helper()
 
 	handler, err := httpapi.New(httpapi.Deps{
-		DecodeRequest: assessmentrequest.Decode,
+		DecodeRequest: decodeRequest,
 		NewInventorySource: func(document []byte) analysis.InventorySource {
 			return inventoryfile.FromBytes(document)
 		},

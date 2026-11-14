@@ -450,6 +450,150 @@ func TestAssessMarkdownFormatIsDefault(t *testing.T) {
 	}
 }
 
+// TestAssessEstimatesAreOnByDefault pins PRD #190 milestone 8's default on the
+// real binary: a run without --no-estimate estimates, so the report carries the
+// Plan and Monthly estimate columns and the cost summary, and the run that turns
+// them off carries no price and no cost summary.
+func TestAssessEstimatesAreOnByDefault(t *testing.T) {
+	t.Parallel()
+
+	inventory := filepath.Join("testdata", "inventory.json")
+
+	byDefault := assess(t, scalewayKey, inventory)
+	if byDefault.code != 0 {
+		t.Fatalf("exit code = %d, want 0; stderr = %q", byDefault.code, byDefault.stderr)
+	}
+
+	for _, want := range []string{"| Plan |", "| Monthly estimate |", "## Cost estimate"} {
+		if !strings.Contains(byDefault.stdout, want) {
+			t.Errorf("the report of a run without --no-estimate does not hold %q, so it does not "+
+				"estimate by default:\n%s", want, byDefault.stdout)
+		}
+	}
+
+	t.Run("--no-estimate", func(t *testing.T) {
+		t.Parallel()
+
+		got := assess(t, scalewayKey, inventory, "--no-estimate")
+		if got.code != 0 {
+			t.Fatalf("exit code = %d, want 0; stderr = %q", got.code, got.stderr)
+		}
+
+		if got.stderr != "" {
+			t.Errorf("stderr = %q, want empty", got.stderr)
+		}
+
+		for _, unwanted := range []string{"€", "| Plan |", "| Monthly estimate |", "## Cost estimate"} {
+			if strings.Contains(got.stdout, unwanted) {
+				t.Errorf("the report of a run with --no-estimate holds %q:\n%s", unwanted, got.stdout)
+			}
+		}
+
+		if !strings.Contains(got.stdout, resourcesHeading) {
+			t.Errorf("the report holds no %q section:\n%s", resourcesHeading, got.stdout)
+		}
+	})
+}
+
+// TestAssessRegion pins --region end to end: a region the target lists is the
+// region the report names, and a region it does not list, or one named for a
+// target the run does not select, is a usage error (exit 2) whose one error line
+// names the element at fault, with nothing on stdout and no report written.
+func TestAssessRegion(t *testing.T) {
+	t.Parallel()
+
+	inventory := filepath.Join("testdata", "inventory.json")
+
+	t.Run("a region the target lists", func(t *testing.T) {
+		t.Parallel()
+
+		const region = "nl-ams"
+
+		got := assess(t, scalewayKey, inventory, "--region", scalewayKey+"="+region)
+		if got.code != 0 {
+			t.Fatalf("exit code = %d, want 0; stderr = %q", got.code, got.stderr)
+		}
+
+		if got.stderr != "" {
+			t.Errorf("stderr = %q, want empty", got.stderr)
+		}
+
+		var regionLines []string
+
+		for line := range strings.SplitSeq(got.stdout, "\n") {
+			if strings.HasPrefix(line, "- Region: ") {
+				regionLines = append(regionLines, line)
+			}
+		}
+
+		if len(regionLines) != 1 {
+			t.Fatalf("the report holds %d region lines %q, want 1:\n%s", len(regionLines), regionLines,
+				got.stdout)
+		}
+
+		if !strings.HasPrefix(regionLines[0], "- Region: `"+region+"`") {
+			t.Errorf("the region line = %q, want it to name %q", regionLines[0], region)
+		}
+	})
+
+	tests := []struct {
+		name string
+		// args are the arguments after the inventory and target of the run.
+		args []string
+		// want is what the error line must name.
+		want []string
+	}{
+		{
+			name: "a region the target does not list",
+			args: []string{"--region", scalewayKey + "=xx-nope"},
+			want: []string{"xx-nope", "fr-par"},
+		},
+		{
+			name: "a region for a target the run does not select",
+			args: []string{"--region", ovhcloudKey + "=GRA"},
+			want: []string{ovhcloudKey},
+		},
+		{
+			name: "a malformed pair",
+			args: []string{"--region", scalewayKey},
+			want: []string{scalewayKey},
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			dest := filepath.Join(t.TempDir(), "report.md")
+
+			got := assess(t, scalewayKey, inventory, append(slices.Clone(tc.args), "--output", dest)...)
+			if got.code != 2 {
+				t.Errorf("exit code = %d, want 2 (a usage error); stderr = %q", got.code, got.stderr)
+			}
+
+			if got.stdout != "" {
+				t.Errorf("stdout = %q, want empty", got.stdout)
+			}
+
+			firstLine, _, _ := strings.Cut(got.stderr, "\n")
+
+			if !strings.HasPrefix(firstLine, errPrefix) {
+				t.Errorf("the first line of stderr = %q, want it to start with %q", firstLine, errPrefix)
+			}
+
+			for _, want := range tc.want {
+				if !strings.Contains(firstLine, want) {
+					t.Errorf("the error line = %q, want it to name %q", firstLine, want)
+				}
+			}
+
+			if _, err := os.Stat(dest); err == nil {
+				t.Errorf("the report %q was written for a usage error", dest)
+			}
+		})
+	}
+}
+
 // TestAssessFitCoverage pins that the shared fixture exercises every fit against
 // the targets that serve no offering in a category it holds: a direct match, a
 // partial match, a fit of none because the target serves no offering in the
@@ -1048,26 +1192,73 @@ type resourceRow struct {
 }
 
 // resourceRows returns the rows of report's Resources table, in report order,
-// and fails the test when the report has no such table or an empty one.
+// and fails the test when the report has no such table or an empty one. The
+// columns are read by their names, not by their positions: a report gains the
+// Plan, Monthly estimate and Relations columns with estimates and relations
+// (PRD #190 milestone 8), and its ID, Category, Fit and Reasons columns stay the
+// same ones.
 func resourceRows(t *testing.T, report string) []resourceRow {
 	t.Helper()
+
+	columns := make(map[string]int)
+
+	for i, name := range tableColumns(t, report, resourcesHeading) {
+		columns[name] = i
+	}
+
+	want := []string{"ID", "Category", "Fit", "Reasons"}
+
+	for _, name := range want {
+		if _, ok := columns[name]; !ok {
+			t.Fatalf("the Resources table has no %q column: %v", name, columns)
+		}
+	}
 
 	var rows []resourceRow
 
 	for _, cells := range tableDataRows(t, report, resourcesHeading) {
-		if len(cells) != 6 {
-			t.Fatalf("the Resources row %q has %d cells, want 6", strings.Join(cells, " | "), len(cells))
+		if len(cells) != len(columns) {
+			t.Fatalf("the Resources row %q has %d cells, the header has %d",
+				strings.Join(cells, " | "), len(cells), len(columns))
 		}
 
 		rows = append(rows, resourceRow{
-			id:       codeSpanText(cells[0]),
-			category: codeSpanText(cells[2]),
-			fit:      cells[3],
-			reason:   cells[5],
+			id:       codeSpanText(cells[columns["ID"]]),
+			category: codeSpanText(cells[columns["Category"]]),
+			fit:      cells[columns["Fit"]],
+			reason:   cells[columns["Reasons"]],
 		})
 	}
 
 	return rows
+}
+
+// tableColumns returns the cells of the header row of the table below heading,
+// in order, so a test can read a column by its name rather than by its position.
+// It fails the test when the table has no header row.
+func tableColumns(t *testing.T, report, heading string) []string {
+	t.Helper()
+
+	lines := strings.Split(report, "\n")
+
+	start := slices.Index(lines, heading)
+	if start < 0 {
+		t.Fatalf("the report has no %q heading:\n%s", heading, report)
+	}
+
+	for i := start + 1; i+1 < len(lines); i++ {
+		if isTableRow(lines[i]) && isSeparatorRow(lines[i+1]) {
+			return tableCells(lines[i])
+		}
+
+		if lines[i] == "" && i > start+1 && !isTableRow(lines[i]) {
+			break
+		}
+	}
+
+	t.Fatalf("the report has no table below %q:\n%s", heading, report)
+
+	return nil
 }
 
 // summaryLabels returns the first cell of every data row of report's Summary
