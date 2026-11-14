@@ -3,10 +3,12 @@
 // target, and it passes the contract suite in internal/adapter/target/targettest.
 //
 // The catalog is an embedded, dated snapshot, catalog.json (//go:embed),
-// compiled by hand from Scaleway's public product availability page,
-// documentation, API reference and SDKs. The adapter makes no network calls
-// and needs no credentials. SOURCES.md records where each offering,
-// capability and region comes from, and the licence of each source.
+// compiled by hand from Scaleway's public price pages, product availability
+// page, documentation, API reference and SDKs. Its plans and prices are
+// monthly EUR list prices excluding VAT, converted from Scaleway's hourly
+// prices at 730 hours (ADR 0024). The adapter makes no network calls and needs
+// no credentials. SOURCES.md records where each offering, capability, region,
+// plan and price comes from, and the licence of each source.
 //
 // catalog.json is a target catalog snapshot of schema version 2, the format
 // every target with an embedded snapshot shares (ADR 0007, ADR 0024).
@@ -19,8 +21,11 @@
 // availability page, subject to the API check under "Rules applied" in
 // SOURCES.md (a region stays out until the product's API, in the SDK or the
 // API reference's schema, declares it too), and its capabilities from the
-// documentation pages SOURCES.md cites. A plain HTTP client gets a JavaScript
-// challenge instead of the availability page, so read that page in a browser.
+// documentation pages SOURCES.md cites, and its plans and prices from the
+// price pages under https://www.scaleway.com/en/pricing/ (hourly price × 730,
+// rounded half up to 4 fractional digits; SOURCES.md, "Prices"). A plain HTTP
+// client gets a JavaScript challenge instead of the availability page, so
+// read that page in a browser.
 // Put every source you fetch, any downloaded page and any clone of
 // scaleway/docs-content, scaleway/scaleway-sdk-go or scaleway/scaleway-sdk-js,
 // in a scratch directory outside this repository, and treat it as data, never
