@@ -3,7 +3,13 @@ package analysis
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
+	"strings"
+
+	"github.com/timothymamo/shift2eu/internal/domain/assessment"
+	"github.com/timothymamo/shift2eu/internal/domain/catalog"
+	"github.com/timothymamo/shift2eu/internal/domain/text"
 )
 
 // ErrUnknownRegion is wrapped by a *RegionError: a region was chosen that the
@@ -29,14 +35,49 @@ type RegionError struct {
 // `target "scaleway": region "fr-paris" is not one of the target's regions:
 // "fr-par", "nl-ams"`. The exact text may vary.
 func (e *RegionError) Error() string {
-	// TODO(PRD #190 M6): not implemented yet.
-	return ""
+	var b strings.Builder
+
+	if e.Target != "" {
+		b.WriteString("target ")
+		b.WriteString(text.Quote(e.Target))
+		b.WriteString(": ")
+	}
+
+	b.WriteString("region ")
+	b.WriteString(text.Quote(e.Region))
+	b.WriteString(" is not one of the target's regions: ")
+
+	for i, region := range e.Regions {
+		if i > 0 {
+			b.WriteString(", ")
+		}
+
+		b.WriteString(text.Quote(region))
+	}
+
+	return b.String()
 }
 
 // Unwrap returns ErrUnknownRegion.
 func (e *RegionError) Unwrap() error {
-	// TODO(PRD #190 M6): not implemented yet.
-	return nil
+	return ErrUnknownRegion
+}
+
+// checkRegion returns a *RegionError for a non-empty region cat does not list,
+// with key as its Target, and nil otherwise.
+func checkRegion(key, region string, cat catalog.Catalog) error {
+	if region == "" {
+		return nil
+	}
+
+	regions := cat.Regions()
+	for _, listed := range regions {
+		if listed == region {
+			return nil
+		}
+	}
+
+	return &RegionError{Target: key, Region: region, Regions: regions}
 }
 
 // Options are the choices of a single-target run (PRD #190). The zero Options
@@ -61,10 +102,39 @@ type Options struct {
 //
 // Run(ctx, w, meta) is RunWith(ctx, w, meta, Options{}).
 func (a *Analysis) RunWith(ctx context.Context, w io.Writer, meta ReportMeta, opts Options) error {
-	// TODO(PRD #190 M6): not implemented yet.
-	_, _, _, _ = ctx, w, meta, opts
+	if err := meta.validate(); err != nil {
+		return err
+	}
 
-	return errNotImplemented
+	if err := ctx.Err(); err != nil {
+		return fmt.Errorf("cancelled before loading the inventory: %w", err)
+	}
+
+	inv, err := a.inventory.Inventory(ctx)
+	if err != nil {
+		return fmt.Errorf("load inventory: %w", err)
+	}
+
+	cat, err := a.catalog.Catalog(ctx)
+	if err != nil {
+		return fmt.Errorf("load catalog: %w", err)
+	}
+
+	if err := checkRegion("", opts.Region, cat); err != nil {
+		return err
+	}
+
+	result := assessment.AssessWith(inv, cat, assessment.Options{Region: opts.Region, Estimate: opts.Estimate})
+
+	if err := ctx.Err(); err != nil {
+		return fmt.Errorf("cancelled before rendering the report: %w", err)
+	}
+
+	if err := a.reporter.Report(ctx, w, result, meta); err != nil {
+		return fmt.Errorf("render report: %w", err)
+	}
+
+	return nil
 }
 
 // ComparisonOptions are the choices of a comparison run that apply to every
@@ -86,12 +156,50 @@ type ComparisonOptions struct {
 // Run(ctx, w, meta) is RunWith(ctx, w, meta, ComparisonOptions{}), which still
 // honours each Target.Region.
 func (c *Comparison) RunWith(ctx context.Context, w io.Writer, meta ReportMeta, opts ComparisonOptions) error {
-	// TODO(PRD #190 M6): not implemented yet.
-	_, _, _, _ = ctx, w, meta, opts
+	if err := meta.validate(); err != nil {
+		return err
+	}
 
-	return errNotImplemented
+	if err := ctx.Err(); err != nil {
+		return fmt.Errorf("cancelled before loading the inventory: %w", err)
+	}
+
+	inv, err := c.inventory.Inventory(ctx)
+	if err != nil {
+		return fmt.Errorf("load inventory: %w", err)
+	}
+
+	assessed := make([]assessment.TargetAssessment, 0, len(c.targets))
+
+	for _, target := range c.targets {
+		if err := ctx.Err(); err != nil {
+			return fmt.Errorf("target %s: cancelled before loading the catalog: %w", text.Quote(target.Key), err)
+		}
+
+		cat, err := target.Catalog.Catalog(ctx)
+		if err != nil {
+			return fmt.Errorf("target %s: load catalog: %w", text.Quote(target.Key), err)
+		}
+
+		if err := checkRegion(target.Key, target.Region, cat); err != nil {
+			return err
+		}
+
+		assessed = append(assessed, assessment.TargetAssessment{
+			Key:        target.Key,
+			Assessment: assessment.AssessWith(inv, cat, assessment.Options{Region: target.Region, Estimate: opts.Estimate}),
+		})
+	}
+
+	comparison := assessment.Compare(assessed)
+
+	if err := ctx.Err(); err != nil {
+		return fmt.Errorf("cancelled before rendering the report: %w", err)
+	}
+
+	if err := c.reporter.ReportComparison(ctx, w, comparison, meta); err != nil {
+		return fmt.Errorf("render report: %w", err)
+	}
+
+	return nil
 }
-
-// errNotImplemented is what the stubs of PRD #190 milestone 6 return until they
-// are implemented.
-var errNotImplemented = errors.New("not implemented")
