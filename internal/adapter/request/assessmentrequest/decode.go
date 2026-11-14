@@ -94,8 +94,10 @@ func Decode(body []byte) (Request, error) {
 }
 
 // regions reads the next value, which must be an object of strings, and
-// returns its members, or nil for an empty object. The walker names a member
-// by its index, never by its key, so no error quotes a key the client sent.
+// returns its members, or nil for an empty object. A region is never empty: an
+// empty one would silently mean every region, so it is refused, as the CLI's
+// --region refuses it. The walker names a member by its index, never by its key,
+// so no error quotes a key or a value the client sent.
 func regions(w *jsondoc.Walker) (map[string]string, error) {
 	at := w.Position()
 
@@ -106,9 +108,17 @@ func regions(w *jsondoc.Walker) (map[string]string, error) {
 			return fmt.Errorf("%w: %s at %s holds more than %d members", ErrDecode, keyRegions, at, MaxRegions)
 		}
 
+		// The path names the member by its index (regions[0]), never by its
+		// key, so it holds nothing the client sent.
+		path := w.Path()
+
 		region, err := w.String()
 		if err != nil {
 			return err
+		}
+
+		if region == "" {
+			return fmt.Errorf("%w: %q is empty, want a region", ErrDecode, path)
 		}
 
 		if out == nil {

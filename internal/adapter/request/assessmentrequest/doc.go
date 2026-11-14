@@ -18,7 +18,8 @@
 //     caller's to check, with the CLI's rules.
 //   - regions (optional, PRD #190): an object of strings mapping a target key
 //     to the one region to assess that target in, at most MaxRegions members,
-//     no key twice. Whether a key is a selected target and the region one the
+//     no key twice, no region empty (an empty one would mean every region).
+//     Whether a key is a selected target and the region one the
 //     target lists is the caller's to check. The keys are data, so an error
 //     names a member by its index (regions[0]), never by its key.
 //   - estimate (optional, PRD #190): a boolean, true when absent.
