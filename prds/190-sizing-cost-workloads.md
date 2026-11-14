@@ -190,7 +190,7 @@ Each milestone ships as one PR, in dependency order. Milestones 3, 4 and 5 can r
    to the new version with no plans yet.
 3. [x] **OVHcloud plans and prices** (monthly) and its default region, in its snapshot and
    `SOURCES.md`. Depends on 2.
-4. [ ] **Scaleway plans and prices** (monthly) and its default region, in its snapshot and
+4. [x] **Scaleway plans and prices** (monthly) and its default region, in its snapshot and
    `SOURCES.md`. Paid Kubernetes control-plane fees are recorded as the offering's `fixedFees`
    (ADR [0026](../docs/adr/0026-add-an-optional-fixed-monthly-fee-per-offering-to-snapshot-format-v2.md)), not left out. Depends on 2.
 5. [ ] **UpCloud plans and prices** (monthly) and its default region, in its snapshot and `SOURCES.md`.
