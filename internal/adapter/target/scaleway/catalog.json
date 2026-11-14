@@ -83,7 +83,8 @@
         { "name": "POP2-48C-192G", "vcpus": 48, "memoryGiB": 192, "storageGiB": 0, "prices": [{ "amount": 1292.10, "currency": "EUR", "regions": [] }] },
         { "name": "POP2-64C-256G", "vcpus": 64, "memoryGiB": 256, "storageGiB": 0, "prices": [{ "amount": 1715.50, "currency": "EUR", "regions": [] }] }
       ],
-      "storagePrices": [{ "amount": 0.0949, "currency": "EUR", "regions": [] }]
+      "storagePrices": [{ "amount": 0.0949, "currency": "EUR", "regions": [] }],
+      "fixedFees": [{ "amount": 0, "currency": "EUR", "regions": [] }]
     },
     {
       "name": "Kubernetes Kapsule Dedicated",
@@ -110,7 +111,8 @@
         { "name": "POP2-48C-192G", "vcpus": 48, "memoryGiB": 192, "storageGiB": 0, "prices": [{ "amount": 1292.10, "currency": "EUR", "regions": [] }] },
         { "name": "POP2-64C-256G", "vcpus": 64, "memoryGiB": 256, "storageGiB": 0, "prices": [{ "amount": 1715.50, "currency": "EUR", "regions": [] }] }
       ],
-      "storagePrices": [{ "amount": 0.0949, "currency": "EUR", "regions": [] }]
+      "storagePrices": [{ "amount": 0.0949, "currency": "EUR", "regions": [] }],
+      "fixedFees": [{ "amount": 80.3, "currency": "EUR", "regions": [] }]
     },
     {
       "name": "Managed Database for PostgreSQL and MySQL",

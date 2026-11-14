@@ -70,7 +70,8 @@ records where each fact comes from, so the snapshot can be checked and refreshed
 
 ## Prices
 
-Every plan and storage price in `catalog.json` is a monthly list price in EUR, excluding VAT (ADR 0024),
+Every plan price, storage price and fixed fee in `catalog.json` is a monthly list price in EUR, excluding
+VAT (ADR 0024, ADR 0026),
 read on 2026-11-13 over HTTPS without credentials and without calling any Scaleway API. The price pages
 are the per-product pages linked from <https://www.scaleway.com/en/pricing/>:
 
@@ -115,8 +116,8 @@ are the per-product pages linked from <https://www.scaleway.com/en/pricing/>:
   than the estimate. The `fr-par-3` prices are listed in *Instances* and are not recorded. Where a plan's
   prices are the same in every region of its offering, the snapshot has one price with an empty `regions`
   list; where the plan is offered only in some regions, its price lists them, and an estimate elsewhere
-  says there is no price (ADR 0024). No recorded plan or storage price differs between regions, only
-  between zones of Paris.
+  says there is no price (ADR 0024). No recorded plan price, storage price or fixed fee differs between
+  regions, only between zones of Paris.
 - **Units.** The pages give memory in "GB" and storage prices per "GB"; the snapshot records them as GiB,
   unconverted, as the OVHcloud snapshot does. The database page's storage size limits are binary
   (the embedded data gives a minimum volume of 10737418240 bytes, 10 GiB), but its prices say "GB".
@@ -147,10 +148,12 @@ are the per-product pages linked from <https://www.scaleway.com/en/pricing/>:
 - **Managed Kubernetes.** The FAQ (<https://www.scaleway.com/en/docs/kubernetes/faq/>) says "Nodes are
   billed at the same price as the underlying Compute Instances. The Kubernetes control plane is provided
   without additional costs." So a Kubernetes plan is a **worker node flavour at its *Instances* price**,
-  and an estimate counts nodes. The containers price page lists "Kapsule Mutualized" at €0 an hour. The
-  Dedicated control planes cost a fixed fee per cluster (Dedicated-4 €0.11, Dedicated-8 €0.18,
-  Dedicated-16 €0.35 an hour), which ADR 0024's format cannot hold: a plan is multiplied by the node
-  count, and there is no per-cluster price. They are left out (*Left out on purpose*).
+  and an estimate counts nodes. The control plane is a fee per cluster, which a plan cannot hold (a
+  plan is multiplied by the node count), so it is recorded as the offering's fixed fee per cluster
+  (`fixedFees`, ADR 0026). The containers price page lists "Kapsule Mutualized" at €0 an hour, recorded
+  as `0.00` for *Kubernetes Kapsule*. The Dedicated control planes cost Dedicated-4 €0.11, Dedicated-8
+  €0.18 and Dedicated-16 €0.35 an hour; *Kubernetes Kapsule Dedicated* records the smallest,
+  Dedicated-4, 0.11 × 730 = `80.30` a month, as a lower bound (that offering's section).
 - **Plans chosen.** A fully cited subset of the general-purpose sizes a workload is matched against:
   Instances and Kubernetes nodes, the current Development range PLAY2 and the general-purpose ranges PRO2
   and POP2 (Linux); Elastic Metal, eight common servers that have one price in all their zones; the
@@ -388,7 +391,11 @@ control-plane type is chosen when the cluster is created (FAQ).
   <https://www.scaleway.com/en/docs/kubernetes/faq/>): "Nodes are billed at the same price as the
   underlying Compute Instances. The Kubernetes control plane is provided without additional costs." So a
   plan is a **worker node flavour at its *Instances* price** (*Instances*), and the Mutualized control
-  plane, listed at €0 an hour on the *Containers* price page ("Kapsule Mutualized"), adds nothing. The
+  plane, listed at €0 an hour on the *Containers* price page
+  (<https://www.scaleway.com/en/pricing/containers/>, read 2026-11-13, "Kapsule Mutualized"), adds
+  nothing. **Fixed fee per cluster** (the control plane, ADR 0026): `0.00`, with an empty `regions`
+  list, since the page gives the Mutualized control plane one price, €0, in every region of this
+  offering, `it-mil` included. The fee is charged once per cluster, never per node. The
   node flavours are those of *Instances*. Which Instance types may be Kapsule nodes is an **inference**:
   no page read lists them, but the *Instances* price page's data offers a "Kapsule" machine image for every
   PLAY2, PRO2 and POP2 type, in the same zones as the type itself. Prices and regions are those of
@@ -455,10 +462,16 @@ Dedicated control plane, Dedicated 4, 8 or 16, which share the same availability
 - **Prices** (*Instances* price page, read 2026-11-13): the worker nodes, as for *Kubernetes Kapsule*
   (the same inference about which Instance types are nodes). Every PLAY2, PRO2 and POP2 type is priced in
   the three regions of this offering, at one price, so each plan has one price with an empty `regions`
-  list. The Dedicated control plane is a fee per cluster that a plan cannot hold (*Prices*): Dedicated-4
-  €0.11, Dedicated-8 €0.18 and Dedicated-16 €0.35 an hour (*Containers* price page), × 730 = €80.30,
-  €131.40 and €255.50 a month. It is not recorded, so an estimate for this offering is low by that fee
-  (*Left out on purpose*).
+  list.
+- **Fixed fee per cluster** (the control plane, ADR 0026; *Containers* price page
+  <https://www.scaleway.com/en/pricing/containers/>, read 2026-11-13): Dedicated-4 costs €0.11 an hour
+  per cluster, × 730 = 80.30, recorded as `80.30` with an empty `regions` list, since the page gives it
+  one price in `fr-par`, `nl-ams` and `pl-waw`. The fee is charged once per cluster, never per node.
+  Dedicated-4 is the **smallest paid control plane**, and an estimate uses it as a **lower bound**: the
+  larger tiers cost Dedicated-8 €0.18 and Dedicated-16 €0.35 an hour, × 730 = €131.40 and €255.50 a
+  month, and the Kubernetes FAQ says dedicated control planes have "a minimum commitment period of 30
+  calendar days". The larger tiers are not recorded (*Left out on purpose*). Choosing Dedicated-4 is a
+  judgement the maintainer may overrule.
 - **Storage price:** as for *Kubernetes Kapsule*: node and persistent volumes are *Block Storage*
   volumes, billed separately, at `0.0949` per GiB a month (the "Block Storage 5K" row, read 2026-11-13;
   see *Block Storage*), the same in every zone of the three regions of this offering, so one price with
@@ -728,11 +741,10 @@ Category `serverless.function`. Pages: <https://www.scaleway.com/en/docs/serverl
 
 Prices and plans left out (PRD #190 milestone 4, read 2026-11-13):
 
-- **The Kubernetes Kapsule Dedicated control plane, a fee per cluster** (*Containers* price page):
-  Dedicated-4 €0.11, Dedicated-8 €0.18 and Dedicated-16 €0.35 an hour, × 730 = €80.30, €131.40 and
-  €255.50 a month; the Kubernetes FAQ says dedicated control planes have "a minimum commitment period of
-  30 calendar days". ADR 0024's format has no per-cluster price: a plan is multiplied by the node count.
-  An estimate for *Kubernetes Kapsule Dedicated* therefore prices its nodes only and is low by that fee.
+- **The Dedicated-8 and Dedicated-16 control planes of Kubernetes Kapsule Dedicated** (*Containers*
+  price page): €0.18 and €0.35 an hour, × 730 = €131.40 and €255.50 a month. An offering has one fixed
+  fee per region (ADR 0026), and the snapshot records the smallest tier, Dedicated-4 (`80.30`), so an
+  estimate for a cluster on a larger tier is low by the difference (*Kubernetes Kapsule Dedicated*).
   The page's data prices Dedicated-4 and Dedicated-8 in `it-mil` too; the offering's regions are not
   changed by this milestone (*Kubernetes Kapsule Dedicated*, Milan). **Flagged for the next region
   re-verification:** that data is a source to weigh when this offering's regions are next checked, and
