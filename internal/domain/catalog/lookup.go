@@ -1,5 +1,9 @@
 package catalog
 
+import (
+	"slices"
+)
+
 // This file holds the lookups an estimate makes in a catalog (PRD #190
 // milestone 6, ADR 0027): the regions a target lists, whether an offering is
 // available in a region, and the price of a plan or of a GiB of storage in a
@@ -12,17 +16,20 @@ package catalog
 // in the domain (ADR 0024) and so is not listed. The result is a fresh slice:
 // changing it does not change the catalog.
 func (c Catalog) Regions() []string {
-	// TODO(PRD #190 M6): not implemented yet.
-	return nil
+	regions := []string{c.snapshot.DefaultRegion}
+	for _, o := range c.offerings {
+		regions = append(regions, o.Regions...)
+	}
+
+	slices.Sort(regions)
+
+	return slices.Compact(regions)
 }
 
 // AvailableIn reports whether the offering is available in region, compared
 // exactly with its regions. It is false for "".
 func (o Offering) AvailableIn(region string) bool {
-	// TODO(PRD #190 M6): not implemented yet.
-	_ = region
-
-	return false
+	return region != "" && slices.Contains(o.Regions, region)
 }
 
 // PlanPrice returns the monthly price of the offering's plan named plan in
@@ -32,10 +39,12 @@ func (o Offering) AvailableIn(region string) bool {
 // the offering's regions, or no price of the plan applies to region: a plan
 // unpriced in a region is "not estimated" there, never free.
 func (o Offering) PlanPrice(plan, region string) (Amount, bool) {
-	// TODO(PRD #190 M6): not implemented yet.
-	_, _ = plan, region
+	i := slices.IndexFunc(o.Plans, func(p Plan) bool { return p.Name == plan })
+	if i < 0 {
+		return 0, false
+	}
 
-	return 0, false
+	return o.priceIn(o.Plans[i].Prices, region)
 }
 
 // StoragePrice returns the monthly price of one GiB of the offering's storage
@@ -43,8 +52,22 @@ func (o Offering) PlanPrice(plan, region string) (Amount, bool) {
 // the offering. It returns 0 and false when region is not one of the offering's
 // regions or no storage price applies to it.
 func (o Offering) StoragePrice(region string) (Amount, bool) {
-	// TODO(PRD #190 M6): not implemented yet.
-	_ = region
+	return o.priceIn(o.StoragePrices, region)
+}
+
+// priceIn returns the amount of the first of prices that applies to region, one
+// of the offering's regions, and true; 0 and false when region is not one of
+// them or no price applies to it.
+func (o Offering) priceIn(prices []Price, region string) (Amount, bool) {
+	if !o.AvailableIn(region) {
+		return 0, false
+	}
+
+	for _, p := range prices {
+		if p.Regions == nil || slices.Contains(p.Regions, region) {
+			return p.Amount, true
+		}
+	}
 
 	return 0, false
 }
