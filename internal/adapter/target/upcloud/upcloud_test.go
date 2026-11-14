@@ -1,7 +1,8 @@
 // Package upcloud_test pins the UpCloud catalog adapter: the target contract in
 // internal/adapter/target/targettest, the snapshot header the catalog reports, the
 // plans, prices and fixed monthly fees the snapshot records and the default region
-// they estimate in, a golden change detector for the parsed catalog, the declared EU zones, that a
+// they estimate in, the rule the multi-node database prices follow from the
+// single-node ones, a golden change detector for the parsed catalog, the declared EU zones, that a
 // cancelled run reads nothing, that no error of one target names another, and the
 // verdicts PRD 77 asks of the data: categories UpCloud does not serve are a
 // blocker, no offering claims zone-level high availability, and every capability
@@ -496,6 +497,154 @@ func feeRegions(o catalog.Offering) []string {
 	}
 
 	return slices.Sorted(maps.Keys(regions))
+}
+
+// TestMultiNodeDatabasePrices pins the rule the snapshot records for UpCloud's
+// multi-node database plans (maintainer decision 2026-11-14, in SOURCES.md): a
+// plan of *Managed MySQL Multi-node* or *Managed PostgreSQL Multi-node* is priced
+// per node at two nodes' list price with the documented 5% multi-node discount,
+// that is the stored amount of the same-named single-node plan times 95/100,
+// rounded half up to ADR 0024's four decimal places. The golden file pins those
+// amounts too, but it is regenerated with -update on every refresh, so a refresh
+// that changes a single-node price and forgets its multi-node counterpart passes
+// there; this test derives each multi-node amount from the single-node one the
+// snapshot stores and cannot. It pins what a multi-node plan is besides its
+// price: the same plan names, the same vCPUs, memory and included storage, and a
+// storage price the same as its single-node offering's.
+func TestMultiNodeDatabasePrices(t *testing.T) {
+	t.Parallel()
+
+	cat := catalogOf(t)
+
+	// The discount is 95 of 100, applied to catalog.Amount's integer
+	// ten-thousandths, so the arithmetic below never uses a float (ADR 0024).
+	const (
+		discountNumerator   = 95
+		discountDenominator = 100
+	)
+
+	// Each row pairs a multi-node database offering with the single-node offering
+	// it is priced from. The rows are in this order so a failure reads the same way
+	// on every run: UpCloud sells MySQL and PostgreSQL with the same plans.
+	tests := []struct {
+		multiNode  string
+		singleNode string
+	}{
+		{multiNode: "Managed MySQL Multi-node", singleNode: "Managed MySQL"},
+		{multiNode: "Managed PostgreSQL Multi-node", singleNode: "Managed PostgreSQL"},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.multiNode, func(t *testing.T) {
+			t.Parallel()
+
+			multi := offeringNamed(t, cat, tc.multiNode)
+			single := offeringNamed(t, cat, tc.singleNode)
+
+			multiPlans := plansByName(multi)
+			singlePlans := plansByName(single)
+
+			// The same set of plans, not just one plan: a multi-node offering that
+			// sells a size its single-node counterpart does not (or the other way
+			// round) has no price to check against, so it is a finding of its own.
+			wantNames := slices.Sorted(maps.Keys(singlePlans))
+			gotNames := slices.Sorted(maps.Keys(multiPlans))
+
+			if diff := cmp.Diff(wantNames, gotNames); diff != "" {
+				t.Errorf("offering %s: plan names differ from offering %s, want the same set (-single-node +multi-node):\n%s",
+					text.Quote(multi.Name), text.Quote(single.Name), diff)
+			}
+
+			// Sorted plan names, so the failures below name the plans in the same
+			// order on every run, whatever order the catalog holds them in.
+			for _, name := range gotNames {
+				multiPlan := multiPlans[name]
+
+				singlePlan, found := singlePlans[name]
+				if !found {
+					t.Errorf("offering %s plan %s: offering %s has no plan of that name, want the same plans in both offerings",
+						text.Quote(multi.Name), text.Quote(name), text.Quote(single.Name))
+
+					continue
+				}
+
+				// A multi-node plan is the same size as its single-node plan: only the
+				// price differs, so a refreshed size that reached one offering alone fails.
+				if multiPlan.VCPUs != singlePlan.VCPUs {
+					t.Errorf("offering %s plan %s: vCPUs = %d, want %d, the vCPUs of offering %s plan %s",
+						text.Quote(multi.Name), text.Quote(name), multiPlan.VCPUs, singlePlan.VCPUs,
+						text.Quote(single.Name), text.Quote(name))
+				}
+
+				if multiPlan.MemoryMilliGiB != singlePlan.MemoryMilliGiB {
+					t.Errorf("offering %s plan %s: memory = %d milliGiB, want %d, the memory of offering %s plan %s",
+						text.Quote(multi.Name), text.Quote(name), multiPlan.MemoryMilliGiB, singlePlan.MemoryMilliGiB,
+						text.Quote(single.Name), text.Quote(name))
+				}
+
+				if multiPlan.IncludedStorageGiB != singlePlan.IncludedStorageGiB {
+					t.Errorf("offering %s plan %s: included storage = %d GiB, want %d, the included storage of offering %s plan %s",
+						text.Quote(multi.Name), text.Quote(name), multiPlan.IncludedStorageGiB, singlePlan.IncludedStorageGiB,
+						text.Quote(single.Name), text.Quote(name))
+				}
+
+				if len(multiPlan.Prices) != len(singlePlan.Prices) {
+					t.Errorf("offering %s plan %s: %d prices, want %d, one per price of offering %s plan %s",
+						text.Quote(multi.Name), text.Quote(name), len(multiPlan.Prices), len(singlePlan.Prices),
+						text.Quote(single.Name), text.Quote(name))
+
+					continue
+				}
+
+				for i, singlePrice := range singlePlan.Prices {
+					multiPrice := multiPlan.Prices[i]
+
+					// Half up in integer units: the numerator is at most MaxAmount times
+					// 95, far inside int64, and adding half the denominator rounds a
+					// remainder of exactly one half away from zero, which is up here
+					// because every amount is positive.
+					wantAmount := catalog.Amount((int64(singlePrice.Amount)*discountNumerator + discountDenominator/2) / discountDenominator)
+
+					if multiPrice.Amount != wantAmount {
+						t.Errorf("offering %s plan %s: prices[%d].amount = %s, want %s: the amount %s of offering %s plan %s times %d/%d, rounded half up to 4 decimal places",
+							text.Quote(multi.Name), text.Quote(name), i, multiPrice.Amount, wantAmount, singlePrice.Amount,
+							text.Quote(single.Name), text.Quote(name), discountNumerator, discountDenominator)
+					}
+
+					if multiPrice.Currency != singlePrice.Currency {
+						t.Errorf("offering %s plan %s: prices[%d].currency = %s, want %s, the currency of offering %s plan %s",
+							text.Quote(multi.Name), text.Quote(name), i, text.Quote(multiPrice.Currency), text.Quote(singlePrice.Currency),
+							text.Quote(single.Name), text.Quote(name))
+					}
+
+					if diff := cmp.Diff(singlePrice.Regions, multiPrice.Regions); diff != "" {
+						t.Errorf("offering %s plan %s: prices[%d].regions differ from offering %s plan %s, want the same regions (-single-node +multi-node):\n%s",
+							text.Quote(multi.Name), text.Quote(name), i, text.Quote(single.Name), text.Quote(name), diff)
+					}
+				}
+			}
+
+			// Stored data costs the same however many database nodes run, so the
+			// multi-node offering repeats its single-node counterpart's storage price
+			// exactly: amount, currency and regions.
+			if diff := cmp.Diff(single.StoragePrices, multi.StoragePrices); diff != "" {
+				t.Errorf("offering %s: storage prices differ from offering %s, want the same ones (-single-node +multi-node):\n%s",
+					text.Quote(multi.Name), text.Quote(single.Name), diff)
+			}
+		})
+	}
+}
+
+// plansByName indexes an offering's plans by name, in one pass, so a plan of the
+// other offering is found without a scan per plan.
+func plansByName(o catalog.Offering) map[string]catalog.Plan {
+	plans := make(map[string]catalog.Plan, len(o.Plans))
+
+	for _, p := range o.Plans {
+		plans[p.Name] = p
+	}
+
+	return plans
 }
 
 // TestCatalogGolden pins the whole parsed catalog against a golden file: every
@@ -1071,7 +1220,7 @@ func offeringNamed(t *testing.T, cat catalog.Catalog, name string) catalog.Offer
 		}
 	}
 
-	t.Fatalf("the catalog has no offering called %s: the tier-variant rule above assumes it", text.Quote(name))
+	t.Fatalf("the catalog has no offering called %s, want one: a test names it", text.Quote(name))
 
 	return catalog.Offering{}
 }
