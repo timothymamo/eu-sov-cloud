@@ -198,7 +198,7 @@ Managed MySQL Multi-node | database.mysql | encryption-at-rest, node-high-availa
   plan: rdb.standard.80CPU-320GB | 80 vcpu | 320 GiB | 0 GiB storage | 3302.7938 EUR @ -
   plan: rdb.standard.8CPU-32GB | 8 vcpu | 32 GiB | 0 GiB storage | 305.3327 EUR @ -
   fixed fees: -
-  storage price: 0.1014 EUR @ -
+  storage price: 0.2028 EUR @ -
 Managed Object Storage | storage.object | encryption-at-rest, object-versioning | de-fra1, dk-cph1, fi-hel2, se-sto1
   plans: -
   fixed fees: -
@@ -246,4 +246,4 @@ Managed PostgreSQL Multi-node | database.postgresql | encryption-at-rest, node-h
   plan: rdb.standard.80CPU-320GB | 80 vcpu | 320 GiB | 0 GiB storage | 3302.7938 EUR @ -
   plan: rdb.standard.8CPU-32GB | 8 vcpu | 32 GiB | 0 GiB storage | 305.3327 EUR @ -
   fixed fees: -
-  storage price: 0.1014 EUR @ -
+  storage price: 0.2028 EUR @ -

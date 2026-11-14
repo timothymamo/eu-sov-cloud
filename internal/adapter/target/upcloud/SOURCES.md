@@ -74,6 +74,9 @@ described above; each section names the part of the page (its tab or table) a pr
   - database plan: €60/mo × 730 / 720 = 60.833333… → `60.8333`;
   - Managed Kubernetes Production control-plane fee: €60/mo × 730 / 720 = 60.833333… → `60.8333`;
   - database storage: €0.10/GB/mo × 730 / 720 = 0.101388… → `0.1014`;
+  - multi-node database storage: 2 × the stored single-node amount, exact, no further rounding:
+    2 × 0.1014 = `0.2028` (*Managed MySQL Multi-node*, *Managed PostgreSQL Multi-node*, where the 2-node
+    basis and the inference behind it are stated);
   - multi-node database plan: rounded twice, on purpose. The stored single-node amount (already rounded)
     × 0.95, rounded again, half up, to ADR 0024's 4 decimal places: 60.8333 × 0.95 = 57.791635 →
     `57.7916` (*Managed MySQL Multi-node*, *Managed PostgreSQL Multi-node*). Deriving it from the
@@ -633,14 +636,16 @@ nodes, which the documentation calls a multi-node plan. Pages:
   "Multi-node" covers 2 and 3 nodes. A 3-node service really averages (1 + 0.90 + 0.70) / 3 ≈ 0.8667 of
   the single-node price per node, so pricing it at 0.95 estimates it about 9.6% high (0.95 / 0.8667).
   That is chosen on purpose: an overestimate is preferred to an underestimate.
-- **Storage price**: `0.1014` per GiB a month in every zone, the same price as *Managed MySQL* (the
-  page's "MaxIOPS – €0.10/GB/mo" × 730 / 720, *Prices*), per GiB of the service's data: not multiplied
-  by the node count and not discounted. The configurations page
-  (<https://upcloud.com/docs/products/managed-mysql/configurations/>, read 2026-11-14) says "The
-  storage size you select applies to each node. For example, a 2-node cluster with 100 GiB of storage has
-  100 GiB on each node." If UpCloud bills that storage on every node, this estimate is low: half the
-  storage cost of a 2-node service, a third of a 3-node one. The minimum storage size of each plan
-  applies as on one node (*Managed MySQL*).
+- **Storage price**: `0.2028` per GiB a month in every zone, 2 × the stored single-node amount `0.1014`
+  of *Managed MySQL* (the page's "MaxIOPS – €0.10/GB/mo" × 730 / 720, *Prices*), per GiB of the
+  service's data, on the same 2-node basis as the plan prices above, and not discounted. The
+  configurations page (<https://upcloud.com/docs/products/managed-mysql/configurations/>, read
+  2026-11-14) says "The storage size you select applies to each node. For example, a 2-node cluster with
+  100 GiB of storage has 100 GiB on each node." Doubling the price is an **inference**: the page says the
+  storage applies to each node, but no page says the storage charge is multiplied by the node count. The
+  maintainer chose it (2026-11-14) because an overestimate is preferred to an underestimate. A 3-node
+  cluster's storage is then estimated a third low (2 of 3 nodes' storage). The minimum storage size of
+  each plan applies as on one node (*Managed MySQL*).
 
 | Plan | Family | CPU cores | Memory | Page price, 1 node | Single node, stored | Per node at 2 nodes, stored |
 |---|---|---|---|---|---|---|
@@ -830,14 +835,16 @@ or three nodes, which the documentation calls a multi-node plan. Pages:
   "Multi-node" covers 2 and 3 nodes. A 3-node service really averages (1 + 0.90 + 0.70) / 3 ≈ 0.8667 of
   the single-node price per node, so pricing it at 0.95 estimates it about 9.6% high (0.95 / 0.8667).
   That is chosen on purpose: an overestimate is preferred to an underestimate.
-- **Storage price**: `0.1014` per GiB a month in every zone, the same price as *Managed PostgreSQL* (the
-  page's "MaxIOPS – €0.10/GB/mo" × 730 / 720, *Prices*), per GiB of the service's data: not multiplied
-  by the node count and not discounted. The configurations page
-  (<https://upcloud.com/docs/products/managed-postgresql/configurations/>, read 2026-11-14) says "The
-  storage size you select applies to each node. For example, a 2-node cluster with 100 GiB of storage has
-  100 GiB on each node." If UpCloud bills that storage on every node, this estimate is low: half the
-  storage cost of a 2-node service, a third of a 3-node one. The minimum storage size of each plan
-  applies as on one node (*Managed PostgreSQL*).
+- **Storage price**: `0.2028` per GiB a month in every zone, 2 × the stored single-node amount `0.1014`
+  of *Managed PostgreSQL* (the page's "MaxIOPS – €0.10/GB/mo" × 730 / 720, *Prices*), per GiB of the
+  service's data, on the same 2-node basis as the plan prices above, and not discounted. The
+  configurations page (<https://upcloud.com/docs/products/managed-postgresql/configurations/>, read
+  2026-11-14) says "The storage size you select applies to each node. For example, a 2-node cluster with
+  100 GiB of storage has 100 GiB on each node." Doubling the price is an **inference**: the page says the
+  storage applies to each node, but no page says the storage charge is multiplied by the node count. The
+  maintainer chose it (2026-11-14) because an overestimate is preferred to an underestimate. A 3-node
+  cluster's storage is then estimated a third low (2 of 3 nodes' storage). The minimum storage size of
+  each plan applies as on one node (*Managed PostgreSQL*).
 
 | Plan | Family | CPU cores | Memory | Page price, 1 node | Single node, stored | Per node at 2 nodes, stored |
 |---|---|---|---|---|---|---|

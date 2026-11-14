@@ -242,7 +242,7 @@
         { "name": "rdb.memory.48CPU-384GB", "vcpus": 48, "memoryGiB": 384, "storageGiB": 0, "prices": [{ "amount": 3520.4757, "currency": "EUR", "regions": [] }] },
         { "name": "rdb.memory.64CPU-512GB", "vcpus": 64, "memoryGiB": 512, "storageGiB": 0, "prices": [{ "amount": 4676.3091, "currency": "EUR", "regions": [] }] }
       ],
-      "storagePrices": [{ "amount": 0.1014, "currency": "EUR", "regions": [] }]
+      "storagePrices": [{ "amount": 0.2028, "currency": "EUR", "regions": [] }]
     },
     {
       "name": "Managed Object Storage",
@@ -306,7 +306,7 @@
         { "name": "rdb.memory.48CPU-384GB", "vcpus": 48, "memoryGiB": 384, "storageGiB": 0, "prices": [{ "amount": 3520.4757, "currency": "EUR", "regions": [] }] },
         { "name": "rdb.memory.64CPU-512GB", "vcpus": 64, "memoryGiB": 512, "storageGiB": 0, "prices": [{ "amount": 4676.3091, "currency": "EUR", "regions": [] }] }
       ],
-      "storagePrices": [{ "amount": 0.1014, "currency": "EUR", "regions": [] }]
+      "storagePrices": [{ "amount": 0.2028, "currency": "EUR", "regions": [] }]
     }
   ]
 }
