@@ -272,17 +272,17 @@ Category `compute.vm`. Pages: <https://upcloud.com/docs/products/cloud-servers/a
   page, <https://upcloud.com/docs/products/cloud-servers/configurations/>, read 2026-11-13): every plan of
   the three tabs, 75 in all, at its monthly list price, which is what a server running all month pays
   under the 672-hour cap (*Prices*). Each tab's prices are a "Global price", so each applies in every zone.
+  vCPU is the page's "CPU cores". Included storage is the plan's own block storage: Standard tier for
+  Starter, MaxIOPS for Premium ("Starter plans use Standard storage and Premium plans use MaxIOPS®
+  storage", Block Storage billing page), none for Cloud Native, whose storage is an add-on ("Cloud Native
+  and GPU plans don't include storage", same page).
+  `STARTER-1xCPU-1GB` is "restricted to 5 instances per account" (configurations page).
 - **Plan billing cap** `672` hours a month (ADR 0029): the configurations page
   (<https://upcloud.com/docs/products/cloud-servers/configurations/>, read 2026-11-13) says "Cloud Servers
   are billed hourly and capped at 672 hours (24 h x 28 days) per month", and the pricing page says under
   the *Starter*, *Premium* and *Cloud Native* tabs that the plans "are billed by the starting hour, maximum
   of 28 days per month" (saved copy of <https://upcloud.com/pricing/>, read 2026-11-14). It applies to every
   plan and zone of the offering, never to its storage price.
-  vCPU is the page's "CPU cores". Included storage is the plan's own block storage: Standard tier for
-  Starter, MaxIOPS for Premium ("Starter plans use Standard storage and Premium plans use MaxIOPS®
-  storage", Block Storage billing page), none for Cloud Native, whose storage is an add-on ("Cloud Native
-  and GPU plans don't include storage", same page).
-  `STARTER-1xCPU-1GB` is "restricted to 5 instances per account" (configurations page).
 - **Storage price** (pricing page, *Cloud Servers*, *Additional services*, *Block Storage* table, read
   2026-11-13; <https://upcloud.com/pricing/>; Block Storage billing page,
   <https://upcloud.com/docs/products/block-storage/billing/>, read 2026-11-13): `0.2231` per GiB a
