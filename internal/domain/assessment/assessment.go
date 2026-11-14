@@ -143,19 +143,6 @@ type Options struct {
 //
 // AssessWith(inv, cat, Options{}) equals Assess(inv, cat).
 func AssessWith(inv inventory.Inventory, cat catalog.Catalog, opts Options) Assessment {
-	// TODO(PRD #190 M6): not implemented yet.
-	_, _, _ = inv, cat, opts
-
-	return Assessment{}
-}
-
-// Assess maps every resource of inv onto cat and gathers the verdicts, blockers
-// and summary counts. Fits and reasons come from mapping.Map unchanged. Resources
-// come from the inventory in ID order, so the same inventory and catalog always
-// give the same assessment. It judges availability across all of the target's
-// regions and estimates nothing: AssessWith takes a region and turns estimates
-// on.
-func Assess(inv inventory.Inventory, cat catalog.Catalog) Assessment {
 	resources := inv.Resources()
 
 	a := Assessment{
@@ -164,10 +151,30 @@ func Assess(inv inventory.Inventory, cat catalog.Catalog) Assessment {
 		Source:   inv.Source(),
 		Verdicts: make([]Verdict, 0, len(resources)),
 		Summary:  Summary{Total: len(resources)},
+		Region:   opts.Region,
+	}
+
+	var estimates []estimate.Estimate
+
+	if opts.Estimate {
+		a.EstimateRegion = opts.Region
+		if a.EstimateRegion == "" {
+			a.EstimateRegion = cat.Snapshot().DefaultRegion
+		}
+
+		estimates = make([]estimate.Estimate, 0, len(resources))
 	}
 
 	for _, r := range resources {
-		v := verdict(mapping.Map(r, cat))
+		result := mapping.MapIn(r, cat, opts.Region)
+		v := verdict(result)
+
+		if opts.Estimate {
+			e := estimate.For(result, a.EstimateRegion)
+			v.Estimate = &e
+			estimates = append(estimates, e)
+		}
+
 		a.Verdicts = append(a.Verdicts, v)
 
 		switch v.Fit {
@@ -184,7 +191,22 @@ func Assess(inv inventory.Inventory, cat catalog.Catalog) Assessment {
 		}
 	}
 
+	if opts.Estimate {
+		total := estimate.Sum(estimates)
+		a.Total = &total
+	}
+
 	return a
+}
+
+// Assess maps every resource of inv onto cat and gathers the verdicts, blockers
+// and summary counts. Fits and reasons come from mapping.Map unchanged. Resources
+// come from the inventory in ID order, so the same inventory and catalog always
+// give the same assessment. It judges availability across all of the target's
+// regions and estimates nothing: AssessWith takes a region and turns estimates
+// on.
+func Assess(inv inventory.Inventory, cat catalog.Catalog) Assessment {
+	return AssessWith(inv, cat, Options{})
 }
 
 // verdict turns a mapping result into a verdict.
