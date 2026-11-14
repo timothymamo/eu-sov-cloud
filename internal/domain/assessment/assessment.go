@@ -40,6 +40,11 @@ type Verdict struct {
 	// EstimateRegion (estimate.For), and nil when estimates are off. It is set
 	// for every verdict when they are on, estimated or not.
 	Estimate *estimate.Estimate
+	// AffectedBy holds the IDs of the resources this resource depends on or is
+	// a replica of (inventory.DependsOn, inventory.ReplicaOf) that have fit
+	// mapping.None in this assessment, each once, sorted in byte order, and is
+	// nil when there is none (ADR 0028). The note is not transitive.
+	AffectedBy []string
 }
 
 // Ties returns the names of the other candidates a reader could take for the
@@ -114,6 +119,13 @@ type Assessment struct {
 	// Total sums the verdicts' estimates (estimate.Sum, in verdict order), and is
 	// nil when estimates are off.
 	Total *estimate.Total
+	// Workloads holds one group per workload, by Name in byte order, then the
+	// "No workload" group last when some resource names no workload. It is nil
+	// when there is no resource (ADR 0028).
+	Workloads []WorkloadSummary
+	// SourceCost is estimate.SumSourceCost over every resource, in verdict
+	// order, whether estimates are on or off.
+	SourceCost estimate.SourceCost
 }
 
 // Options are the choices an assessment takes besides its inventory and
@@ -140,6 +152,11 @@ type Options struct {
 // opts.Estimate is true, each verdict gets estimate.For(result,
 // EstimateRegion) and the assessment the Total of them. Sizes never change a
 // fit, a blocker or the summary counts.
+//
+// Whatever opts holds, each verdict gets its AffectedBy notes, the assessment
+// its Workloads and its SourceCost (ADR 0028); only each group's Total depends
+// on opts.Estimate. Workloads, relations and costs change no fit, blocker,
+// count or estimate.
 //
 // AssessWith(inv, cat, Options{}) equals Assess(inv, cat).
 func AssessWith(inv inventory.Inventory, cat catalog.Catalog, opts Options) Assessment {
@@ -195,6 +212,10 @@ func AssessWith(inv inventory.Inventory, cat catalog.Catalog, opts Options) Asse
 		total := estimate.Sum(estimates)
 		a.Total = &total
 	}
+
+	noteAffected(a.Verdicts)
+	a.Workloads = workloads(a, opts.Estimate)
+	a.SourceCost = estimate.SumSourceCost(verdictResources(a.Verdicts))
 
 	return a
 }

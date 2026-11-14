@@ -1,6 +1,7 @@
 package assessment_test
 
 import (
+	"fmt"
 	"slices"
 	"strings"
 	"testing"
@@ -9,6 +10,7 @@ import (
 
 	"github.com/timothymamo/shift2eu/internal/domain/assessment"
 	"github.com/timothymamo/shift2eu/internal/domain/catalog"
+	"github.com/timothymamo/shift2eu/internal/domain/estimate"
 	"github.com/timothymamo/shift2eu/internal/domain/inventory"
 	"github.com/timothymamo/shift2eu/internal/domain/mapping"
 	"github.com/timothymamo/shift2eu/internal/domain/taxonomy"
@@ -449,4 +451,367 @@ func TestCompareNoSharedBlockers(t *testing.T) {
 	if diff := cmp.Diff([]string{scalewayKey, upcloudKey}, targetKeys(got.Targets)); diff != "" {
 		t.Errorf("target keys mismatch (-want +got):\n%s", diff)
 	}
+}
+
+// workloadComparisonInventory is one inventory with workloads, a relation onto a
+// resource and the source's own monthly costs, assessed against two targets that
+// block different resources: OVHcloud serves PostgreSQL, UpCloud sells no
+// database at all (PRD #190, ADR 0028).
+func workloadComparisonInventory(t *testing.T) inventory.Inventory {
+	t.Helper()
+
+	return newInventory(t, []inventory.Resource{
+		{
+			ID: "bucket-example", RawType: "AWS::S3::Bucket",
+			Category: taxonomy.StorageObject, Region: "eu-west-1",
+			Size:        &inventory.Size{StorageGiB: f(1000)},
+			MonthlyCost: &inventory.Cost{Amount: f(1), Currency: "EUR"},
+		},
+		{
+			ID: "db-example", RawType: "AWS::RDS::DBInstance",
+			Category: taxonomy.DatabasePostgreSQL, Region: "eu-west-1",
+			Workload:    "shop",
+			MonthlyCost: &inventory.Cost{Amount: f(10), Currency: "EUR"},
+		},
+		{
+			ID: "web-1", RawType: "AWS::EC2::Instance",
+			Category: taxonomy.ComputeVM, Region: "eu-west-1",
+			Size:        &inventory.Size{VCPUs: f(2), MemoryGiB: f(4)},
+			Workload:    "shop",
+			Relations:   []inventory.Relation{{Type: inventory.DependsOn, Target: "db-example"}},
+			MonthlyCost: &inventory.Cost{Amount: f(20), Currency: "USD"},
+		},
+	})
+}
+
+// workloadShapes returns what every target of a comparison shares about its
+// workload groups: the names, whether a group is the "No workload" one, and its
+// resources. The counts, blockers and totals differ per target.
+func workloadShapes(workloads []assessment.WorkloadSummary) []workloadShape {
+	if len(workloads) == 0 {
+		return nil
+	}
+
+	shapes := make([]workloadShape, 0, len(workloads))
+	for _, w := range workloads {
+		shapes = append(shapes, workloadShape{Name: w.Name, NoWorkload: w.NoWorkload, ResourceIDs: w.ResourceIDs})
+	}
+
+	return shapes
+}
+
+// workloadShape is the part of a workload group a comparison's targets must
+// agree on.
+type workloadShape struct {
+	Name        string
+	NoWorkload  bool
+	ResourceIDs []string
+}
+
+// comparisonWorkloadTargets assesses workloadComparisonInventory against the
+// OVHcloud and the UpCloud fixture, in key order.
+func comparisonWorkloadTargets(t *testing.T) []assessment.TargetAssessment {
+	t.Helper()
+
+	inv := workloadComparisonInventory(t)
+
+	return []assessment.TargetAssessment{
+		{Key: ovhcloudKey, Assessment: assessment.Assess(inv, testutil.OVHcloudCatalog(t))},
+		{Key: upcloudKey, Assessment: assessment.Assess(inv, testutil.UpCloudCatalog(t))},
+	}
+}
+
+// TestComparisonWorkloadsNotesAndSourceCost pins what a comparison shares and what
+// it does not: the workload groups' names and resources and the source's cost are
+// the one inventory's, so every target holds the same, while the blockers, the
+// counts and the notes are each target's own (ADR 0028).
+func TestComparisonWorkloadsNotesAndSourceCost(t *testing.T) {
+	t.Parallel()
+
+	got := assessment.Compare(comparisonWorkloadTargets(t))
+
+	if diff := cmp.Diff([]string{ovhcloudKey, upcloudKey}, targetKeys(got.Targets)); diff != "" {
+		t.Fatalf("target keys mismatch (-want +got):\n%s", diff)
+	}
+
+	// Every target holds the one inventory's groups: one per workload, the "No
+	// workload" group last.
+	wantGroups := []workloadShape{
+		{Name: "shop", ResourceIDs: []string{"db-example", "web-1"}},
+		{NoWorkload: true, ResourceIDs: []string{"bucket-example"}},
+	}
+
+	// The source's own cost comes from the inventory, so no target changes it.
+	wantCost := estimate.SourceCost{
+		Currencies: []estimate.CurrencyCost{
+			{Currency: "EUR", Monthly: estimate.Ratio(11, 1), Resources: 2},
+			{Currency: "USD", Monthly: estimate.Ratio(20, 1), Resources: 1},
+		},
+		Covered:   3,
+		Resources: 3,
+	}
+
+	for _, target := range got.Targets {
+		if diff := cmp.Diff(wantGroups, workloadShapes(target.Assessment.Workloads)); diff != "" {
+			t.Errorf("target %q does not hold the inventory's workload groups (-want +got):\n%s", target.Key, diff)
+		}
+
+		if diff := cmp.Diff(wantCost, target.Assessment.SourceCost); diff != "" {
+			t.Errorf("target %q's SourceCost mismatch (-want +got):\n%s", target.Key, diff)
+		}
+	}
+
+	// The blockers, the counts and the notes are each target's own: UpCloud
+	// blocks the database, and the web server that depends on it is affected
+	// there only.
+	tests := []struct {
+		key         string
+		wantBlocked []string
+		wantNotes   []string
+	}{
+		{key: ovhcloudKey},
+		{key: upcloudKey, wantBlocked: []string{"db-example"}, wantNotes: []string{"db-example"}},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.key, func(t *testing.T) {
+			t.Parallel()
+
+			var target assessment.TargetAssessment
+
+			for _, have := range got.Targets {
+				if have.Key == tc.key {
+					target = have
+				}
+			}
+
+			if target.Key == "" {
+				t.Fatalf("the comparison holds no target %q", tc.key)
+			}
+
+			if diff := cmp.Diff(tc.wantBlocked, blockedIDs(target.Assessment.Blockers)); diff != "" {
+				t.Errorf("target %q's blockers mismatch (-want +got):\n%s", tc.key, diff)
+			}
+
+			if diff := cmp.Diff(tc.wantNotes, verdictFor(t, target.Assessment.Verdicts, "web-1").AffectedBy); diff != "" {
+				t.Errorf("target %q's notes on web-1 mismatch (-want +got):\n%s", tc.key, diff)
+			}
+		})
+	}
+
+	if err := got.Validate(); err != nil {
+		t.Errorf("Validate() = %v, want nil for targets that hold the same workload groups", err)
+	}
+}
+
+// TestComparisonValidateWorkloads pins the workload precondition of a comparison:
+// every target holds the first target's groups in the same order, with the same
+// Name, NoWorkload and ResourceIDs, and Validate names the offending target when
+// one does not (ADR 0028).
+func TestComparisonValidateWorkloads(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name   string
+		change func(t *testing.T, c *assessment.Comparison)
+		// wantErr is true when Validate must refuse the comparison.
+		wantErr bool
+		// wantErrNames are the values the error must name: the target key, and
+		// the workload the targets disagree on where both call it the same.
+		wantErrNames []string
+	}{
+		{
+			name:   "every target holds the inventory's groups",
+			change: func(*testing.T, *assessment.Comparison) {},
+		},
+		{
+			name: "a later target's group lists another resource",
+			change: func(_ *testing.T, c *assessment.Comparison) {
+				c.Targets[1].Assessment.Workloads[0].ResourceIDs = []string{"db-example"}
+			},
+			wantErr:      true,
+			wantErrNames: []string{upcloudKey, "shop"},
+		},
+		{
+			name: "a later target's group holds one resource more",
+			change: func(_ *testing.T, c *assessment.Comparison) {
+				c.Targets[1].Assessment.Workloads[0].ResourceIDs = []string{
+					"db-example", "web-1", "extra-example",
+				}
+			},
+			wantErr:      true,
+			wantErrNames: []string{upcloudKey, "shop"},
+		},
+		{
+			name: "a later target's group lists its resources in another order",
+			change: func(_ *testing.T, c *assessment.Comparison) {
+				ids := c.Targets[1].Assessment.Workloads[0].ResourceIDs
+				ids[0], ids[1] = ids[1], ids[0]
+			},
+			wantErr:      true,
+			wantErrNames: []string{upcloudKey, "shop"},
+		},
+		{
+			name: "a later target's group carries another name",
+			change: func(_ *testing.T, c *assessment.Comparison) {
+				c.Targets[1].Assessment.Workloads[0].Name = "shopping"
+			},
+			wantErr:      true,
+			wantErrNames: []string{upcloudKey},
+		},
+		{
+			name: "a later target's group is no longer the No workload group",
+			change: func(_ *testing.T, c *assessment.Comparison) {
+				c.Targets[1].Assessment.Workloads[1].NoWorkload = false
+			},
+			wantErr:      true,
+			wantErrNames: []string{upcloudKey},
+		},
+		{
+			name: "a later target's No workload group holds another resource",
+			change: func(_ *testing.T, c *assessment.Comparison) {
+				c.Targets[1].Assessment.Workloads[1].ResourceIDs = []string{"extra-example"}
+			},
+			wantErr:      true,
+			wantErrNames: []string{upcloudKey},
+		},
+		{
+			name: "a later target holds one workload group more",
+			change: func(_ *testing.T, c *assessment.Comparison) {
+				c.Targets[1].Assessment.Workloads = append(c.Targets[1].Assessment.Workloads,
+					assessment.WorkloadSummary{Name: "blog", ResourceIDs: []string{"bucket-example"}})
+			},
+			wantErr:      true,
+			wantErrNames: []string{upcloudKey},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			c := assessment.Compare(comparisonWorkloadTargets(t))
+			tt.change(t, &c)
+
+			err := c.Validate()
+
+			switch {
+			case tt.wantErr && err == nil:
+				t.Fatalf("Validate() = nil, want an error for a comparison whose %s", tt.name)
+			case !tt.wantErr && err != nil:
+				t.Fatalf("Validate() = %v, want nil for a comparison whose %s", err, tt.name)
+			}
+
+			if err == nil {
+				return
+			}
+
+			for _, want := range tt.wantErrNames {
+				if !strings.Contains(err.Error(), want) {
+					t.Errorf("Validate() error %q does not name %q", err.Error(), want)
+				}
+			}
+		})
+	}
+}
+
+// TestComparisonValidateWorkloadsErrorIsShort pins that Validate's workload
+// mismatch error stays readable for the largest group an inventory can hold: it
+// names the target, the group and what differs, and never formats the groups'
+// whole ResourceIDs, which is hundreds of kilobytes for 10,000 resources and
+// tens of megabytes for the 50,000 an inventory may hold (PRD #190 M7, security
+// audit).
+func TestComparisonValidateWorkloadsErrorIsShort(t *testing.T) {
+	t.Parallel()
+
+	// maxValidateErrorLen is the most bytes the error may take: room for a
+	// sentence naming a target key, a workload name, a position and a resource
+	// ID, and far less than the group it is about.
+	const maxValidateErrorLen = 1024
+
+	// manyIDs is already 70 KB of formatted resource IDs per group.
+	const manyIDs = 10000
+
+	tests := []struct {
+		// change returns the later target's group from the first target's.
+		change func(ids []string) []string
+		name   string
+	}{
+		{
+			name: "the last resource of a group differs",
+			change: func(ids []string) []string {
+				out := slices.Clone(ids)
+				out[len(out)-1] = "r-99999"
+
+				return out
+			},
+		},
+		{
+			name: "a later target's group holds one resource more",
+			change: func(ids []string) []string {
+				return append(slices.Clone(ids), "r-99999")
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			ids := numberedResourceIDs(manyIDs)
+
+			c := assessment.Comparison{Targets: []assessment.TargetAssessment{
+				{
+					Key: ovhcloudKey,
+					Assessment: assessment.Assessment{Workloads: []assessment.WorkloadSummary{
+						{Name: "shop", ResourceIDs: ids},
+					}},
+				},
+				{
+					Key: upcloudKey,
+					Assessment: assessment.Assessment{Workloads: []assessment.WorkloadSummary{
+						{Name: "shop", ResourceIDs: tt.change(ids)},
+					}},
+				},
+			}}
+
+			err := c.Validate()
+			if err == nil {
+				t.Fatalf("Validate() = nil, want an error for a comparison whose %s", tt.name)
+			}
+
+			msg := err.Error()
+
+			for _, want := range []string{upcloudKey, "shop"} {
+				if !strings.Contains(msg, want) {
+					t.Errorf("Validate() error %q does not name %q", prefix(msg, maxValidateErrorLen), want)
+				}
+			}
+
+			if len(msg) > maxValidateErrorLen {
+				t.Fatalf("Validate() error is %d bytes, want at most %d for a group of %d resources; it starts %q",
+					len(msg), maxValidateErrorLen, len(ids), prefix(msg, 200))
+			}
+		})
+	}
+}
+
+// numberedResourceIDs returns n invented resource IDs in ID order.
+func numberedResourceIDs(n int) []string {
+	ids := make([]string, 0, n)
+	for i := range n {
+		ids = append(ids, fmt.Sprintf("r-%05d", i+1))
+	}
+
+	return ids
+}
+
+// prefix returns at most n bytes of s, for a failure message that would
+// otherwise print the whole of a long error.
+func prefix(s string, n int) string {
+	if len(s) <= n {
+		return s
+	}
+
+	return s[:n] + "..."
 }
