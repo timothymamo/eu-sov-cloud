@@ -224,8 +224,16 @@ func TestFor(t *testing.T) {
 			wantMonthly: "12.00",
 		},
 		{
-			name:      "compute.baremetal: a plan, storage per server, and a count",
-			resource:  computeResource(&inventory.Size{VCPUs: f(8), MemoryGiB: f(16), StorageGiB: f(200), Count: n(2)}, nil),
+			// Bare metal is priced like compute.vm: a plan per server, storage
+			// above what the plan includes for each server, and the count.
+			name: "compute.baremetal: a plan, storage per server, and a count",
+			resource: inventory.Resource{
+				ID:       "i-0123456789abcdef0",
+				RawType:  "AWS::EC2::Instance",
+				Category: taxonomy.ComputeBareMetal,
+				Region:   "eu-west-1",
+				Size:     &inventory.Size{VCPUs: f(8), MemoryGiB: f(16), StorageGiB: f(200), Count: n(2)},
+			},
 			offerings: []catalog.Offering{bareMetalOffering()},
 			region:    testutil.PricedDefaultRegion,
 			want: estimate.Estimate{
@@ -233,15 +241,16 @@ func TestFor(t *testing.T) {
 				Estimated: true,
 				Offering:  "Example Bare Metal",
 				Plan:      pricedPlan("BM-1", 8, 16000, 100, 480000),
-				// 480 × 2 = 960; (200 − 100) × 0.05 × 2 = 10.
-				Monthly: estimate.FromAmount(970000),
+				// 48 × 2 = 96; (200 − 100) × 0.05 × 2 = 10.
+				Monthly: estimate.FromAmount(1060000),
 				Breakdown: estimate.Breakdown{
 					Plan:    estimate.FromAmount(960000),
 					Storage: estimate.FromAmount(100000),
 				},
+				HoursAssumed: true,
 			},
-			wantMonthly: "970.00",
-			wantExact:   "970",
+			wantMonthly: "106.00",
+			wantExact:   "106",
 		},
 		{
 			name: "kubernetes.managed: storage per node and the fixed fee once, not per node",
@@ -264,16 +273,17 @@ func TestFor(t *testing.T) {
 				Estimated: true,
 				Offering:  "Example Kubernetes",
 				Plan:      pricedPlan("NK-1", 4, 8000, 50, 300000),
-				// 300 × 3 = 900; (80 − 50) × 0.03 × 3 = 2.7; the fee is 9 once.
-				Monthly: estimate.Ratio(9117, 10),
+				// 30 × 3 = 90; (80 − 50) × 0.03 × 3 = 2.7; the fee is 9 once.
+				Monthly: estimate.Ratio(1017, 10),
 				Breakdown: estimate.Breakdown{
 					Plan:     estimate.FromAmount(900000),
 					Storage:  estimate.Ratio(27, 10),
 					FixedFee: estimate.FromAmount(90000),
 				},
+				HoursAssumed: true,
 			},
-			wantMonthly: "911.70",
-			wantExact:   "9117/10",
+			wantMonthly: "101.70",
+			wantExact:   "1017/10",
 		},
 		{
 			// Database storage is the service's data, not one volume per node
@@ -298,14 +308,16 @@ func TestFor(t *testing.T) {
 				Estimated: true,
 				Offering:  "Example PostgreSQL",
 				Plan:      pricedPlan("PG-1", 2, 4000, 20, 200000),
-				// 200 × 3 = 600; (100 − 20) × 0.10 = 8.
-				Monthly: estimate.FromAmount(608000),
+				// 20 × 3 = 60; (100 − 20) × 0.10 = 8.
+				Monthly: estimate.FromAmount(680000),
 				Breakdown: estimate.Breakdown{
 					Plan:    estimate.FromAmount(600000),
 					Storage: estimate.FromAmount(80000),
 				},
+				HoursAssumed: true,
 			},
-			wantMonthly: "608.00",
+			wantMonthly: "68.00",
+			wantExact:   "68",
 		},
 		{
 			name: "database.mysql: storage once, with the default count and hours",
@@ -327,8 +339,8 @@ func TestFor(t *testing.T) {
 				Estimated: true,
 				Offering:  "Example MySQL",
 				Plan:      pricedPlan("MY-1", 2, 4000, 20, 180000),
-				// 180 × 1; (50 − 20) × 0.08 = 2.4.
-				Monthly: estimate.Ratio(912, 5),
+				// 18 × 1; (50 − 20) × 0.08 = 2.4.
+				Monthly: estimate.Ratio(102, 5),
 				Breakdown: estimate.Breakdown{
 					Plan:    estimate.FromAmount(180000),
 					Storage: estimate.Ratio(12, 5),
@@ -336,8 +348,8 @@ func TestFor(t *testing.T) {
 				CountAssumed: true,
 				HoursAssumed: true,
 			},
-			wantMonthly: "182.40",
-			wantExact:   "912/5",
+			wantMonthly: "20.40",
+			wantExact:   "102/5",
 		},
 		{
 			name:      "storage.object: the stored GiB at the per-GiB price",
@@ -444,7 +456,7 @@ func TestFor(t *testing.T) {
 				Breakdown: estimate.Breakdown{Plan: estimate.Ratio(37200000000000, 365)},
 			},
 			wantMonthly: "101917808219.18",
-			wantExact:   "37200000000000/365",
+			wantExact:   "7440000000000/73",
 		},
 
 		// The plan choice, and its tie breaks: cheapest first, then fewer vCPUs,
