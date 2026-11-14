@@ -146,7 +146,8 @@ func TestCatalogSnapshotHeader(t *testing.T) {
 // also lists a storage price, so the estimate can price the disk above what the
 // plan includes from the same offering. leftOut names the offerings those rules
 // are waived for, with the reason, because the snapshot cannot express their price
-// as a plan or a storage price; extraStorageLeftOut waives that storage-price rule
+// as a plan or a storage price; it is empty today and an entry is a finding to
+// explain in SOURCES.md. extraStorageLeftOut waives that storage-price rule
 // alone for an offering whose plans must still be pinned. A waiver only holds while
 // the rule it waives would still fail: an entry that names no offering of the
 // catalog, or that waives a rule the data now meets, fails the test, so a refresh
@@ -194,22 +195,10 @@ func TestCatalogPlansAndPrices(t *testing.T) {
 		taxonomy.KubernetesManaged,
 	}
 
-	// multiNodeDatabaseLeftOut is why both multi-node managed databases are
-	// waived: the reason is the same for both.
-	const multiNodeDatabaseLeftOut = "UpCloud prices extra database nodes as a count-dependent discount " +
-		"(Second Node -10%, Third Node -30%), which a per-node plan price cannot express; see SOURCES.md"
-
 	// leftOut exempts an offering from the coverage and plan-storage rules, never
-	// from the price rules, and gives the reason. An entry is a finding to explain
-	// in this test and in SOURCES.md, not a way past a refresh. It holds the
-	// multi-node managed databases, the only offerings the snapshot cannot price:
-	// UpCloud publishes their price as a count-dependent discount on the per-node
-	// price rather than as a plan or a per-GiB one, and the domain has no price
-	// that depends on a count.
-	leftOut := map[string]string{
-		"Managed MySQL Multi-node":      multiNodeDatabaseLeftOut,
-		"Managed PostgreSQL Multi-node": multiNodeDatabaseLeftOut,
-	}
+	// from the price rules, and gives the reason. It is empty today: an entry is a
+	// finding to explain in this test and in SOURCES.md, not a way past a refresh.
+	leftOut := map[string]string{}
 
 	// kubernetesWorkerStorageLeftOut is why both managed Kubernetes offerings are
 	// waived from the extra-storage rule: the reason is the same for both.
