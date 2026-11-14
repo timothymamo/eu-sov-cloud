@@ -28,7 +28,8 @@
 // to a plan and estimates its monthly cost (analysis.Options.Estimate,
 // analysis.ComparisonOptions.Estimate); --no-estimate turns them off, and the
 // report then holds no price at all. --region takes comma-separated
-// <target>=<region> pairs, each naming one selected target at most once: that
+// <target>=<region> pairs, spaces around each pair, key and region dropped,
+// each naming one selected target at most once: that
 // target is assessed and estimated in that one region (analysis.Options.Region,
 // analysis.Target.Region), every other in all its regions with estimates in its
 // default region. Whether the target lists the region is checked by the use

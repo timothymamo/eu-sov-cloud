@@ -171,8 +171,9 @@ func parseTargets(value string, deps Deps) ([]string, error) {
 }
 
 // parseRegions parses the --region value: comma-separated <target>=<region>
-// pairs, each naming one of the selected targets at most once. It returns nil
-// for an empty value. Whether the target lists the region is checked against
+// pairs, each naming one of the selected targets at most once. Spaces around a
+// pair, its key and its region are dropped, so "a=x, b=y" is two pairs. It
+// returns nil for an empty value. Whether the target lists the region is checked against
 // its catalog once loaded (analysis.RegionError), before the inventory is read.
 // Every error it returns is a usage error.
 func parseRegions(value string, selected []string) (map[string]string, error) {
@@ -184,6 +185,7 @@ func parseRegions(value string, selected []string) (map[string]string, error) {
 
 	for _, pair := range strings.Split(value, ",") {
 		key, region, found := strings.Cut(pair, "=")
+		key, region = strings.TrimSpace(key), strings.TrimSpace(region)
 
 		switch {
 		case !found || key == "" || region == "":
