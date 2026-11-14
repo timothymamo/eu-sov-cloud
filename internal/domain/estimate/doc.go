@@ -18,7 +18,9 @@
 // Money is exact: an amount of euros held as a rational number (math/big), so
 // no product of the inventory's and the catalog's capped numbers can wrap. It
 // is rounded to the cent, half away from zero, only when it is formatted
-// (ADR 0024).
+// (ADR 0024). Each inventory number is read as the decimal it prints as,
+// rounded to six fractional digits, so 0.1 is exactly 1/10 and the
+// denominators stay bounded (ADR 0027).
 //
 // Domain layer: standard library and other domain packages only, no I/O, no
 // clock.

@@ -63,7 +63,9 @@ const (
 	UsagePriced Reason = "usage-priced"
 	// NoSize is the reason for a resource that does not give the size its
 	// category is priced by: vcpus and memoryGiB for ByPlan (both needed),
-	// storageGiB for ByStorage.
+	// storageGiB for ByStorage. A size or usage that is NaN, infinite or
+	// negative, which only a resource built without inventory.New can hold, is
+	// no size either.
 	NoSize Reason = "no-size"
 	// NoPlan is the reason for a ByPlan resource whose best candidate offerings
 	// list no plan at all.
@@ -218,6 +220,20 @@ func byPlan(r inventory.Resource, offerings []catalog.Offering, region string) E
 		return e
 	}
 
+	vcpus, okVCPUs := exact(*r.Size.VCPUs)
+	memoryGiB, okMemory := exact(*r.Size.MemoryGiB)
+	stored, okStored := optionalExact(r.Size.StorageGiB)
+	count, countAssumed, okCount := countOf(r.Size)
+	hours, hoursAssumed, okHours := hoursOf(r.Usage)
+
+	if !okVCPUs || !okMemory || !okStored || !okCount || !okHours {
+		e.Reason = NoSize
+
+		return e
+	}
+
+	memory := new(big.Rat).Mul(memoryGiB, big.NewRat(1000, 1))
+
 	var all []offeredPlan
 
 	for _, o := range offerings {
@@ -231,9 +247,6 @@ func byPlan(r inventory.Resource, offerings []catalog.Offering, region string) E
 
 		return e
 	}
-
-	vcpus := exact(*r.Size.VCPUs)
-	memory := new(big.Rat).Mul(exact(*r.Size.MemoryGiB), big.NewRat(1000, 1))
 
 	var covering []offeredPlan
 
@@ -277,13 +290,10 @@ func byPlan(r inventory.Resource, offerings []catalog.Offering, region string) E
 	e.Offering = chosen.offering.Name
 	e.Plan = planOf(chosen, region)
 
-	count, countAssumed := countOf(r.Size)
-	hours, hoursAssumed := hoursOf(r.Usage)
-
 	storage := new(big.Rat)
 
-	if r.Size.StorageGiB != nil {
-		extra := new(big.Rat).Sub(exact(*r.Size.StorageGiB), big.NewRat(chosen.plan.IncludedStorageGiB, 1))
+	if stored != nil {
+		extra := new(big.Rat).Sub(stored, big.NewRat(chosen.plan.IncludedStorageGiB, 1))
 		if extra.Sign() > 0 {
 			perGiB, ok := chosen.offering.StoragePrice(region)
 			if !ok {
@@ -329,6 +339,15 @@ func byStorage(r inventory.Resource, offerings []catalog.Offering, region string
 		return e
 	}
 
+	stored, okStored := exact(*r.Size.StorageGiB)
+	count, countAssumed, okCount := countOf(r.Size)
+
+	if !okStored || (r.Category == taxonomy.StorageBlock && !okCount) {
+		e.Reason = NoSize
+
+		return e
+	}
+
 	var (
 		chosen string
 		perGiB catalog.Amount
@@ -352,12 +371,11 @@ func byStorage(r inventory.Resource, offerings []catalog.Offering, region string
 		return e
 	}
 
-	storage := new(big.Rat).Mul(exact(*r.Size.StorageGiB), amount(perGiB))
+	storage := new(big.Rat).Mul(stored, amount(perGiB))
 
 	if r.Category == taxonomy.StorageBlock {
-		count, assumed := countOf(r.Size)
 		storage.Mul(storage, count)
-		e.CountAssumed = assumed
+		e.CountAssumed = countAssumed
 	}
 
 	e.Estimated = true
@@ -467,23 +485,31 @@ func storedOnce(c taxonomy.Category) bool {
 	return c == taxonomy.DatabasePostgreSQL || c == taxonomy.DatabaseMySQL
 }
 
-// countOf returns the resource's count, or 1 and true when it gives none.
-func countOf(size *inventory.Size) (*big.Rat, bool) {
+// countOf returns the resource's count, or 1 and true when it gives none. The
+// last result is false for a negative count, which no inventory holds
+// (inventory.New refuses it) and which is no size at all.
+func countOf(size *inventory.Size) (*big.Rat, bool, bool) {
 	if size.Count == nil {
-		return big.NewRat(1, 1), true
+		return big.NewRat(1, 1), true, true
 	}
 
-	return big.NewRat(int64(*size.Count), 1), false
+	if *size.Count < 0 {
+		return nil, false, false
+	}
+
+	return big.NewRat(int64(*size.Count), 1), false, true
 }
 
 // hoursOf returns the hours a month the resource runs, or HoursPerMonth and
-// true when it gives none.
-func hoursOf(usage *inventory.Usage) (*big.Rat, bool) {
+// true when it gives none. The last result is false for a value exact refuses.
+func hoursOf(usage *inventory.Usage) (*big.Rat, bool, bool) {
 	if usage == nil || usage.HoursPerMonth == nil {
-		return big.NewRat(HoursPerMonth, 1), true
+		return big.NewRat(HoursPerMonth, 1), true, true
 	}
 
-	return exact(*usage.HoursPerMonth), false
+	hours, ok := exact(*usage.HoursPerMonth)
+
+	return hours, false, ok
 }
 
 // monthShare returns hours / HoursPerMonth, the share of a monthly price that
@@ -497,17 +523,40 @@ func amount(a catalog.Amount) *big.Rat {
 	return big.NewRat(int64(a), catalog.AmountScale)
 }
 
-// exact returns v as the exact decimal it prints as, its shortest round-trip
-// representation, so 0.1 is exactly 1/10 (ADR 0027). The inventory only holds
-// finite values, so the conversion cannot fail; a value it could not read
-// would be 0.
-func exact(v float64) *big.Rat {
+// decimals is how many fractional digits of an inventory number are read
+// (ADR 0027): 10^6 bounds every denominator of the arithmetic.
+const decimals = 1_000_000
+
+// exact returns v as an exact rational: the decimal of its shortest round-trip
+// representation, so 0.1 is exactly 1/10, rounded to six fractional digits,
+// half away from zero, so 5e-324 is 0 and 100.0000004 is 100 (ADR 0027). It
+// returns false for NaN, ±Inf and a negative value: inventory.New refuses
+// them, and a resource built without it that carries one has no size, never a
+// size of 0 or a negative price.
+func exact(v float64) (*big.Rat, bool) {
 	r, ok := new(big.Rat).SetString(strconv.FormatFloat(v, 'g', -1, 64))
-	if !ok {
-		return new(big.Rat)
+	if !ok || r.Sign() < 0 {
+		return nil, false
 	}
 
-	return r
+	scaled := r.Mul(r, big.NewRat(decimals, 1))
+	whole, rest := new(big.Int).QuoRem(scaled.Num(), scaled.Denom(), new(big.Int))
+
+	// The value is not negative, so half away from zero is half up.
+	if rest.Lsh(rest, 1).Cmp(scaled.Denom()) >= 0 {
+		whole.Add(whole, big.NewInt(1))
+	}
+
+	return new(big.Rat).SetFrac(whole, big.NewInt(decimals)), true
+}
+
+// optionalExact is exact for an optional value: nil and true when v is nil.
+func optionalExact(v *float64) (*big.Rat, bool) {
+	if v == nil {
+		return nil, true
+	}
+
+	return exact(*v)
 }
 
 // Total sums the estimates of an assessment.
