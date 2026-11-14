@@ -512,6 +512,28 @@ func TestFor(t *testing.T) {
 			wantPlanExact: "45",
 		},
 		{
+			// The plan choice compares monthly list prices, not the hours-scaled
+			// cost a cap gives them (ADR 0029): the capped plan at 38.00 is chosen
+			// though 336 hours cost 19.00 on it and only 18.41 (40 × 336/730) on the
+			// uncapped 40.00 plan.
+			name:      "plan billing cap: the plan choice compares monthly list prices, not scaled costs",
+			resource:  computeResource(&inventory.Size{VCPUs: f(2), MemoryGiB: f(4)}, &inventory.Usage{HoursPerMonth: f(336)}),
+			offerings: []catalog.Offering{cappedComputeOffering(672), uncappedComputeOffering()},
+			region:    testutil.PricedDefaultRegion,
+			want: estimate.Estimate{
+				Region:       testutil.PricedDefaultRegion,
+				Estimated:    true,
+				Offering:     "Example Compute Plans",
+				Plan:         pricedPlan("CAP-M", 2, 4000, 20, 380000),
+				Monthly:      estimate.FromAmount(190000),
+				Breakdown:    estimate.Breakdown{Plan: estimate.FromAmount(190000)},
+				CountAssumed: true,
+			},
+			wantMonthly:   "19.00",
+			wantExact:     "19",
+			wantPlanExact: "19",
+		},
+		{
 			// Database storage is the service's data, not one volume per node
 			// (ADR 0027), so it is counted once even with a count of 3.
 			name: "database.postgresql: storage once, not per node",
@@ -1386,6 +1408,12 @@ func cappedComputeOffering(capHours int64) catalog.Offering {
 	o.PlanBillingCapHours = capHours
 
 	return o
+}
+
+// uncappedComputeOffering sells one compute.vm plan at 40.00 EUR a month and
+// bills it without a cap (ADR 0029): its plan price is the price of 730 hours.
+func uncappedComputeOffering() catalog.Offering {
+	return namedComputeOffering("Example Uncapped Compute Plans", plan("UNC-M", 2, 4000, 20, 400000))
 }
 
 // kubernetesOfferingWithCap is kubernetesOffering with its node plans billed for
