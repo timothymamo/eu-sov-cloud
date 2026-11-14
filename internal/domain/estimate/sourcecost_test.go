@@ -189,25 +189,37 @@ func TestSumSourceCost(t *testing.T) {
 func TestSumSourceCostIsExact(t *testing.T) {
 	t.Parallel()
 
-	third := estimate.SumSourceCost([]inventory.Resource{
-		{ID: "web-1", MonthlyCost: monthly(1.0/3.0, "EUR")},
+	// Both amounts print "0.00": a tenth of a cent and a fifth of a cent.
+	one := estimate.SumSourceCost([]inventory.Resource{
+		{ID: "web-1", MonthlyCost: monthly(0.001, "EUR")},
 	})
-	half := estimate.SumSourceCost([]inventory.Resource{
-		{ID: "web-1", MonthlyCost: monthly(0.5, "EUR")},
+	two := estimate.SumSourceCost([]inventory.Resource{
+		{ID: "web-1", MonthlyCost: monthly(0.002, "EUR")},
 	})
 
-	// Each amount is rounded to six fractional digits, so 1/3 is 333333
-	// millionths and 0.5 is a half: the two amounts are not equal, whatever
+	if len(one.Currencies) != 1 || len(two.Currencies) != 1 {
+		t.Fatalf("Currencies = %+v and %+v, want one sum each", one.Currencies, two.Currencies)
+	}
+
+	first, second := one.Currencies[0].Monthly, two.Currencies[0].Monthly
+
+	if first.String() != "0.00" || second.String() != "0.00" {
+		t.Fatalf("the printed amounts are %q and %q, want both rounded to \"0.00\"",
+			first.String(), second.String())
+	}
+
+	// Each amount is kept to six fractional digits, so 0.001 is a thousandth
+	// and 0.002 a five-hundredth: the two sums are distinct values, whatever
 	// their printed form.
-	if len(third.Currencies) != 1 || len(half.Currencies) != 1 {
-		t.Fatalf("Currencies = %+v and %+v, want one sum each", third.Currencies, half.Currencies)
+	if first.Equal(second) {
+		t.Errorf("%s and %s sum to the same Money, want them distinct", first.Exact(), second.Exact())
 	}
 
-	if third.Currencies[0].Monthly.Equal(half.Currencies[0].Monthly) {
-		t.Errorf("a third and a half sum to the same Money, want them distinct")
+	if diff := cmp.Diff(estimate.Ratio(1, 1000), first); diff != "" {
+		t.Errorf("0.001 EUR is not exactly 1/1000 (-want +got):\n%s", diff)
 	}
 
-	if diff := cmp.Diff(estimate.Ratio(1, 2), half.Currencies[0].Monthly); diff != "" {
-		t.Errorf("half a euro is not exactly 1/2 (-want +got):\n%s", diff)
+	if diff := cmp.Diff(estimate.Ratio(1, 500), second); diff != "" {
+		t.Errorf("0.002 EUR is not exactly 1/500 (-want +got):\n%s", diff)
 	}
 }

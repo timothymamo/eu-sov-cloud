@@ -330,6 +330,10 @@ func TestWorkloadGroupTotal(t *testing.T) {
 	tests := []struct {
 		name   string
 		assess assess
+		// resources is the inventory assessed, nil for workloadResources().
+		resources []inventory.Resource
+		// groups is how many workload groups that inventory assesses to.
+		groups int
 		// want is nil when the assessment estimates nothing: every group's Total
 		// is nil then.
 		want map[string]*estimate.Total
@@ -337,18 +341,21 @@ func TestWorkloadGroupTotal(t *testing.T) {
 		{
 			name:   "Assess estimates nothing",
 			assess: assessment.Assess,
+			groups: 3,
 		},
 		{
 			name: "AssessWith with estimates off",
 			assess: func(inv inventory.Inventory, cat catalog.Catalog) assessment.Assessment {
 				return assessment.AssessWith(inv, cat, assessment.Options{})
 			},
+			groups: 3,
 		},
 		{
 			name: "AssessWith with estimates on",
 			assess: func(inv inventory.Inventory, cat catalog.Catalog) assessment.Assessment {
 				return assessment.AssessWith(inv, cat, assessment.Options{Estimate: true})
 			},
+			groups: 3,
 			// The blocked database is counted in Resources, its source cost is
 			// not added to the estimate, and the free-estimated resource is
 			// still an estimate.
@@ -358,16 +365,41 @@ func TestWorkloadGroupTotal(t *testing.T) {
 				"":     {Monthly: estimate.FromAmount(150000), Estimated: 1, Resources: 1},
 			},
 		},
+		{
+			// Every resource of the group is unestimated, and the group still
+			// has a Total: none was estimated and nothing was added, so a report
+			// can print "not estimated" instead of 0.00 EUR (ADR 0028).
+			name: "AssessWith with estimates on, a group of unestimated resources only",
+			assess: func(inv inventory.Inventory, cat catalog.Catalog) assessment.Assessment {
+				return assessment.AssessWith(inv, cat, assessment.Options{Estimate: true})
+			},
+			resources: []inventory.Resource{
+				{
+					ID: "db-shop", RawType: "AWS::RDS::DBInstance",
+					Category: taxonomy.DatabasePostgreSQL, Region: "eu-west-1",
+					Workload: "shop", MonthlyCost: monthlyCost(12.5, "EUR"),
+				},
+			},
+			groups: 1,
+			want: map[string]*estimate.Total{
+				"shop": {Estimated: 0, Resources: 1},
+			},
+		},
 	}
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 
-			got := tc.assess(newInventory(t, workloadResources()), pricedCatalog(t))
+			resources := tc.resources
+			if resources == nil {
+				resources = workloadResources()
+			}
 
-			if len(got.Workloads) != 3 {
-				t.Fatalf("Workloads holds %d groups, want 3", len(got.Workloads))
+			got := tc.assess(newInventory(t, resources), pricedCatalog(t))
+
+			if len(got.Workloads) != tc.groups {
+				t.Fatalf("Workloads holds %d groups, want %d", len(got.Workloads), tc.groups)
 			}
 
 			for _, w := range got.Workloads {

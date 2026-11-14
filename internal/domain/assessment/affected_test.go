@@ -334,12 +334,20 @@ func TestAffectedBy(t *testing.T) {
 			}
 
 			for id, wantCode := range tc.wantCodes {
-				blocker := got.Blockers[0]
+				var blocker assessment.Blocker
+
+				found := false
 
 				for _, b := range got.Blockers {
 					if b.ResourceID == id {
-						blocker = b
+						blocker, found = b, true
+
+						break
 					}
+				}
+
+				if !found {
+					t.Fatalf("no blocker names %q, want one: the note must come from that blocker", id)
 				}
 
 				if blocker.Reason.Code != wantCode {
