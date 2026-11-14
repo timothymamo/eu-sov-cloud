@@ -171,24 +171,30 @@ func assessArgs(extra ...string) []string {
 func TestRunAssessEstimatesAreOnByDefault(t *testing.T) {
 	t.Parallel()
 
-	h := newEstimateHarness(t)
+	t.Run("estimates on by default", func(t *testing.T) {
+		t.Parallel()
 
-	code, stdout, stderr := h.run(t.Context(), assessArgs()...)
-	if code != 0 {
-		t.Fatalf("Run() = %d, want 0; stderr = %q", code, stderr)
-	}
+		h := newEstimateHarness(t)
 
-	// The estimate columns of the resources table, the cost summary and a price:
-	// the fixture prices the virtual machine on its smallest plan.
-	for _, want := range []string{"| Plan |", "| Monthly estimate |", "## Cost estimate", "- Total: ", "€"} {
-		if !strings.Contains(stdout, want) {
-			t.Errorf("the report does not hold %q, so a run without --no-estimate does not estimate:\n%s",
-				want, stdout)
+		code, stdout, stderr := h.run(t.Context(), assessArgs()...)
+		if code != 0 {
+			t.Fatalf("Run() = %d, want 0; stderr = %q", code, stderr)
 		}
-	}
+
+		// The estimate columns of the resources table, the cost summary and a price:
+		// the fixture prices the virtual machine on its smallest plan.
+		for _, want := range []string{"| Plan |", "| Monthly estimate |", "## Cost estimate", "- Total: ", "€"} {
+			if !strings.Contains(stdout, want) {
+				t.Errorf("the report does not hold %q, so a run without --no-estimate does not estimate:\n%s",
+					want, stdout)
+			}
+		}
+	})
 
 	t.Run("--no-estimate holds no price", func(t *testing.T) {
 		t.Parallel()
+
+		h := newEstimateHarness(t)
 
 		code, stdout, stderr := h.run(t.Context(), assessArgs("--no-estimate")...)
 		if code != 0 {
@@ -299,10 +305,10 @@ func TestRunAssessRegion(t *testing.T) {
 func TestRunAssessFormatJSONHonoursTheOptions(t *testing.T) {
 	t.Parallel()
 
-	h := newEstimateHarness(t)
-
 	t.Run("estimates on by default", func(t *testing.T) {
 		t.Parallel()
+
+		h := newEstimateHarness(t)
 
 		code, stdout, stderr := h.run(t.Context(), assessArgs("--format", jsonFormat,
 			"--region", estimateTargetKey+"="+testutil.ReportSecondRegion)...)
@@ -324,6 +330,8 @@ func TestRunAssessFormatJSONHonoursTheOptions(t *testing.T) {
 
 	t.Run("--no-estimate", func(t *testing.T) {
 		t.Parallel()
+
+		h := newEstimateHarness(t)
 
 		code, stdout, stderr := h.run(t.Context(), assessArgs("--format", jsonFormat,
 			"--region", estimateTargetKey+"="+testutil.ReportSecondRegion, "--no-estimate")...)

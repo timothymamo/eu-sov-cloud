@@ -96,7 +96,7 @@ func TestAssessEstimateFalse(t *testing.T) {
 
 	for _, verdict := range got.Verdicts {
 		if verdict.Estimate != nil {
-			t.Errorf("the verdict on %q holds an estimate, want none with \"estimate\": false", verdict.ResourceID)
+			t.Errorf("the verdict on %q holds an estimate, want none with \"estimate\": false", verdict.Resource.ID)
 		}
 	}
 }
@@ -116,6 +116,10 @@ func TestAssessRegions(t *testing.T) {
 		// wantRegions is the region each compared target's key must be assessed
 		// in, "" for the catalog's default.
 		wantRegions map[string]string
+		// estimatesOff is whether the request turns estimates off, which leaves
+		// the estimate region unset by design: only an estimated assessment has
+		// one.
+		estimatesOff bool
 	}{
 		{
 			name:        "one target's region",
@@ -135,8 +139,9 @@ func TestAssessRegions(t *testing.T) {
 				Regions:  map[string]string{alphaKey: fixtureRegion, betaKey: fixtureRegion},
 				Estimate: estimateSwitch(false),
 			},
-			targets:     []string{alphaKey, betaKey},
-			wantRegions: map[string]string{alphaKey: fixtureRegion, betaKey: fixtureRegion},
+			targets:      []string{alphaKey, betaKey},
+			wantRegions:  map[string]string{alphaKey: fixtureRegion, betaKey: fixtureRegion},
+			estimatesOff: true,
 		},
 	}
 
@@ -174,7 +179,9 @@ func TestAssessRegions(t *testing.T) {
 					t.Errorf("the %s assessment region = %q, want %q", key, got.Region, want)
 				}
 
-				if want != "" && got.EstimateRegion != want {
+				// The domain sets the estimate region only when estimates are on, so
+				// a region chosen with them off shows in the assessment region alone.
+				if !tc.estimatesOff && want != "" && got.EstimateRegion != want {
 					t.Errorf("the %s estimate region = %q, want %q", key, got.EstimateRegion, want)
 				}
 			}
