@@ -681,7 +681,7 @@ func normalise(o Offering) (Offering, error) {
 	}
 
 	if o.PlanBillingCapHours < 0 || o.PlanBillingCapHours > MaxBillingCapHours {
-		return Offering{}, fmt.Errorf("planBillingCapHours: %w: %d, want 0 to %d",
+		return Offering{}, fmt.Errorf("planBillingCapHours: %w: %d, want 0 (uncapped) or 1 to %d",
 			ErrInvalidBillingCap, o.PlanBillingCapHours, MaxBillingCapHours)
 	}
 
