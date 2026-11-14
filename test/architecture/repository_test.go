@@ -895,11 +895,18 @@ func mainModuleMessages(module string, pkgs []check.Package) []string {
 // package must be listed, so a run that read nothing of it cannot pass, it must
 // import nothing the list refuses, and every package the listing reaches under the
 // module path must belong to the main module, since each rule's one prefix entry is
-// that path (the security audit's LOW-1, issue #101). The rules are skipped by the
-// shared layer listing (see skippedStrictRules), so this test reads the packages
-// each rule holds and no other: they are the composition root's own, and every
-// other package of the module is held by the rule of its layer in
-// TestReleaseTargetDependencies.
+// that path (the security audit's LOW-1, issue #101). The same listing must also
+// reach no package of the module whose path below the module path holds an element
+// the go command skips when it walks ./...: testdata, or one starting with _ or .
+// (check.HiddenPathMessages, issue #206). Such a package is built all the same when
+// a package imports it by explicit path, and depguard and test/lint walk the tree
+// the way the go command does, so it would reach a release binary with no
+// architecture or lint rule applied to it; the probe of
+// TestHiddenPathProbeIsRefusedForEveryReleaseTarget proves the check reports one. The
+// rules are skipped by the shared layer listing (see skippedStrictRules), so this
+// test reads the packages each rule holds and no other: they are the composition
+// root's own, and every other package of the module is held by the rule of its
+// layer in TestReleaseTargetDependencies.
 func TestCompositionRootRulesAreHeldToTheirRuleForEveryReleaseTarget(t *testing.T) {
 	t.Parallel()
 
@@ -941,6 +948,14 @@ func TestCompositionRootRulesAreHeldToTheirRuleForEveryReleaseTarget(t *testing.
 						if messages := mainModuleMessages(modulePath, pkgs); len(messages) != 0 {
 							t.Errorf("go list -deps ./%s/... (%v, cgo=%t, tags=%v) listed %d package(s) under %s that belong to no main module, which the rule's prefix entry would allow:\n%s",
 								rootCase.dir, target, cgo.enabled, tags.tags, len(messages), modulePath, strings.Join(messages, "\n"))
+						}
+
+						// The listing must reach no package the go command builds only
+						// by explicit path, which no rule walking the tree sees (issue
+						// #206).
+						if messages := check.HiddenPathMessages(modulePath, rootCase.dir, importPaths(pkgs)); len(messages) != 0 {
+							t.Errorf("%s (%v, cgo=%t, tags=%v) reaches %d hidden-path package(s), want none:\n%s",
+								rootCase.dir, target, cgo.enabled, tags.tags, len(messages), strings.Join(messages, "\n"))
 						}
 
 						held := heldByRules(modulePath, rules, pkgs)
@@ -1127,98 +1142,32 @@ const hiddenPathProbeDir = "testdata/hiddenpathprobe"
 
 // hiddenPathProbeRoot is the composition root of the fixture, relative to its
 // module root: the package whose go list -deps listing must report the hidden
-// packages it imports.
+// packages it reaches.
 const hiddenPathProbeRoot = "cmd/shift2eu"
-
-// TestCompositionRootsReachNoHiddenPathPackage holds the acceptance of issue
-// #206 over the real module: for every platform the release builds, with cgo
-// off and on and with the e2e and integration files off and on, go list -deps
-// of each composition root, cmd/shift2eu and cmd/shift2eu-server, lists no
-// package of the main module whose import path holds, below the module path,
-// an element the go command skips when it walks ./... (testdata, or one
-// starting with _ or .).
-//
-// Such a package is built all the same when a package imports it by explicit
-// path, and depguard and test/lint walk the tree the way the go command does,
-// so it would reach a release binary with no architecture or lint rule applied
-// to it. The probe of TestHiddenPathProbeIsRefusedForEveryReleaseTarget proves
-// the check reports one; this test is the guard that the real roots reach none.
-func TestCompositionRootsReachNoHiddenPathPackage(t *testing.T) {
-	t.Parallel()
-
-	targets, err := releasetarget.Read(readRepositoryFile(t, ".goreleaser.yaml"))
-	if err != nil {
-		t.Fatalf("releasetarget.Read(.goreleaser.yaml): %v", err)
-	}
-
-	if len(targets) == 0 {
-		t.Fatal("releasetarget.Read(.goreleaser.yaml) returned no target, so the check below would run on nothing")
-	}
-
-	if len(compositionRoots()) == 0 {
-		t.Fatal("compositionRoots() returned no root, so this test would check nothing")
-	}
-
-	root := repositoryRoot(t)
-
-	for _, rootCase := range compositionRoots() {
-		for _, target := range targets {
-			for _, cgo := range cgoModes {
-				for _, tags := range tagSets {
-					t.Run(fmt.Sprintf("%s/%s/%s/%s/%s", rootCase.dir, target.GOOS, target.GOARCH, cgo.name, tags.name), func(t *testing.T) {
-						t.Parallel()
-
-						pkgs, err := check.ListPackages(t.Context(), root, target, cgo.enabled, tags.tags, "./"+rootCase.dir+"/...")
-						if err != nil {
-							t.Fatalf("ListPackages(%v, ./%s/..., cgo=%t, tags=%v): %v", target, rootCase.dir, cgo.enabled, tags.tags, err)
-						}
-
-						// The root itself is listed, so a run that read nothing of it
-						// cannot pass.
-						want := modulePath + "/" + rootCase.dir
-						if !slices.ContainsFunc(pkgs, func(pkg check.Package) bool { return pkg.ImportPath == want }) {
-							t.Fatalf("go list did not list %s, so the check below would read nothing of the composition root", want)
-						}
-
-						imports := importPaths(pkgs)
-
-						if hidden := check.HiddenPathPackages(modulePath, imports); len(hidden) != 0 {
-							t.Errorf("go list -deps ./%s/... (%v, cgo=%t, tags=%v) reached %d package(s) the go command skips when it walks ./..., which no architecture or lint rule sees (issue #206):\n%s",
-								rootCase.dir, target, cgo.enabled, tags.tags, len(hidden), strings.Join(hidden, "\n"))
-						}
-
-						if messages := check.HiddenPathMessages(modulePath, rootCase.dir, imports); len(messages) != 0 {
-							t.Errorf("%s (%v, cgo=%t, tags=%v) reached %d hidden-path package(s), want none:\n%s",
-								rootCase.dir, target, cgo.enabled, tags.tags, len(messages), strings.Join(messages, "\n"))
-						}
-					})
-				}
-			}
-		}
-	}
-}
 
 // TestHiddenPathProbeIsRefusedForEveryReleaseTarget is the probe of issue #206,
 // for every platform the release builds, with cgo off and on and with the e2e
 // and integration files off and on: the fixture module hiddenpathprobe's
-// cmd/shift2eu imports example.com/hiddenpathprobe/testdata/x and
-// example.com/hiddenpathprobe/_x, so its go list -deps listing must report both,
-// each message naming the composition root and the package. The fixture's own
-// go.mod sits under this repository's testdata, so this module's go command
-// skips it and lint never reads it.
+// cmd/shift2eu imports example.com/hiddenpathprobe/testdata/x,
+// example.com/hiddenpathprobe/_x and example.com/hiddenpathprobe/.x, so its go
+// list -deps listing must report all three, each message naming the composition
+// root and the package. The fixture's own go.mod sits under this repository's
+// testdata, so this module's go command skips it and lint never reads it.
 func TestHiddenPathProbeIsRefusedForEveryReleaseTarget(t *testing.T) {
 	t.Parallel()
 
 	const (
 		testdataPkg   = hiddenPathProbeModule + "/testdata/x"
 		underscorePkg = hiddenPathProbeModule + "/_x"
+		dotPkg        = hiddenPathProbeModule + "/.x"
 	)
 
 	// The finding format, pinned whole: the root's directory, the package's
 	// import path and what the go command does with it.
 	wantMessages := []string{
-		"cmd/shift2eu imports example.com/hiddenpathprobe/_x, which ./... never walks but go builds when a package imports it by explicit path: no lint or architecture rule sees it",
-		"cmd/shift2eu imports example.com/hiddenpathprobe/testdata/x, which ./... never walks but go builds when a package imports it by explicit path: no lint or architecture rule sees it",
+		"cmd/shift2eu reaches example.com/hiddenpathprobe/.x, which ./... never walks but go builds when a package imports it by explicit path: no lint or architecture rule sees it",
+		"cmd/shift2eu reaches example.com/hiddenpathprobe/_x, which ./... never walks but go builds when a package imports it by explicit path: no lint or architecture rule sees it",
+		"cmd/shift2eu reaches example.com/hiddenpathprobe/testdata/x, which ./... never walks but go builds when a package imports it by explicit path: no lint or architecture rule sees it",
 	}
 
 	targets, err := releasetarget.Read(readRepositoryFile(t, ".goreleaser.yaml"))
@@ -1255,9 +1204,9 @@ func TestHiddenPathProbeIsRefusedForEveryReleaseTarget(t *testing.T) {
 
 					imports := importPaths(pkgs)
 
-					wantHidden := []string{underscorePkg, testdataPkg}
+					wantHidden := []string{dotPkg, underscorePkg, testdataPkg}
 					if diff := cmp.Diff(wantHidden, check.HiddenPathPackages(hiddenPathProbeModule, imports)); diff != "" {
-						t.Errorf("HiddenPathPackages(hiddenpathprobe) mismatch (-want +got):\n%s: the probe's cmd/shift2eu imports both, and go list -deps lists a package the go command builds by explicit path", diff)
+						t.Errorf("HiddenPathPackages(hiddenpathprobe) mismatch (-want +got):\n%s: the probe's cmd/shift2eu imports all three, and go list -deps lists a package the go command builds by explicit path", diff)
 					}
 
 					if diff := cmp.Diff(wantMessages, check.HiddenPathMessages(hiddenPathProbeModule, hiddenPathProbeRoot, imports)); diff != "" {

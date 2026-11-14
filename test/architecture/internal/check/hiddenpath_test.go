@@ -187,11 +187,13 @@ func TestHiddenPathPackages(t *testing.T) {
 //
 //   - HiddenPathMessages(modulePath, rootDir string, importPaths []string)
 //     []string returns no message for a listing without a hidden-path package.
-//   - Each message reads "<rootDir> imports <import path>, which ./... never
+//   - Each message reads "<rootDir> reaches <import path>, which ./... never
 //     walks but go builds when a package imports it by explicit path: no lint
 //     or architecture rule sees it", with rootDir as the composition root's
 //     directory relative to the module root (cmd/shift2eu) and the import path
-//     as go list reports it.
+//     as go list reports it. The verb is reaches, not imports: go list -deps
+//     lists the root's transitive dependencies, not only the packages it
+//     imports itself.
 //   - A package outside the module earns no message, as in HiddenPathPackages.
 func TestHiddenPathMessages(t *testing.T) {
 	t.Parallel()
@@ -219,10 +221,11 @@ func TestHiddenPathMessages(t *testing.T) {
 			name:        "each hidden-path package earns a message naming the root and the package",
 			modulePath:  mod,
 			rootDir:     rootDir,
-			importPaths: []string{mod + "/testdata/x", mod + "/cmd/shift2eu", mod + "/_x", mod + "/internal/x"},
+			importPaths: []string{mod + "/testdata/x", mod + "/cmd/shift2eu", mod + "/_x", mod + "/.x", mod + "/internal/x"},
 			want: []string{
-				"cmd/shift2eu imports example.com/hiddenpathprobe/_x, which ./... never walks but go builds when a package imports it by explicit path: no lint or architecture rule sees it",
-				"cmd/shift2eu imports example.com/hiddenpathprobe/testdata/x, which ./... never walks but go builds when a package imports it by explicit path: no lint or architecture rule sees it",
+				"cmd/shift2eu reaches example.com/hiddenpathprobe/.x, which ./... never walks but go builds when a package imports it by explicit path: no lint or architecture rule sees it",
+				"cmd/shift2eu reaches example.com/hiddenpathprobe/_x, which ./... never walks but go builds when a package imports it by explicit path: no lint or architecture rule sees it",
+				"cmd/shift2eu reaches example.com/hiddenpathprobe/testdata/x, which ./... never walks but go builds when a package imports it by explicit path: no lint or architecture rule sees it",
 			},
 		},
 		{
