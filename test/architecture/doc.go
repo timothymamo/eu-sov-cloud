@@ -173,16 +173,24 @@
 // GoReleaser release.yml runs, building those archives with it and checking
 // each holds exactly its own binary (check.DryRunVerifiesArchives), issue #147.
 //
-// TestCompositionRootsReachNoHiddenPathPackage holds cmd/shift2eu and
-// cmd/shift2eu-server, on every release target, cgo mode and tag set, to
+// TestCompositionRootRulesAreHeldToTheirRuleForEveryReleaseTarget also holds
+// cmd/shift2eu and cmd/shift2eu-server, on every release target, cgo mode and
+// tag set and on the same go list -deps listing as its main-module check, to
 // reaching no package of the module whose path below the module path holds an
 // element the go command skips when it walks ./...: testdata, or one starting
-// with _ or . (check.HiddenPathPackages, check.HiddenPathMessages, issue
+// with _ or a dot (check.HiddenPathPackages, check.HiddenPathMessages, issue
 // #206). The go command still builds such a package when another imports it
 // by explicit path, and depguard and test/lint walk the tree as the go command
-// does, so no rule would see it reach a release binary.
+// does, so no rule would see it reach a release binary. Each finding says
+// "<root> reaches <pkg>", since the listing holds transitive imports too.
 // TestHiddenPathProbeIsRefusedForEveryReleaseTarget proves the check fires on
-// testdata/hiddenpathprobe, whose cmd/shift2eu imports testdata/x and _x.
+// testdata/hiddenpathprobe, whose cmd/shift2eu imports testdata/x, _x and .x.
+// A symlinked directory is another spelling ./... skips, and this check does
+// not close it: TestRepositoryHasNoLineDirectives refuses every symlink git
+// tracks or would add, and TestReleaseTargetDependencies (check.Sources)
+// requires every module package a release binary is built from to sit in the
+// directory its import path names, symlinks resolved. A change to either check
+// would reopen issue #206.
 //
 // The checks are tests: they run in make test, make check and CI's make cover,
 // with no workflow of their own. They need no network and no credentials.

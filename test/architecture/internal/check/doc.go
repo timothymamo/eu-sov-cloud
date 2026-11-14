@@ -177,8 +177,12 @@
 //
 // HiddenPathPackages returns the module packages in a listing whose path
 // below the module path holds an element the go command skips when it walks
-// ./...: testdata, or one starting with _ or .; HiddenPathMessages turns each
-// into a finding naming the composition root that reaches it (issue #206).
+// ./...: testdata, or one starting with _ or a dot; HiddenPathMessages turns
+// each into a finding, "<root> reaches <pkg>", naming the composition root
+// that reaches it directly or transitively (issue #206). A symlinked
+// directory, the other spelling ./... skips, is left to FindLineDirectives,
+// which reports every symlink, and Sources, which requires a package's
+// directory with symlinks resolved to be the one its import path names.
 //
 // The package is internal to test/architecture: it is not an API of the module.
 package check

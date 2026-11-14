@@ -37,13 +37,14 @@ func HiddenPathPackages(modulePath string, importPaths []string) []string {
 
 // HiddenPathMessages returns one finding per package HiddenPathPackages
 // reports among importPaths, sorted, naming rootDir, the composition root's
-// directory relative to the module root, and the package.
+// directory relative to the module root, and the package it reaches: the
+// listing is go list -deps, so a package imported only transitively counts.
 func HiddenPathMessages(modulePath, rootDir string, importPaths []string) []string {
 	hidden := HiddenPathPackages(modulePath, importPaths)
 	messages := make([]string, 0, len(hidden))
 
 	for _, pkg := range hidden {
-		messages = append(messages, rootDir+" imports "+pkg+
+		messages = append(messages, rootDir+" reaches "+pkg+
 			", which ./... never walks but go builds when a package imports it by explicit path: no lint or architecture rule sees it")
 	}
 
@@ -52,7 +53,7 @@ func HiddenPathMessages(modulePath, rootDir string, importPaths []string) []stri
 
 // isHiddenElement reports whether the go command skips a directory of this
 // name when it walks a pattern ending in /...: testdata, or a name starting
-// with _ or ..
+// with _ or a dot.
 func isHiddenElement(element string) bool {
 	return element == "testdata" || strings.HasPrefix(element, "_") || strings.HasPrefix(element, ".")
 }
