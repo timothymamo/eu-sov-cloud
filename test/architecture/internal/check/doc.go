@@ -175,5 +175,10 @@
 // whose staged content starts with #! and whose mode is 100644, reading
 // both from the index with git ls-files -s and git cat-file --batch (issue #125).
 //
+// HiddenPathPackages returns the module packages in a listing whose path
+// below the module path holds an element the go command skips when it walks
+// ./...: testdata, or one starting with _ or .; HiddenPathMessages turns each
+// into a finding naming the composition root that reaches it (issue #206).
+//
 // The package is internal to test/architecture: it is not an API of the module.
 package check

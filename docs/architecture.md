@@ -300,6 +300,12 @@ hand-written GCP package, add an entry for it, a probe line only it refuses and 
   cgo mode and tag set, apart from the shared layer listing, and whose listing must hold no package
   under the module path from a module other than the main one, since the rule's prefix entry would
   allow a nested module.
+  Nor may a composition root reach a package of the module whose path below the module path holds
+  `testdata` or an element starting with `_` or `.` (issue #206): `./...` never walks such a
+  directory, so neither depguard nor `test/lint` sees it, yet the go command builds it when a package
+  imports it by explicit path. `test/architecture` (`TestCompositionRootsReachNoHiddenPathPackage`)
+  refuses one in `go list -deps` of `cmd/shift2eu` and `cmd/shift2eu-server` on every release target,
+  cgo mode and tag set, and a probe module (`testdata/hiddenpathprobe`) proves it fires.
   `go list -deps` lists the imports of a held package's tests but not those imported packages
   themselves, so a package only a test imports is checked against the test's allow list, not for
   its own module, directory or non-Go sources.
