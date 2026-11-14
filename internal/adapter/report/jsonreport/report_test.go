@@ -1322,6 +1322,10 @@ func TestReportWithEstimates(t *testing.T) {
 			{path: extend(at, "estimate", "breakdown", "plan"), want: "10.00"},
 			{path: extend(at, "estimate", "breakdown", "storage"), want: "0.00"},
 			{path: extend(at, "estimate", "breakdown", "fixedFee"), want: "0.00"},
+			// The resource gives no count and no hours, so the estimate says it
+			// priced one instance running 730 hours (ADR 0025).
+			{path: extend(at, "estimate", "countAssumed"), want: true},
+			{path: extend(at, "estimate", "hoursAssumed"), want: true},
 		}
 
 		for _, test := range tests {
@@ -1360,6 +1364,11 @@ func TestReportWithEstimates(t *testing.T) {
 
 		at := resourceIndex(t, document, "cluster-small")
 
+		if diff := cmp.Diff([]string{"amount", "breakdown", "countAssumed", "estimated", "hoursAssumed"},
+			objectKeysAt(t, document, extend(at, "estimate")...)); diff != "" {
+			t.Errorf("estimate keys mismatch (-want +got), an estimated resource says what it assumed:\n%s", diff)
+		}
+
 		tests := []struct {
 			path []any
 			want any
@@ -1368,6 +1377,8 @@ func TestReportWithEstimates(t *testing.T) {
 			{path: extend(at, "estimate", "breakdown", "plan"), want: "10.00"},
 			{path: extend(at, "estimate", "breakdown", "fixedFee"), want: "5.00"},
 			{path: extend(at, "plan", "name"), want: "KN-S"},
+			{path: extend(at, "estimate", "countAssumed"), want: true},
+			{path: extend(at, "estimate", "hoursAssumed"), want: true},
 		}
 
 		for _, test := range tests {
@@ -1382,7 +1393,7 @@ func TestReportWithEstimates(t *testing.T) {
 
 		at := resourceIndex(t, document, "bucket-storage")
 
-		if diff := cmp.Diff([]string{"amount", "breakdown", "estimated"},
+		if diff := cmp.Diff([]string{"amount", "breakdown", "countAssumed", "estimated", "hoursAssumed"},
 			objectKeysAt(t, document, extend(at, "estimate")...)); diff != "" {
 			t.Errorf("estimate keys mismatch (-want +got):\n%s", diff)
 		}
@@ -1395,6 +1406,10 @@ func TestReportWithEstimates(t *testing.T) {
 			{path: extend(at, "estimate", "breakdown", "plan"), want: "0.00"},
 			{path: extend(at, "estimate", "breakdown", "storage"), want: "2500.00"},
 			{path: extend(at, "estimate", "breakdown", "fixedFee"), want: "0.00"},
+			// Object storage is priced by the GiB stored, so it assumes neither a
+			// count nor a number of hours.
+			{path: extend(at, "estimate", "countAssumed"), want: false},
+			{path: extend(at, "estimate", "hoursAssumed"), want: false},
 		}
 
 		for _, test := range tests {
@@ -1637,6 +1652,91 @@ func TestReportWithEstimates(t *testing.T) {
 
 	testutil.Golden(t, "testdata/report-estimates.golden", got)
 }
+
+// TestReportEstimateAssumptionFlags pins that an estimated resource says in the
+// document itself what the estimate assumed: whether it priced a count the
+// resource does not give as one, and whether it priced a resource that gives no
+// hoursPerMonth as running 730 (ADR 0025). Both flags are always written on an
+// estimated resource, false when nothing was assumed, so a consumer can read
+// them without a default.
+func TestReportEstimateAssumptionFlags(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name         string
+		size         *inventory.Size
+		usage        *inventory.Usage
+		countAssumed bool
+		hoursAssumed bool
+	}{
+		{
+			name:  "a count and hours the resource gives",
+			size:  &inventory.Size{VCPUs: sized(1), MemoryGiB: sized(2), Count: counted(2)},
+			usage: &inventory.Usage{HoursPerMonth: sized(730)},
+		},
+		{
+			name:         "no count, so one instance is assumed",
+			size:         &inventory.Size{VCPUs: sized(1), MemoryGiB: sized(2)},
+			usage:        &inventory.Usage{HoursPerMonth: sized(730)},
+			countAssumed: true,
+		},
+		{
+			name:         "no hours, so 730 are assumed",
+			size:         &inventory.Size{VCPUs: sized(1), MemoryGiB: sized(2), Count: counted(2)},
+			hoursAssumed: true,
+		},
+		{
+			name:         "neither a count nor hours, so both are assumed",
+			size:         &inventory.Size{VCPUs: sized(1), MemoryGiB: sized(2)},
+			countAssumed: true,
+			hoursAssumed: true,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+
+			inv := newInventory(t, sourceName, []inventory.Resource{{
+				ID:       "server-small",
+				RawType:  "AWS::EC2::Instance",
+				Category: taxonomy.ComputeVM,
+				Region:   "eu-west-1",
+				Size:     test.size,
+				Usage:    test.usage,
+			}})
+
+			got := render(t, assessment.AssessWith(inv, testutil.ReportCatalog(t),
+				assessment.Options{Estimate: true}), analysis.ReportMeta{InventoryName: inventoryFileName})
+			checkDocument(t, got)
+
+			document := decodeJSON(t, got)
+			at := resourceIndex(t, document, "server-small")
+
+			if diff := cmp.Diff([]string{"amount", "breakdown", "countAssumed", "estimated", "hoursAssumed"},
+				objectKeysAt(t, document, extend(at, "estimate")...)); diff != "" {
+				t.Errorf("estimate keys mismatch (-want +got), an estimated resource writes both flags:\n%s", diff)
+			}
+
+			checks := []struct {
+				path []any
+				want any
+			}{
+				{path: extend(at, "estimate", "countAssumed"), want: test.countAssumed},
+				{path: extend(at, "estimate", "hoursAssumed"), want: test.hoursAssumed},
+			}
+
+			for _, check := range checks {
+				if diff := cmp.Diff(check.want, valueAt(t, document, check.path...)); diff != "" {
+					t.Errorf("%v mismatch (-want +got):\n%s", check.path, diff)
+				}
+			}
+		})
+	}
+}
+
+// counted is a given int, as an inventory count carries it.
+func counted(v int) *int { return &v }
 
 // TestReportNamesTheChosenRegion pins that a document names the region a run
 // chose, at the top level, with or without estimates (PRD #190 milestone 8: the

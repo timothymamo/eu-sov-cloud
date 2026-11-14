@@ -656,6 +656,45 @@ func estimateRegionalCatalog(t *testing.T) catalog.Catalog {
 // assess against.
 const estimateTargetName = "Example Cloud"
 
+// TestRunAssessRegionSpacesAfterCommas pins that the --region value a shell
+// completes with a space after each comma is accepted: each <target>=<region>
+// pair is trimmed, so both targets of a comparison name their region and the
+// report says both were chosen, rather than reporting " ovhcloud" as a target
+// --target does not select.
+func TestRunAssessRegionSpacesAfterCommas(t *testing.T) {
+	t.Parallel()
+
+	h := newEstimateHarness(t)
+
+	code, stdout, stderr := h.run(t.Context(), "assess", "--inventory", inventoryPath, "--target", "all",
+		"--region", estimateTargetKey+"="+testutil.ReportSecondRegion+", "+secondTargetKey+"="+
+			testutil.PricedDefaultRegion)
+	if code != 0 {
+		t.Fatalf("Run() = %d, want 0: a space after the comma is not a target; stderr = %q", code, stderr)
+	}
+
+	// The comparison names the chosen region per target, in key order: ovhcloud
+	// first, then scaleway.
+	var got []string
+
+	for line := range strings.SplitSeq(stdout, "\n") {
+		if strings.HasPrefix(line, regionLinePrefix) {
+			got = append(got, line)
+		}
+	}
+
+	want := []string{
+		regionLinePrefix + "`" + estimateTargetName + "`: `" + testutil.PricedDefaultRegion +
+			"` (" + regionChosenMark + " `--region`)",
+		regionLinePrefix + "`" + estimateTargetName + "`: `" + testutil.ReportSecondRegion +
+			"` (" + regionChosenMark + " `--region`)",
+	}
+
+	if diff := cmp.Diff(want, got); diff != "" {
+		t.Errorf("region lines mismatch (-want +got):\n%s\nreport:\n%s", diff, stdout)
+	}
+}
+
 // TestRunAssessIsDeterministic pins that the same inventory twice gives the same
 // report, byte for byte, estimates included.
 func TestRunAssessIsDeterministic(t *testing.T) {

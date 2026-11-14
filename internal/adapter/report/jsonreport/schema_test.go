@@ -795,14 +795,19 @@ func checkGoldenAgainstSchema(t *testing.T, path, schemaFile string) {
 // optionalProperties are the property names an object schema may declare without
 // requiring them, because the document writes them only when it has something to
 // say. They are the reason object's names, each written only when the reason sets
-// it, and the schema version 2 keys of a resource that cannot be priced: a
-// resource priced by storage has no plan, an estimate that is not estimated has
-// no amount, and a plan with no price in the estimate region has no price. Any
-// other property a schema declares must be required, so a document can neither
-// omit a key the format always writes nor gain one nobody checks.
+// it, the flags an estimate writes only when it estimated the resource
+// (countAssumed and hoursAssumed), and the schema version 2 keys of a resource
+// that cannot be priced: a resource priced by storage has no plan, an estimate
+// that is not estimated has no amount, and a plan with no price in the estimate
+// region has no price. Any other property a schema declares must be required, so a
+// document can neither omit a key the format always writes nor gain one nobody
+// checks.
 var optionalProperties = []string{
 	"target", "category", "offering", "capability",
 	"plan", "estimate", "amount", "breakdown", "reason", "price",
+	// The two assumptions an estimate records, written only when the resource is
+	// estimated (ADR 0025).
+	"countAssumed", "hoursAssumed",
 	// A document names the region a run chose, at the top level and per
 	// comparison target, only when --region chose one; sourceCost is written
 	// only with estimates on.

@@ -270,9 +270,26 @@ func TestAssessBadRegion(t *testing.T) {
 			name:     "a regions key that is not a target",
 			opts:     assessOptions{Regions: map[string]string{"<x>": fixtureRegion}},
 			targets:  []string{alphaKey},
-			want:     []string{alphaKey},
+			want:     []string{alphaKey, "a target that is not supported"},
 			never:    []string{"<x>"},
 			rawNever: []string{`\u003cx`},
+		},
+		{
+			// A supported-looking key that is no target of the API at all: the
+			// message says so in the API's own words and never repeats the key.
+			name:    "a regions key that is no supported target",
+			opts:    assessOptions{Regions: map[string]string{"aws": fixtureRegion}},
+			targets: []string{alphaKey},
+			want:    []string{"a target that is not supported", alphaKey},
+			never:   []string{"aws"},
+		},
+		{
+			// The comparison path: the region error names the target whose catalog
+			// does not list the region, never another selected target.
+			name:    "a bad region on one target of a comparison",
+			opts:    assessOptions{Regions: map[string]string{betaKey: "r9"}},
+			targets: []string{alphaKey, betaKey},
+			want:    []string{`the region "r9" for the target "` + betaKey + `"`, fixtureRegion},
 		},
 	}
 

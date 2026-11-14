@@ -1407,7 +1407,7 @@ func TestReportWithEstimates(t *testing.T) {
 				id:       "cluster-small",
 				fit:      string(mapping.Direct),
 				plan:     "`KN-S` (1 vCPU, 2 GiB)",
-				estimate: "€15.00 (includes a fixed fee of €5.00)",
+				estimate: "€15.00 (includes a fixed fee of €5.00) (count assumed 1) (730 hours assumed)",
 			},
 			{
 				id:       "function-orders",
@@ -1437,13 +1437,13 @@ func TestReportWithEstimates(t *testing.T) {
 				id:       "server-small",
 				fit:      string(mapping.Direct),
 				plan:     "`EX-S` (1 vCPU, 2 GiB)",
-				estimate: "€10.00",
+				estimate: "€10.00 (count assumed 1) (730 hours assumed)",
 			},
 			{
 				id:        "worker-jobs",
 				fit:       string(mapping.Direct),
 				plan:      "`EX-S` (1 vCPU, 2 GiB)",
-				estimate:  "€10.00",
+				estimate:  "€10.00 (count assumed 1) (730 hours assumed)",
 				relations: "depends-on `queue-jobs`, replica-of `server-small`",
 			},
 		}
@@ -1501,7 +1501,7 @@ func TestReportWithEstimates(t *testing.T) {
 			"- Blockers: none",
 			"### No workload",
 			"- Fit: 1 direct, 0 partial, 0 none",
-			"- Monthly estimate: €0.00 per month for 0 of 1 resources, list prices on " + reportRetrievedOn +
+			"- Monthly estimate: €0.00 per month for 0 of 1 resource, list prices on " + reportRetrievedOn +
 				", excluding VAT and discounts",
 			"- Source cost: `USD` $200.00",
 			"- Blockers: none",
@@ -1553,9 +1553,11 @@ func TestReportWithChosenRegion(t *testing.T) {
 	}
 
 	// The smallest compute plan costs 12.00 in the second region, so the
-	// resources on it, and the total, are dearer than in the default region.
+	// resources on it, and the total, are dearer than in the default region, and
+	// the cell says what the estimate assumed of a resource that gives no count
+	// and no hours.
 	cells := tableRow(t, out, "`server-small`")
-	if got, want := cells[6], "€12.00"; got != want {
+	if got, want := cells[6], "€12.00 (count assumed 1) (730 hours assumed)"; got != want {
 		t.Errorf("server-small Monthly estimate = %q, want %q", got, want)
 	}
 
@@ -1564,6 +1566,115 @@ func TestReportWithChosenRegion(t *testing.T) {
 		t.Errorf("total = %q, want %q", got, want)
 	}
 }
+
+// TestReportEstimateNotes pins what a Monthly estimate cell says about a value it
+// had to assume, and the singular of the count a total spells out: a resource
+// that gives no count is priced as one and a resource that gives no
+// hoursPerMonth is priced as running 730 (ADR 0025), each note after the
+// fixed-fee note, and one resource is counted as "1 resource".
+//
+// The estimates are the fixture's: the smallest compute plan costs 10.00 in the
+// default region, so the amount is that plan's price × the count × the hours a
+// month / 730.
+func TestReportEstimateNotes(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name  string
+		size  *inventory.Size
+		usage *inventory.Usage
+		cell  string
+		total string
+	}{
+		{
+			name:  "a count and hours the resource gives",
+			size:  &inventory.Size{VCPUs: sized(1), MemoryGiB: sized(2), Count: counted(2)},
+			usage: &inventory.Usage{HoursPerMonth: sized(730)},
+			cell:  "€20.00",
+			total: "- Total: €20.00 per month for 1 of 1 resource",
+		},
+		{
+			name:  "no count, so one instance is assumed",
+			size:  &inventory.Size{VCPUs: sized(1), MemoryGiB: sized(2)},
+			usage: &inventory.Usage{HoursPerMonth: sized(730)},
+			cell:  "€10.00 (count assumed 1)",
+			total: "- Total: €10.00 per month for 1 of 1 resource",
+		},
+		{
+			name:  "no hours, so 730 are assumed",
+			size:  &inventory.Size{VCPUs: sized(1), MemoryGiB: sized(2), Count: counted(2)},
+			cell:  "€20.00 (730 hours assumed)",
+			total: "- Total: €20.00 per month for 1 of 1 resource",
+		},
+		{
+			name:  "neither a count nor hours, so both are assumed",
+			size:  &inventory.Size{VCPUs: sized(1), MemoryGiB: sized(2)},
+			cell:  "€10.00 (count assumed 1) (730 hours assumed)",
+			total: "- Total: €10.00 per month for 1 of 1 resource",
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+
+			inv := newInventory(t, sourceName, []inventory.Resource{{
+				ID:       "server-small",
+				RawType:  "AWS::EC2::Instance",
+				Category: taxonomy.ComputeVM,
+				Region:   "eu-west-1",
+				Size:     test.size,
+				Usage:    test.usage,
+			}})
+
+			a := assessment.AssessWith(inv, testutil.ReportCatalog(t), assessment.Options{Estimate: true})
+			out := render(t, a, analysis.ReportMeta{InventoryName: inventoryFileName})
+
+			if got := tableRow(t, out, "`server-small`")[6]; got != test.cell {
+				t.Errorf("the Monthly estimate cell = %q, want %q:\n%s", got, test.cell, out)
+			}
+
+			cost := sectionLines(t, out, "## Cost estimate")
+			if len(cost) == 0 {
+				t.Fatalf("the report holds no cost summary:\n%s", out)
+			}
+
+			if got := cost[0]; got != test.total {
+				t.Errorf("the total = %q, want %q:\n%s", got, test.total, out)
+			}
+		})
+	}
+}
+
+// TestReportEstimateNoStoragePrice pins the wording of the one reason about a
+// price that names a place: a plan whose offering has no per-GiB storage price in
+// the estimate region is "not estimated: no storage price in `<region>`", as
+// "no price" names the region it found no price in.
+func TestReportEstimateNoStoragePrice(t *testing.T) {
+	t.Parallel()
+
+	// The fixture's Kubernetes offering charges a plan and a fixed fee and lists
+	// no storage price, so a cluster whose nodes need more storage than the plan
+	// includes has no storage price to price it at.
+	inv := newInventory(t, sourceName, []inventory.Resource{{
+		ID:       "cluster-storage",
+		RawType:  "Scaleway::Kubernetes::Cluster",
+		Category: taxonomy.KubernetesManaged,
+		Region:   "eu-west-1",
+		Size:     &inventory.Size{VCPUs: sized(1), MemoryGiB: sized(2), StorageGiB: sized(50)},
+	}})
+
+	a := assessment.AssessWith(inv, testutil.ReportCatalog(t), assessment.Options{Estimate: true})
+	out := render(t, a, analysis.ReportMeta{InventoryName: inventoryFileName})
+
+	want := "not estimated: no storage price in `" + testutil.PricedDefaultRegion + "`"
+	if got := tableRow(t, out, "`cluster-storage`")[6]; got != want {
+		t.Errorf("the Monthly estimate cell = %q, want %q:\n%s", got, want, out)
+	}
+}
+
+// counted is a given int, as an inventory count carries it.
+func counted(v int) *int { return &v }
 
 // TestReportWithoutEstimates pins that estimates off is today's report: the same
 // bytes as the golden files the repository already had, no Plan or Monthly

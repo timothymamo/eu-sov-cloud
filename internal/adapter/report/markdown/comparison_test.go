@@ -406,22 +406,55 @@ func demotedReportLines(t *testing.T, singleTargetReport string) []string {
 // TestReportComparisonHasNoRanking pins that a comparison states facts per target
 // and does not rank them or recommend one: the words a ranking would use do not
 // appear, while "best offering", a per-resource fact, stays.
+//
+// It runs with estimates off and on, because the words a ranking would use are
+// the words a priced report is most tempting to use: the estimates-on case is a
+// comparison with the fixture's prices in it, so "cheapest" and "best price" are
+// checked against a report that shows amounts.
 func TestReportComparisonHasNoRanking(t *testing.T) {
 	t.Parallel()
 
-	c := assessment.Compare(assessTargets(t, comparisonInventory(t), threeTargetKeys()))
-
-	out := renderComparison(t, c, analysis.ReportMeta{InventoryName: inventoryFileName})
-	lowered := strings.ToLower(string(out))
-
-	for _, word := range []string{"best target", "recommend", "winner", "cheapest", "best price"} {
-		if strings.Contains(lowered, word) {
-			t.Errorf("the comparison holds the ranking word %q:\n%s", word, out)
-		}
+	tests := []struct {
+		name string
+		// comparison is the comparison the reporter renders.
+		comparison assessment.Comparison
+		// prices is whether the report shows an amount, which the estimates-on
+		// case must: the ranking words are checked against a priced report.
+		prices bool
+	}{
+		{
+			name:       "estimates off",
+			comparison: assessment.Compare(assessTargets(t, comparisonInventory(t), threeTargetKeys())),
+		},
+		{
+			name:       "estimates on",
+			comparison: assessment.Compare(assessReportTargets(t, []string{reportKey, reportNorthKey})),
+			prices:     true,
+		},
 	}
 
-	if !strings.Contains(lowered, "best offering") {
-		t.Errorf("the comparison does not name each target's best offering:\n%s", out)
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+
+			out := renderComparison(t, test.comparison, analysis.ReportMeta{InventoryName: inventoryFileName})
+			lowered := strings.ToLower(string(out))
+
+			for _, word := range []string{"best target", "recommend", "winner", "cheapest", "best price"} {
+				if strings.Contains(lowered, word) {
+					t.Errorf("the comparison holds the ranking word %q:\n%s", word, out)
+				}
+			}
+
+			if !strings.Contains(lowered, "best offering") {
+				t.Errorf("the comparison does not name each target's best offering:\n%s", out)
+			}
+
+			if got := strings.Contains(lowered, "€"); got != test.prices {
+				t.Errorf("the comparison shows an amount = %t, want %t: the ranking words are checked against "+
+					"the report the case names:\n%s", got, test.prices, out)
+			}
+		})
 	}
 }
 
@@ -919,13 +952,18 @@ func TestReportComparisonWithEstimates(t *testing.T) {
 
 		// The regions differ only in their prices: the same resource costs 10.00
 		// in the default region and 12.00 in the second, and a resource with no
-		// plan large enough says so in both.
+		// plan large enough says so in both. The cells say what the estimate
+		// assumed of a resource that gives no count and no hours (ADR 0025).
 		tests := []struct {
 			id     string
 			first  string
 			second string
 		}{
-			{id: "worker-jobs", first: "€10.00", second: "€12.00"},
+			{
+				id:     "worker-jobs",
+				first:  "€10.00 (count assumed 1) (730 hours assumed)",
+				second: "€12.00 (count assumed 1) (730 hours assumed)",
+			},
 			{id: "server-huge", first: "not estimated: no plan large enough", second: "not estimated: no plan large enough"},
 		}
 
