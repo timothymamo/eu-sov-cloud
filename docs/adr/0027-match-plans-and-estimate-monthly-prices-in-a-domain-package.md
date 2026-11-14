@@ -1,6 +1,9 @@
 # 0027. Match plans and estimate monthly prices in a domain package, with exact money
 
-- Status: Accepted
+- Status: Accepted. Amended by
+  [0029](0029-cap-the-billed-hours-of-an-offerings-plans-in-target-snapshot-format-v2.md): on an offering with
+  `planBillingCapHours`, the plan part of a `ByPlan` estimate is min(hours, cap) / cap of the plan price;
+  fixed fees and storage are unchanged
 - Date: 2026-11-14
 
 ## Context
