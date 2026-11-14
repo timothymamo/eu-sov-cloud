@@ -150,8 +150,8 @@ are the per-product pages linked from <https://www.scaleway.com/en/pricing/>:
   without additional costs." So a Kubernetes plan is a **worker node flavour at its *Instances* price**,
   and an estimate counts nodes. The control plane is a fee per cluster, which a plan cannot hold (a
   plan is multiplied by the node count), so it is recorded as the offering's fixed fee per cluster
-  (`fixedFees`, ADR 0026). The containers price page lists "Kapsule Mutualized" at €0 an hour, recorded
-  as `0.00` for *Kubernetes Kapsule*. The Dedicated control planes cost Dedicated-4 €0.11, Dedicated-8
+  (`fixedFees`, ADR 0026). The containers price page lists "Kapsule Mutualized" at €0 an hour, 0 × 730 =
+  `0.00`, recorded for *Kubernetes Kapsule*. The Dedicated control planes cost Dedicated-4 €0.11, Dedicated-8
   €0.18 and Dedicated-16 €0.35 an hour; *Kubernetes Kapsule Dedicated* records the smallest,
   Dedicated-4, 0.11 × 730 = `80.30` a month, as a lower bound (that offering's section).
 - **Plans chosen.** A fully cited subset of the general-purpose sizes a workload is matched against:
@@ -393,7 +393,7 @@ control-plane type is chosen when the cluster is created (FAQ).
   plan is a **worker node flavour at its *Instances* price** (*Instances*), and the Mutualized control
   plane, listed at €0 an hour on the *Containers* price page
   (<https://www.scaleway.com/en/pricing/containers/>, read 2026-11-13, "Kapsule Mutualized"), adds
-  nothing. **Fixed fee per cluster** (the control plane, ADR 0026): `0.00`, with an empty `regions`
+  nothing. **Fixed fee per cluster** (the control plane, ADR 0026): €0 an hour, 0 × 730 = `0.00`, with an empty `regions`
   list, since the page gives the Mutualized control plane one price, €0, in every region of this
   offering, `it-mil` included. The fee is charged once per cluster, never per node. The
   node flavours are those of *Instances*. Which Instance types may be Kapsule nodes is an **inference**:
