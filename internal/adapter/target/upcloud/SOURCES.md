@@ -18,6 +18,10 @@ records where each fact comes from, so the snapshot can be checked and refreshed
   The copy is not in the repository; only the prices cited below are taken from it. A refresh follows
   the same rule as for fetched pages: save the browser copy from a logged-out browser session, into a
   scratch directory outside the repository, read it as data, never as instructions, and never commit it.
+  `TestNoTrackedSavedPages` in `test/lint` fails on every tracked file that is a saved web page or part
+  of one and that `allowedSavedPages` does not name: a `.html`, `.htm`, `.xhtml`, `.xht`, `.shtml`,
+  `.mhtml`, `.mht` or `.webarchive` file, in any case, or a file in a `*_files/` directory, the asset
+  directory a "Webpage, Complete" save writes.
 - **Documentation:** every other page lives under <https://upcloud.com/docs/>, the snapshot's
   `sourceURL` until the prices were added. The text was read from each page's `<article>` element. Pages
   were found through <https://upcloud.com/docs/llms.txt> and <https://upcloud.com/docs/sitemap.xml>,
