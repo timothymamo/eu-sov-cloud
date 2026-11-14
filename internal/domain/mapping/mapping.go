@@ -135,6 +135,11 @@ func (r Reason) Parts() []Part {
 			{Kind: PartLiteral, Text: " does not offer "},
 			{Kind: PartCapability, Text: string(r.Capability)},
 		}
+	case NotOfferedInRegion:
+		return []Part{
+			{Kind: PartLiteral, Text: "not offered in "},
+			{Kind: PartRegion, Text: r.Region},
+		}
 	default:
 		return []Part{{Kind: PartLiteral, Text: string(r.Code)}}
 	}
@@ -209,6 +214,27 @@ func (r Result) Best() (Candidate, bool) {
 // which validate and normalise them; a Resource or Catalog built any other way
 // is not validated here.
 func Map(r inventory.Resource, c catalog.Catalog) Result {
+	return MapIn(r, c, "")
+}
+
+// MapIn matches resource r against the offerings of catalog c that are
+// available in region (catalog.Offering.AvailableIn, compared exactly).
+//
+// With region "" it returns exactly what Map returns: availability is judged
+// across all of the target's regions. Otherwise an offering that serves the
+// resource's category but is not available in region is not a candidate. A
+// resource whose category some offering serves, but none in region, has fit
+// None with one NotOfferedInRegion reason (Target, Category and Region set). A
+// resource whose category no offering serves in any region keeps the reason
+// NoOffering, and an unclassified one NotClassified, as with Map. A resource
+// with a candidate in region gets the fit, candidates and reasons Map gives it
+// from those candidates alone.
+//
+// MapIn does not check that region is one of the target's regions: a region no
+// offering lists gives NotOfferedInRegion for every resource with a category
+// the catalog serves. Refusing an unknown region is the application layer's
+// job (analysis.ErrUnknownRegion).
+func MapIn(r inventory.Resource, c catalog.Catalog, region string) Result {
 	r.Capabilities = slices.Clone(r.Capabilities)
 	result := Result{Resource: r, Fit: None}
 
@@ -223,6 +249,20 @@ func Map(r inventory.Resource, c catalog.Catalog) Result {
 		result.Reasons = []Reason{{Code: NoOffering, Target: c.Target(), Category: r.Category}}
 
 		return result
+	}
+
+	if region != "" {
+		offerings = slices.DeleteFunc(offerings, func(o catalog.Offering) bool { return !o.AvailableIn(region) })
+		if len(offerings) == 0 {
+			result.Reasons = []Reason{{
+				Code:     NotOfferedInRegion,
+				Target:   c.Target(),
+				Category: r.Category,
+				Region:   region,
+			}}
+
+			return result
+		}
 	}
 
 	candidates := make([]Candidate, 0, len(offerings))
@@ -248,30 +288,6 @@ func Map(r inventory.Resource, c catalog.Catalog) Result {
 	result.Reasons = reasons(best)
 
 	return result
-}
-
-// MapIn matches resource r against the offerings of catalog c that are
-// available in region (catalog.Offering.AvailableIn, compared exactly).
-//
-// With region "" it returns exactly what Map returns: availability is judged
-// across all of the target's regions. Otherwise an offering that serves the
-// resource's category but is not available in region is not a candidate. A
-// resource whose category some offering serves, but none in region, has fit
-// None with one NotOfferedInRegion reason (Target, Category and Region set). A
-// resource whose category no offering serves in any region keeps the reason
-// NoOffering, and an unclassified one NotClassified, as with Map. A resource
-// with a candidate in region gets the fit, candidates and reasons Map gives it
-// from those candidates alone.
-//
-// MapIn does not check that region is one of the target's regions: a region no
-// offering lists gives NotOfferedInRegion for every resource with a category
-// the catalog serves. Refusing an unknown region is the application layer's
-// job (analysis.ErrUnknownRegion).
-func MapIn(r inventory.Resource, c catalog.Catalog, region string) Result {
-	// TODO(PRD #190 M6): not implemented yet.
-	_, _, _ = r, c, region
-
-	return Result{}
 }
 
 // candidate returns how offering o fits resource r.
