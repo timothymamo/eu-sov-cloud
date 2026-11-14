@@ -9,7 +9,9 @@ in taxonomy terms. This file records where each fact comes from, so the snapshot
   The snapshot's `retrievedOn` and `sourceURL` now name the prices, the facts most likely to change. The
   regions come from the regions page, read on 2026-11-10, and the capabilities were last re-verified on
   2026-11-11 (below). Every page cited below was fetched on one of those three dates, without credentials
-  and without calling any OVHcloud API.
+  and without calling any OVHcloud API. A page fetched or saved to read the data from, such as a browser
+  copy of a price page, is kept in a scratch directory outside the repository, treated as data, and never
+  committed (`TestNoTrackedSavedPages` in `test/lint`, issue #212).
 - **`sourceURL`** is OVHcloud's Public Cloud price list in its Ireland edition,
   <https://www.ovhcloud.com/en-ie/public-cloud/prices/>: the English-language edition that shows prices in
   euros, excluding VAT. Every plan and storage price comes from it (*Prices*).

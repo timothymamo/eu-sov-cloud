@@ -251,11 +251,14 @@
 // test/internal/yamlread, the strict line reader test/architecture reads
 // .golangci.yml with, so a rule written in a way it does not follow fails.
 //
-// TestNoTrackedSavedPages refuses every .html or .htm file git tracks, the
-// extension compared in any case, that the allow list allowedSavedPages does
-// not name (issue #212). A saved price page, a browser copy of a target's
-// pricing page kept because the site refuses automated clients, is read from
-// a scratch directory outside the repository and never committed
+// TestNoTrackedSavedPages refuses every file git tracks that is a saved web
+// page or part of one and that the allow list allowedSavedPages does not name
+// (issue #212): a file whose final extension, compared in any case, is .html,
+// .htm, .xhtml, .xht, .shtml, .mhtml, .mht or .webarchive, or a file under a
+// directory whose name ends in _files, in any case, the asset directory a
+// "Webpage, Complete" save writes. A saved price page, a browser copy of a
+// target's pricing page kept because the site refuses automated clients, is
+// read from a scratch directory outside the repository and never committed
 // (internal/adapter/target/upcloud/SOURCES.md). The rule reads git ls-files,
 // so files git ignores are never read. savedPageProblems is the checker, and
 // TestSavedPageProblems pins it.
