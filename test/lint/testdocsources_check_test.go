@@ -106,7 +106,8 @@ type docPath struct {
 // link follows it whatever directory it sits in (issue #194). Nothing comes
 // from under the root of another module, symlinks included, though the walked
 // root itself is always read. A module root is what isModuleRoot, which
-// skipDir shares, says it is: a directory named go.mod makes none. No directory is returned, and a walk error is.
+// skipDir shares, says it is: a directory named go.mod makes none. No directory
+// is returned, and a walk error is.
 func docEntries(fsys fs.FS) ([]docPath, error) {
 	var entries []docPath
 
