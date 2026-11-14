@@ -22,6 +22,11 @@
 // rounded to six fractional digits, so 0.1 is exactly 1/10 and the
 // denominators stay bounded (ADR 0027).
 //
+// SumSourceCost sums what the source itself charges (the inventory's
+// MonthlyCost) exactly, one sum per currency, never converted, and counts how
+// many resources have a cost (ADR 0028). It reads each amount as an inventory
+// number is read, and is a fact from the inventory, not an estimate.
+//
 // Domain layer: standard library and other domain packages only, no I/O, no
 // clock.
 package estimate

@@ -7,9 +7,11 @@ import (
 	"github.com/timothymamo/shift2eu/internal/domain/catalog"
 )
 
-// Money is an exact, non-negative amount of euros, held as a rational number so
-// that no estimate is ever rounded before it is shown and no product of capped
-// inputs can overflow (ADR 0027). The zero Money is 0 EUR.
+// Money is an exact, non-negative amount, held as a rational number so that no
+// estimate is ever rounded before it is shown and no product of capped inputs
+// can overflow (ADR 0027). Money carries no currency: estimates and totals are
+// in euros (ADR 0024), and a CurrencyCost's Monthly is in its Currency
+// (ADR 0028). The zero Money is 0.
 //
 // A Money is immutable: every method returns a new value and never changes its
 // receiver or argument, so Money values may be copied and shared freely. Compare
