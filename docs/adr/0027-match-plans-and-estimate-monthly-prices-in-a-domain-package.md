@@ -50,7 +50,12 @@ The application layer takes the choices through `Analysis.RunWith(ctx, w, meta, 
 `Comparison.RunWith(ctx, w, meta, analysis.ComparisonOptions)`, with the comparison's region per
 target on `analysis.Target.Region`. `Run` is `RunWith` with the zero options. A region the target's
 catalog does not list is a `*analysis.RegionError` (target key, region, the target's regions) wrapping
-`analysis.ErrUnknownRegion`, returned after that catalog is loaded and before anything is assessed.
+`analysis.ErrUnknownRegion`. Every region is checked before anything is assessed and before the
+inventory is read: when a region is chosen, `RunWith` loads the catalog (in a comparison, every
+target's catalog, in key order) and checks each region right after its catalog is loaded, then reads
+the inventory, then assesses. A bad region on the last target of a comparison therefore reads no
+inventory and assesses no target, and the drivers (milestone 8) need not check regions themselves.
+Without a chosen region the order stays the one `Run` has always had: the inventory first.
 
 ### The regions a target lists
 
@@ -67,16 +72,28 @@ with `Ratio`, and formatted with `String` (rounded to the cent, half away from z
 digits, ADR 0024) or `Exact` (`"num/den"`). The domain allow list gains `math/big`, which is pure.
 
 The inventory's numbers are `float64`. Each is read as the exact decimal of its shortest round-trip
-representation (`strconv.FormatFloat(v, 'g', -1, 64)`), the number the user wrote, then as a rational.
-So `0.1` GiB is exactly 1/10 GiB, not the binary float just above it, and `hoursPerMonth: 365` gives
-exactly half of a 730-hour price.
+representation (`strconv.FormatFloat(v, 'g', -1, 64)`), the number the user wrote, then as a rational,
+rounded to **at most six fractional digits, half away from zero**. So `0.1` GiB is exactly 1/10 GiB,
+not the binary float just above it, `hoursPerMonth: 365` gives exactly half of a 730-hour price,
+`5e-324` hours read as 0 and `100.0000004` GiB as 100.
+
+The rounding bounds every denominator at 10^6 (times the 730 of the hours share and the catalog's
+10^4). Without it, a security audit of the milestone found that valid but adversarial numbers
+(subnormals such as `5e-324`, values with 17 significant digits) make rationals of about 1,100 bits,
+about 1 s of CPU per request at the inventory's resource cap across every target: cheap CPU time for
+an HTTP API client (milestone 8). Six digits are far finer than anything a size or an hour count
+means (about a kibibyte, under four milliseconds of running time).
+
+A value no valid inventory holds, NaN, ±Inf or a negative number (and a negative `count`), which only
+a resource built without `inventory.New` can carry, is read as no size at all: the resource is "not
+estimated: no size", never estimated at 0 EUR or at a negative amount. `Money` is never negative.
 
 Every product is exact and nothing can wrap. With checked `int64` the worst case does not fit: a plan
 at `MaxAmount` (10^10 units) × `count` 100,000 × 744 hours is about 7.4 × 10^17 units before dividing
 by 730, and a fractional `hoursPerMonth` or `storageGiB` with up to 17 significant digits needs a
-common denominator of up to 10^17 more. A rational has no such bound, and the sizes are capped
-(ADR 0024, ADR 0025), so the numbers stay small enough to compute instantly. Rounding happens only in
-`Money.String`, once per displayed figure; totals are summed exactly.
+common denominator of up to 10^6 more. A rational has no such bound, and the sizes are capped
+(ADR 0024, ADR 0025) and read to six decimals, so the numbers stay small enough to compute instantly.
+Money is rounded only in `Money.String`, once per displayed figure; totals are summed exactly.
 
 Plan coverage is compared exactly in the catalog's units: a plan covers a resource when
 `plan.VCPUs ≥ vcpus` and `plan.MemoryMilliGiB ≥ memoryGiB × 1000`, both as rationals.
@@ -144,7 +161,7 @@ chosen plan's offering.
 |---|---|
 | `no-fit` | the fit is `none`: no offering, not classified, or not offered in the chosen region |
 | `usage-priced` | the category is `ByUsage` (or `NotPriced`) |
-| `no-size` | a `ByPlan` resource without `vcpus` or `memoryGiB`, or a `ByStorage` one without `storageGiB` |
+| `no-size` | a `ByPlan` resource without `vcpus` or `memoryGiB`, or a `ByStorage` one without `storageGiB`; or a size or usage it reads that is NaN, infinite or negative |
 | `no-plan` | `ByPlan`, and the best candidate offerings list no plan |
 | `no-plan-large-enough` | `ByPlan`, and no plan covers the resource |
 | `no-price` | no covering plan (`ByPlan`) or no storage (`ByStorage`) has a price in the estimate region |
@@ -168,9 +185,11 @@ no total. Sizes never reach the mapping, so the fits are those of the same inven
 - **A region filter in `assessment`, not `mapping`.** The region decides which offerings are
   candidates, which is what `mapping` decides; doing it later would leave `mapping.Result` with
   candidates the assessment then drops, and two places that build fits.
-- **Checked `int64` arithmetic.** Exact only after rounding the inventory's fractional hours and
-  storage to a fixed precision, and the worst case of the caps overflows anyway (above). Rounding an
-  input would break "rounded once, for display".
+- **Checked `int64` arithmetic.** The inputs are now read to six decimals, but the worst case of the
+  caps overflows anyway (above).
+- **Refusing tiny values in the inventory's validation instead of rounding.** Also bounds the
+  denominators, but needs a minimum per field and still lets 17-digit values through; rounding bounds
+  every input with one rule, in the one place the numbers become exact.
 - **`float64` money.** Refused by ADR 0024.
 - **`big.Rat` read straight from the float (`SetFloat64`).** Exact, but exact for the binary float:
   `0.1` GiB becomes 0.1000000000000000055 GiB and needs a larger plan than a 0.1 GiB one.
