@@ -1,6 +1,12 @@
 package estimate
 
 import (
+	"math/big"
+	"strconv"
+	"strings"
+
+	"github.com/timothymamo/shift2eu/internal/domain/catalog"
+	"github.com/timothymamo/shift2eu/internal/domain/inventory"
 	"github.com/timothymamo/shift2eu/internal/domain/mapping"
 	"github.com/timothymamo/shift2eu/internal/domain/taxonomy"
 )
@@ -30,10 +36,17 @@ const (
 
 // PricingOf returns how category c is priced.
 func PricingOf(c taxonomy.Category) Method {
-	// TODO(PRD #190 M6): not implemented yet.
-	_ = c
-
-	return ""
+	switch c {
+	case taxonomy.ComputeVM, taxonomy.ComputeBareMetal, taxonomy.KubernetesManaged,
+		taxonomy.DatabasePostgreSQL, taxonomy.DatabaseMySQL:
+		return ByPlan
+	case taxonomy.StorageBlock, taxonomy.StorageObject:
+		return ByStorage
+	case taxonomy.ServerlessFunction, taxonomy.MessagingQueue:
+		return ByUsage
+	default:
+		return NotPriced
+	}
 }
 
 // Reason says why a resource is not estimated.
@@ -151,10 +164,350 @@ type Estimate struct {
 // mapping.MapIn on a resource from an inventory.Inventory and a catalog from
 // catalog.New.
 func For(result mapping.Result, region string) Estimate {
-	// TODO(PRD #190 M6): not implemented yet.
-	_, _ = result, region
+	if result.Fit == mapping.None {
+		return Estimate{Region: region, Reason: NoFit}
+	}
 
-	return Estimate{}
+	r := result.Resource
+	offerings := bestOfferings(result.Candidates)
+
+	switch PricingOf(r.Category) {
+	case ByPlan:
+		return byPlan(r, offerings, region)
+	case ByStorage:
+		return byStorage(r, offerings, region)
+	default:
+		return Estimate{Region: region, Reason: UsagePriced}
+	}
+}
+
+// bestOfferings returns the offerings of the best candidates: the first one
+// and every other with its fit and as many missing capabilities, in candidate
+// order (assessment.Verdict.Ties names the same offerings).
+func bestOfferings(candidates []mapping.Candidate) []catalog.Offering {
+	if len(candidates) == 0 {
+		return nil
+	}
+
+	first := candidates[0]
+
+	var out []catalog.Offering
+
+	for _, c := range candidates {
+		if c.Fit == first.Fit && len(c.Missing) == len(first.Missing) {
+			out = append(out, c.Offering)
+		}
+	}
+
+	return out
+}
+
+// offeredPlan is one plan of one of the best candidate offerings.
+type offeredPlan struct {
+	offering catalog.Offering
+	plan     catalog.Plan
+}
+
+// byPlan estimates a resource priced by plan.
+func byPlan(r inventory.Resource, offerings []catalog.Offering, region string) Estimate {
+	e := Estimate{Region: region}
+
+	if r.Size == nil || r.Size.VCPUs == nil || r.Size.MemoryGiB == nil {
+		e.Reason = NoSize
+
+		return e
+	}
+
+	var all []offeredPlan
+
+	for _, o := range offerings {
+		for _, p := range o.Plans {
+			all = append(all, offeredPlan{offering: o, plan: p})
+		}
+	}
+
+	if len(all) == 0 {
+		e.Reason = NoPlan
+
+		return e
+	}
+
+	vcpus := exact(*r.Size.VCPUs)
+	memory := new(big.Rat).Mul(exact(*r.Size.MemoryGiB), big.NewRat(1000, 1))
+
+	var covering []offeredPlan
+
+	for _, op := range all {
+		if big.NewRat(op.plan.VCPUs, 1).Cmp(vcpus) >= 0 && big.NewRat(op.plan.MemoryMilliGiB, 1).Cmp(memory) >= 0 {
+			covering = append(covering, op)
+		}
+	}
+
+	if len(covering) == 0 {
+		largest := all[0]
+		for _, op := range all[1:] {
+			if larger(op, largest) {
+				largest = op
+			}
+		}
+
+		e.Reason = NoPlanLargeEnough
+		e.Offering = largest.offering.Name
+		e.Largest = planOf(largest, region)
+
+		return e
+	}
+
+	chosen, ok := cheapest(covering, region)
+	if !ok {
+		first := covering[0]
+		for _, op := range covering[1:] {
+			if smaller(op, first) {
+				first = op
+			}
+		}
+
+		e.Reason = NoPrice
+		e.Offering = first.offering.Name
+		e.Plan = planOf(first, region)
+
+		return e
+	}
+
+	e.Offering = chosen.offering.Name
+	e.Plan = planOf(chosen, region)
+
+	count, countAssumed := countOf(r.Size)
+	hours, hoursAssumed := hoursOf(r.Usage)
+
+	storage := new(big.Rat)
+
+	if r.Size.StorageGiB != nil {
+		extra := new(big.Rat).Sub(exact(*r.Size.StorageGiB), big.NewRat(chosen.plan.IncludedStorageGiB, 1))
+		if extra.Sign() > 0 {
+			perGiB, ok := chosen.offering.StoragePrice(region)
+			if !ok {
+				e.Reason = NoStoragePrice
+
+				return e
+			}
+
+			storage.Mul(extra, amount(perGiB))
+
+			if !storedOnce(r.Category) {
+				storage.Mul(storage, count)
+			}
+		}
+	}
+
+	planPrice := e.Plan.Price.rat()
+	planPrice.Mul(planPrice, count)
+	planPrice.Mul(planPrice, monthShare(hours))
+
+	fee := new(big.Rat)
+	if a, ok := chosen.offering.FixedFee(region); ok {
+		fee.Mul(amount(a), monthShare(hours))
+	}
+
+	e.Estimated = true
+	e.Breakdown = Breakdown{Plan: fromRat(planPrice), Storage: fromRat(storage), FixedFee: fromRat(fee)}
+	e.Monthly = e.Breakdown.Plan.Add(e.Breakdown.Storage).Add(e.Breakdown.FixedFee)
+	e.CountAssumed = countAssumed
+	e.HoursAssumed = hoursAssumed
+
+	return e
+}
+
+// byStorage estimates a resource priced by stored GiB, on the best candidate
+// offering with the lowest per-GiB price in region, ties by offering name.
+func byStorage(r inventory.Resource, offerings []catalog.Offering, region string) Estimate {
+	e := Estimate{Region: region}
+
+	if r.Size == nil || r.Size.StorageGiB == nil {
+		e.Reason = NoSize
+
+		return e
+	}
+
+	var (
+		chosen string
+		perGiB catalog.Amount
+		found  bool
+	)
+
+	for _, o := range offerings {
+		a, ok := o.StoragePrice(region)
+		if !ok {
+			continue
+		}
+
+		if !found || a < perGiB || (a == perGiB && o.Name < chosen) {
+			chosen, perGiB, found = o.Name, a, true
+		}
+	}
+
+	if !found {
+		e.Reason = NoPrice
+
+		return e
+	}
+
+	storage := new(big.Rat).Mul(exact(*r.Size.StorageGiB), amount(perGiB))
+
+	if r.Category == taxonomy.StorageBlock {
+		count, assumed := countOf(r.Size)
+		storage.Mul(storage, count)
+		e.CountAssumed = assumed
+	}
+
+	e.Estimated = true
+	e.Offering = chosen
+	e.Breakdown = Breakdown{Storage: fromRat(storage)}
+	e.Monthly = e.Breakdown.Storage
+
+	return e
+}
+
+// cheapest returns the covering plan priced in region that is cheapest, ties
+// broken by smaller, and false when none is priced there.
+func cheapest(covering []offeredPlan, region string) (offeredPlan, bool) {
+	var (
+		best      offeredPlan
+		bestPrice catalog.Amount
+		found     bool
+	)
+
+	for _, op := range covering {
+		a, ok := op.offering.PlanPrice(op.plan.Name, region)
+		if !ok {
+			continue
+		}
+
+		if !found || a < bestPrice || (a == bestPrice && smaller(op, best)) {
+			best, bestPrice, found = op, a, true
+		}
+	}
+
+	return best, found
+}
+
+// smaller reports whether a comes before b in the plan order: fewer vCPUs, less
+// memory, then plan name and offering name in byte order.
+func smaller(a, b offeredPlan) bool {
+	return comparePlans(a, b) < 0
+}
+
+// larger reports whether a is a larger plan than b: more vCPUs, more memory,
+// then the smaller plan name and the smaller offering name in byte order.
+func larger(a, b offeredPlan) bool {
+	if a.plan.VCPUs != b.plan.VCPUs {
+		return a.plan.VCPUs > b.plan.VCPUs
+	}
+
+	if a.plan.MemoryMilliGiB != b.plan.MemoryMilliGiB {
+		return a.plan.MemoryMilliGiB > b.plan.MemoryMilliGiB
+	}
+
+	return compareNames(a, b) < 0
+}
+
+// comparePlans orders plans by vCPUs, memory, plan name and offering name.
+func comparePlans(a, b offeredPlan) int {
+	switch {
+	case a.plan.VCPUs != b.plan.VCPUs:
+		return compareInt(a.plan.VCPUs, b.plan.VCPUs)
+	case a.plan.MemoryMilliGiB != b.plan.MemoryMilliGiB:
+		return compareInt(a.plan.MemoryMilliGiB, b.plan.MemoryMilliGiB)
+	default:
+		return compareNames(a, b)
+	}
+}
+
+// compareNames orders plans by plan name, then offering name, in byte order.
+func compareNames(a, b offeredPlan) int {
+	if d := strings.Compare(a.plan.Name, b.plan.Name); d != 0 {
+		return d
+	}
+
+	return strings.Compare(a.offering.Name, b.offering.Name)
+}
+
+// compareInt returns -1, 0 or +1 as a is less than, equal to or greater than b.
+func compareInt(a, b int64) int {
+	switch {
+	case a < b:
+		return -1
+	case a > b:
+		return 1
+	default:
+		return 0
+	}
+}
+
+// planOf returns op's plan as an estimate names it, with its price in region.
+func planOf(op offeredPlan, region string) *Plan {
+	p := &Plan{
+		Name:               op.plan.Name,
+		VCPUs:              op.plan.VCPUs,
+		MemoryMilliGiB:     op.plan.MemoryMilliGiB,
+		IncludedStorageGiB: op.plan.IncludedStorageGiB,
+	}
+
+	if a, ok := op.offering.PlanPrice(op.plan.Name, region); ok {
+		p.Priced = true
+		p.Price = FromAmount(a)
+	}
+
+	return p
+}
+
+// storedOnce reports whether the storage of category c is the whole service's
+// data, counted once and not × count: the managed databases (ADR 0027).
+func storedOnce(c taxonomy.Category) bool {
+	return c == taxonomy.DatabasePostgreSQL || c == taxonomy.DatabaseMySQL
+}
+
+// countOf returns the resource's count, or 1 and true when it gives none.
+func countOf(size *inventory.Size) (*big.Rat, bool) {
+	if size.Count == nil {
+		return big.NewRat(1, 1), true
+	}
+
+	return big.NewRat(int64(*size.Count), 1), false
+}
+
+// hoursOf returns the hours a month the resource runs, or HoursPerMonth and
+// true when it gives none.
+func hoursOf(usage *inventory.Usage) (*big.Rat, bool) {
+	if usage == nil || usage.HoursPerMonth == nil {
+		return big.NewRat(HoursPerMonth, 1), true
+	}
+
+	return exact(*usage.HoursPerMonth), false
+}
+
+// monthShare returns hours / HoursPerMonth, the share of a monthly price that
+// many hours cost.
+func monthShare(hours *big.Rat) *big.Rat {
+	return new(big.Rat).Quo(hours, big.NewRat(HoursPerMonth, 1))
+}
+
+// amount returns the catalog amount a in euros, exactly.
+func amount(a catalog.Amount) *big.Rat {
+	return big.NewRat(int64(a), catalog.AmountScale)
+}
+
+// exact returns v as the exact decimal it prints as, its shortest round-trip
+// representation, so 0.1 is exactly 1/10 (ADR 0027). The inventory only holds
+// finite values, so the conversion cannot fail; a value it could not read
+// would be 0.
+func exact(v float64) *big.Rat {
+	r, ok := new(big.Rat).SetString(strconv.FormatFloat(v, 'g', -1, 64))
+	if !ok {
+		return new(big.Rat)
+	}
+
+	return r
 }
 
 // Total sums the estimates of an assessment.
@@ -171,8 +524,14 @@ type Total struct {
 // Sum totals estimates: Monthly over those with Estimated true, how many those
 // are, and len(estimates).
 func Sum(estimates []Estimate) Total {
-	// TODO(PRD #190 M6): not implemented yet.
-	_ = estimates
+	t := Total{Resources: len(estimates)}
 
-	return Total{}
+	for _, e := range estimates {
+		if e.Estimated {
+			t.Monthly = t.Monthly.Add(e.Monthly)
+			t.Estimated++
+		}
+	}
+
+	return t
 }
