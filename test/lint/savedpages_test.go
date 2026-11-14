@@ -8,15 +8,20 @@ import (
 // The saved-page rule and its allow list live in savedpages_rule_test.go
 // (issue #212): a saved price page, a browser copy of a target's pricing page
 // kept because the site refuses automated clients, belongs in a scratch
-// directory outside the repository and is never committed (each target's
-// doc.go and SOURCES.md say so). Committing one would put a large third-party
-// page, tracking scripts and session data included, next to a catalog snapshot.
+// directory outside the repository and is never committed. Committing one
+// would put a large third-party page, tracking scripts and session data
+// included, next to a catalog snapshot. The convention is stated in
+// internal/adapter/target/upcloud/SOURCES.md and in the add-cloud-provider
+// skill.
 
 // TestSavedPageProblems pins the checker the rule runs, on a probe tree held as
-// a list of slash-separated paths relative to the module root. A path whose
-// extension is .html or .htm, in any case, and that the allow list does not
-// name is refused: one problem per refused path, in input order, each naming
-// the path and pointing to the SOURCES.md convention.
+// a list of slash-separated paths relative to the module root. A path the allow
+// list does not name is refused when its extension is that of a saved page
+// (.html, .htm, .xhtml, .xht, .shtml, .mhtml, .mht, .webarchive, in any case) or
+// when a directory segment ends in _files, in any case, the asset directory a
+// browser writes beside a "Webpage, Complete" copy. Each refused path gets
+// exactly one problem, in input order, naming the path and pointing to the
+// SOURCES.md convention.
 func TestSavedPageProblems(t *testing.T) {
 	t.Parallel()
 
@@ -73,7 +78,62 @@ func TestSavedPageProblems(t *testing.T) {
 		{
 			name:  "xhtml extension",
 			paths: []string{"x.xhtml"},
+			want:  []string{"x.xhtml"},
+		},
+		{
+			name:  "xht extension",
+			paths: []string{"x.xht"},
+			want:  []string{"x.xht"},
+		},
+		{
+			name:  "shtml extension",
+			paths: []string{"x.shtml"},
+			want:  []string{"x.shtml"},
+		},
+		{
+			name:  "mhtml extension",
+			paths: []string{"x.mhtml"},
+			want:  []string{"x.mhtml"},
+		},
+		{
+			name:  "mht extension in capitals",
+			paths: []string{"x.MHT"},
+			want:  []string{"x.MHT"},
+		},
+		{
+			name:  "webarchive extension",
+			paths: []string{"x.webarchive"},
+			want:  []string{"x.webarchive"},
+		},
+		{
+			name:  "asset directory of a complete web page copy",
+			paths: []string{"internal/adapter/target/upcloud/pricing_files/analytics.js"},
+			want:  []string{"internal/adapter/target/upcloud/pricing_files/analytics.js"},
+		},
+		{
+			name:  "asset directory suffix in capitals",
+			paths: []string{"docs/Pricing_FILES/a.css"},
+			want:  []string{"docs/Pricing_FILES/a.css"},
+		},
+		{
+			name:  "file whose name ends in _files, not a directory",
+			paths: []string{"docs/x_files"},
 			want:  nil,
+		},
+		{
+			name:  "plain files directory",
+			paths: []string{"docs/files/a.css"},
+			want:  nil,
+		},
+		{
+			name:  "directory whose name merely contains _files",
+			paths: []string{"docs/my_filesystem/a.go"},
+			want:  nil,
+		},
+		{
+			name:  "page inside an asset directory, refused once",
+			paths: []string{"a_files/b.html"},
+			want:  []string{"a_files/b.html"},
 		},
 		{
 			name:    "allowed page beside a refused one",
@@ -86,6 +146,14 @@ func TestSavedPageProblems(t *testing.T) {
 			paths:   []string{"internal/adapter/target/upcloud/pricing.html"},
 			allowed: allowedPricingPage,
 			want:    nil,
+		},
+		{
+			name:  "allowed path inside an asset directory is not refused",
+			paths: []string{"internal/adapter/target/upcloud/pricing_files/pricing.xhtml"},
+			allowed: map[string]bool{
+				"internal/adapter/target/upcloud/pricing_files/pricing.xhtml": true,
+			},
+			want: nil,
 		},
 		{
 			name: "several refused pages, each named in input order",
