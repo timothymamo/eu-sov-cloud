@@ -27,13 +27,13 @@ Estimates are list prices on each catalog's retrieval date, excluding VAT and di
 | ID | Category | `Example Cloud` fit | `Example Cloud` best offering | `Example Cloud` monthly estimate | `Example Cloud North` fit | `Example Cloud North` best offering | `Example Cloud North` monthly estimate |
 |---|---|---|---|---|---|---|---|
 | `bucket-storage` | `storage.object` | direct | `Example Object Storage` | €2,500.00 | direct | `Example Object Storage` | €2,500.00 |
-| `cluster-small` | `kubernetes.managed` | direct | `Example Kubernetes` | €15.00 (includes a fixed fee of €5.00) | direct | `Example Kubernetes` | €15.00 (includes a fixed fee of €5.00) |
+| `cluster-small` | `kubernetes.managed` | direct | `Example Kubernetes` | €15.00 (includes a fixed fee of €5.00) (count assumed 1) (730 hours assumed) | direct | `Example Kubernetes` | €15.00 (includes a fixed fee of €5.00) (count assumed 1) (730 hours assumed) |
 | `function-orders` | `serverless.function` | direct | `Example Functions` | not estimated: usage-priced | direct | `Example Functions` | not estimated: usage-priced |
 | `legacy-nosize` | `compute.vm` | direct | `Example Virtual Machines` | not estimated: size unknown | direct | `Example Virtual Machines` | not estimated: size unknown |
 | `queue-jobs` | `messaging.queue` | none |  | not estimated: no fit | none |  | not estimated: no fit |
 | `server-huge` | `compute.vm` | direct | `Example Virtual Machines` | not estimated: no plan large enough | direct | `Example Virtual Machines` | not estimated: no plan large enough |
-| `server-small` | `compute.vm` | direct | `Example Virtual Machines` | €10.00 | direct | `Example Virtual Machines` | €12.00 |
-| `worker-jobs` | `compute.vm` | direct | `Example Virtual Machines` | €10.00 | direct | `Example Virtual Machines` | €12.00 |
+| `server-small` | `compute.vm` | direct | `Example Virtual Machines` | €10.00 (count assumed 1) (730 hours assumed) | direct | `Example Virtual Machines` | €12.00 (count assumed 1) (730 hours assumed) |
+| `worker-jobs` | `compute.vm` | direct | `Example Virtual Machines` | €10.00 (count assumed 1) (730 hours assumed) | direct | `Example Virtual Machines` | €12.00 (count assumed 1) (730 hours assumed) |
 
 ### Blockers on every target
 
@@ -57,13 +57,13 @@ Estimates are list prices on each catalog's retrieval date, excluding VAT and di
 | ID | Raw type | Category | Fit | Best offering | Plan | Monthly estimate | Relations | Reasons |
 |---|---|---|---|---|---|---|---|---|
 | `bucket-storage` | `AWS::S3::Bucket` | `storage.object` | direct | `Example Object Storage` |  | €2,500.00 |  | `Example Object Storage` offers every capability the resource uses |
-| `cluster-small` | `Scaleway::Kubernetes::Cluster` | `kubernetes.managed` | direct | `Example Kubernetes` | `KN-S` (1 vCPU, 2 GiB) | €15.00 (includes a fixed fee of €5.00) |  | `Example Kubernetes` offers every capability the resource uses |
+| `cluster-small` | `Scaleway::Kubernetes::Cluster` | `kubernetes.managed` | direct | `Example Kubernetes` | `KN-S` (1 vCPU, 2 GiB) | €15.00 (includes a fixed fee of €5.00) (count assumed 1) (730 hours assumed) |  | `Example Kubernetes` offers every capability the resource uses |
 | `function-orders` | `AWS::Lambda::Function` | `serverless.function` | direct | `Example Functions` |  | not estimated: usage-priced |  | `Example Functions` offers every capability the resource uses |
 | `legacy-nosize` | `AWS::EC2::Instance` | `compute.vm` | direct | `Example Virtual Machines` |  | not estimated: size unknown |  | `Example Virtual Machines` offers every capability the resource uses |
 | `queue-jobs` | `AWS::SQS::Queue` | `messaging.queue` | none |  |  | not estimated: no fit |  | no offering in the `Example Cloud` catalog for `messaging.queue` |
 | `server-huge` | `AWS::EC2::Instance` | `compute.vm` | direct | `Example Virtual Machines` | no plan large enough (largest: `EX-L`, 4 vCPU, 8 GiB) | not estimated: no plan large enough |  | `Example Virtual Machines` offers every capability the resource uses |
-| `server-small` | `AWS::EC2::Instance` | `compute.vm` | direct | `Example Virtual Machines` | `EX-S` (1 vCPU, 2 GiB) | €10.00 |  | `Example Virtual Machines` offers every capability the resource uses |
-| `worker-jobs` | `AWS::EC2::Instance` | `compute.vm` | direct | `Example Virtual Machines` | `EX-S` (1 vCPU, 2 GiB) | €10.00 | depends-on `queue-jobs`, replica-of `server-small` | `Example Virtual Machines` offers every capability the resource uses |
+| `server-small` | `AWS::EC2::Instance` | `compute.vm` | direct | `Example Virtual Machines` | `EX-S` (1 vCPU, 2 GiB) | €10.00 (count assumed 1) (730 hours assumed) |  | `Example Virtual Machines` offers every capability the resource uses |
+| `worker-jobs` | `AWS::EC2::Instance` | `compute.vm` | direct | `Example Virtual Machines` | `EX-S` (1 vCPU, 2 GiB) | €10.00 (count assumed 1) (730 hours assumed) | depends-on `queue-jobs`, replica-of `server-small` | `Example Virtual Machines` offers every capability the resource uses |
 
 ### Required changes
 
@@ -95,7 +95,7 @@ None.
 #### No workload
 
 - Fit: 1 direct, 0 partial, 0 none
-- Monthly estimate: €0.00 per month for 0 of 1 resources, list prices on 2026-11-13, excluding VAT and discounts
+- Monthly estimate: €0.00 per month for 0 of 1 resource, list prices on 2026-11-13, excluding VAT and discounts
 - Source cost: `USD` $200.00
 - Blockers: none
 
@@ -124,13 +124,13 @@ None.
 | ID | Raw type | Category | Fit | Best offering | Plan | Monthly estimate | Relations | Reasons |
 |---|---|---|---|---|---|---|---|---|
 | `bucket-storage` | `AWS::S3::Bucket` | `storage.object` | direct | `Example Object Storage` |  | €2,500.00 |  | `Example Object Storage` offers every capability the resource uses |
-| `cluster-small` | `Scaleway::Kubernetes::Cluster` | `kubernetes.managed` | direct | `Example Kubernetes` | `KN-S` (1 vCPU, 2 GiB) | €15.00 (includes a fixed fee of €5.00) |  | `Example Kubernetes` offers every capability the resource uses |
+| `cluster-small` | `Scaleway::Kubernetes::Cluster` | `kubernetes.managed` | direct | `Example Kubernetes` | `KN-S` (1 vCPU, 2 GiB) | €15.00 (includes a fixed fee of €5.00) (count assumed 1) (730 hours assumed) |  | `Example Kubernetes` offers every capability the resource uses |
 | `function-orders` | `AWS::Lambda::Function` | `serverless.function` | direct | `Example Functions` |  | not estimated: usage-priced |  | `Example Functions` offers every capability the resource uses |
 | `legacy-nosize` | `AWS::EC2::Instance` | `compute.vm` | direct | `Example Virtual Machines` |  | not estimated: size unknown |  | `Example Virtual Machines` offers every capability the resource uses |
 | `queue-jobs` | `AWS::SQS::Queue` | `messaging.queue` | none |  |  | not estimated: no fit |  | no offering in the `Example Cloud North` catalog for `messaging.queue` |
 | `server-huge` | `AWS::EC2::Instance` | `compute.vm` | direct | `Example Virtual Machines` | no plan large enough (largest: `EX-L`, 4 vCPU, 8 GiB) | not estimated: no plan large enough |  | `Example Virtual Machines` offers every capability the resource uses |
-| `server-small` | `AWS::EC2::Instance` | `compute.vm` | direct | `Example Virtual Machines` | `EX-S` (1 vCPU, 2 GiB) | €12.00 |  | `Example Virtual Machines` offers every capability the resource uses |
-| `worker-jobs` | `AWS::EC2::Instance` | `compute.vm` | direct | `Example Virtual Machines` | `EX-S` (1 vCPU, 2 GiB) | €12.00 | depends-on `queue-jobs`, replica-of `server-small` | `Example Virtual Machines` offers every capability the resource uses |
+| `server-small` | `AWS::EC2::Instance` | `compute.vm` | direct | `Example Virtual Machines` | `EX-S` (1 vCPU, 2 GiB) | €12.00 (count assumed 1) (730 hours assumed) |  | `Example Virtual Machines` offers every capability the resource uses |
+| `worker-jobs` | `AWS::EC2::Instance` | `compute.vm` | direct | `Example Virtual Machines` | `EX-S` (1 vCPU, 2 GiB) | €12.00 (count assumed 1) (730 hours assumed) | depends-on `queue-jobs`, replica-of `server-small` | `Example Virtual Machines` offers every capability the resource uses |
 
 ### Required changes
 
@@ -162,7 +162,7 @@ None.
 #### No workload
 
 - Fit: 1 direct, 0 partial, 0 none
-- Monthly estimate: €0.00 per month for 0 of 1 resources, list prices on 2026-11-14, excluding VAT and discounts
+- Monthly estimate: €0.00 per month for 0 of 1 resource, list prices on 2026-11-14, excluding VAT and discounts
 - Source cost: `USD` $200.00
 - Blockers: none
 

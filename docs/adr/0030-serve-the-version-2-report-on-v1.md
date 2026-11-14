@@ -52,10 +52,18 @@ The report itself:
   A chosen region is also a top-level `region` key of the document (and of each comparison target),
   with or without estimates, so a report with estimates off still says which region availability was
   scoped to; with no region chosen the key is absent.
-- **Money is an exact decimal string.** Every amount is `estimate.Money.String()`, two fractional
-  digits, never a JSON number, so no consumer meets a binary float. Estimates are in EUR (ADR 0024); the
+- **Money is a decimal string rounded to the cent.** The domain keeps every amount exact; each amount
+  in the report is `estimate.Money.String()`, rounded half away from zero to two fractional digits,
+  never a JSON number, so no consumer meets a binary float. A total (`total.amount`, a workload's
+  estimate, the source cost) is rounded from the exact sum, not summed from the rounded rows, so a
+  consumer that adds up the per-resource amounts can be a cent or so off the total. Estimates are in EUR (ADR 0024); the
   source cost is summed per currency and never converted (ADR 0028). The Markdown report adds a
   thousands separator and the sign of EUR, USD and GBP; any other currency is shown by its code alone.
+- **An estimate says what it assumed.** An estimated resource's JSON `estimate` always carries
+  `countAssumed` and `hoursAssumed` (a count of 1, 730 hours a month, taken because the resource gives
+  none); a resource that is not estimated carries neither. The Markdown estimate cell adds
+  "(count assumed 1)" and "(730 hours assumed)" after the fixed-fee note, so a reader sees which rows
+  rest on an assumption.
 - **The basis is stated next to every total**: list prices on the snapshot's retrieval date (never an
   age), excluding VAT and discounts, the hours basis "plan price × count × hours / 730" (no cap), and a
   fixed fee as the offering's listed fee. A fee recorded as the smallest paid size of a tier, such as
@@ -69,11 +77,13 @@ The report itself:
 The request options and their errors:
 
 - **`regions` and `estimate` are decoded strictly and checked like the CLI's flags.** `regions` is an
-  object of strings (at most 64 members, no key twice) and `estimate` a boolean, true when absent; null
+  object of strings (at most 64 members, no key twice, no region empty: an empty one would silently mean
+  every region, which the CLI's `--region` refuses too) and `estimate` a boolean, true when absent; null
   and any other JSON type are 400 `invalid_request`, named by JSON type only. `jsondoc` gains
   `Walker.Bool` and `Walker.Members`, which reads an object whose keys are data: its errors name a member
   by its index (`regions[0]`), never by its key, so the decoder still echoes nothing. In
-  `api/openapi.json`, `regions` is a closed object with one string property per target key (the
+  `api/openapi.json`, `regions` is a closed object with one string property per target key, each
+  `minLength: 1` (the
   repository's schema validator takes only a boolean `additionalProperties`).
 - **A bad region is 400 `invalid_region`**, a new code beside `invalid_targets`, in the existing
   envelope. A `regions` key the request does not select is refused before anything is built; a region

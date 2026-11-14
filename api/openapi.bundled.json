@@ -307,7 +307,7 @@
           },
           "breakdown": {
             "additionalProperties": false,
-            "description": "What an estimate is made of, each part in EUR as an exact decimal with two fractional digits; the parts sum to the amount, give or take the rounding of each to the cent.",
+            "description": "What an estimate is made of, each part in EUR as a decimal string rounded to the cent; each part is rounded from its exact value, so the parts sum to the amount give or take a cent.",
             "properties": {
               "fixedFee": {
                 "description": "The offering's listed fixed fee × hours a month / 730, once per resource and never × count; 0.00 when the offering charges none. A fee the catalog records as the smallest paid size of a tier (such as Scaleway Kubernetes Kapsule Dedicated, see the Scaleway catalog's SOURCES.md) is a lower bound of what the resource is charged.",
@@ -337,7 +337,7 @@
             "description": "The source's monthly cost in one currency.",
             "properties": {
               "amount": {
-                "description": "The exact sum in that currency, with two fractional digits.",
+                "description": "The sum in that currency, a decimal string rounded to the cent from the exact sum of the source costs.",
                 "pattern": "^[0-9]+\\.[0-9]{2}$",
                 "type": "string"
               },
@@ -425,7 +425,7 @@
                 "type": "string"
               },
               "price": {
-                "description": "The plan's monthly list price in EUR in the estimate region, an exact decimal with two fractional digits; absent when the plan has no price there.",
+                "description": "The plan's monthly list price in EUR in the estimate region, a decimal string rounded to the cent; absent when the plan has no price there.",
                 "pattern": "^[0-9]+\\.[0-9]{2}$",
                 "type": "string"
               },
@@ -589,18 +589,26 @@
           },
           "resourceEstimate": {
             "additionalProperties": false,
-            "description": "The resource's monthly estimate: the amount and its breakdown when it is estimated, the reason when it is not. A resource that is not estimated is never counted as 0.",
+            "description": "The resource's monthly estimate: the amount, its breakdown and what it assumed when it is estimated, the reason when it is not. A resource that is not estimated is never counted as 0.",
             "properties": {
               "amount": {
-                "description": "The monthly list price in EUR, excluding VAT and discounts, an exact decimal with two fractional digits; present only when estimated.",
+                "description": "The monthly list price in EUR, excluding VAT and discounts, a decimal string rounded to the cent (half away from zero); present only when estimated.",
                 "pattern": "^[0-9]+\\.[0-9]{2}$",
                 "type": "string"
               },
               "breakdown": {
                 "$ref": "#/components/schemas/AssessmentReportV2/$defs/breakdown"
               },
+              "countAssumed": {
+                "description": "Whether the estimate assumed a count of 1 because the resource gives none; present only when estimated.",
+                "type": "boolean"
+              },
               "estimated": {
                 "description": "Whether the resource is estimated.",
+                "type": "boolean"
+              },
+              "hoursAssumed": {
+                "description": "Whether the estimate assumed 730 hours a month because the resource gives none; present only when estimated.",
                 "type": "boolean"
               },
               "reason": {
@@ -718,7 +726,7 @@
             "description": "A sum of estimates: the amount over the estimated resources only, how many those are, and how many resources there are.",
             "properties": {
               "amount": {
-                "description": "The sum in EUR, an exact decimal with two fractional digits.",
+                "description": "The sum in EUR, a decimal string rounded to the cent from the exact sum of the estimates, not summed from the rounded amounts of the resources, so it can differ from that by a cent or so.",
                 "pattern": "^[0-9]+\\.[0-9]{2}$",
                 "type": "string"
               },
@@ -927,7 +935,7 @@
           },
           "breakdown": {
             "additionalProperties": false,
-            "description": "What an estimate is made of, each part in EUR as an exact decimal with two fractional digits; the parts sum to the amount, give or take the rounding of each to the cent.",
+            "description": "What an estimate is made of, each part in EUR as a decimal string rounded to the cent; each part is rounded from its exact value, so the parts sum to the amount give or take a cent.",
             "properties": {
               "fixedFee": {
                 "description": "The offering's listed fixed fee × hours a month / 730, once per resource and never × count; 0.00 when the offering charges none. A fee the catalog records as the smallest paid size of a tier (such as Scaleway Kubernetes Kapsule Dedicated, see the Scaleway catalog's SOURCES.md) is a lower bound of what the resource is charged.",
@@ -957,7 +965,7 @@
             "description": "The source's monthly cost in one currency.",
             "properties": {
               "amount": {
-                "description": "The exact sum in that currency, with two fractional digits.",
+                "description": "The sum in that currency, a decimal string rounded to the cent from the exact sum of the source costs.",
                 "pattern": "^[0-9]+\\.[0-9]{2}$",
                 "type": "string"
               },
@@ -1045,7 +1053,7 @@
                 "type": "string"
               },
               "price": {
-                "description": "The plan's monthly list price in EUR in the estimate region, an exact decimal with two fractional digits; absent when the plan has no price there.",
+                "description": "The plan's monthly list price in EUR in the estimate region, a decimal string rounded to the cent; absent when the plan has no price there.",
                 "pattern": "^[0-9]+\\.[0-9]{2}$",
                 "type": "string"
               },
@@ -1209,18 +1217,26 @@
           },
           "resourceEstimate": {
             "additionalProperties": false,
-            "description": "The resource's monthly estimate: the amount and its breakdown when it is estimated, the reason when it is not. A resource that is not estimated is never counted as 0.",
+            "description": "The resource's monthly estimate: the amount, its breakdown and what it assumed when it is estimated, the reason when it is not. A resource that is not estimated is never counted as 0.",
             "properties": {
               "amount": {
-                "description": "The monthly list price in EUR, excluding VAT and discounts, an exact decimal with two fractional digits; present only when estimated.",
+                "description": "The monthly list price in EUR, excluding VAT and discounts, a decimal string rounded to the cent (half away from zero); present only when estimated.",
                 "pattern": "^[0-9]+\\.[0-9]{2}$",
                 "type": "string"
               },
               "breakdown": {
                 "$ref": "#/components/schemas/ComparisonReportV2/$defs/breakdown"
               },
+              "countAssumed": {
+                "description": "Whether the estimate assumed a count of 1 because the resource gives none; present only when estimated.",
+                "type": "boolean"
+              },
               "estimated": {
                 "description": "Whether the resource is estimated.",
+                "type": "boolean"
+              },
+              "hoursAssumed": {
+                "description": "Whether the estimate assumed 730 hours a month because the resource gives none; present only when estimated.",
                 "type": "boolean"
               },
               "reason": {
@@ -1438,7 +1454,7 @@
             "description": "A sum of estimates: the amount over the estimated resources only, how many those are, and how many resources there are.",
             "properties": {
               "amount": {
-                "description": "The sum in EUR, an exact decimal with two fractional digits.",
+                "description": "The sum in EUR, a decimal string rounded to the cent from the exact sum of the estimates, not summed from the rounded amounts of the resources, so it can differ from that by a cent or so.",
                 "pattern": "^[0-9]+\\.[0-9]{2}$",
                 "type": "string"
               },

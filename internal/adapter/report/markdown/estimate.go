@@ -96,8 +96,9 @@ func milliGiB(m int64) string {
 }
 
 // renderEstimate renders the Monthly estimate cell of an estimate: its amount,
-// with the fixed fee it includes when there is one, or "not estimated: " and the
-// reason in plain words.
+// with the fixed fee it includes when there is one, then what it assumed for a
+// count or hours the resource does not give, or "not estimated: " and the reason
+// in plain words.
 func renderEstimate(e *estimate.Estimate) string {
 	if e == nil {
 		return ""
@@ -110,6 +111,14 @@ func renderEstimate(e *estimate.Estimate) string {
 	cell := euros(e.Monthly)
 	if !e.Breakdown.FixedFee.IsZero() {
 		cell += " (includes a fixed fee of " + euros(e.Breakdown.FixedFee) + ")"
+	}
+
+	if e.CountAssumed {
+		cell += " (count assumed 1)"
+	}
+
+	if e.HoursAssumed {
+		cell += " (" + hoursPerMonth + " hours assumed)"
 	}
 
 	return cell
@@ -132,7 +141,7 @@ func renderNotEstimated(e estimate.Estimate) string {
 	case estimate.NoPrice:
 		return "no price in " + codeSpan(e.Region, true)
 	case estimate.NoStoragePrice:
-		return "no storage price"
+		return "no storage price in " + codeSpan(e.Region, true)
 	default:
 		return escapeText(string(e.Reason))
 	}
@@ -149,10 +158,16 @@ func renderRelations(v assessment.Verdict) string {
 	return strings.Join(rendered, nameSeparator)
 }
 
-// renderTotal renders a total: "€2,535.00 per month for 4 of 8 resources".
+// renderTotal renders a total: "€2,535.00 per month for 4 of 8 resources", with
+// "resource" when there is one.
 func renderTotal(t estimate.Total) string {
+	noun := " resources"
+	if t.Resources == 1 {
+		noun = " resource"
+	}
+
 	return euros(t.Monthly) + " per month for " + strconv.Itoa(t.Estimated) + " of " +
-		strconv.Itoa(t.Resources) + " resources"
+		strconv.Itoa(t.Resources) + noun
 }
 
 // basisNote is the basis an estimate is given on: the snapshot's retrieval date,

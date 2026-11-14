@@ -28,7 +28,8 @@
 // Markdown) and the target, category, offering and capability it mentions,
 // each only when set. A resource always carries its relations and its
 // "affected by" notes ([] when none); with estimates on it carries its estimate
-// (estimated with amount and breakdown, or the reason code when not) and the
+// (estimated with amount, breakdown and the countAssumed and hoursAssumed
+// flags, both always written, or the reason code when not) and the
 // plan the estimate names, if any.
 //
 // # Estimates
@@ -38,9 +39,11 @@
 // cost key is written anywhere: an absent key cannot be read as zero. The basis
 // ("estimate") names the region the prices are for, whether it was chosen, the
 // price date, the currency EUR, what is excluded (VAT, discounts), the hours
-// basis 730 and the total. Every amount is an exact decimal string with two
-// fractional digits (estimate.Money.String), never a JSON number; the source
-// cost is per currency and never converted.
+// basis 730 and the total. Every amount is a decimal string rounded to the
+// cent, half away from zero (estimate.Money.String), never a JSON number. A
+// total is rounded from the exact sum, not summed from the rounded amounts, so
+// it can differ from their sum by a cent or so. The source cost is per currency
+// and never converted.
 //
 // A region chosen for the target (--region, the API's regions) is the
 // document's top-level "region", and each comparison target's, with or without

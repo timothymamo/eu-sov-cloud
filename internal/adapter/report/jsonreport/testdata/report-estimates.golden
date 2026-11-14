@@ -38,6 +38,8 @@
       "estimate": {
         "estimated": true,
         "amount": "2500.00",
+        "countAssumed": false,
+        "hoursAssumed": false,
         "breakdown": {
           "plan": "0.00",
           "storage": "2500.00",
@@ -73,6 +75,8 @@
       "estimate": {
         "estimated": true,
         "amount": "15.00",
+        "countAssumed": true,
+        "hoursAssumed": true,
         "breakdown": {
           "plan": "10.00",
           "storage": "0.00",
@@ -208,6 +212,8 @@
       "estimate": {
         "estimated": true,
         "amount": "10.00",
+        "countAssumed": true,
+        "hoursAssumed": true,
         "breakdown": {
           "plan": "10.00",
           "storage": "0.00",
@@ -254,6 +260,8 @@
       "estimate": {
         "estimated": true,
         "amount": "10.00",
+        "countAssumed": true,
+        "hoursAssumed": true,
         "breakdown": {
           "plan": "10.00",
           "storage": "0.00",

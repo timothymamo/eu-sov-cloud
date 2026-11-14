@@ -81,13 +81,17 @@ type plan struct {
 	Price              string `json:"price,omitempty"`
 }
 
-// resourceEstimate is one resource's estimate: its amount and breakdown when it
-// is estimated, the reason code when it is not.
+// resourceEstimate is one resource's estimate: its amount, breakdown and
+// whether it assumed a count of 1 or 730 hours when it is estimated, the reason
+// code when it is not. The two flags are pointers so that an estimated resource
+// always writes both, false included, and one that is not writes neither.
 type resourceEstimate struct {
-	Estimated bool       `json:"estimated"`
-	Amount    string     `json:"amount,omitempty"`
-	Breakdown *breakdown `json:"breakdown,omitempty"`
-	Reason    string     `json:"reason,omitempty"`
+	Estimated    bool       `json:"estimated"`
+	Amount       string     `json:"amount,omitempty"`
+	CountAssumed *bool      `json:"countAssumed,omitempty"`
+	HoursAssumed *bool      `json:"hoursAssumed,omitempty"`
+	Breakdown    *breakdown `json:"breakdown,omitempty"`
+	Reason       string     `json:"reason,omitempty"`
 }
 
 // breakdown is what an estimate is made of.
@@ -232,9 +236,13 @@ func newResourceEstimate(e *estimate.Estimate) *resourceEstimate {
 		return &resourceEstimate{Reason: string(e.Reason)}
 	}
 
+	countAssumed, hoursAssumed := e.CountAssumed, e.HoursAssumed
+
 	return &resourceEstimate{
-		Estimated: true,
-		Amount:    e.Monthly.String(),
+		Estimated:    true,
+		Amount:       e.Monthly.String(),
+		CountAssumed: &countAssumed,
+		HoursAssumed: &hoursAssumed,
 		Breakdown: &breakdown{
 			Plan:     e.Breakdown.Plan.String(),
 			Storage:  e.Breakdown.Storage.String(),

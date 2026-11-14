@@ -17,8 +17,10 @@
 //   - "## Resources": one table row per verdict, in the assessment's order, with
 //     the ID, raw type, category, fit, best offering, then, with estimates on,
 //     the plan (name and size, or "no plan large enough" and the largest plan)
-//     and the monthly estimate (the amount and any fixed fee it includes, or
-//     "not estimated: " and the reason in plain words), then, when some
+//     and the monthly estimate (the amount, any fixed fee it includes, then
+//     "(count assumed 1)" and "(730 hours assumed)" when the resource gives no
+//     count or no hours, or "not estimated: " and the reason in plain words,
+//     the region named for a missing price or storage price), then, when some
 //     resource has a relation, its relations, and last the reasons. The best
 //     offering is followed by "(tie: ...)" naming, in candidate order, the other
 //     candidates with the best one's fit and as many missing capabilities;
@@ -33,7 +35,7 @@
 //     with estimates on its total and the source's cost per currency, and its
 //     blockers;
 //   - "## Cost estimate", only with estimates on: the total "for N of M
-//     resources", the basis (list prices on the retrieval date, excluding VAT
+//     resources" ("resource" when M is 1), the basis (list prices on the retrieval date, excluding VAT
 //     and discounts, a fixed fee as the offering's listed fee), the region the
 //     prices are for, the hours basis, and the source's cost per currency, never
 //     converted.

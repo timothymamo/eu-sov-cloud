@@ -405,7 +405,7 @@
         },
         "price": {
           "type": "string",
-          "description": "The plan's monthly list price in EUR in the estimate region, an exact decimal with two fractional digits; absent when the plan has no price there.",
+          "description": "The plan's monthly list price in EUR in the estimate region, a decimal string rounded to the cent; absent when the plan has no price there.",
           "pattern": "^[0-9]+\\.[0-9]{2}$"
         }
       },
@@ -419,7 +419,7 @@
     },
     "resourceEstimate": {
       "type": "object",
-      "description": "The resource's monthly estimate: the amount and its breakdown when it is estimated, the reason when it is not. A resource that is not estimated is never counted as 0.",
+      "description": "The resource's monthly estimate: the amount, its breakdown and what it assumed when it is estimated, the reason when it is not. A resource that is not estimated is never counted as 0.",
       "properties": {
         "estimated": {
           "type": "boolean",
@@ -427,8 +427,16 @@
         },
         "amount": {
           "type": "string",
-          "description": "The monthly list price in EUR, excluding VAT and discounts, an exact decimal with two fractional digits; present only when estimated.",
+          "description": "The monthly list price in EUR, excluding VAT and discounts, a decimal string rounded to the cent (half away from zero); present only when estimated.",
           "pattern": "^[0-9]+\\.[0-9]{2}$"
+        },
+        "countAssumed": {
+          "type": "boolean",
+          "description": "Whether the estimate assumed a count of 1 because the resource gives none; present only when estimated."
+        },
+        "hoursAssumed": {
+          "type": "boolean",
+          "description": "Whether the estimate assumed 730 hours a month because the resource gives none; present only when estimated."
         },
         "breakdown": {
           "$ref": "#/$defs/breakdown"
@@ -445,7 +453,7 @@
     },
     "breakdown": {
       "type": "object",
-      "description": "What an estimate is made of, each part in EUR as an exact decimal with two fractional digits; the parts sum to the amount, give or take the rounding of each to the cent.",
+      "description": "What an estimate is made of, each part in EUR as a decimal string rounded to the cent; each part is rounded from its exact value, so the parts sum to the amount give or take a cent.",
       "properties": {
         "plan": {
           "type": "string",
@@ -476,7 +484,7 @@
       "properties": {
         "amount": {
           "type": "string",
-          "description": "The sum in EUR, an exact decimal with two fractional digits.",
+          "description": "The sum in EUR, a decimal string rounded to the cent from the exact sum of the estimates, not summed from the rounded amounts of the resources, so it can differ from that by a cent or so.",
           "pattern": "^[0-9]+\\.[0-9]{2}$"
         },
         "estimated": {
@@ -584,7 +592,7 @@
         },
         "amount": {
           "type": "string",
-          "description": "The exact sum in that currency, with two fractional digits.",
+          "description": "The sum in that currency, a decimal string rounded to the cent from the exact sum of the source costs.",
           "pattern": "^[0-9]+\\.[0-9]{2}$"
         },
         "resources": {
