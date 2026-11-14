@@ -198,7 +198,12 @@ never a required check.
   never expires.
 - **The credential lives in the maintainer's direnv `.envrc` above the workspace**, as `GITHUB_TOKEN`,
   the Claude token and the DeepSeek key do today (`docs/dev-environment.md`, Credentials).
-- **Renovate pull requests are not exempt** from the approval.
+- **Renovate pull requests are not exempt** from the approval (reconsidered and kept the same day). An
+  exemption needs Renovate's App as a bypass actor, and a bypass skips every rule of its ruleset, the
+  reviewer's change request included. A compromised GitHub Action merged to `main` would run in the
+  `main`-only environments that hold the release Apps' keys (ADR 0021), and a compromised Go module or VM
+  tool in the VM, beside the agents' tokens. Renovate opens a few grouped pull requests a night, so the
+  approval costs little.
 - **No commit signing on branches.** An App has no account to register a signing key with; only commits
   made through GitHub's API would be signed for it, which would mean rewriting how every agent commits.
   `main` stays signed: every commit on it is a squash merge GitHub creates and signs.
