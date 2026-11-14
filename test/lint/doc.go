@@ -251,6 +251,15 @@
 // test/internal/yamlread, the strict line reader test/architecture reads
 // .golangci.yml with, so a rule written in a way it does not follow fails.
 //
+// TestNoTrackedSavedPages refuses every .html or .htm file git tracks, the
+// extension compared in any case, that the allow list allowedSavedPages does
+// not name (issue #212). A saved price page, a browser copy of a target's
+// pricing page kept because the site refuses automated clients, is read from
+// a scratch directory outside the repository and never committed
+// (internal/adapter/target/upcloud/SOURCES.md). The rule reads git ls-files,
+// so files git ignores are never read. savedPageProblems is the checker, and
+// TestSavedPageProblems pins it.
+//
 // TestLintLoadsEveryGoFile and TestLintVisitsEveryImportedPackage keep every
 // Go file within lint's reach. Lint loads, for the host and every release
 // target of .goreleaser.yaml, what builds with the tags e2e and integration,
