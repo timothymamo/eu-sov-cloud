@@ -384,22 +384,27 @@ func regionsListed(prices []catalog.Price) string {
 
 // TestCatalogFixedFees pins the fixed monthly fee per Kubernetes cluster the
 // snapshot records (ADR 0026, PRD #190 milestone 5): UpCloud charges the
-// Production control plane 60 EUR a month per cluster in every zone, and includes
-// the Development control plane of the base offering, which its pricing page lists
-// as "€0/mo" and its billing page as "Free of charge". The free fee is recorded
-// as 0.00 and not left out: the boolean of FixedFee tells a free control plane
-// from one the snapshot has no fee for. Every other offering charges no fixed fee,
-// so no estimate adds one where UpCloud publishes none.
+// Production control plane per cluster in every zone, and includes the
+// Development control plane of the base offering, which its pricing page lists
+// as "€0/mo" and its billing page as "Free of charge". The Production plan is
+// billed by the hour, and its pricing page's "€60/mo" is a 30-day estimate
+// ("Monthly prices are estimates based on a 30-day month"), so the fee is
+// converted the way ADR 0024's prices are, at 730 hours: 60 × 730 / 720 = 60.8333.
+// The free fee is recorded as 0.00 and not left out: the boolean of FixedFee
+// tells a free control plane from one the snapshot has no fee for. Every other
+// offering charges no fixed fee, so no estimate adds one where UpCloud publishes
+// none.
 func TestCatalogFixedFees(t *testing.T) {
 	t.Parallel()
 
 	cat := catalogOf(t)
 
 	// feePerOffering is the control-plane fee each offering charges per cluster in
-	// every one of its zones: the Production plan's 60.00 EUR, and 0.00 where the
-	// base offering stands for the Development plan, which UpCloud includes.
+	// every one of its zones: the Production plan's hourly fee converted to
+	// 60.8333 EUR, and 0.00 where the base offering stands for the Development
+	// plan, which UpCloud includes.
 	const (
-		productionControlPlane  = catalog.Amount(600_000)
+		productionControlPlane  = catalog.Amount(608_333)
 		developmentControlPlane = catalog.Amount(0)
 	)
 
