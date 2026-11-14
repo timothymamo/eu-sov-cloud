@@ -168,16 +168,29 @@ func checkSource(rel string, src []byte) ([]string, error) {
 
 // skipDir reports whether the go command's ./... pattern, which golangci-lint
 // lints, leaves the directory out: one whose name starts with . or _, a
-// testdata directory, or the root of another module. rel is the directory's
-// slash-separated path within r.
+// testdata directory, or the root of another module (isModuleRoot, so a
+// directory named go.mod hides nothing, issue #207). rel is the directory's
+// slash-separated path within r. go.mod is looked up through r, so a symlink
+// named go.mod is followed while it stays inside r, and one that escapes r is
+// an error.
 func skipDir(r *os.Root, rel, name string) (bool, error) {
 	if strings.HasPrefix(name, ".") || strings.HasPrefix(name, "_") || name == "testdata" {
 		return true, nil
 	}
-	_, err := r.Stat(filepath.FromSlash(path.Join(rel, "go.mod")))
+	return isModuleRoot(r.FS(), rel)
+}
+
+// isModuleRoot reports whether dir, a slash-separated path within fsys, is the
+// root of a module as the go command reads one: a directory holding a go.mod
+// that is no directory. A directory named go.mod makes no module root. go.mod
+// is looked up with fs.Stat, so a symlink named go.mod counts by what it points
+// to, in whatever way fsys follows it. It is the one definition of a nested
+// module root for the walks of this package (skipDir, docEntries).
+func isModuleRoot(fsys fs.FS, dir string) (bool, error) {
+	fi, err := fs.Stat(fsys, path.Join(dir, "go.mod"))
 	switch {
 	case err == nil:
-		return true, nil
+		return !fi.IsDir(), nil
 	case errors.Is(err, fs.ErrNotExist):
 		return false, nil
 	default:

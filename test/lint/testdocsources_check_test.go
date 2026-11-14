@@ -105,9 +105,8 @@ type docPath struct {
 // their files out, not the symlinks in them: an import of a path through a
 // link follows it whatever directory it sits in (issue #194). Nothing comes
 // from under the root of another module, symlinks included, though the walked
-// root itself is always read. As for the go command, a module root is a
-// directory holding a go.mod regular file: a directory named go.mod makes
-// none. No directory is returned, and a walk error is.
+// root itself is always read. A module root is what isModuleRoot, which
+// skipDir shares, says it is: a directory named go.mod makes none. No directory is returned, and a walk error is.
 func docEntries(fsys fs.FS) ([]docPath, error) {
 	var entries []docPath
 
@@ -121,14 +120,14 @@ func docEntries(fsys fs.FS) ([]docPath, error) {
 				return nil
 			}
 
-			fi, err := fs.Stat(fsys, path.Join(rel, "go.mod"))
+			root, err := isModuleRoot(fsys, rel)
 			switch {
-			case err == nil && !fi.IsDir():
-				return fs.SkipDir
-			case err == nil, errors.Is(err, fs.ErrNotExist):
-				return nil
-			default:
+			case err != nil:
 				return fmt.Errorf("look for a module root at %s: %w", rel, err)
+			case root:
+				return fs.SkipDir
+			default:
+				return nil
 			}
 		}
 
