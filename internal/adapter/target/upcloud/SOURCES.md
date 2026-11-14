@@ -68,12 +68,18 @@ described above; each section names the part of the page (its tab or table) a pr
   **page monthly figure × 730 / 720**, rounded once, half up, to 4 decimal places (ADR 0024). This applies
   to every database plan and the database storage price (*Managed MySQL*, *Managed PostgreSQL*), the
   Block Storage price (*Block Storage*, *Block Storage Encrypted*, and the extra-disk price of *Cloud
-  Servers*) and the Object Storage price. One example of each:
+  Servers*), the Object Storage price and the Production control-plane fee (*Managed Kubernetes
+  Production*). The multi-node database plans are the one exception to "rounded once" (below). One
+  example of each:
   - database plan: €60/mo × 730 / 720 = 60.833333… → `60.8333`;
+  - Managed Kubernetes Production control-plane fee: €60/mo × 730 / 720 = 60.833333… → `60.8333`;
   - database storage: €0.10/GB/mo × 730 / 720 = 0.101388… → `0.1014`;
-  - multi-node database plan: the stored single-node amount × 0.95, rounded again, half up, to 4 decimal
-    places: 60.8333 × 0.95 = 57.791635 → `57.7916` (*Managed MySQL Multi-node*, *Managed PostgreSQL
-    Multi-node*);
+  - multi-node database plan: rounded twice, on purpose. The stored single-node amount (already rounded)
+    × 0.95, rounded again, half up, to ADR 0024's 4 decimal places: 60.8333 × 0.95 = 57.791635 →
+    `57.7916` (*Managed MySQL Multi-node*, *Managed PostgreSQL Multi-node*). Deriving it from the
+    stored single-node amount keeps every multi-node price exactly 0.95 of a price the snapshot holds;
+    a single rounding of page × 730 / 720 × 0.95 would differ by 0.0001 EUR in 5 of the 19 plans
+    (here `57.7917`);
   - Block Storage MaxIOPS (and the Cloud Servers extra disk): €0.220/GB/mo × 730 / 720 = 0.223055… →
     `0.2231`;
   - Object Storage: €5 / 250 GB = 0.02 per GiB, × 730 / 720 = 0.020277… → `0.0203`.
@@ -615,7 +621,11 @@ nodes, which the documentation calls a multi-node plan. Pages:
   price of a node in a 2-node cluster**: (1 + 0.90) / 2 = 0.95 of the single-node price. The order of
   operations is the same for every plan: start from the single-node amount already stored in *Managed
   MySQL* (the page's 30-day figure × 730 / 720, rounded half up to 4 decimal places, *Prices*),
-  multiply it by 0.95, and round the product once more, half up, to 4 decimal places (ADR 0024).
+  multiply it by 0.95, and round the product once more, half up, to ADR 0024's 4 decimal places. The
+  amount is so rounded twice, on purpose, an exception to the single rounding of *Prices*: deriving it
+  from the stored single-node amount keeps it exactly 0.95 of a price the snapshot holds. A single
+  rounding of page × 730 / 720 × 0.95 would differ by 0.0001 EUR in 5 of the 19 plans (this example:
+  `57.7917` against `57.7916`).
   Worked example, `rdb.standard.2CPU-8GB`: €60/mo × 730 / 720 = 60.833333… → `60.8333`;
   60.8333 × 0.95 = 57.791635 → `57.7916`. A 2-node service is estimated at 2 × 57.7916 = 115.5832 EUR
   a month, the single node plus a node at 90%.
@@ -808,7 +818,11 @@ or three nodes, which the documentation calls a multi-node plan. Pages:
   price of a node in a 2-node cluster**: (1 + 0.90) / 2 = 0.95 of the single-node price. The order of
   operations is the same for every plan: start from the single-node amount already stored in *Managed
   PostgreSQL* (the page's 30-day figure × 730 / 720, rounded half up to 4 decimal places, *Prices*),
-  multiply it by 0.95, and round the product once more, half up, to 4 decimal places (ADR 0024).
+  multiply it by 0.95, and round the product once more, half up, to ADR 0024's 4 decimal places. The
+  amount is so rounded twice, on purpose, an exception to the single rounding of *Prices*: deriving it
+  from the stored single-node amount keeps it exactly 0.95 of a price the snapshot holds. A single
+  rounding of page × 730 / 720 × 0.95 would differ by 0.0001 EUR in 5 of the 19 plans (this example:
+  `57.7917` against `57.7916`).
   Worked example, `rdb.standard.2CPU-8GB`: €60/mo × 730 / 720 = 60.833333… → `60.8333`;
   60.8333 × 0.95 = 57.791635 → `57.7916`. A 2-node service is estimated at 2 × 57.7916 = 115.5832 EUR
   a month, the single node plus a node at 90%.
