@@ -165,7 +165,12 @@ All in `big.Rat`, through `estimate.Money`; `min` compares rationals exactly. Th
 *big.Rat)`, the name is the implementer's), and the fee keeps `hours / 730`. The constant
 `estimate.HoursPerMonth` (730) is unchanged. Plan choice (cheapest covering plan, ADR 0027) still
 compares the monthly plan prices alone, not the shares: a plan's price is its price whichever share an
-offering bills. Every other rule of ADR 0027 is unchanged, `HoursAssumed` included.
+offering bills. That holds only while every candidate offering of a category in one target has the same
+cap, which is true today: UpCloud's `compute.vm` has one offering, and both its `kubernetes.managed`
+offerings cap at 672. A target that mixed capped and uncapped offerings in one category could pick a
+plan that is cheaper by monthly price but dearer at partial hours (a capped plan at 336 hours bills 1/2
+of its price, an uncapped one 336/730); plan choice is to be revisited when such a target arrives. Every
+other rule of ADR 0027 is unchanged, `HoursAssumed` included.
 
 Tests target `estimate.For(mapping.Result, region)` and read `Estimate.Breakdown.Plan`,
 `Estimate.Breakdown.FixedFee` and `Estimate.Monthly` (`Money.Equal`, `estimate.Ratio`,

@@ -4,8 +4,9 @@
   format moves to schema version 2, and the shared reader reads version 2 only. Amended by
   [0026](0026-add-an-optional-fixed-monthly-fee-per-offering-to-snapshot-format-v2.md): an offering may
   carry an optional `fixedFees` key, a fixed monthly fee per instance, within schema version 2. Amended by
-  [0029](0029-cap-the-billed-hours-of-an-offerings-plans-in-target-snapshot-format-v2.md): an offering may carry an optional `planBillingCapHours` key, the most
-  hours a month its plans are billed, within schema version 2
+  [0029](0029-cap-the-billed-hours-of-an-offerings-plans-in-target-snapshot-format-v2.md): an offering
+  may carry an optional `planBillingCapHours` key, the most hours a month its plans are billed, within
+  schema version 2
 - Date: 2026-11-13
 
 ## Context

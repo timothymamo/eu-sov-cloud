@@ -223,5 +223,6 @@ no total. Sizes never reach the mapping, so the fits are those of the same inven
   the verdict, so a report's plan and its fit never disagree.
 - UpCloud caps a month's bill at 672 hours; the formula is applied as the PRD writes it (price ×
   hours / 730), so an UpCloud estimate for more than 672 hours a month is above UpCloud's capped bill.
-  No rule handles it; the PR notes it.
+  No rule handles it; the PR notes it. (Handled by ADR 0029: plan prices on a capped offering scale
+  by min(hours, cap) / cap.)
 - Milestone 7 builds per-workload totals with `estimate.Sum` over a workload's verdicts.

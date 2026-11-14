@@ -109,6 +109,7 @@ type Breakdown struct {
 	// Plan is the plan price × count × hoursPerMonth / 730 on an uncapped
 	// offering, and the plan price × count × min(hoursPerMonth, cap) / cap on an
 	// offering whose PlanBillingCapHours is cap (ADR 0029); zero for ByStorage.
+	// The plan is chosen by monthly price, before this scaling (see cheapest).
 	Plan Money
 	// Storage is the storage the estimate prices × the per-GiB price, never
 	// scaled by hours: for compute.vm, compute.baremetal and kubernetes.managed
@@ -390,7 +391,12 @@ func byStorage(r inventory.Resource, offerings []catalog.Offering, region string
 }
 
 // cheapest returns the covering plan priced in region that is cheapest, ties
-// broken by smaller, and false when none is priced there.
+// broken by smaller, and false when none is priced there. It compares monthly
+// plan prices, not the hours-scaled Breakdown.Plan: that picks the cheapest
+// estimate only while every covering offering bills the same share, which
+// holds while the offerings of a category in one target share one
+// PlanBillingCapHours (ADR 0029). A target mixing capped and uncapped
+// offerings in one category could get a plan that is dearer at partial hours.
 func cheapest(covering []offeredPlan, region string) (offeredPlan, bool) {
 	var (
 		best      offeredPlan
