@@ -482,3 +482,188 @@ func candidateOfferingNames(v assessment.Verdict) []string {
 
 	return names
 }
+
+// workloadInventory is an inventory with workloads, relations and the source's
+// own monthly costs, so a run has workload groups, a blocker note and a source
+// cost to hand the reporter (PRD #190, ADR 0028). Against the priced fixture the
+// database is blocked, and the object storage only in a region it is not sold in.
+func workloadInventory(t *testing.T) inventory.Inventory {
+	t.Helper()
+
+	inv, err := inventory.New(sourceName, []inventory.Resource{
+		{
+			ID: "bucket-example", RawType: "AWS::S3::Bucket",
+			Category: taxonomy.StorageObject, Region: "eu-west-1",
+			Size:        &inventory.Size{StorageGiB: f(1000)},
+			MonthlyCost: &inventory.Cost{Amount: f(1), Currency: "EUR"},
+		},
+		{
+			ID: "db-example", RawType: "AWS::RDS::DBInstance",
+			Category: taxonomy.DatabasePostgreSQL, Region: "eu-west-1",
+			Workload:    "shop",
+			MonthlyCost: &inventory.Cost{Amount: f(10), Currency: "EUR"},
+		},
+		{
+			ID: "web-1", RawType: "AWS::EC2::Instance",
+			Category: taxonomy.ComputeVM, Region: "eu-west-1",
+			Size:     &inventory.Size{VCPUs: f(2), MemoryGiB: f(4)},
+			Workload: "shop",
+			Relations: []inventory.Relation{
+				{Type: inventory.DependsOn, Target: "bucket-example"},
+				{Type: inventory.DependsOn, Target: "db-example"},
+			},
+			MonthlyCost: &inventory.Cost{Amount: f(20), Currency: "USD"},
+		},
+	})
+	if err != nil {
+		t.Fatalf("inventory.New() returned unexpected error: %v", err)
+	}
+
+	return inv
+}
+
+// TestRunWithPassesWorkloadsRelationsAndCostThrough pins that the reporter gets
+// exactly the assessment AssessWith makes, workload groups, blocker notes and the
+// source's cost included: the application layer decides none of them.
+func TestRunWithPassesWorkloadsRelationsAndCostThrough(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name string
+		opts analysis.Options
+		// wantNotes is what the web server is affected by in that scope.
+		wantNotes []string
+	}{
+		{
+			name:      "estimates off",
+			wantNotes: []string{"db-example"},
+		},
+		{
+			name:      "estimates on",
+			opts:      analysis.Options{Estimate: true},
+			wantNotes: []string{"db-example"},
+		},
+		{
+			// The region blocks the object storage too, so the web server that
+			// depends on it is affected by two blockers.
+			name:      "a chosen region the object storage is not sold in",
+			opts:      analysis.Options{Region: "xx-ams", Estimate: true},
+			wantNotes: []string{"bucket-example", "db-example"},
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			inv := workloadInventory(t)
+			cat := pricedCatalog(t)
+			rep := &fakeReporter{body: reportBody}
+
+			useCase, err := analysis.New(&fakeInventory{inv: inv}, &fakeCatalog{cat: cat}, rep)
+			if err != nil {
+				t.Fatalf("New() returned unexpected error: %v", err)
+			}
+
+			var buf bytes.Buffer
+
+			if err := useCase.RunWith(context.Background(), &buf,
+				analysis.ReportMeta{InventoryName: inventoryName}, tc.opts); err != nil {
+				t.Fatalf("RunWith() returned unexpected error: %v", err)
+			}
+
+			want := assessment.AssessWith(inv, cat,
+				assessment.Options{Region: tc.opts.Region, Estimate: tc.opts.Estimate})
+
+			if diff := cmp.Diff(want, rep.gotAssessment); diff != "" {
+				t.Errorf("RunWith() did not hand the reporter AssessWith's assessment (-want +got):\n%s", diff)
+			}
+
+			// The assessment that reaches the reporter holds the workloads, the
+			// notes and the source's cost, so the pin is not vacuous.
+			if len(want.Workloads) != 2 {
+				t.Fatalf("the assessment holds %d workload groups, want one per workload and one for no workload (2)",
+					len(want.Workloads))
+			}
+
+			// Every resource of that inventory gives a monthly cost, so the cost
+			// covers all of them.
+			if want.SourceCost.Covered != 3 || want.SourceCost.Resources != 3 {
+				t.Errorf("the source's cost covers %d of %d resources, want 3 of 3",
+					want.SourceCost.Covered, want.SourceCost.Resources)
+			}
+
+			if diff := cmp.Diff(tc.wantNotes, verdictOf(t, want.Verdicts, "web-1").AffectedBy); diff != "" {
+				t.Errorf("the notes on web-1 mismatch (-want +got):\n%s", diff)
+			}
+		})
+	}
+}
+
+// TestComparisonRunWithPassesWorkloadsRelationsAndCostThrough pins the comparison
+// counterpart: every target's assessment reaches the reporter as AssessWith made
+// it, with its own region's blockers, counts and notes and the inventory's
+// workloads and source cost.
+func TestComparisonRunWithPassesWorkloadsRelationsAndCostThrough(t *testing.T) {
+	t.Parallel()
+
+	cat := pricedCatalog(t)
+	inv := workloadInventory(t)
+
+	targets := []analysis.Target{
+		{Key: "alpha", Catalog: &fakeCatalog{cat: cat}, Region: "xx-par"},
+		{Key: "bravo", Catalog: &fakeCatalog{cat: cat}, Region: "xx-ams"},
+	}
+
+	rep := &fakeComparisonReporter{body: comparisonBody}
+
+	comparison, err := analysis.NewComparison(&fakeInventory{inv: inv}, targets, rep)
+	if err != nil {
+		t.Fatalf("NewComparison() returned unexpected error: %v", err)
+	}
+
+	var buf bytes.Buffer
+
+	if err := comparison.RunWith(context.Background(), &buf,
+		analysis.ReportMeta{InventoryName: inventoryName}, analysis.ComparisonOptions{Estimate: true}); err != nil {
+		t.Fatalf("RunWith() returned unexpected error: %v", err)
+	}
+
+	got := rep.gotComparison
+
+	if diff := cmp.Diff([]string{"alpha", "bravo"}, comparisonKeys(got)); diff != "" {
+		t.Fatalf("the comparison's targets mismatch (-want +got):\n%s", diff)
+	}
+
+	tests := []struct {
+		region    string
+		opts      assessment.Options
+		wantNotes []string
+	}{
+		// The region that serves every offering blocks the database only.
+		{region: "xx-par", opts: assessment.Options{Region: "xx-par", Estimate: true}, wantNotes: []string{"db-example"}},
+		// The region without the object storage blocks both.
+		{
+			region:    "xx-ams",
+			opts:      assessment.Options{Region: "xx-ams", Estimate: true},
+			wantNotes: []string{"bucket-example", "db-example"},
+		},
+	}
+
+	for i, tc := range tests {
+		t.Run(tc.region, func(t *testing.T) {
+			t.Parallel()
+
+			reported := got.Targets[i].Assessment
+
+			want := assessment.AssessWith(inv, cat, tc.opts)
+			if diff := cmp.Diff(want, reported); diff != "" {
+				t.Errorf("target %q did not get AssessWith's assessment (-want +got):\n%s", got.Targets[i].Key, diff)
+			}
+
+			if diff := cmp.Diff(tc.wantNotes, verdictOf(t, reported.Verdicts, "web-1").AffectedBy); diff != "" {
+				t.Errorf("target %q's notes on web-1 mismatch (-want +got):\n%s", got.Targets[i].Key, diff)
+			}
+		})
+	}
+}
