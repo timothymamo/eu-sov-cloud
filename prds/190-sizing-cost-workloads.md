@@ -204,7 +204,9 @@ Each milestone ships as one PR, in dependency order. Milestones 3, 4 and 5 can r
    `Offering.FixedFee(region)` in the estimate region, once per resource (one cluster), never multiplied
    by its `count` (its nodes), and scaled by hours / 730 as plan prices are; a fee alone never makes an
    estimate: a resource with no plan price for the region stays "not estimated" (ADR 0026,
-   *Estimates*). Depends on 1 and 2.
+   *Estimates*). Design and API: ADR
+   [0027](../docs/adr/0027-match-plans-and-estimate-monthly-prices-in-a-domain-package.md). Depends on 1
+   and 2.
 7. [ ] **Workloads and relations in the assessment.** Domain: per-workload summaries and estimates, and
    the "affected by a blocker" notes. Depends on 6.
 8. [ ] **Markdown and JSON reports, CLI and API options.** Both renderers, the comparison, JSON report

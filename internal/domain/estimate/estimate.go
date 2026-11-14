@@ -93,10 +93,13 @@ type Plan struct {
 type Breakdown struct {
 	// Plan is the plan price × count × hoursPerMonth / 730; zero for ByStorage.
 	Plan Money
-	// Storage is the storage the estimate prices × the per-GiB price: for
-	// ByPlan the GiB above what the plan includes, per instance or node (×
-	// count); for storage.block the volume's GiB × count; for storage.object
-	// the stored GiB.
+	// Storage is the storage the estimate prices × the per-GiB price, never
+	// scaled by hours: for compute.vm, compute.baremetal and kubernetes.managed
+	// the GiB above what the plan includes per instance or node, × count; for
+	// database.postgresql and database.mysql the GiB of the service's data above
+	// what the plan includes, once (not × count: the snapshots' database storage
+	// prices and included storage are for the whole service); for storage.block
+	// the volume's GiB × count; for storage.object the stored GiB.
 	Storage Money
 	// FixedFee is the offering's fixed fee in the estimate region × hoursPerMonth
 	// / 730, once per resource and never × count (ADR 0026); zero when the
