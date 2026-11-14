@@ -1,7 +1,8 @@
 // Package upcloud_test pins the UpCloud catalog adapter: the target contract in
 // internal/adapter/target/targettest, the snapshot header the catalog reports, the
 // plans, prices and fixed monthly fees the snapshot records and the default region
-// they estimate in, the rule the multi-node database prices follow from the
+// they estimate in, the monthly billing cap of its server and node plans (ADR 0029),
+// the rule the multi-node database prices follow from the
 // single-node ones, a golden change detector for the parsed catalog, the declared EU zones, that a
 // cancelled run reads nothing, that no error of one target names another, and the
 // verdicts PRD 77 asks of the data: categories UpCloud does not serve are a
@@ -473,6 +474,51 @@ func TestCatalogFixedFees(t *testing.T) {
 		if _, found := byName[name]; !found {
 			t.Errorf("feePerOffering names offering %s, want an offering of the catalog: the entry names no offering and should be removed",
 				text.Quote(name))
+		}
+	}
+}
+
+// TestCatalogPlanBillingCapHours pins ADR 0029's data: UpCloud bills Cloud
+// Servers and Kubernetes nodes by the hour, capped at 672 hours (24 h × 28 days)
+// a month, so the three offerings whose plans are server or node plans carry
+// that cap. Its databases, block storage and object storage are charged by the
+// hour with no cap, their monthly figures being for a 30-day, 730-hour month, so
+// they carry none. The map names every offering, so a refresh that adds one
+// cannot slip past the rule.
+func TestCatalogPlanBillingCapHours(t *testing.T) {
+	t.Parallel()
+
+	want := map[string]int64{
+		"Cloud Servers":                 672,
+		"Managed Kubernetes":            672,
+		"Managed Kubernetes Production": 672,
+		"Block Storage":                 0,
+		"Block Storage Encrypted":       0,
+		"Managed Object Storage":        0,
+		"Managed PostgreSQL":            0,
+		"Managed PostgreSQL Multi-node": 0,
+		"Managed MySQL":                 0,
+		"Managed MySQL Multi-node":      0,
+	}
+
+	offerings := catalogOf(t).Offerings()
+	if len(offerings) != len(want) {
+		t.Fatalf("Catalog.Offerings() returned %d offerings, want %d: every offering needs a billing-cap expectation",
+			len(offerings), len(want))
+	}
+
+	for _, o := range offerings {
+		hours, found := want[o.Name]
+		if !found {
+			t.Errorf("offering %s has no plan billing cap expectation, want one: the catalog changed",
+				text.Quote(o.Name))
+
+			continue
+		}
+
+		if o.PlanBillingCapHours != hours {
+			t.Errorf("offering %s has PlanBillingCapHours %d, want %d",
+				text.Quote(o.Name), o.PlanBillingCapHours, hours)
 		}
 	}
 }
