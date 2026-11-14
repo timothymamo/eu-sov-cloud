@@ -1,8 +1,9 @@
 // Package snapshot_test pins the shared target snapshot reader: the document
 // format every target with an embedded snapshot reads (schemaVersion 2), the
 // strictness a document must meet, the declared region list Parse returns, the
-// default region estimates use (ADR 0024), the plans and prices an offering may
-// sell and the exact decimals they are written as, and the reader's own error
+// default region estimates use (ADR 0024), the plans, prices and optional fixed
+// monthly fees an offering may carry (ADR 0026) and the exact decimals they are
+// written as, and the reader's own error
 // contract - one line, the sentinel it wraps, every value shown through
 // text.Quote, the keys a document must carry and spell exactly, the nulls and
 // duplicate keys it must refuse rather than default, the lone surrogates it must
@@ -132,6 +133,23 @@ func docIn(t *testing.T, base string, replacements ...string) string {
 	}
 
 	return data
+}
+
+// fixedFeesDocument returns pricedDocument with the one optional key of the
+// format on its offering (ADR 0026): a fixed monthly fee per instance that
+// covers both of the offering's regions, a paid one in fr-par and a fee of 0 in
+// nl-ams, written out of order and with a region repeated, so a case can pin
+// their canonical order and de-duplication. The first fee is 65.7 EUR, the
+// control plane of one cluster: 65.7 x 10000 is 657000 ten-thousandths.
+func fixedFeesDocument(t *testing.T) string {
+	t.Helper()
+
+	return docIn(t, pricedDocument, `      "storagePrices": [`,
+		`      "fixedFees": [
+        { "amount": 65.7, "currency": "EUR", "regions": ["nl-ams", "nl-ams"] },
+        { "amount": 0, "currency": "EUR", "regions": ["fr-par"] }
+      ],
+      "storagePrices": [`)
 }
 
 // padTo returns data padded with trailing spaces to exactly n bytes. White space
@@ -268,6 +286,7 @@ var (
 	secondPlanPath   = []any{"offerings", 0, "plans", 1}
 	pricePath        = []any{"offerings", 0, "plans", 0, "prices", 0}
 	storagePricePath = []any{"offerings", 0, "storagePrices", 0}
+	fixedFeePath     = []any{"offerings", 0, "fixedFees", 0}
 )
 
 // editAt returns base with edit applied to the JSON object at path, re-encoding
@@ -963,6 +982,112 @@ func TestParseErrors(t *testing.T) {
 			wantErr:    []error{snapshot.ErrDecode},
 			wantQuoted: []string{"offerings[0].plans[0].memoryGiB"},
 		},
+		// fixedFees is the format's one optional key (ADR 0026): left out, the
+		// offering charges no fixed fee; present, it holds at least one price,
+		// and every number and price rule of ADR 0024 holds for each of them.
+		{
+			name: "valid document with a fixed fee per region",
+			data: fixedFeesDocument(t),
+		},
+		{
+			// An empty array is a second spelling of "no fee": the one is to
+			// leave the key out.
+			name:         "empty fixed fee list",
+			data:         withNested(t, fixedFeesDocument(t), offeringPath, "fixedFees", `[]`),
+			wantErr:      []error{snapshot.ErrDecode},
+			wantContains: []string{"offerings[0].fixedFees", "empty"},
+		},
+		{
+			name:         "null fixed fee list",
+			data:         withNested(t, fixedFeesDocument(t), offeringPath, "fixedFees", `null`),
+			wantErr:      []error{snapshot.ErrDecode},
+			wantQuoted:   []string{"offerings[0].fixedFees"},
+			wantContains: []string{"is null"},
+		},
+		{
+			name:       "fixed fee list that is not an array",
+			data:       withNested(t, fixedFeesDocument(t), offeringPath, "fixedFees", `{}`),
+			wantErr:    []error{snapshot.ErrDecode},
+			wantQuoted: []string{"offerings[0].fixedFees"},
+		},
+		{
+			name:       "fixed fee that is not a price object",
+			data:       withNested(t, fixedFeesDocument(t), offeringPath, "fixedFees", `[null]`),
+			wantErr:    []error{snapshot.ErrDecode},
+			wantQuoted: []string{"offerings[0].fixedFees[0]"},
+		},
+		{
+			name:         "fixed fee amount with an exponent",
+			data:         withNested(t, fixedFeesDocument(t), fixedFeePath, "amount", `6.57e1`),
+			wantErr:      []error{snapshot.ErrDecode},
+			wantQuoted:   []string{"offerings[0].fixedFees[0].amount", "6.57e1"},
+			wantContains: []string{"the number"},
+		},
+		{
+			name:       "fixed fee amount with five fractional digits",
+			data:       withNested(t, fixedFeesDocument(t), fixedFeePath, "amount", `65.70000`),
+			wantErr:    []error{snapshot.ErrDecode},
+			wantQuoted: []string{"offerings[0].fixedFees[0].amount", "65.70000"},
+		},
+		{
+			name:       "fixed fee amount written as -0",
+			data:       withNested(t, fixedFeesDocument(t), fixedFeePath, "amount", `-0`),
+			wantErr:    []error{snapshot.ErrDecode},
+			wantQuoted: []string{"offerings[0].fixedFees[0].amount", "-0"},
+		},
+		{
+			name:       "fixed fee amount given as a string",
+			data:       withNested(t, fixedFeesDocument(t), fixedFeePath, "amount", `"65.7"`),
+			wantErr:    []error{snapshot.ErrDecode},
+			wantQuoted: []string{"offerings[0].fixedFees[0].amount"},
+		},
+		{
+			name: "fixedFees key given twice",
+			data: docIn(t, fixedFeesDocument(t),
+				`      "fixedFees": [`, `      "fixedFees": [], "fixedFees": [`),
+			wantErr:      []error{snapshot.ErrDecode},
+			wantQuoted:   []string{"offerings[0].fixedFees"},
+			wantContains: []string{"repeated key"},
+		},
+		{
+			// A negative fee is read: the sign is part of the grammar, and the rule
+			// that a fee is not negative lives once, in the domain.
+			name:         "negative fixed fee amount reaches the domain",
+			data:         withNested(t, fixedFeesDocument(t), fixedFeePath, "amount", `-0.01`),
+			wantErr:      []error{catalog.ErrInvalidPrice},
+			wantNotErr:   []error{snapshot.ErrDecode},
+			wantQuoted:   []string{"Example Compute"},
+			wantContains: []string{"fixedFees[0]", "amount"},
+		},
+		{
+			name:         "fixed fee in a currency that is not EUR",
+			data:         withNested(t, fixedFeesDocument(t), fixedFeePath, "currency", `"USD"`),
+			wantErr:      []error{catalog.ErrInvalidPrice},
+			wantQuoted:   []string{"USD"},
+			wantContains: []string{"fixedFees[0]", "currency"},
+		},
+		{
+			// A fee region is checked against the offering's regions, as a price
+			// region is: the reader has already checked those against the declared
+			// ones.
+			name:         "fixed fee region the offering is not in",
+			data:         withNested(t, fixedFeesDocument(t), fixedFeePath, "regions", `["de-fra"]`),
+			wantErr:      []error{catalog.ErrPriceRegion},
+			wantNotErr:   []error{snapshot.ErrUndeclaredRegion, snapshot.ErrDecode},
+			wantQuoted:   []string{"de-fra"},
+			wantContains: []string{"fixedFees[0]"},
+		},
+		{
+			// Never zero for unknown: a region of the offering that no fee covers
+			// would estimate as a free control plane (ADR 0026).
+			name: "offering region left without a fixed fee",
+			data: withNested(t, fixedFeesDocument(t), offeringPath, "fixedFees",
+				`[{ "amount": 65.7, "currency": "EUR", "regions": ["fr-par"] }]`),
+			wantErr:      []error{catalog.ErrMissingFee},
+			wantNotErr:   []error{snapshot.ErrDecode},
+			wantQuoted:   []string{"nl-ams"},
+			wantContains: []string{"fixedFees"},
+		},
 		{
 			// A negative number is read: the sign is part of the grammar, and the
 			// rule that a size or a price is not negative lives once, in the
@@ -1459,6 +1584,105 @@ func TestParsePlansAndPrices(t *testing.T) {
 
 		if got, want := plans[1].Prices[1].Amount, catalog.Amount(123456); got != want {
 			t.Errorf("stored amount = %d, want %d for 12.3456 EUR", got, want)
+		}
+	})
+}
+
+// TestParseFixedFees pins what the optional fixedFees key of a version 2
+// document becomes in the catalog (ADR 0026): each amount is an exact monthly
+// EUR amount in ten-thousandths (65.7 is Amount(657000), 0 stays a fee of 0), the
+// fees are sorted by their first region and their regions sorted and
+// de-duplicated, and a document without the key reads as before, with no fee on
+// any offering.
+func TestParseFixedFees(t *testing.T) {
+	t.Parallel()
+
+	document, err := snapshot.Parse([]byte(fixedFeesDocument(t)))
+	if err != nil {
+		t.Fatalf("Parse() of a document with fixed fees returned unexpected error: %v", err)
+	}
+
+	offerings := document.Catalog.Offerings()
+	if len(offerings) != 1 {
+		t.Fatalf("Parse().Catalog.Offerings() returned %d offerings, want 1", len(offerings))
+	}
+
+	// The document's own order is nl-ams then fr-par, and it lists nl-ams twice:
+	// the catalog sorts the fees by first region and de-duplicates each fee's
+	// regions.
+	want := []catalog.Price{
+		{Amount: 0, Currency: catalog.EUR, Regions: []string{"fr-par"}},
+		{Amount: 657000, Currency: catalog.EUR, Regions: []string{"nl-ams"}},
+	}
+
+	if diff := cmp.Diff(want, offerings[0].FixedFees); diff != "" {
+		t.Errorf("FixedFees mismatch (-want +got):\n%s", diff)
+	}
+
+	// The stored amount and the document's decimal are the same price, at the
+	// precision the format stores it: 65.7 EUR a month is 657000 ten-thousandths.
+	for _, tc := range []struct {
+		region string
+		want   catalog.Amount
+	}{
+		{region: "fr-par", want: 0},
+		{region: "nl-ams", want: 657000},
+	} {
+		got, ok := offerings[0].FixedFee(tc.region)
+		if !ok {
+			t.Errorf("FixedFee(%s) reports no fee, want %s", text.Quote(tc.region), tc.want)
+
+			continue
+		}
+
+		if got != tc.want {
+			t.Errorf("FixedFee(%s) = %s, want %s", text.Quote(tc.region), got, tc.want)
+		}
+	}
+
+	if fee, ok := offerings[0].FixedFee("de-fra"); ok {
+		t.Errorf("FixedFee(\"de-fra\") = (%s, true), want (0.00, false): the offering is not available there", fee)
+	}
+
+	t.Run("a document without the key charges no fixed fee", func(t *testing.T) {
+		t.Parallel()
+
+		// Every snapshot written before ADR 0026 has no fixedFees key, and must
+		// read as it did: no fee on any offering, which is not a fee of 0.
+		document, err := snapshot.Parse([]byte(pricedDocument))
+		if err != nil {
+			t.Fatalf("Parse() of a document without fixed fees returned unexpected error: %v", err)
+		}
+
+		for _, offering := range document.Catalog.Offerings() {
+			if offering.FixedFees != nil {
+				t.Errorf("offering %s has FixedFees %v, want nil", text.Quote(offering.Name), offering.FixedFees)
+			}
+
+			for _, region := range offering.Regions {
+				if fee, ok := offering.FixedFee(region); ok {
+					t.Errorf("offering %s reports a fee %s in region %s, want none",
+						text.Quote(offering.Name), fee, text.Quote(region))
+				}
+			}
+		}
+	})
+
+	t.Run("a fee that applies to every region", func(t *testing.T) {
+		t.Parallel()
+
+		data := withNested(t, fixedFeesDocument(t), offeringPath, "fixedFees",
+			`[{ "amount": 65.7, "currency": "EUR", "regions": [] }]`)
+
+		document, err := snapshot.Parse([]byte(data))
+		if err != nil {
+			t.Fatalf("Parse() returned unexpected error: %v", err)
+		}
+
+		want := []catalog.Price{{Amount: 657000, Currency: catalog.EUR}}
+
+		if diff := cmp.Diff(want, document.Catalog.Offerings()[0].FixedFees); diff != "" {
+			t.Errorf("FixedFees mismatch (-want +got):\n%s", diff)
 		}
 	})
 }

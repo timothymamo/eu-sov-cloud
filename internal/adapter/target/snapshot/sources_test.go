@@ -2,7 +2,8 @@
 // offering in a snapshot has its own section in the SOURCES.md beside it, and
 // that section names the https pages the offering comes from, the fact behind
 // each capability and region, the name of each plan and the amount of each price
-// as the catalog holds them, and the licence of each source. The test globs the
+// and fixed fee as the catalog holds them (ADR 0024, ADR 0026), and the licence
+// of each source. The test globs the
 // snapshots beside this package, so it runs for every target with an embedded
 // snapshot, adding one as each target arrives.
 
@@ -191,18 +192,21 @@ func checkSnapshotSources(t *testing.T, catalogPath string) {
 	}
 }
 
-// priceCitationViolations returns every way a snapshot's plans and prices are not
-// cited in the SOURCES.md beside it: in each offering's own "### " subsection,
-// every plan name appears exactly as the catalog holds it and every price amount
-// as Amount.String renders it, as a Markdown code span, so a price in SOURCES.md
-// and a price in catalog.json can be compared as text (ADR 0024). An offering
-// with no plans and no storage prices has nothing to cite.
+// priceCitationViolations returns every way a snapshot's plans, prices and fixed
+// fees are not cited in the SOURCES.md beside it: in each offering's own "### "
+// subsection, every plan name appears exactly as the catalog holds it and every
+// price amount as Amount.String renders it, as a Markdown code span, so a price
+// in SOURCES.md and a price in catalog.json can be compared as text (ADR 0024).
+// A fixed monthly fee of an offering is a price and is cited the same way
+// (ADR 0026). An offering with no plans, storage prices and fixed fees has
+// nothing to cite.
 //
 // It is a pure function so the rule can be pinned on an invented priced document:
-// none of the embedded snapshots sells a plan yet, so the check over them never
-// reaches it. A missing "## Offerings" section, an offering without a section and
-// a section naming no offering are checkSnapshotSources's own findings, reported
-// there, so this function yields nothing for them.
+// the invented document pins the rule independently of the embedded snapshots'
+// data, whichever plans and fees they happen to carry. A missing "## Offerings"
+// section, an offering without a section and a section naming no offering are
+// checkSnapshotSources's own findings, reported there, so this function yields
+// nothing for them.
 func priceCitationViolations(doc snapshot.Document, sources string) []string {
 	offerings, ok := section(strings.Split(sources, "\n"), offeringsHeading)
 	if !ok {
@@ -238,6 +242,7 @@ func priceCitationViolations(doc snapshot.Document, sources string) []string {
 		}
 
 		prices = append(prices, offering.StoragePrices...)
+		prices = append(prices, offering.FixedFees...)
 
 		for _, price := range prices {
 			amount := price.Amount.String()
@@ -441,11 +446,12 @@ func TestSourcesHelpers(t *testing.T) {
 	})
 }
 
-// sourcesPricedDocument is a version 2 snapshot that sells a plan and publishes a
-// storage price, so the rule that both are cited in the SOURCES.md can be pinned
-// on a document that exercises it: the embedded snapshots sell no plan yet, and
-// the plan's amount is written 12.5 in the document but rendered 12.50 by
-// Amount.String. Every name, region and amount is invented.
+// sourcesPricedDocument is a version 2 snapshot that sells a plan, publishes a
+// storage price and charges a fixed fee per instance, so the rule that all three
+// are cited in the SOURCES.md can be pinned on a document that exercises it,
+// independently of the embedded snapshots' data: the plan's amount is written
+// 12.5 in the document but rendered 12.50 by Amount.String. Every name, region
+// and amount is invented.
 const sourcesPricedDocument = `{
   "schemaVersion": 2,
   "target": "Example Cloud",
@@ -468,7 +474,8 @@ const sourcesPricedDocument = `{
           "prices": [{ "amount": 12.5, "currency": "EUR", "regions": ["xx-par"] }]
         }
       ],
-      "storagePrices": [{ "amount": 0.04, "currency": "EUR", "regions": ["xx-par"] }]
+      "storagePrices": [{ "amount": 0.04, "currency": "EUR", "regions": ["xx-par"] }],
+      "fixedFees": [{ "amount": 65.7, "currency": "EUR", "regions": ["xx-par"] }]
     }
   ]
 }`
@@ -497,13 +504,13 @@ func inventedSources(spans ...string) string {
 
 // TestPriceCitations pins the plans-and-prices rule of ADR 0024 on an invented
 // priced document and invented Markdown: every plan of an offering and every
-// price amount of it, plan prices and storage prices alike, is a code span in the
-// offering's own subsection, the plan by its name exactly as the catalog holds it
-// and the amount as Amount.String renders it, so a reader can trace each price in
-// the snapshot to the page it came from. A plan name that is not cited, an amount
-// cited as the document writes it rather than as the catalog renders it, and a
-// missing storage-price amount are each reported; a section that cites them all
-// is not.
+// price amount of it, plan prices, storage prices and fixed fees alike, is a code
+// span in the offering's own subsection, the plan by its name exactly as the
+// catalog holds it and the amount as Amount.String renders it, so a reader can
+// trace each price in the snapshot to the page it came from. A plan name that is
+// not cited, an amount cited as the document writes it rather than as the catalog
+// renders it, and a missing storage-price or fixed-fee amount are each reported;
+// a section that cites them all is not.
 func TestPriceCitations(t *testing.T) {
 	t.Parallel()
 
@@ -522,11 +529,11 @@ func TestPriceCitations(t *testing.T) {
 	}{
 		{
 			name:    "every plan name and amount cited",
-			sources: inventedSources("EX-M", "12.50", "0.04"),
+			sources: inventedSources("EX-M", "12.50", "0.04", "65.70"),
 		},
 		{
 			name:    "plan name with no code span",
-			sources: inventedSources("12.50", "0.04"),
+			sources: inventedSources("12.50", "0.04", "65.70"),
 			want:    []string{`plan "EX-M" has no code span in its section`},
 		},
 		{
@@ -534,13 +541,20 @@ func TestPriceCitations(t *testing.T) {
 			// price can only be compared with its source when it is cited as
 			// Amount.String renders it.
 			name:    "amount cited as the document writes it",
-			sources: inventedSources("EX-M", "12.5", "0.04"),
+			sources: inventedSources("EX-M", "12.5", "0.04", "65.70"),
 			want:    []string{`price "12.50" has no code span in its section`},
 		},
 		{
 			name:    "storage price amount with no code span",
-			sources: inventedSources("EX-M", "12.50"),
+			sources: inventedSources("EX-M", "12.50", "65.70"),
 			want:    []string{`price "0.04" has no code span in its section`},
+		},
+		{
+			// A fixed monthly fee is a price of its offering, so its amount is
+			// cited as Amount.String renders it too (ADR 0026).
+			name:    "fixed fee amount with no code span",
+			sources: inventedSources("EX-M", "12.50", "0.04"),
+			want:    []string{`price "65.70" has no code span in its section`},
 		},
 	}
 

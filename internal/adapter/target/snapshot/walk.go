@@ -1,18 +1,22 @@
 package snapshot
 
 import (
+	"fmt"
+
 	"github.com/timothymamo/shift2eu/internal/adapter/internal/jsondoc"
 	"github.com/timothymamo/shift2eu/internal/domain/catalog"
 	"github.com/timothymamo/shift2eu/internal/domain/taxonomy"
+	"github.com/timothymamo/shift2eu/internal/domain/text"
 )
 
 // walk reads the whole document with w, a walker at its start, and returns what
 // it holds. The document is a JSON object whose exact schemaVersion key decode
 // has found to be 2. jsondoc refuses an unknown, inexact or repeated key, a
 // value of the wrong JSON type, a missing key and a string that escapes a lone
-// surrogate; walk decides the keys, all of them required, and reads every value
-// without jsondoc.Walker.Null, so null is refused like any other value of the
-// wrong type: the format has no optional field.
+// surrogate; walk decides the keys, all of them required but an offering's
+// fixedFees (ADR 0026), and reads every value without jsondoc.Walker.Null, so
+// null is refused like any other value of the wrong type, and is never read as
+// an absent fixedFees.
 func walk(w *jsondoc.Walker) (document, error) {
 	var doc document
 
@@ -87,7 +91,11 @@ func offerings(w *jsondoc.Walker) ([]offering, error) {
 
 // readOffering reads the next value: an offering object.
 func readOffering(w *jsondoc.Walker) (offering, error) {
-	var o offering
+	var (
+		o offering
+		// emptyFees refuses an empty fixedFees array, once the object is read.
+		emptyFees error
+	)
 
 	err := w.Object(offeringKeys, func(key string) error {
 		var err error
@@ -105,6 +113,8 @@ func readOffering(w *jsondoc.Walker) (offering, error) {
 			o.plans, err = plans(w)
 		case keyStoragePrices:
 			o.storagePrices, err = prices(w)
+		case keyFixedFees:
+			o.fixedFees, emptyFees, err = fixedFees(w)
 		}
 
 		return err
@@ -113,7 +123,32 @@ func readOffering(w *jsondoc.Walker) (offering, error) {
 		return offering{}, err
 	}
 
+	if emptyFees != nil {
+		return offering{}, emptyFees
+	}
+
 	return o, nil
+}
+
+// fixedFees reads the next value: an array of price objects, an offering's
+// fixed fees (ADR 0026). For an empty array it returns, besides the empty
+// list, the ErrDecode error that refuses it, so "no fee" has one spelling (the
+// key left out); the caller reports that error once the offering's object has
+// been read, so a repeated or unknown key in it is reported first.
+func fixedFees(w *jsondoc.Walker) (values []catalog.Price, empty, err error) {
+	path, at := w.Path(), w.Position()
+
+	values, err = prices(w)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	if len(values) == 0 {
+		empty = fmt.Errorf("%w: %s at %s is an empty array, want at least one fee (leave the key out for none)",
+			ErrDecode, text.Quote(path), at)
+	}
+
+	return values, empty, nil
 }
 
 // plans reads the next value: an array of plan objects, each with every key of

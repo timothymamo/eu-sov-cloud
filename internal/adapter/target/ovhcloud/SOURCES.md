@@ -106,9 +106,10 @@ read on 2026-11-13. "The prices page" below is <https://www.ovhcloud.com/en-ie/p
 - **Managed Kubernetes.** The page prices only the control plane; worker nodes are Public Cloud
   instances "billed at standard price". A Kubernetes plan is therefore a worker node flavour at its
   *Instances* price, with the flavours the Kubernetes regions page offers. The Free plan's control plane
-  is "Included". The Standard plan's control plane costs €0.09 an hour per cluster, which ADR 0024's
-  format cannot hold: a plan is multiplied by the node count, and there is no per-cluster price. It is
-  left out (*Left out on purpose*).
+  is "Included". The Standard plan's control plane costs €0.09 an hour per cluster, which a plan cannot
+  hold (a plan is multiplied by the node count), so it is recorded as the offering's fixed fee per
+  cluster (`fixedFees`, ADR 0026): 0.09 × 730 = `65.70` a month where the Standard plan is sold, and
+  `0.00` where the control plane is "Included".
 - **Plans chosen.** Instances: the General Purpose (B3, B2), Compute Optimised (C3) and Memory Optimised
   (R3) ranges, the sizes a general workload is matched against. Metal Instances, MySQL and PostgreSQL:
   every flavour the page lists. The plans left out are listed under *Left out on purpose*.
@@ -426,7 +427,7 @@ Roubaix). Pages: <https://www.ovhcloud.com/en/public-cloud/kubernetes/>,
   Kubernetes regions page lists GRA5, GRA7, GRA9, GRA11, SBG5, DE1 and WAW1 (Free plan, 1-AZ) and EU-WEST-RBX
   (Standard plan, 1-AZ).
 
-- **Prices** (prices page, *Managed Kubernetes Service*, read 2026-11-13): the page says its prices "only apply to MKS (Managed Kubernetes Service) control planes", and the worker nodes "correspond to the standard OVHcloud Public Cloud catalog offered in this region and are billed at standard price" (Kubernetes regions page). So a plan is a **worker node flavour at its *Instances* price**, and an estimate counts nodes. The control plane of the Free plan is "Included" (`GRA`, `LIM`, `SBG`, `WAW`), so nothing is added for it. The Standard plan's control plane in Roubaix costs €0.09 an hour per cluster, which a plan cannot hold (*Left out on purpose*). Flavours: B2 ("All region" in the Kubernetes regions page's flavour table) at its price in all five regions, and B3, C3 and R3, which the same table offers in "DE1 / GRA11 / UK1 / WAW1" only, so their price is recorded for `GRA`, `LIM` and `WAW` and an estimate in `RBX` or `SBG` finds no price for them.
+- **Prices** (prices page, *Managed Kubernetes Service*, read 2026-11-13): the page says its prices "only apply to MKS (Managed Kubernetes Service) control planes", and the worker nodes "correspond to the standard OVHcloud Public Cloud catalog offered in this region and are billed at standard price" (Kubernetes regions page). So a plan is a **worker node flavour at its *Instances* price**, and an estimate counts nodes. **Fixed fee per cluster** (the control plane, ADR 0026): the Free plan's control plane is "Included", recorded as `0.00` in `GRA`, `LIM`, `SBG` and `WAW`; `RBX` (EU-WEST-RBX) offers the Standard plan only, whose control plane costs €0.09 an hour per cluster, × 730 = 65.70, recorded as `65.70` in `RBX`. The fee is charged once per cluster, never per node. Flavours: B2 ("All region" in the Kubernetes regions page's flavour table) at its price in all five regions, and B3, C3 and R3, which the same table offers in "DE1 / GRA11 / UK1 / WAW1" only, so their price is recorded for `GRA`, `LIM` and `WAW` and an estimate in `RBX` or `SBG` finds no price for them.
 
 | Plan | vCPU | Memory | Storage on the page | EUR/hour | EUR/month (× 730) | Price regions |
 |---|---|---|---|---|---|---|
@@ -495,7 +496,7 @@ Category `kubernetes.managed`: Managed Kubernetes on the Standard plan in the 3-
   phase", the plans page gives a "99.99% SLA at General Availability", and the architecture page's
   comparison table gives "99.99% SLA (at GA)".
 
-- **Prices** (prices page, *Managed Kubernetes Service*, read 2026-11-13): as for *Managed Kubernetes Service*, a plan is a worker node flavour at its *Instances* price. The Kubernetes regions page's flavour table names no 3-AZ region, so the flavours follow its general rule that worker nodes "correspond to the standard OVHcloud Public Cloud catalog offered in this region and are billed at standard price": the B3, C3 and R3 flavours, which the prices page offers in Paris and Milan at the same price as elsewhere. B2 is not offered there. These node plans are an inference from that "standard Public Cloud catalog of the region ... billed at standard price" sentence, not from a page listing the 3-AZ flavours; re-check them at the next refresh. Every cluster here is on the Standard plan, whose control plane costs €0.09 an hour per cluster (€65.70 a month at 730 hours); a plan cannot hold a per-cluster fee, so it is left out and an estimate is that much too low per cluster (*Left out on purpose*).
+- **Prices** (prices page, *Managed Kubernetes Service*, read 2026-11-13): as for *Managed Kubernetes Service*, a plan is a worker node flavour at its *Instances* price. The Kubernetes regions page's flavour table names no 3-AZ region, so the flavours follow its general rule that worker nodes "correspond to the standard OVHcloud Public Cloud catalog offered in this region and are billed at standard price": the B3, C3 and R3 flavours, which the prices page offers in Paris and Milan at the same price as elsewhere. B2 is not offered there. These node plans are an inference from that "standard Public Cloud catalog of the region ... billed at standard price" sentence, not from a page listing the 3-AZ flavours; re-check them at the next refresh. **Fixed fee per cluster** (the control plane, ADR 0026): every cluster here is on the Standard plan, whose control plane costs €0.09 an hour per cluster, × 730 = 65.70, recorded as `65.70` in `MIL` and `PAR`. The fee is charged once per cluster, never per node.
 
 | Plan | vCPU | Memory | Storage on the page | EUR/hour | EUR/month (× 730) | Price regions |
 |---|---|---|---|---|---|---|
@@ -1193,11 +1194,6 @@ Prices and plans left out (PRD #190 milestone 3, read 2026-11-13):
   says only that each class has an encrypted version "depending on the region". Reusing the unencrypted
   class's price would be an inferred price, so none is recorded, and an estimate for these volumes is "not
   estimated".
-- **The Managed Kubernetes Standard plan's control plane, €0.09 an hour per cluster** (prices page, *Managed
-  Kubernetes Service*; Paris, Milan and Roubaix). ADR 0024's format has no per-cluster price: a plan is a
-  node size, multiplied by the node count, and adding the fee to every node flavour would charge it once per
-  node. An estimate for a cluster in `PAR`, `MIL` or `RBX` is too low by €65.70 a month (0.09 × 730) per
-  cluster. The Free plan's control plane is "Included" and needs nothing.
 - **B3, C3 and R3 Kubernetes nodes in `RBX` and `SBG`.** The Kubernetes regions page's flavour table offers
   them in "DE1 / GRA11 / UK1 / WAW1" only, so *Managed Kubernetes Service* prices them in `GRA`, `LIM` and
   `WAW`; B2 nodes are priced in all five 1-AZ regions. The same table names no 3-AZ region at all, so

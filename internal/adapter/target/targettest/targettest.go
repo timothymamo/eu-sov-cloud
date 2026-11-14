@@ -279,7 +279,8 @@ func equalOffering(a, b catalog.Offering) bool {
 		slices.Equal(a.Capabilities, b.Capabilities) &&
 		slices.Equal(a.Regions, b.Regions) &&
 		slices.EqualFunc(a.Plans, b.Plans, equalPlan) &&
-		slices.EqualFunc(a.StoragePrices, b.StoragePrices, equalPrice)
+		slices.EqualFunc(a.StoragePrices, b.StoragePrices, equalPrice) &&
+		slices.EqualFunc(a.FixedFees, b.FixedFees, equalPrice)
 }
 
 // equalPlan reports whether a and b are the same plan, prices included.
@@ -298,9 +299,9 @@ func equalPrice(a, b catalog.Price) bool {
 
 // describe formats o for a violation message, quoting every value.
 func describe(o catalog.Offering) string {
-	return fmt.Sprintf("{Name: %s, Categories: %s, Capabilities: %s, Regions: %s, Plans: %s, StoragePrices: %s}",
+	return fmt.Sprintf("{Name: %s, Categories: %s, Capabilities: %s, Regions: %s, Plans: %s, StoragePrices: %s, FixedFees: %s}",
 		text.Quote(o.Name), quoteAll(o.Categories), quoteAll(o.Capabilities), quoteAll(o.Regions),
-		describePlans(o.Plans), describePrices(o.StoragePrices))
+		describePlans(o.Plans), describePrices(o.StoragePrices), describePrices(o.FixedFees))
 }
 
 // describePlans formats plans for a violation message, quoting every value.

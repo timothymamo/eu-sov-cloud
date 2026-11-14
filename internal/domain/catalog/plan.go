@@ -94,6 +94,9 @@ var (
 	// storage prices of one offering, apply to the same region. A price with no
 	// region applies to every region.
 	ErrOverlappingPrices = errors.New("overlapping prices")
+	// ErrMissingFee is returned for an offering whose fixed fees leave one of its
+	// regions without a fee: a region with no fee would read as free.
+	ErrMissingFee = errors.New("offering region has no fixed fee")
 )
 
 // regionSet holds an offering's regions, each once, so a price region is
@@ -221,6 +224,42 @@ func normalisePrices(list string, prices []Price, regions regionSet) ([]Price, e
 	}
 
 	slices.SortFunc(out, comparePrices)
+
+	return out, nil
+}
+
+// normaliseFixedFees checks the fixed fees of an offering available in regions
+// as a price list named fixedFees, then that they cover every region of the
+// offering (ADR 0026), and returns them normalised as normalisePrices does: nil
+// when there are none.
+func normaliseFixedFees(fees []Price, regions regionSet) ([]Price, error) {
+	out, err := normalisePrices("fixedFees", fees, regions)
+	if err != nil || out == nil {
+		return out, err
+	}
+
+	if out[0].Regions == nil {
+		return out, nil
+	}
+
+	covered := make(map[string]struct{}, len(regions))
+	for _, fee := range out {
+		for _, r := range fee.Regions {
+			covered[r] = struct{}{}
+		}
+	}
+
+	var missing []string
+
+	for r := range regions {
+		if _, ok := covered[r]; !ok {
+			missing = append(missing, r)
+		}
+	}
+
+	if len(missing) > 0 {
+		return nil, fmt.Errorf("fixedFees: %w: region %s", ErrMissingFee, text.Quote(slices.Min(missing)))
+	}
 
 	return out, nil
 }
